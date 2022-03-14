@@ -1,5 +1,11 @@
-risb - An example application using triqs and cpp2py
+risb - Rotationally invariant slave-boson mean-field theory implemented in 
+the TRIQS library.
 
+risb copyright:
+Copyright (C) 2022-, H. L. Nourse, B. J. Powell
+Copyright (C) 2016-2022, H. L. Nourse, R. H. McKenzie, B. J. Powell
+
+app4triqs copyright:
 Copyright (C) 2017-2018, N. Wentzell, O. Parcollet
 Copyright (C) 2018-2019, The Simons Foundation
   authors: N. Wentzell, D. Simons, H. Strand, O. Parcollet
