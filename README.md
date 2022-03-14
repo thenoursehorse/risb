@@ -1,10 +1,9 @@
-[![build](https://github.com/TRIQS/risb/workflows/build/badge.svg)](https://github.com/TRIQS/risb/actions?query=workflow%3Abuild)
-
 # risb - Rotationally invariant slave boson mean-field theory
 
 Dependencies
 -------------
-* [embedding_ed](https://github.com/thenoursehorse/embedding_ed) (only suggested)
+* [TRIQS](https://github.com/TRIQS/triqs)
+* [embedding_ed](https://github.com/thenoursehorse/embedding_ed) (other impurity solvers can be used instead)
 
 Installation
 ---------------
