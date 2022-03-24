@@ -40,7 +40,7 @@ class tests(unittest.TestCase):
                 h_loc += U * n(spin_names[0],orb) * n(spin_names[1],orb)
             mu = U / 2
 
-            eprint("U = ", U)
+            #eprint("U = ", U)
             
             for a in range(dim):
                 Lambda[a,a] = mu
@@ -73,8 +73,8 @@ class tests(unittest.TestCase):
                 D = get_d(pdensity, ke[0])
                 Lambda_c = get_lambda_c(pdensity, R, Lambda, D)
 
-                eprint("D =", D)
-                eprint("Lambda_c =", Lambda_c)
+                #eprint("D =", D)
+                #eprint("Lambda_c =", Lambda_c)
                 
                 #h_emb = get_h_emb(h_loc, D, Lambda_c, fops_loc, fops_bath)
                 #emb_solver = EmbeddingAtomDiag(h_emb, fops_emb, fops_loc, fops_bath)
@@ -92,18 +92,18 @@ class tests(unittest.TestCase):
                 norm += np.linalg.norm(R - R_old)
                 norm += np.linalg.norm(Lambda - Lambda_old)
 
-                eprint("Ec =", Ec)
-                eprint("Nf =", Nf)
-                eprint("Mcf =", Mcf)
+                #eprint("Ec =", Ec)
+                #eprint("Nf =", Nf)
+                #eprint("Mcf =", Mcf)
 
                 if norm < 1e-6:
                     break
             
-            eprint("cycles =", cycle, "norm =", norm)
-            eprint("R =")
-            eprint(R)
-            eprint("Lambda =")
-            eprint(Lambda)
+            #eprint("cycles =", cycle, "norm =", norm)
+            #eprint("R =")
+            #eprint(R)
+            #eprint("Lambda =")
+            #eprint(Lambda)
         
         mu_calculated = np.sum(Lambda) / dim
         mu_expected = U/2.

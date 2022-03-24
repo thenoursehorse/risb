@@ -42,7 +42,7 @@ class tests(unittest.TestCase):
         for s1,s2 in product(spin_names,spin_names):
             h_loc += 0.5 * J * c_dag(s1,1) * c(s2,1) * c_dag(s2,2) * c(s1,1)
 
-        eprint("U =", U, "V =", V, "J =", J)
+        #eprint("U =", U, "V =", V, "J =", J)
 
         # First guess for Lambda will have mu on the diagonal
         for block in block_names:
@@ -95,10 +95,10 @@ class tests(unittest.TestCase):
         for block in block_names:
             Z[block] = np.dot(R[block], R[block])
         #e, v = np.linalg.eigh(Z["up"])
-        eprint("cycles =", cycle, "norm =", norm)
-        eprint("Z =", Z)
+        #eprint("cycles =", cycle, "norm =", norm)
+        #eprint("Z =", Z)
         #eprint("Z+- =",e)
-        eprint("Lambda =", Lambda)
+        #eprint("Lambda =", Lambda)
         #eprint("mu =", mu)
 
         mu_calculated = 0

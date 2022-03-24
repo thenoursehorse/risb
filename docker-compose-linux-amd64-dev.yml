@@ -1,0 +1,12 @@
+version: "3.9"
+
+services:
+  risb:
+    platform: linux/amd64 # comment/change for different architecture
+    build:
+      context: .
+      dockerfile: Dockerfile.linux-amd64-dev
+    volumes:
+      - "./:/home/hacker/code:ro"
+    stdin_open: true # docker run -i
+    tty: true        # docker run -t

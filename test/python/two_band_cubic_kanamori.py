@@ -42,12 +42,12 @@ class tests(unittest.TestCase):
         # Expression of mu for half and quarter filling
         if filling == 'half':
             mu = 0.5*U + 0.5*(U-2*J) + 0.5*(U-3*J)
-        # This gives the wrong mu for RISB for some reason. Is it correct for DMFT?
+        # This gives the wrong mu for RISB, because it is the DMFT result.
         elif filling == 'quarter':
             mu = -0.81 + (0.6899-1.1099*coeff)*U + (-0.02548+0.02709*coeff-0.1606*coeff**2)*U**2 
 
-        eprint("U =", U, "J_rat =", coeff)
-        eprint("mu =", mu)
+        #eprint("U =", U, "J_rat =", coeff)
+        #eprint("mu =", mu)
        
         # First guess for Lambda will have mu on the diagonal
         for block in block_names:
@@ -93,9 +93,9 @@ class tests(unittest.TestCase):
         Z = dict()
         for block in block_names:
             Z[block] = np.dot(R[block], R[block])
-        eprint("cycles =", cycle, "norm =", norm)
-        eprint("Z =", Z)
-        eprint("Lambda =", Lambda)
+        #eprint("cycles =", cycle, "norm =", norm)
+        #eprint("Z =", Z)
+        #eprint("Lambda =", Lambda)
 
         mu_calculated = 0
         for block in block_names:

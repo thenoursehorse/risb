@@ -8,16 +8,24 @@ from triqs.operators.util.observables import N_op
 
 from risb.embedding_atom_diag import *
 from triqs.atom_diag import trace_rho_op
-from kint import Tetras
+#from kint import Tetras
 
-def build_dh_dispersion(tg = 0.5, nkx = 60):
+def build_dh_dispersion(tg = 0.5, nkx = 18):
         na = 2
         orb_dim = 3
         phi = 2.0 * np.pi / 3.0
 
-        # The k-space integrator
-        kintegrator = Tetras(nkx,nkx,1,1) # shift away from M high symmetry point
-        mesh = kintegrator.getMesh
+        # The k-space integrator if using linear tetrahedron from kint
+        #kintegrator = Tetras(nkx,nkx,1,1) # shift away from M high symmetry point
+        #mesh = kintegrator.getMesh
+
+        # Build shifted 2D mesh
+        kintegrator = None
+        mesh = np.empty(shape=(nkx*nkx, 2))
+        for idx,coords in enumerate(zip(range(nkx), range(nkx))):
+            mesh[idx,0] = coords[0]/nkx + 0.5/nkx
+            mesh[idx,1] = coords[1]/nkx + 0.5/nkx
+        
         mesh_num = mesh.shape[0]
 
         # Unit cell lattice vectors and Bravai lattice vectors
@@ -106,10 +114,11 @@ class tests(unittest.TestCase):
         orb_dim = 3
         tk = 1.0
         tg = 0.5
-        nkx = 60
+        nkx = 18
         beta = 10
-        num_cycles = 200;
+        num_cycles = 200
         N_elec = 8
+        mu = 1
         
         orb_names = [0, 1, 2]
         spin_names = ['up','dn']
@@ -127,7 +136,7 @@ class tests(unittest.TestCase):
         U = 0
         h_loc = hubb_N(tk, U, orb_names, spin_names)
 
-        eprint("U =", U, "tk =", tk)
+        #eprint("U =", U, "tk =", tk)
 
         # First guess for Lambda is the quadratic terms in h_loc
         for block in block_names:
@@ -147,7 +156,7 @@ class tests(unittest.TestCase):
             for b, block in enumerate(['up']):
 
                 # python
-                eig, vec = sc.get_h_qp2([R[block],R[block]], [Lambda[block],Lambda[block]], dispersion) #, mu)
+                eig, vec = sc.get_h_qp2([R[block],R[block]], [Lambda[block],Lambda[block]], dispersion, mu)
                 disp_R = sc.get_disp_R2([R[block],R[block]], dispersion, vec)
                 
                 # c++
@@ -157,14 +166,16 @@ class tests(unittest.TestCase):
                 #vec = h_qp.vec[0:3,:,:]
                 #vec_dag = h_qp.vec_dag[:,0:3,:]
 
-                kintegrator.setEks(np.transpose(eig)) # python
-                #kintegrator.setEks(eig) # c++
-                kintegrator.setEF_fromFilling(N_elec / len(block_names)) # divide by number of blocks
-                mu = kintegrator.getEF
-                wks = np.transpose(kintegrator.getWs); #python
-                #wks = kintegrator.getWs; #c++
+                # Using kint linear tetrahedron
+                #kintegrator.setEks(np.transpose(eig)) # python
+                ##kintegrator.setEks(eig) # c++
+                #kintegrator.setEF_fromFilling(N_elec / len(block_names)) # divide by number of blocks
+                #mu = kintegrator.getEF
+                #wks = np.transpose(kintegrator.getWs); #python
+                ##wks = kintegrator.getWs; #c++
 
-                #wks = fermi_fnc(eig, beta) / nk
+                # Using fermi smear
+                wks = fermi_fnc(eig, beta) / nkx**2
                 
                 # python
                 pdensity = sc.get_pdensity(vec[:,0:3,:], wks) # Project onto one of the triangles in the unit cell
@@ -178,14 +189,19 @@ class tests(unittest.TestCase):
                 pdensity = np.diag(np.diag(pdensity))
                 ke = np.diag(np.diag(ke))
 
+                eprint(pdensity)
+
                 D[block] = sc.get_d(pdensity, ke)
                 Lambda_c[block] = sc.get_lambda_c(pdensity, R[block], Lambda[block], D[block])
 
             Lambda_c['dn'] = Lambda_c['up']
             D['dn'] = D['up']
 
-            emb_solver.set_h_emb(h_loc, Lambda_c, D, mu)
+            emb_solver.set_h_emb(h_loc, Lambda_c, D) #, mu)
             emb_solver.solve()
+        
+            N = N_op(spin_names,orb_names,off_diag=True)
+            eprint("N =", trace_rho_op(emb_solver.get_dm(), N, emb_solver.get_ad()) )
 
             #for b, block in enumerate(block_names):
             for b, block in enumerate(['up']):
@@ -197,6 +213,12 @@ class tests(unittest.TestCase):
                 Nf = np.diag(np.diag(Nf))
                 Mcf = np.diag(np.diag(Mcf))
                 Nc = np.diag(np.diag(Nc))
+        
+                eprint("D =", D)
+                eprint("Lambda_c =", Lambda_c)
+                eprint("Nf =", Nf)
+                eprint("Mcf =", Mcf)
+                eprint("Nc =", Nc)
                 
                 Lambda[block] = sc.get_lambda(R[block], D[block], Lambda_c[block], Nf)
                 R[block] = sc.get_r(Mcf, Nf)

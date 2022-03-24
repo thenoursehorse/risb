@@ -33,7 +33,7 @@ class tests(unittest.TestCase):
         for U in [1.5]: #np.arange(0,3,0.1):
             h_loc = U * n('up',0) * n('dn',0)
             mu = U / 2
-            eprint("U =", U, "mu =", mu)
+            #eprint("U =", U, "mu =", mu)
             
             for block in S.block_names:
                 for inner in S.Lambda[block]:
@@ -80,13 +80,13 @@ class tests(unittest.TestCase):
                 if norm < 1e-6:
                     break
             
-            eprint("cycles =", i, "norm =", norm)
-            eprint("R =", S.R)
-            eprint("Lambda =", S.Lambda)
-            eprint("pdensity =", S.pdensity)
-            eprint("G0_iw.density() =", S.G0_iw.density())
-            eprint("Gqp_iw.density() =", S.Gqp_iw.density())
-            eprint("G_iw.density() =", S.G_iw.density())
+            #eprint("cycles =", i, "norm =", norm)
+            #eprint("R =", S.R)
+            #eprint("Lambda =", S.Lambda)
+            #eprint("pdensity =", S.pdensity)
+            #eprint("G0_iw.density() =", S.G0_iw.density())
+            #eprint("Gqp_iw.density() =", S.Gqp_iw.density())
+            #eprint("G_iw.density() =", S.G_iw.density())
        
         mu_calculated = 0
         for block in S.block_names:
