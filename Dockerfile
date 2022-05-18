@@ -1,16 +1,18 @@
-# See ../triqs/packaging for other options
-FROM flatironinstitute/triqs:unstable-ubuntu-clang
+ARG TRIQSTAG
+FROM triqs:${TRIQSTAG}
 ARG APPNAME=risb
 
-COPY requirements.txt /src/$APPNAME/requirements.txt
-RUN pip3 install -r /src/$APPNAME/requirements.txt
+RUN mkdir -p ${SRC_DIR}/${APPNAME}
+COPY requirements.txt ${SRC_DIR}/${APPNAME}/requirements.txt
+RUN pip3 install -r ${SRC_DIR}/${APPNAME}/requirements.txt
 
-COPY --chown=build . $SRC/$APPNAME
-WORKDIR $BUILD/$APPNAME
-RUN chown build .
-USER build
-ARG BUILD_DOC=0
-ARG BUILD_ID
-RUN cmake $SRC/$APPNAME -DTRIQS_ROOT=${INSTALL} -DBuild_Documentation=${BUILD_DOC} -DBuild_Deps=Always && make -j2 || make -j1 VERBOSE=1
-USER root
-RUN make install
+COPY . ${SRC_DIR}/${APPNAME}
+
+RUN mkdir -p ${BUILD_DIR}/${APPNAME}
+WORKDIR ${BUILD_DIR}/${APPNAME}
+
+SHELL ["/bin/bash", "-cli"]
+RUN cmake ${SRC_DIR}/${APPNAME} -DTRIQS_ROOT=${INSTALL_PREFIX} \
+  && make -j${NCORES} \
+  || make -j1 VERBOSE=1 \
+  && make install
