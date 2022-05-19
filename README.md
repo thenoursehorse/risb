@@ -9,3 +9,7 @@ Dependencies
 Installation
 ---------------
 * The build and install process is the same as the one outlined [here](https://triqs.github.io/app4triqs/3.0.x/install.html).
+
+Examples
+---------------
+* Look at ed_one_band_cubic.py and one_band_cubic.py in test/python for examples.

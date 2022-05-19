@@ -26,7 +26,6 @@ class tests(unittest.TestCase):
         for U in [1.5]: #np.arange(0,3,0.1):
             h_loc = U * n('up',0) * n('dn',0)
             mu = U / 2
-            eprint("U =", U, "mu =", mu)
 
             for b in block_names:
                 for inner in Lambda[b]:
@@ -59,9 +58,6 @@ class tests(unittest.TestCase):
                     Nf = emb_solver.get_nf(b)
                     Mcf = emb_solver.get_mcf(b)
                     
-                    eprint("Nf =", Nf)
-                    eprint("Mcf =", Mcf)
-
                     Lambda[b] = sc.get_lambda(R[b], D[b], Lambda_c[b], Nf)
                     R[b] = sc.get_r(Mcf, Nf)
                 
@@ -71,13 +67,6 @@ class tests(unittest.TestCase):
                 if norm < 1e-6:
                     break
             
-            eprint("cycles =", cycle, "norm =", norm)
-            eprint("R =", R)
-            eprint("Lambda =", Lambda)
-            eprint("pdensity =", pdensity)
-            eprint()
-            eprint()
-        
         mu_calculated = 0
         for block in block_names:
             mu_calculated += np.sum(Lambda[block]) / 2.0
