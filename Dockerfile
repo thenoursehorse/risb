@@ -3,10 +3,10 @@ FROM triqs:${TRIQSTAG}
 ARG APPNAME=risb
 
 RUN mkdir -p ${SRC_DIR}/${APPNAME}
-COPY requirements.txt ${SRC_DIR}/${APPNAME}/requirements.txt
+COPY --chown=${NB_USER} requirements.txt ${SRC_DIR}/${APPNAME}/requirements.txt
 RUN pip3 install -r ${SRC_DIR}/${APPNAME}/requirements.txt
 
-COPY . ${SRC_DIR}/${APPNAME}
+COPY --chown=${NB_USER} . ${SRC_DIR}/${APPNAME}
 
 RUN mkdir -p ${BUILD_DIR}/${APPNAME}
 WORKDIR ${BUILD_DIR}/${APPNAME}
