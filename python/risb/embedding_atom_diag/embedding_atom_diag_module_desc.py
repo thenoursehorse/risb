@@ -52,7 +52,10 @@ for c_py, c_cpp, in (('Real','false'),('Complex','true')):
     #c.add_method("void set_h_emb (many_body_operator h_loc, block_matrix<double> lambda_c, block_matrix<%s::scalar_t> D, double mu = 0)" % c_type,
     c.add_method("void set_h_emb (many_body_operator h_loc, std::map<std::string,matrix<double>> lambda_c, std::map<std::string, matrix<%s::scalar_t>> D, double mu = 0)" % c_type,
                  doc = "Sets the embedding Hamiltonian for the solver")
-
+    
+    c.add_method("double overlap (many_body_operator Op)",
+                 doc = "Returns <Phi| Op |Phi>")
+    
     c.add_method("matrix<double> get_nf (std::string block)",
                  doc = "Returns the density matrix of the f-fermions")
     

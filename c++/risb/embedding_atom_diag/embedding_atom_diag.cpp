@@ -53,19 +53,41 @@ namespace risb {
     
     
     EMBEDDING_ATOM_DIAG_METHOD(void, solve()) {
-      _ad = atom_diag_t(_h_emb, _fops_emb);
+      //_ad = atom_diag_t(_h_emb, _fops_emb);
       
-      //int M = _fops_emb.size() / 2;
-      //_ad = atom_diag_t(_h_emb, _fops_emb, M-2, M+2); 
-      // Restrict to particle sector N = # physical orbitals
-      // NOTE: atom_diag still needs particle sectors around half-filling for the interaction term
+      // Test to reduce how expensive it is to solve by restricting particle sectors
+      // NOTE: atom_diag only needs particle sectors around half-filling for the interaction term
       //       and for calculating the densities
+      int M = _fops_emb.size() / 2;
+      _ad = atom_diag_t(_h_emb, _fops_emb, M-2, M+2); 
+      
+      /*
+      // Test of adding constraint to h_emb to restrict to half-filled particle sector
+      // Doesn't work
+      double M = _fops_emb.size() / 2.0;
+      double weight = 0.1;
+      auto h = _h_emb;
+      for (auto const block : range(_fops_loc.size())) {
+        auto const& fops_l = _fops_loc[block];
+        auto const& fops_b = _fops_bath[block];
+        for (auto const &o : fops_l) {
+          auto nalpha  = many_body_op_t::make_canonical(true, o.index)
+                        * many_body_op_t::make_canonical(false, o.index);
+          h -= weight * nalpha;
+        }
+        for (auto const &o : fops_b) {
+          auto na  = many_body_op_t::make_canonical(true, o.index)
+                        * many_body_op_t::make_canonical(false, o.index);
+          h -= weight * na;
+        }
+      }
+      h += weight * M;
+      _ad = atom_diag_t(h, _fops_emb);
+      */
 
       std::cout << "Found " << _ad.n_subspaces() << " subspaces." << std::endl;
 
-      // FIXME I need to find the lowest energy vector in the M particle sector
-      // to make this more robust
-
+      // Test for some observables
       //std::cerr << "n_subspaces = " << _ad.n_subspaces() << " ";
       //std::cerr << "full_hilbert_space_dim = " << _ad.get_full_hilbert_space_dim() << " ";
       //std::cerr << "gs_energy = " << _ad.get_gs_energy() << std::endl;
@@ -75,10 +97,50 @@ namespace risb {
       //    std::cerr << en + _ad.get_gs_energy() << " ";
       //std::cerr << std::endl;
 
-      _dm = atomic_density_matrix(_ad,_beta);
-      //_gs_vec.resize(_ad.get_full_hilbert_space_dim());
-      //_gs_vec() = 0;
+      //_dm = atomic_density_matrix(_ad,_beta);
+
+      // Below is very inefficient because it has to create the full vector and take the overlap every time 
+      // Find lowest energy vector in in subspace of M particles
+      // We require \hat{N} |Phi> = M |Phi> for risb
+      many_body_op_t N;
+      for (auto const block : range(_fops_loc.size())) {
+        auto const& fops_l = _fops_loc[block];
+        auto const& fops_b = _fops_bath[block];
+        for (auto const &o : fops_l) {
+          auto nalpha  = many_body_op_t::make_canonical(true, o.index)
+                        * many_body_op_t::make_canonical(false, o.index);
+          N += nalpha;
+        }
+        for (auto const &o : fops_b) {
+          auto na  = many_body_op_t::make_canonical(true, o.index)
+                        * many_body_op_t::make_canonical(false, o.index);
+          N += na;
+        }
+      }
+
+      // Basis of vectors are in the eigenbasis,
+      // organised from lowest energy to highest energy
+      _gs_vec.resize(_ad.get_full_hilbert_space_dim());
+      _gs_vec() = 0;
+      for (auto i : range(_ad.get_full_hilbert_space_dim())) {
+        _gs_vec(i) = 1;
+        auto N_part = real( dot( _gs_vec, act(N, _gs_vec, _ad) ) );
+        if (std::abs(N_part - (double)M) < 1e-12) break;
+        _gs_vec(i) = 0;
+      }
+
+      // FIXME Now need to add an overlap function so trace_rho_op is not used, or expose
+      // _gs_vec to public (and then fix the tests to use this correctly)
+      // Above also makes three_orbital take forever 
+      
       //_gs_vec(0) = 1; // Ground state vector in the eigenbasis of the full hilbert space
+    }
+    
+    
+    
+    // -----------------------------------------------------------------
+    EMBEDDING_ATOM_DIAG_METHOD(double, overlap(many_body_op_t const& Op) const) {
+      return real( dot( _gs_vec, act(Op, _gs_vec, _ad)) );
     }
 
 
@@ -148,8 +210,9 @@ namespace risb {
           auto const j = oo.linear_index;
           auto fa  = many_body_op_t::make_canonical(true, o.index);
           auto fb = many_body_op_t::make_canonical(false, oo.index);
-          //Nf(i,j) = real( dot( _gs_vec, act(fb * fa, _gs_vec, _ad) ) );
-          Nf(i,j) = real(trace_rho_op(_dm, fb * fa, _ad));
+          //Nf(i,j) = real( overlap(fb * fa) );
+          Nf(i,j) = real( dot( _gs_vec, act(fb * fa, _gs_vec, _ad) ) );
+          //Nf(i,j) = real(trace_rho_op(_dm, fb * fa, _ad));
         }
       }
       return Nf;
@@ -170,8 +233,9 @@ namespace risb {
           auto const j = oo.linear_index;
           auto ca  = many_body_op_t::make_canonical(true, o.index);
           auto cb = many_body_op_t::make_canonical(false, oo.index);
-          //Nc(i,j) = real( dot( _gs_vec, act(ca * cb, _gs_vec, _ad) ) );
-          Nc(i,j) = real(trace_rho_op(_dm, ca * cb, _ad));
+          //Nc(i,j) = real( overlap(ca * cb) );
+          Nc(i,j) = real( dot( _gs_vec, act(ca * cb, _gs_vec, _ad) ) );
+          //Nc(i,j) = real(trace_rho_op(_dm, ca * cb, _ad));
         }
       }
       return Nc;
@@ -193,8 +257,9 @@ namespace risb {
           auto const j = oo.linear_index;
           auto ca  = many_body_op_t::make_canonical(true, o.index);
           auto fa = many_body_op_t::make_canonical(false, oo.index);
-          //auto res = dot( _gs_vec, act(ca * fa, _gs_vec, _ad) );
-          auto res = trace_rho_op(_dm, ca * fa, _ad);
+          //auto res = overlap(ca * fa);
+          auto res = dot( _gs_vec, act(ca * fa, _gs_vec, _ad) );
+          //auto res = trace_rho_op(_dm, ca * fa, _ad);
           if (is_complex) Mcf(i,j) = res;
           else Mcf(i,j) = real(res);
         }

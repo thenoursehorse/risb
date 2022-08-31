@@ -71,6 +71,9 @@ namespace risb {
       /// 
       template <class M, class N> void set_h_emb(many_body_op_t const &h_loc, M const &lambda_c, N const &D, double const mu = 0);
 
+      ///
+      double overlap(many_body_op_t const& Op) const;
+
 
       /// Density matrix of the f-fermions
       /**

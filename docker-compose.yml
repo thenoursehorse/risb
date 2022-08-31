@@ -4,7 +4,6 @@ services:
   triqs:
     platform: linux/amd64
     image: triqs:3.0.x
-    container_name: triqs
     build:
       context: https://github.com/thenoursehorse/docker.git#main:triqs
       dockerfile: Dockerfile.3.0.x
@@ -14,7 +13,6 @@ services:
     - triqs
     platform: linux/amd64
     image: risb:3.0.x
-    container_name: risb
     build:
       context: .
       dockerfile: Dockerfile

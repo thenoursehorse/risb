@@ -2,11 +2,32 @@ import numpy as np
 from itertools import product
 from scipy.linalg import sqrtm
 from scipy.linalg import pinv
+from scipy.special import binom
 from triqs.gf import Gf, iOmega_n, inverse, dyson
+
+# Formula is (1-A)^{-1/2} = sum_r=0^{infty} (-1)^r * 1/2 choose r * A^r
+def one_sqrtm_inv(A, tol=np.finfo(float).eps, N=10000):
+    # Do r = 0 manually (it is just the identity)
+    A_r = np.eye(A.shape[0])
+    out = np.eye(A.shape[0])
+    for r in range(1,N+1):
+        old = out.copy()
+        A_r = np.dot(A_r,A)
+        out += (-1)**r * binom(-1/2., r) * A_r
+        err = np.linalg.norm(out - old)
+        if err < tol:
+            break
+    print(r,err)
+    return out
+
+def get_K_sq_inv(pdensity, hdensity, tol=np.finfo(float).eps, N=10000):
+    return np.dot( one_sqrtm_inv(A=pdensity, tol=tol, N=N), 
+                   one_sqrtm_inv(A=hdensity, tol=tol, N=N) )
 
 def get_d(pdensity, ke):
     K = pdensity - np.dot(pdensity,pdensity)
-    K_sq = sqrtm(K);
+    K_sq = sqrtm(K)
+    #K_sq_inv = get_K_sq_inv(pdensity, np.eye(pdensity.shape[0])-pdensity)
     #K_sq_inv = pinv(K_sq)
     K_sq_inv = np.linalg.inv(K_sq)
     return np.dot(K_sq_inv,ke.T)
@@ -14,7 +35,8 @@ def get_d(pdensity, ke):
 def get_lambda_c(pdensity, R, Lambda, D):
     P = np.eye(pdensity.shape[0]) - 2.0*pdensity
     K = pdensity - np.dot(pdensity,pdensity)
-    K_sq = sqrtm(K);
+    K_sq = sqrtm(K)
+    #K_sq_inv = get_K_sq_inv(pdensity, np.eye(pdensity.shape[0])-pdensity)
     #K_sq_inv = pinv(K_sq)
     K_sq_inv = np.linalg.inv(K_sq)
     #return -np.real(np.dot(np.dot(R,D).T, np.dot(K_sq_inv,P))).T - Lambda
@@ -24,7 +46,8 @@ def get_lambda_c(pdensity, R, Lambda, D):
 def get_lambda(R, D, Lambda_c, Nf):
     P = np.eye(Nf.shape[0]) - 2.0*Nf
     K = Nf - np.dot(Nf,Nf)
-    K_sq = sqrtm(K);
+    K_sq = sqrtm(K)
+    #K_sq_inv = get_K_sq_inv(Nf, np.eye(Nf.shape[0])-Nf)
     #K_sq_inv = pinv(K_sq)
     K_sq_inv = np.linalg.inv(K_sq)
     #return -np.real(np.dot(np.dot(R,D).T, np.dot(K_sq_inv,P))).T - Lambda_c
@@ -33,10 +56,19 @@ def get_lambda(R, D, Lambda_c, Nf):
 
 def get_r(Mcf, Nf):
     K = Nf - np.dot(Nf,Nf)
-    K_sq = sqrtm(K);
+    K_sq = sqrtm(K)
+    #K_sq_inv = get_K_sq_inv(Nf, np.eye(Nf.shape[0])-Nf)
     #K_sq_inv = pinv(K_sq)
     K_sq_inv = np.linalg.inv(K_sq)
     return np.dot(Mcf,K_sq_inv).T
+
+def get_f1(Mcf,pdensity,R):
+    K = pdensity - np.dot(pdensity,pdensity)
+    K_sq = sqrtm(K)
+    return Mcf - np.dot(R.T, K_sq)
+
+def get_f2(Nf, pdensity):
+    return Nf - pdensity.T
 
 def get_h_qp(R, Lambda, dispersion, mu=0):
     #h_qp = np.einsum('ac,cdk,db->kab', R, dispersion, R.conj().T, optimize='optimal') + (Lambda - mu*np.eye(Lambda.shape[0]))

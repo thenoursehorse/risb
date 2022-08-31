@@ -7,7 +7,7 @@ from triqs.operators.util.observables import S2_op
 from triqs.operators.util.observables import N_op
 
 from risb.embedding_atom_diag import *
-from triqs.atom_diag import trace_rho_op
+#from triqs.atom_diag import trace_rho_op
 #from kint import Tetras
 
 def build_dh_dispersion(tg = 0.5, nkx = 18):
@@ -116,7 +116,7 @@ class tests(unittest.TestCase):
         tg = 0.5
         nkx = 18
         beta = 10
-        num_cycles = 200
+        num_cycles = 5
         N_elec = 8
         mu = 1
         
@@ -133,10 +133,10 @@ class tests(unittest.TestCase):
         [R, Lambda] = build_block_mf_matrices(gf_struct)
         [D, Lambda_c] = build_block_mf_matrices(gf_struct)
 
-        U = 0
+        U = 1.
         h_loc = hubb_N(tk, U, orb_names, spin_names)
 
-        #eprint("U =", U, "tk =", tk)
+        eprint("U =", U, "tk =", tk)
 
         # First guess for Lambda is the quadratic terms in h_loc
         for block in block_names:
@@ -189,19 +189,20 @@ class tests(unittest.TestCase):
                 pdensity = np.diag(np.diag(pdensity))
                 ke = np.diag(np.diag(ke))
 
-                eprint(pdensity)
+                eprint("pdensity =", pdensity)
 
                 D[block] = sc.get_d(pdensity, ke)
                 Lambda_c[block] = sc.get_lambda_c(pdensity, R[block], Lambda[block], D[block])
 
             Lambda_c['dn'] = Lambda_c['up']
             D['dn'] = D['up']
-
+                
             emb_solver.set_h_emb(h_loc, Lambda_c, D) #, mu)
             emb_solver.solve()
         
             N = N_op(spin_names,orb_names,off_diag=True)
-            eprint("N =", trace_rho_op(emb_solver.get_dm(), N, emb_solver.get_ad()) )
+            #eprint("N =", trace_rho_op(emb_solver.get_dm(), N, emb_solver.get_ad()) )
+            eprint("N =", emb_solver.overlap(N))
 
             #for b, block in enumerate(block_names):
             for b, block in enumerate(['up']):
@@ -244,7 +245,8 @@ class tests(unittest.TestCase):
 
         N = N_op(spin_names,orb_names,off_diag=True)
         S2 = S2_op(spin_names,orb_names,off_diag=True)
-        S2_avg = trace_rho_op(emb_solver.get_dm(), S2, emb_solver.get_ad())
+        #S2_avg = trace_rho_op(emb_solver.get_dm(), S2, emb_solver.get_ad())
+        S2_avg = emb_solver.overlap(S2)
 
 
         Z = dict()
@@ -254,7 +256,8 @@ class tests(unittest.TestCase):
         eprint("Z =", Z)
         eprint("Lambda =", Lambda)
         eprint("mu =", mu)
-        eprint("N =", trace_rho_op(emb_solver.get_dm(), N, emb_solver.get_ad()) )
+        #eprint("N =", trace_rho_op(emb_solver.get_dm(), N, emb_solver.get_ad()) )
+        eprint("N =", emb_solver.overlap(N))
         eprint("S2 =", S2_avg)
         eprint("S =", np.sqrt(S2_avg + 0.25) - 0.5 )
 
