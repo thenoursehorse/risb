@@ -1,2 +1,7 @@
 compile_commands.json
 doc/cpp2rst_generated
+
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
