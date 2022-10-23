@@ -1,1 +1,14 @@
 remote_theme: just-the-docs/just-the-docs
+title: risb
+description: Rotationally invariant slave bosons for correlated many-body physics.
+
+kramdown:
+  syntax_highlighter_opts:
+    block:
+      line_numbers: false
+
+mathjax:
+  source: https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.5/latest.js?config=TeX-AMS_CHTML
+  config: 'MathJax.Hub.Config({ TeX: { equationNumbers: { autoNumber: "AMS" } } })'
+
+usemathjax: true

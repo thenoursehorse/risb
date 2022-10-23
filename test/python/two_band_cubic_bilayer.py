@@ -68,7 +68,7 @@ class tests(unittest.TestCase):
                 D[b] = sc.get_d(pdensity, ke)
                 Lambda_c[b] = sc.get_lambda_c(pdensity, R[b], Lambda[b], D[b])
 
-            emb_solver.set_h_emb(h_loc, Lambda_c, D, mu)
+            emb_solver.set_h_emb(h_loc, Lambda_c, D)
             emb_solver.solve()
 
             for b in block_names:
