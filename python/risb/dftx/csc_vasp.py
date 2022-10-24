@@ -2,6 +2,7 @@ import os
 import signal
 import subprocess
 import time
+from shutil import copyfile
 
 import triqs.utility.mpi as mpi
 
@@ -140,32 +141,44 @@ class cscVASP(object):
                     )
         mpi.barrier()
     
-    def run_csc(self, oneshot_obj, n_iter_dft):
+    def run_csc(self, oneshot_obj, n_iter, n_iter_dft=1, tol=1e-4, min_iterations=5, mix_mf=False, recycle_mf=False, recycle_structure=False, remove_gamma=True):
+        # Requires to have done a single oneshot iteration first
+        if remove_gamma:
+            copyfile(src='GAMMA',dst='GAMMA_recent')
+        old_total_energy = oneshot_obj.total_energy
+        
         self.start_vasp()
         # Wait for vasp to start (creates a lock file)
-        while not self.is_vasp_lock_present():
-            time.sleep(1)
-    
-        old_total_energy = oneshot_obj.get_dft_energy()
-    
-        iteration = 0
-        iter_dft = 0
-        while iter_dft < n_iter_dft:
-            
-            # Run a single step of dft
-            while self.is_vasp_lock_present():
-                time.sleep(1)
-            iter_dft += 1 
-    
+        #while not self.is_vasp_lock_present():
+        #    time.sleep(1)
+                     
+        iteration = 1
+        dE = 10
+        while (iteration < n_iter) and (abs(dE) > abs(tol)):
             # Remove gamma if vasp wrote it
-            self.remove_gamma()
+            #self.remove_gamma()
+            
+            # Run the dft steps
+            iter_dft = 0
+            if remove_gamma:
+                copyfile(src='GAMMA',dst='GAMMA_recent')
+            while iter_dft < n_iter_dft:
+                self.resume_vasp()
+                while self.is_vasp_lock_present():
+                    time.sleep(1)
+                iter_dft += 1
+                if remove_gamma:
+                    copyfile(src='GAMMA_recent',dst='GAMMA')
     
             # Run the dmft cycle and write gamma for next dft
-            _, _ = oneshot_obj.dmft_cycle(reset_sumk=True)
+            _, _ = oneshot_obj.dmft_cycle(reset_sumk=True, it=iteration-1, mix_mf=mix_mf, recycle_mf=recycle_mf, recycle_structure=recycle_structure)
             if self.oneshot_save:
-                oneshot_obj.save(it=iter_dft)
+                oneshot_obj.save(it=iteration)
             dE = oneshot_obj.total_energy - old_total_energy
             mpi.barrier()
+            
+            # store old energy
+            old_total_energy = oneshot_obj.total_energy
     
             # Print and save energies
             self.output_variables['iteration'] = iteration
@@ -177,18 +190,19 @@ class cscVASP(object):
             self.output_variables['energy_correction'] = oneshot_obj.energy_correction
             self.print_csc()
             self.save_csc()
-        
-            # store old energy
-            old_total_energy = oneshot_obj.total_energy
-    
-            # resume vasp
-            self.resume_vasp()
-    
+                            
             iteration += 1
     
-            if iter_dft >= n_iter_dft:
+            if iteration >= n_iter:
                 if mpi.is_master_node():
                     print("\nMaximum number of iterations reached.\n")
+            
+            if abs(dE) < abs(tol):
+                if mpi.is_master_node():
+                    print("\nTolerance reached.\n")
+
+            if iteration < min_iterations:
+                dE = 10
     
         # Stop vasp and exit
         self.stop_vasp()

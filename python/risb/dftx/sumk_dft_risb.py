@@ -15,6 +15,8 @@ from scipy.special import factorial
 from scipy.special import erfc
 from scipy.special import hermite
 
+from scipy.optimize import minimize_scalar
+
 class SumkDFTRISB(SumkDFT):
     """This class extends the SumK method (ab-initio code and triqs) to use RISB"""
 
@@ -312,7 +314,7 @@ class SumkDFTRISB(SumkDFT):
                         
             # Make sure Lambda is real (discard imaginary)
             for key in self.Lambda[ish].keys():
-                #self.Lambda[ish][key] = self.Lambda[ish][key].astype(numpy.float_) # FIXME
+                self.Lambda[ish][key] = self.Lambda[ish][key].astype(numpy.float_) # FIXME
                 if zero_Lambda:
                     self.Lambda[ish][key][:] = 0.0
 
@@ -887,6 +889,7 @@ class SumkDFTRISB(SumkDFT):
         for bname in h_bl_qp_k.keys():
             eig, vec = numpy.linalg.eigh(h_bl_qp_k[bname])
             dens_k[bname] = numpy.dot(vec, numpy.dot( numpy.diag(self.fweights(eks=eig, mu=mu, beta=beta)), vec.conjugate().transpose() ) )
+            
             if for_rho:
                 dens_k[bname] = numpy.dot( R_bl_k[bname].conjugate().transpose(), numpy.dot(dens_k[bname], R_bl_k[bname]) )                
 
@@ -930,22 +933,40 @@ class SumkDFTRISB(SumkDFT):
             mpi.report("Warning: Imaginary part in density will be ignored ({})".format(str(abs(dens.imag))))
         return dens.real
 
-    def calc_mu_risb(self, Lambda=None, R=None, beta=None, precision=0.01, delta=0.5, dm=None):
+    def calc_mu_risb(self, Lambda=None, R=None, beta=None, dm=None, 
+                           precision=0.01, delta=0.5, mu_max_iter=100, method='dichotomy',
+                           offset=0):
         if Lambda is None:
             Lambda = self.Lambda_sumk
         if R is None:
             R = self.R_sumk
         if beta is None:
             beta = self.beta
-       
-        F = lambda mu: self.total_density_risb(Lambda=Lambda, R=R, mu=mu, beta=beta, dm=dm)
-        density = self.density_required - self.charge_below
+            
+        density = self.density_required - self.charge_below + offset
 
-        self.chemical_potential = dichotomy.dichotomy(function=F,
-                                                      x_init=self.chemical_potential, y_value=density,
-                                                      precision_on_y=precision, delta_x=delta, max_loops=100,
-                                                      x_name="Chemical Potential", y_name="Total Density",
-                                                      verbosity=3)[0]
+        dichotomy_fail = False
+        if method == 'dichotomy':
+            F = lambda mu: self.total_density_risb(Lambda=Lambda, R=R, mu=mu, beta=beta, dm=dm)
+            res = dichotomy.dichotomy(function=F,
+                                      x_init=self.chemical_potential, y_value=density,
+                                      precision_on_y=precision, delta_x=delta, max_loops=mu_max_iter,
+                                      x_name="Chemical Potential", y_name="Total Density",
+                                      verbosity=3)[0]
+            
+            # If dichotomy fails, fall back to brent
+            if res is None:
+                dichotomy_fail = True
+            else:
+                self.chemical_potential = res
+        
+        # Slow but 'more robust' method
+        if (method != 'dichotomy') or dichotomy_fail:
+            F = lambda mu: numpy.abs(self.total_density_risb(Lambda=Lambda, R=R, mu=mu, beta=beta, dm=dm) - density)
+            res = minimize_scalar(F, method='brent', tol=precision, bracket=(self.chemical_potential-delta, self.chemical_potential+delta),
+                                  options={'maxiter':mu_max_iter})
+            self.chemical_potential = res.x
+        
         return self.chemical_potential
         
     def save_deltaN(self, deltaN, filename, dm_type, band_window):
