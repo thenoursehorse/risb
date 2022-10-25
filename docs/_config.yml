@@ -1,6 +1,10 @@
 remote_theme: just-the-docs/just-the-docs
 title: risb
 description: Rotationally invariant slave bosons for correlated many-body physics.
+baseurl: "/risb" # the subpath of your site, e.g. /blog
+url: "https://thenoursehorse.github.io" # the base hostname & protocol for your site, e.g. http://example.com
+
+color_scheme: light
 
 kramdown:
   syntax_highlighter_opts:
@@ -11,4 +15,9 @@ mathjax:
   source: https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.5/latest.js?config=TeX-AMS_CHTML
   config: 'MathJax.Hub.Config({ TeX: { equationNumbers: { autoNumber: "AMS" } } })'
 
-usemathjax: true
+back_to_top: true
+back_to_top_text: "Back to top"
+
+aux_links:
+  "risb on GitHub":
+    - "//github.com/thenoursehorse/risb"
