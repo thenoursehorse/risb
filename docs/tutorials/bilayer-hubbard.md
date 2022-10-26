@@ -261,7 +261,7 @@ R[s] = sc.get_r(Mcf[s], Nf[s])
 ```
 
 The second is as a root problem, adjusting $$\mathcal{R}$$ and $$\lambda$$ to
-ensuring that the density matrices from $$\hat{H}^{\mathrm{qp}}$$ match the 
+ensure that the density matrices from $$\hat{H}^{\mathrm{qp}}$$ match the 
 density matrices from $$\hat{H}^{\mathrm{emb}}$$.
 
 ```python
@@ -295,7 +295,7 @@ $$
 $$
 
 where $$\mathcal{N}$$ is the number of unit cells, $$A_k$$ is a generic 
-function and $$f(\xi_n)$$ is the Fermi-Dirac distribution. The meaning 
+function, and $$f(\xi_n)$$ is the Fermi-Dirac distribution. The meaning 
 of $$f(\hat{H}^{\mathrm{qp}})$$ is specifically the operation
 
 $$
@@ -305,7 +305,8 @@ $$
 
 where $$U_k$$ is the matrix representation of the unitary that diagonalizes 
 $$\hat{H}_k^{\mathrm{qp}}$$, $$\xi_{kn}$$ are its eigenenergies, and 
-$$f(\xi_{kn})$$ is a diagonal matrix of Fermi weights for each eigenvalue.
+$$f(\xi_{kn})$$ is a diagonal matrix of the Fermi-Dirac distribution for 
+each eigenvalue.
 
 The integral can be converted to a series of finite $$k$$-points, with an 
 appropriate integration weight such that the integral now takes the form 
