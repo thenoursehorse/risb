@@ -27,13 +27,17 @@ where $$i$$ indexes a site.
 The kinetic part of the Hamiltonian is given by
 
 $$
-\hat{H}^{\mathrm{kin}} = - \frac{1}{d} \sum_{\sigma} \sum_{\alpha=1,2} 
-t_{\alpha} \hat{d}_{i \alpha \sigma}^{\dagger} \hat{d}_{j \alpha \sigma},
+\hat{H}^{\mathrm{kin}} = - \frac{1}{d} 
+\sum_{\langle i j \rangle} \sum_{\sigma} \sum_{\alpha=1,2} 
+( t_{\alpha} \hat{d}_{i \alpha \sigma}^{\dagger} \hat{d}_{j \alpha \sigma}
++ \mathrm{H.c.} ),
 $$
 
-where $$d$$ is the number of spatial dimensions ($$d=3$$ on the cubic lattice), 
-$$\sigma$$ is a spin label, $$\alpha$$ is an orbital label, and $$t_{\alpha}$$
-is the hopping parameter.
+where $$d$$ is the number of spatial dimensions ($$d=3$$ on the cubic 
+lattice), $$\sigma$$ is a spin label, $$\alpha$$ is an orbital label, 
+$$\langle i j \rangle$$ indicates nearest-neighbor bonds, 
+$${\mathrm{H.c.}}$$ is Hermitian conjugate, and $$t_{\alpha}$$ is the 
+probability amplitude to movean electron between nearest neighbor sites.
 
 For the bilayer Hubbard model the two orbitals have the dispersion relation
 
@@ -62,8 +66,11 @@ the local Coulomb repulsion.
 The Hamiltonian is block diagonal in spin. Hence, for each spin $$\sigma$$, 
 the hopping terms are given by the kinetic Hamiltonian 
 $$\hat{H}^{\mathrm{kin}}_{k \alpha\beta}[\sigma]$$. This is 
-represented as an $$N \times M \times M$$ matrix, where $$N$$ is the number of 
-sites on the lattice and $$M$$ is the number of orbitals. Below, ``s`` labels 
+represented as an $$\mathcal{N} \times M \times M$$ matrix, where 
+$$\mathcal{N}$$ is the number of unit cells (sites in this case) on the 
+lattice and $$M$$ is the number of orbitals. If the Hamiltonian was not 
+block diagonal the matrix to construct would instead be 
+$$\mathcal{N} \times 2M \times 2M$$. Below, ``s`` labels 
 each spin.
 
 ## Method 1: Explicit construction
@@ -207,15 +214,17 @@ for s,ind in gf_struct:
     R[s] = np.zeros((len(ind),len(ind)))
     Lambda[s] = np.zeros((len(ind),len(ind)))
 
-    # H^qp single-particle density matrices
+    # H^qp single-particle density matrix
     pdensity[s] = np.empty((len(ind),len(ind)))
+
+    # H^qp (lopsided) kinetic energy
     ke[s] = np.empty((len(ind),len(ind)))
     
     # H^emb hybridization and bath terms
     D[s] = np.empty((len(ind),len(ind)))
     Lambda_c[s] = np.empty((len(ind),len(ind)))
     
-    # Single-particle density matrices of H^emb
+    # H^emb single-particle density matrices
     Nf[s] = np.empty((len(ind),len(ind)))
     Mcf[s] = np.empty((len(ind),len(ind)))
     Nc[s] = np.empty((len(ind),len(ind)))    
@@ -238,14 +247,14 @@ The helper functions are used as below.
 # H^qp single-particle density
 pdensity[s] = sc.get_pdensity(vec, wks)
 
-# Lopsided kinetic energy
+# H^qp (lopsided) kinetic energy
 disp_R = sc.get_disp_R(R[s], h_qp[s], vec)                
 ke[s] = sc.get_ke(disp_R, vec, wks)
 
-# Hybridization
+# H^emb hybridization
 D[s] = sc.get_d(pdensity[s], ke[s])
 
-# Bath
+# H^emb bath
 Lambda_c[s] = sc.get_lambda_c(pdensity[s], R[s], Lambda[s], D[s])
 ```
 
@@ -458,8 +467,6 @@ vectors as possible, but for large problems it is not possible. I find that
 30 often works well, but this is all problem dependent.
 
 ## Method 3: Using `EmbeddingDMRG` implemented in [ITensor](https://itensor.org)
-
-## Method 4: Using [Pomerol](https://aeantipov.github.io/pomerol/)
 
 # Skeleton code for the self-consistent loop
 

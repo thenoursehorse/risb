@@ -138,7 +138,22 @@ A complete container can be set up using
 [Compose](https://docs.docker.com/compose/), 
 with the YAML file located at
 [docker-compose.yml](https://github.com/thenoursehorse/docker/blob/main/risb_all/docker-compose.yml).
-This installs TRIQS, dft-tools, cthyb, and risb. 
+This installs TRIQS, dft-tools, cthyb, risb, and a Jupyter notebook. The YAML 
+file has to be edited where the comments suggest.
+
+For any private repos, a very insecure way to get Compose to be able to clone 
+them is to create an 
+[access token](https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/creating-a-personal-access-token) 
+for GitHub, and then change any of the `git clone` lines within the YAML file 
+as
+
+```bash
+git clone https://ACCESS-TOKEN@github.com/private/repo
+```
+
+Anyone that has access to the Docker images will also have access to your 
+access token, so be very careful. There are other ways to do the above that 
+are more secure, just Google around.
 
 Unfortunately, Compose can be non-trivial to get working. It is difficult to 
 give comprehensive instructions until more of the features of Compose 
