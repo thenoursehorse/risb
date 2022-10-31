@@ -62,7 +62,7 @@ export ARPACK_NG_ROOT=${HOME}/arpack-ng
 
 git clone https://github.com/opencollab/arpack-ng --branch 3.6.0 arpack-ng.src
 mkdir -p arpack-ng.build && cd arpack-ng.build 
-cmake ../arpack-ng.src/ -DCMAKE_INSTALL_PREFIX=${ARPACK_NG_ROO} \
+cmake ../arpack-ng.src/ -DCMAKE_INSTALL_PREFIX=${ARPACK_NG_ROOT} \
                         -DBUILD_SHARED_LIBS=ON
 make -j${NCORES}
 make test
