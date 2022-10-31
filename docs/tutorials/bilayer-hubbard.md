@@ -37,7 +37,7 @@ where $$d$$ is the number of spatial dimensions ($$d=3$$ on the cubic
 lattice), $$\sigma$$ is a spin label, $$\alpha$$ is an orbital label, 
 $$\langle i j \rangle$$ indicates nearest-neighbor bonds, 
 $${\mathrm{H.c.}}$$ is Hermitian conjugate, and $$t_{\alpha}$$ is the 
-probability amplitude to movean electron between nearest neighbor sites.
+probability amplitude to move an electron between nearest neighbor sites.
 
 For the bilayer Hubbard model the two orbitals have the dispersion relation
 
@@ -383,7 +383,7 @@ The commented line sets the chemical potential $$\mu$$ for a desired electron
 filling $$N_{\mathrm{elec}}$$ of the lattice, and in this case assumes that 
 there are the same number of spin up and spin down quasiparticles.
 
-# E: Setup the solver for the embedding Hamiltonian $$\hat{H}^{\mathrm{emb}}$$
+# E: Solving the embedding Hamiltonian $$\hat{H}^{\mathrm{emb}}$$
 
 Solving the embedding Hamiltonian $$\hat{H}^{\mathrm{emb}}$$ is 
 done in a way that is intended to be very modular. It is kept this way 

@@ -77,6 +77,32 @@ export LD_LIBRARY_PATH=${ARPACK_NG_ROOT}/lib/:${LD_LIBRARY_PATH}
 echo "export LD_LIBRARY_PATH=${ARPACK_NG_ROOT}/lib/:${LD_LIBRARY_PATH}" >> ${HOME}/.bashrc
 ```
 
+#### Fixing `lib64`
+
+On some operating systems (e.g., Ubuntu 20.04) ARPACK-NG will install 
+libraries to `${ARPACK_NG_ROOT}/lib64/`. An obvious change is that now the 
+libraries at runtime have to be included as
+
+```bash
+export LD_LIBRARY_PATH=${ARPACK_NG_ROOT}/lib64/:${LD_LIBRARY_PATH}
+echo "export LD_LIBRARY_PATH=${ARPACK_NG_ROOT}/lib64/:${LD_LIBRARY_PATH}" >> ${HOME}/.bashrc
+```
+
+But there is another change required for `cmake` to correctly find the 
+ARPACK-NG libraries. Inside 
+`${ARPACK_NG_ROOT}/lib64/cmake/arpack-ng-config.cmake`
+all of the phrases that have
+
+```bash
+${ARPACK_NG_ROOT}/lib
+```
+
+have to be changed to
+
+```bash
+${ARPACK_NG_ROOT}/lib64
+```
+
 ### ezARPACK
 
 Install [ezARPACK](https://github.com/krivenko/ezARPACK).
@@ -144,11 +170,11 @@ file has to be edited where the comments suggest.
 For any private repos, a very insecure way to get Compose to be able to clone 
 them is to create an 
 [access token](https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/creating-a-personal-access-token) 
-for GitHub, and then change any of the `git clone` lines within the YAML file 
-as
+for GitHub, and then change any of the `context:` lines that depend on private 
+repos within the YAML file as
 
 ```bash
-git clone https://ACCESS-TOKEN@github.com/private/repo
+context: https://ACCESS-TOKEN@github.com/private/repo
 ```
 
 Anyone that has access to the Docker images will also have access to your 
