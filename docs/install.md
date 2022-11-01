@@ -28,7 +28,14 @@ version of TRIQS.
 
 The below instructions are taken from the Docker files in each repository. 
 Each repository requires TRIQS `3.0.x` to be installed, and will by default 
-be installed into the same location as TRIQS.
+be installed into the same location as TRIQS. Note that instead, each repo can 
+be installed in separate locations by appropriately adding
+
+```bash
+-DCMAKE_INSTALL_PREFIX=
+```
+
+in the build process.
 
 Make sure that TRIQS is loaded into your environment with
 
@@ -54,13 +61,14 @@ cmake ../kint.src/ -DTRIQS_ROOT=${TRIQS_ROOT}
 
 ### ARPACK-NG
 
-Install [ARPACK-NG](https://github.com/opencollab/arpack-ng). 
-We specify a version below that we know works correctly with our project.
+Install [ARPACK-NG](https://github.com/opencollab/arpack-ng). A specific 
+version can be requested with `--branch <version>`. Currently, 
+versions `3.6.0` to `3.9.0` are tested and work.
 
 ```bash
 export ARPACK_NG_ROOT=${HOME}/arpack-ng
 
-git clone https://github.com/opencollab/arpack-ng --branch 3.6.0 arpack-ng.src
+git clone https://github.com/opencollab/arpack-ng arpack-ng.src
 mkdir -p arpack-ng.build && cd arpack-ng.build 
 cmake ../arpack-ng.src/ -DCMAKE_INSTALL_PREFIX=${ARPACK_NG_ROOT} \
                         -DBUILD_SHARED_LIBS=ON
@@ -77,11 +85,11 @@ export LD_LIBRARY_PATH=${ARPACK_NG_ROOT}/lib/:${LD_LIBRARY_PATH}
 echo "export LD_LIBRARY_PATH=${ARPACK_NG_ROOT}/lib/:${LD_LIBRARY_PATH}" >> ${HOME}/.bashrc
 ```
 
-#### Fixing `lib64`
+#### Fixing `lib64` in versions less than `3.8.0`
 
-On some operating systems (e.g., Ubuntu 20.04) ARPACK-NG will install 
-libraries to `${ARPACK_NG_ROOT}/lib64/`. An obvious change is that now the 
-libraries at runtime have to be included as
+On some operating systems (e.g., Ubuntu 20.04) on some machines ARPACK-NG 
+versions below `3.8.0` will install libraries to `${ARPACK_NG_ROOT}/lib64/`. 
+An obvious change is that now the libraries at runtime have to be included as
 
 ```bash
 export LD_LIBRARY_PATH=${ARPACK_NG_ROOT}/lib64/:${LD_LIBRARY_PATH}
@@ -106,12 +114,12 @@ ${ARPACK_NG_ROOT}/lib64
 ### ezARPACK
 
 Install [ezARPACK](https://github.com/krivenko/ezARPACK).
-Currently, the version has to be 0.9 for our project.
+Currently, the minimum version has to be 1.0 for our project.
 
 ```bash
 export EZARPACK_ROOT=/home/${NB_USER}/ezARPACK
 
-git clone https://github.com/krivenko/ezARPACK --branch 0.9 ezARPACK.src
+git clone https://github.com/krivenko/ezARPACK ezARPACK.src
 mkdir -p ezARPACK.build && cd ezARPACK.build 
 cmake ../ezARPACK.src/ -DCMAKE_INSTALL_PREFIX=${EZARPACK_ROOT} \
                        -DARPACK_NG_ROOT=${ARPACK_NG_ROOT}
@@ -133,6 +141,20 @@ mkdir -p embedding_ed.build && cd embedding_ed.build
 cmake ../embedding_ed.src/ -DTRIQS_ROOT=${TRIQS_ROOT} \
                            -DARPACK_NG_ROOT=${ARPACK_NG_ROOT} \
                            -DEZARPACK_ROOT=${EZARPACK_ROOT}
+```
+
+### MPI issues
+
+ezARPACK will automatically assume that PARPACK is installed if it correctly detects
+MPI on your system. Sometimes ezARPACK will compile fine, but then it will 
+fail on any of the MPI tests. You can ignore this because our project does not 
+currently use PARPACK. If ezARPACK does not compile you have to build 
+ARPACK-NG with MPI support with
+
+```bash
+cmake ../arpack-ng.src/ -DCMAKE_INSTALL_PREFIX=${ARPACK_NG_ROOT} \
+                        -DBUILD_SHARED_LIBS=ON \
+                        -DMPI=ON
 ```
 
 ## Embedding solver embedding_dmrg
