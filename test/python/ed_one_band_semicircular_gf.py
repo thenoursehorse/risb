@@ -69,11 +69,11 @@ class tests(unittest.TestCase):
                 g0_iw << inverse( iOmega_n + mu - t**2 * g_iw )
 
                 # Calculate hybridization function
-                delta_iw = get_delta_z(g0_iw);
+                delta_iw = get_delta_z(g0_iw)
 
                 # RISB self-consistent part to calculate new sigma_iw
-                pdensity = get_pdensity_gf(g_iw, R);
-                ke = get_ke_gf(g_iw, delta_iw, R);
+                pdensity = get_pdensity_gf(g_iw, R)
+                ke = get_ke_gf(g_iw, delta_iw, R)
                 
                 D = get_d(pdensity, ke)
                 Lambda_c = get_lambda_c(pdensity, R, Lambda, D)
@@ -114,9 +114,9 @@ class tests(unittest.TestCase):
         R_expected = np.array([[0.987918,0],[0,0.987918]])
         Lambda_expected = np.array([[0.25,0],[0,0.25]])
         
-        #assert are_close(mu_calculated, mu_expected, 1e-3), "mu_calculated = {0}, mu_expected = {1}".format(mu_calculated,mu_expected)
-        #assert_arrays_are_close(R_expected, R, 1e-3)
-        #assert_arrays_are_close(Lambda_expected, Lambda, 1e-3)
+        assert are_close(mu_calculated, mu_expected, 1e-3), "mu_calculated = {0}, mu_expected = {1}".format(mu_calculated,mu_expected)
+        assert_arrays_are_close(R_expected, R, 1e-3)
+        assert_arrays_are_close(Lambda_expected, Lambda, 1e-3)
                 
 if __name__ == '__main__':
     unittest.main()

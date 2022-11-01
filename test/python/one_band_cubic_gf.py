@@ -30,7 +30,7 @@ class tests(unittest.TestCase):
         #G0_iw = BlockGf(name_list = S.block_names, block_list = (g0,g0), make_copies = True)
         g_iw = g0_iw.copy()
 
-        for U in [1.5]: #np.arange(0,3,0.1):
+        for U in [0.5]: #np.arange(0,3,0.1):
             h_loc = U * n('up',0) * n('dn',0)
             mu = U / 2
             #eprint("U =", U, "mu =", mu)
@@ -71,7 +71,7 @@ class tests(unittest.TestCase):
                 # Calculate new G0_iw of impurity:
                 S.G0_iw = dyson(G_iw = S.G_iw, Sigma_iw = S.Sigma_iw)
 
-                S.solve(h_int = h_loc, mu = mu)
+                S.solve(h_int = h_loc)
          
                 for block in S.block_names:
                     norm += np.linalg.norm(S.R[block] - R_old[block])
@@ -92,13 +92,13 @@ class tests(unittest.TestCase):
         for block in S.block_names:
             mu_calculated += np.trace(S.Lambda[block]) / 2.0
         mu_expected = U/2.
-        #R_expected = np.array([[0.987918]])
-        #Lambda_expected = np.array([[mu_expected]])
+        R_expected = np.array([[0.986323]])
+        Lambda_expected = np.array([[mu_expected]])
         #
-        assert are_close(mu_calculated, mu_expected, 1e-3), "mu_calculated = {0}, mu_expected = {1}".format(mu_calculated,mu_expected)
-        #for b in S.block_names:
-        #    assert_arrays_are_close(R_expected, R[b], 1e-3)
-        #    assert_arrays_are_close(Lambda_expected, Lambda[b], 1e-3)
+        assert are_close(mu_calculated, mu_expected, 1e-2), "mu_calculated = {0}, mu_expected = {1}".format(mu_calculated,mu_expected)
+        for b in S.block_names:
+            assert_arrays_are_close(R_expected, S.R[b], 1e-3)
+            assert_arrays_are_close(Lambda_expected, S.Lambda[b], 1e-2)
 
 if __name__ == '__main__':
     unittest.main()

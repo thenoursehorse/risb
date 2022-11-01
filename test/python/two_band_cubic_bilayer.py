@@ -58,9 +58,9 @@ class tests(unittest.TestCase):
             Lambda_old = deepcopy(Lambda)
 
             for b in block_names:
-                eig, vec = sc.get_h_qp(R[b], Lambda[b], dispersion, mu)
+                eig, vec = sc.get_h_qp(R[b], Lambda[b], dispersion)
                 disp_R = sc.get_disp_R(R[b], dispersion, vec)
-                wks = fermi_fnc(eig, beta) / nk
+                wks = fermi_fnc(eig, beta, mu) / nk
 
                 pdensity = sc.get_pdensity(vec, wks)
                 ke = sc.get_ke(disp_R, vec, wks)

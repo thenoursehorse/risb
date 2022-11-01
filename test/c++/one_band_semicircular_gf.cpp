@@ -32,7 +32,7 @@ TEST(one_band_semicircular_gf, half_filling) { // NOLINT
   auto emb_solver = embedding_atom_diag<false>(gf_struct);
  
   double error;
-  int total_cycles;
+  int total_cycles = 0;
   
 #ifdef __GNUC__
   for (__attribute__ ((unused)) auto const cycle : range(num_cycles)) { 
@@ -83,7 +83,7 @@ TEST(one_band_semicircular_gf, half_filling) { // NOLINT
       lambda_c_b = get_lambda_c<double>(pdensity, R_b, lambda_b, D_b);
     }
 
-    emb_solver.set_h_emb(h_loc,lambda_c, D, mu);
+    emb_solver.set_h_emb(h_loc,lambda_c, D);
     emb_solver.solve();
 
     for (auto i : range(spin_names.size())) {

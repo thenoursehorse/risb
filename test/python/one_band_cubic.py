@@ -41,9 +41,9 @@ class tests(unittest.TestCase):
                 Lambda_old = deepcopy(Lambda)
 
                 for b in spin_names:
-                    eig, vec = sc.get_h_qp(R[b], Lambda[b], dispersion, mu)
+                    eig, vec = sc.get_h_qp(R[b], Lambda[b], dispersion)
                     disp_R = sc.get_disp_R(R[b], dispersion, vec)
-                    wks = fermi_fnc(eig, beta) / nk
+                    wks = fermi_fnc(eig, beta, mu) / nk
 
                     pdensity = sc.get_pdensity(vec, wks)
                     ke = sc.get_ke(disp_R, vec, wks)
@@ -51,7 +51,7 @@ class tests(unittest.TestCase):
                     D[b] = sc.get_d(pdensity, ke)
                     Lambda_c[b] = sc.get_lambda_c(pdensity, R[b], Lambda[b], D[b])
 
-                emb_solver.set_h_emb(h_loc,Lambda_c, D, mu)
+                emb_solver.set_h_emb(h_loc,Lambda_c, D)
                 emb_solver.solve()
                 
                 for b in block_names:

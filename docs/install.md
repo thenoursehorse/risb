@@ -11,6 +11,9 @@ title: Install
 
 # From source
 
+{: .warning }
+Minimum GCC version 10 or clang 13 is required.
+
 Follow the 
 [installation intructions](https://triqs.github.io/triqs/latest/install.html)
 for TRIQS. Crucially, this project requires an older version `3.0.x`. If 
@@ -23,7 +26,7 @@ git clone https://github.com/TRIQS/triqs --branch 3.0.x triqs.src
 ```
 
 If compiling from source you have to be careful about library versions and 
-compilers. We are not sure if higher than `gcc` `10.x` will work on this older 
+compilers. We are not sure if higher than `gcc` `11.x` will work on this older 
 version of TRIQS.
 
 The below instructions are taken from the Docker files in each repository. 

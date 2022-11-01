@@ -105,7 +105,7 @@ class tests(unittest.TestCase):
         R_expected = np.array([[0.927500]])
         Lambda_expected = np.array([[mu_expected]])
 
-        #assert are_close(mu_calculated, mu_expected, 1e-5), "mu_calculated = {0}, mu_expected = {1}".format(mu_calculated,mu_expected)
+        assert are_close(mu_calculated, mu_expected, 1e-5), "mu_calculated = {0}, mu_expected = {1}".format(mu_calculated,mu_expected)
         for b in block_names:
             assert_arrays_are_close(R_expected, R[b], 1e-5)
             assert_arrays_are_close(Lambda_expected, Lambda[b], 1e-5)

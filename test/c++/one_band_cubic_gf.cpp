@@ -32,7 +32,7 @@ TEST(one_band_cubic_gf, half_filling) { // NOLINT
   auto emb_solver = embedding_atom_diag<false>(gf_struct);
  
   double error;
-  int total_cycles;
+  int total_cycles = 0;
   
   int num_cycles = 25;
 #ifdef __GNUC__

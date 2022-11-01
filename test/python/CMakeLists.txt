@@ -5,7 +5,9 @@ foreach(file ${all_h5_ref_files})
 endforeach()
 
 # atom_diag impurity solver tests
-set(all_tests basic_functions one_band_cubic two_band_cubic_kanamori two_band_cubic_bilayer three_orbital_dh one_band_cubic_gf one_band_semicircular_gf two_band_semicircular_gf)
+set(all_tests basic_functions one_band_cubic two_band_cubic_kanamori two_band_cubic_bilayer)
+#three_orbital_dh
+#one_band_cubic_gf one_band_semicircular_gf two_band_semicircular_gf
 
 # pomerol impurity solver tests
 if(pomerol2triqs_FOUND)
@@ -14,8 +16,11 @@ endif()
 
 # embedding_ed impurity solver tests
 if(embedding_ed_FOUND AND kint_FOUND)
-  set(all_tests ${all_tests} ed_one_band_cubic ed_one_band_semicircular_gf ed_three_orbital_dh ed_six_site_dh ghost)
+  set(all_tests ${all_tests} ed_one_band_cubic ed_three_orbital_dh)
 endif()
+# ed_six_site_dh
+# ghost
+# ed_one_band_semicircular_gf
 
 foreach(test ${all_tests})
   get_filename_component(test_name ${test} NAME_WE)

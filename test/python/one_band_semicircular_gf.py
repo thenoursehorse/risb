@@ -40,7 +40,7 @@ class tests(unittest.TestCase):
                 R_old = deepcopy(S.R)
                 Lambda_old = deepcopy(S.Lambda)
 
-                S.solve(h_int = h_loc, mu = mu)
+                S.solve(h_int = h_loc)
 
                 for block in S.block_names:
                     norm += np.linalg.norm(S.R[block] - R_old[block])
@@ -63,13 +63,13 @@ class tests(unittest.TestCase):
         for block in S.block_names:
             mu_calculated += np.trace(S.Lambda[block]) / 2.0
         mu_expected = U/2.
-        #R_expected = np.array([[0.987918]])
-        #Lambda_expected = np.array([[mu_expected]])
+        R_expected = np.array([[0.987918]])
+        Lambda_expected = np.array([[mu_expected]])
         #
-        assert are_close(mu_calculated, mu_expected, 1e-3), "mu_calculated = {0}, mu_expected = {1}".format(mu_calculated,mu_expected)
-        #for b in S.block_names:
-        #    assert_arrays_are_close(R_expected, R[b], 1e-3)
-        #    assert_arrays_are_close(Lambda_expected, Lambda[b], 1e-3)
+        #assert are_close(mu_calculated, mu_expected, 1e-2), "mu_calculated = {0}, mu_expected = {1}".format(mu_calculated,mu_expected)
+        for b in S.block_names:
+            assert_arrays_are_close(R_expected, S.R[b], 1e-3)
+            assert_arrays_are_close(Lambda_expected, S.Lambda[b], 1e-2)
 
 
 if __name__ == '__main__':

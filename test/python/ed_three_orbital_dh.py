@@ -165,7 +165,7 @@ class tests(unittest.TestCase):
 
         emb_solver = EmbeddingEd(h_loc, gf_struct)
 
-        eprint("U =", U, "tk =", tk, "tg =", tg)
+        #eprint("U =", U, "tk =", tk, "tg =", tg)
 
         # First guess for Lambda is the quadratic terms in h_loc
         for block in block_names:
@@ -259,12 +259,12 @@ class tests(unittest.TestCase):
             if norm < 1e-3:
                 break
 
-        eprint("D =", D)
-        eprint("Lambda_c =", Lambda_c)
-        eprint("Nf =", Nf)
-        eprint("Mcf =", Mcf)
-        eprint("Nc =", Nc)
-        eprint("N_elec =", 2. * 2. * np.trace(Nc)) # two impurities, for each spin
+        #eprint("D =", D)
+        #eprint("Lambda_c =", Lambda_c)
+        #eprint("Nf =", Nf)
+        #eprint("Mcf =", Mcf)
+        #eprint("Nc =", Nc)
+        #eprint("N_elec =", 2. * 2. * np.trace(Nc)) # two impurities, for each spin
 
         NOp = N_op(spin_names,orb_names,off_diag=True)
         S2Op = S2_op(spin_names,orb_names,off_diag=True)
@@ -274,25 +274,22 @@ class tests(unittest.TestCase):
         Z = dict()
         for block in block_names:
             Z[block] = np.dot(R[block], R[block])
-        eprint("cycles =", cycle, "norm =", norm)
-        eprint("Z =", Z)
-        eprint("Lambda =", Lambda)
-        eprint("mu =", mu)
-        eprint("N =", N )
-        eprint("S2 =", S2)
-        eprint("S =", np.sqrt(S2 + 0.25) - 0.5 )
+        #eprint("cycles =", cycle, "norm =", norm)
+        #eprint("Z =", Z)
+        #eprint("Lambda =", Lambda)
+        #eprint("mu =", mu)
+        #eprint("N =", N )
+        #eprint("S2 =", S2)
+        #eprint("S =", np.sqrt(S2 + 0.25) - 0.5 )
 
-        #mu_calculated = 0
-        #for block in block_names:
-        #    mu_calculated += np.trace(Lambda[block]) / (len(orb_names) * len(block_names))
-        #mu_expected = mu
-        #Z_expected = np.array([[0.780708,0,0],[0,0.780708,0],[0,0,0.780708]])
-        #Lambda_expected = np.array([[mu_expected,0,0],[0,mu_expected,0],[0,0,mu_expected]])
+        mu_expected = 1.756287
+        Z_expected = np.array([[0.97873604,0,0],[0,0.96450894,0],[0,0,0.96450894]])
+        Lambda_expected = np.array([[-1.23735665,0,0],[0,1.68479074,0],[0,0,1.68479074]])
 
         #assert are_close(mu_calculated, mu_expected, 1e-6), "mu_calculated = {0}, mu_expected = {1}".format(mu_calculated,mu_expected)
-        #for block in block_names:
-        #    assert_arrays_are_close(Lambda_expected, Lambda[block], 1e-6)
-        #    assert_arrays_are_close(Z_expected, Z[block], 1e-6)
+        for block in block_names:
+            assert_arrays_are_close(Lambda_expected, Lambda[block], 1e-6)
+            assert_arrays_are_close(Z_expected, Z[block], 1e-6)
 
 if __name__ == '__main__':
     unittest.main()
