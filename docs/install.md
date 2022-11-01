@@ -117,7 +117,7 @@ Install [ezARPACK](https://github.com/krivenko/ezARPACK).
 Currently, the minimum version has to be 1.0 for our project.
 
 ```bash
-export EZARPACK_ROOT=/home/${NB_USER}/ezARPACK
+export EZARPACK_ROOT=${HOME}/ezARPACK
 
 git clone https://github.com/krivenko/ezARPACK ezARPACK.src
 mkdir -p ezARPACK.build && cd ezARPACK.build 
@@ -133,6 +133,19 @@ export LD_LIBRARY_PATH=${EZARPACK_ROOT}/lib/:${LD_LIBRARY_PATH}
 echo "export LD_LIBRARY_PATH=${EZARPACK_ROOT}/lib/:${LD_LIBRARY_PATH}" >> ${HOME}/.bashrc
 ```
 
+{: .warning }
+> ezARPACK may automatically assume that PARPACK is installed if it correctly detects
+MPI on your system. Sometimes ezARPACK will compile fine, but then it will 
+fail on any of the MPI tests. You can ignore this because our project does not 
+currently use PARPACK. If ezARPACK does not compile you have to build 
+ARPACK-NG with MPI support with
+>
+> ```bash
+> cmake ../arpack-ng.src/ -DCMAKE_INSTALL_PREFIX=${ARPACK_NG_ROOT} \
+                        -DBUILD_SHARED_LIBS=ON \
+                        -DMPI=ON
+> ```
+
 ### embedding_ed
 
 ```bash
@@ -141,20 +154,6 @@ mkdir -p embedding_ed.build && cd embedding_ed.build
 cmake ../embedding_ed.src/ -DTRIQS_ROOT=${TRIQS_ROOT} \
                            -DARPACK_NG_ROOT=${ARPACK_NG_ROOT} \
                            -DEZARPACK_ROOT=${EZARPACK_ROOT}
-```
-
-### MPI issues
-
-ezARPACK will automatically assume that PARPACK is installed if it correctly detects
-MPI on your system. Sometimes ezARPACK will compile fine, but then it will 
-fail on any of the MPI tests. You can ignore this because our project does not 
-currently use PARPACK. If ezARPACK does not compile you have to build 
-ARPACK-NG with MPI support with
-
-```bash
-cmake ../arpack-ng.src/ -DCMAKE_INSTALL_PREFIX=${ARPACK_NG_ROOT} \
-                        -DBUILD_SHARED_LIBS=ON \
-                        -DMPI=ON
 ```
 
 ## Embedding solver embedding_dmrg

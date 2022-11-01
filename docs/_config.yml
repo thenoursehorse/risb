@@ -21,3 +21,9 @@ back_to_top_text: "Back to top"
 aux_links:
   "risb on GitHub":
     - "//github.com/thenoursehorse/risb"
+
+callouts:
+  warning:
+    title: Warning
+    color: red
+
