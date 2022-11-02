@@ -136,10 +136,11 @@ def cubic_kin(t = 1, nkx = 6, spatial_dim = 3, orb_dim = 2):
 
     di = np.diag_indices(orb_dim)
     
+    # want dispersion indexed as k, a, b so transpose
     h_kin = dict()
     for s in ["up","dn"]:
         h_kin[s] = np.zeros([mesh_num, orb_dim, orb_dim])
-        h_kin[s][:, di[0],di[1]] = energies[:, None]
+        h_kin[s][:, di[0],di[1]] = np.transpose(energies, (1,0))
     
     return h_kin
 ```

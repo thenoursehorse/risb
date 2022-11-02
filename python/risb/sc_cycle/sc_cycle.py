@@ -5,6 +5,72 @@ from scipy.linalg import pinv
 from scipy.special import binom
 from triqs.gf import Gf, iOmega_n, inverse, dyson
 
+def block_mat_to_full(A):
+    total_size = 0
+    for block in A:
+        if len(A[block].shape) != 2:
+            raise ValueError("Blocks in matrix must be a matrix !")
+        if A[block].shape[0] != A[block].shape[1]:
+            raise ValueError("Block in matrix must have square blocks !")
+        total_size += A[block].shape[0]
+    
+    A_full = np.zeros(shape=(total_size, total_size))
+    
+    stride = 0
+    for block in A:
+        size = A[block].shape[0]
+        A_full[stride:stride+size,stride:stride+size] = A[block]
+        stride += size
+
+    return A_full
+
+def full_mat_to_block(A, gf_struct):
+    if len(A.shape) != 2:
+        raise ValueError("Must be a matrix !")
+    if A.shape[0] != A.shape[1]:
+        raise ValueError("Must be a square matrix !")
+    
+    A_blocked = dict()
+    
+    stride = 0
+    for bname,ind in gf_struct:
+        size = len(ind)
+        A_blocked[bname] = A[stride:stride+size, stride:stride+size]
+        stride += size
+    return A_blocked
+
+def get_mat_block(A, gf_struct, bname_out, kgrid=False):
+    have_bname = False
+    for bname,ind in gf_struct:
+        if bname == bname_out:
+            have_bname = True
+
+    if not have_bname:
+        raise ValueError("block must be in gf_struct !")
+    
+    stride = 0
+    for bname,ind in gf_struct:
+        size = len(ind)
+        if bname == bname_out:
+            if kgrid:
+                if len(A.shape) == 3:
+                    return A[:, stride:stride+size, stride:stride+size]
+                elif len(A.shape) == 2:
+                    return A[:, stride:stride+size]
+                else:
+                    raise ValueError("For A a matrix on the kgrid the shape must be (N,a,b) or (N,a) !")
+            else:
+                if len(A.shape) == 2:
+                    if A.shape[0] == A.shape[1]:
+                        return A[stride:stride+size, stride:stride+size]
+                    raise ValueError("Must be a square matrix !")
+                else:
+                    raise ValueError("Can only project onto a matrix !")
+
+        stride += size
+    
+    raise RuntimeError("How did we never hit block? Something catastrophically went wrong !")
+
 # Formula is (1-A)^{-1/2} = sum_r=0^{infty} (-1)^r * 1/2 choose r * A^r
 def one_sqrtm_inv(A, tol=np.finfo(float).eps, N=10000):
     # Do r = 0 manually (it is just the identity)
@@ -72,25 +138,13 @@ def get_f2(Nf, pdensity):
 
 def get_h_qp(R, Lambda, dispersion, mu=0):
     #h_qp = np.einsum('ac,cdk,db->kab', R, dispersion, R.conj().T, optimize='optimal') + (Lambda - mu*np.eye(Lambda.shape[0]))
-    h_qp = np.einsum('ac,cdk,db->kab', R, dispersion, R.conj().T) + (Lambda - mu*np.eye(Lambda.shape[0]))
+    h_qp = np.einsum('ac,kcd,db->kab', R, dispersion, R.conj().T) + (Lambda - mu*np.eye(Lambda.shape[0]))
     eig, vec = np.linalg.eigh(h_qp)
     return (eig, vec)
 
 def get_disp_R(R, dispersion, vec):
     #return np.einsum('ack,cd,kdb->kab', dispersion, R.conj().T, vec, optimize='optimal')
-    return np.einsum('ack,cd,kdb->kab', dispersion, R.conj().T, vec)
-
-
-#\sum_n \sum_k [A_k P_k]_{an} [D_k]_n  [P_k^+ B_k]_{nb}
-def get_pdensity(vec, wks):
-    vec_dag = np.transpose(vec.conj(), (0,2,1))
-    #return np.real( np.einsum('kan,kn,knb->ab', vec, wks, vec_dag, optimize='optimal').T )
-    return np.real( np.einsum('kan,kn,knb->ab', vec, wks, vec_dag).T )
-
-def get_ke(disp_R, vec, wks):
-    vec_dag = np.transpose(vec.conj(), (0,2,1))
-    #return np.einsum('kan,kn,knb->ab', disp_R, wks, vec_dag, optimize='optimal')
-    return np.einsum('kan,kn,knb->ab', disp_R, wks, vec_dag)
+    return np.einsum('kac,cd,kdb->kab', dispersion, R.conj().T, vec)
 
 # FIXME add possible rotation
 def get_h_qp2(R, Lambda, dispersion, mu=0):
@@ -124,6 +178,19 @@ def get_disp_R2(R, dispersion, vec):
         #disp_R[the_slice] = np.einsum('kac,cb->kab',dispersion[:,i,j,...], R[j].conj().T)
     #A = np.einsum('kac,kcb->kab', disp_R, vec)
     return np.matmul(disp_R, vec) # Right multiply into eigenbasis of quasiparticles
+
+# FIXME add projectors
+#\sum_n \sum_k [A_k P_k]_{an} [D_k]_n  [P_k^+ B_k]_{nb}
+def get_pdensity(vec, wks):
+    vec_dag = np.transpose(vec.conj(), (0,2,1))
+    #return np.real( np.einsum('kan,kn,knb->ab', vec, wks, vec_dag, optimize='optimal').T )
+    return np.real( np.einsum('kan,kn,knb->ab', vec, wks, vec_dag).T )
+
+# FIXME add projectors
+def get_ke(disp_R, vec, wks):
+    vec_dag = np.transpose(vec.conj(), (0,2,1))
+    #return np.einsum('kan,kn,knb->ab', disp_R, wks, vec_dag, optimize='optimal')
+    return np.einsum('kan,kn,knb->ab', disp_R, wks, vec_dag)
 
 def get_sigma_z(mesh_z, R, Lambda, mu = 0.0, e0 = 0.0):
     sigma_z = Gf(mesh = mesh_z, target_shape = R.shape, name = "$\Sigma(z)$")

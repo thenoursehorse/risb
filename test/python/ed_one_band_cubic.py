@@ -26,19 +26,25 @@ class tests(unittest.TestCase):
         G = np.zeros([spatial_dim, spatial_dim])
         np.fill_diagonal(G, 2. * np.pi)
 
-        # build the dispersion relation
+        # build the dispersion relation for each block
         t = 0.5 / float(spatial_dim)
-        dispersion = np.zeros([orb_dim,orb_dim,mesh_num])
+        dispersion = [dict() for _ in range(mesh_num)]
+        dispersion_full = np.zeros(shape=(mesh_num, orb_dim*len(spin_names), orb_dim*len(spin_names)))
         for k in range(mesh_num):
-            kay = np.dot(G.T, mesh[k,:]) # rotate into cartesian basis
-            for a in range(orb_dim):
-                dispersion[a,a,k] = -2. * t * np.sum(np.cos(kay)) # e_k
-        nk = dispersion.shape[-1] # number of lattice sites nkx*nkx*nkx
+            for b in spin_names:
+                dispersion[k][b] = np.zeros([orb_dim,orb_dim])
+                kay = np.dot(G.T, mesh[k,:]) # rotate into cartesian basis
+                for a in range(orb_dim):
+                    dispersion[k][b][a,a] = -2. * t * np.sum(np.cos(kay)) # e_k
+            dispersion_full[k] = sc.block_mat_to_full(dispersion[k])
+
 
         # Set up the mean-field matrices
         [R, Lambda] = build_block_mf_matrices(gf_struct)
         D = deepcopy(Lambda)
         Lambda_c = deepcopy(Lambda)
+        pdensity = deepcopy(Lambda)
+        ke = deepcopy(Lambda)
 
         for U in [1]: #;np.arange(0,17+0.1,1):
             h_loc = U * n('up',0) * n('dn',0)
@@ -61,25 +67,33 @@ class tests(unittest.TestCase):
                 R_old = deepcopy(R)
                 Lambda_old = deepcopy(Lambda)
 
+                # Get the dense matrices
+                R_full = sc.block_mat_to_full(R)
+                Lambda_full = sc.block_mat_to_full(Lambda)
+
+                # build h_qp and diagonalize
+                eig, vec = sc.get_h_qp(R_full, Lambda_full, dispersion_full)
+                disp_R = sc.get_disp_R(R_full, dispersion_full, vec)
+                    
+                # Get the k space weights
+                kintegrator.setEks(np.transpose(eig))
+                #kintegrator.setEF(mu)
+                kintegrator.setEF_fromFilling(N_elec)
+                mu_calculated = kintegrator.getEF
+                wks = np.transpose(kintegrator.getWs)
+                    
+                # get orbital occupations and kinetic energy of f electrons
+                pdensity_full = sc.get_pdensity(vec, wks)
+                ke_full = sc.get_ke(disp_R, vec, wks)
+
+                # put into block structure
+                pdensity = sc.full_mat_to_block(pdensity_full, gf_struct)
+                ke = sc.full_mat_to_block(ke_full, gf_struct)
+
                 for b in spin_names:
-                    # build h_qp
-                    eig, vec = sc.get_h_qp(R[b], Lambda[b], dispersion)
-                    disp_R = sc.get_disp_R(R[b], dispersion, vec)
-
-                    # solve h_qp
-                    kintegrator.setEks(np.transpose(eig))
-                    #kintegrator.setEF(mu)
-                    kintegrator.setEF_fromFilling(N_elec / len(block_names))
-                    mu_calculated = kintegrator.getEF
-                    wks = np.transpose(kintegrator.getWs)
-
-                    # get orbital occupations and kinetic energy of f electrons
-                    pdensity = sc.get_pdensity(vec, wks)
-                    ke = sc.get_ke(disp_R, vec, wks)
-
                     # get the hybridization and bath for the impurity problem
-                    D[b] = sc.get_d(pdensity, ke)
-                    Lambda_c[b] = sc.get_lambda_c(pdensity, R[b], Lambda[b], D[b])
+                    D[b] = sc.get_d(pdensity[b], ke[b])
+                    Lambda_c[b] = sc.get_lambda_c(pdensity[b], R[b], Lambda[b], D[b])
 
                 # set h_emb and solve impurity problem
                 emb_solver.set_h_emb(Lambda_c, D)

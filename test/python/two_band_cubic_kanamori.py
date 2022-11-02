@@ -25,7 +25,7 @@ class tests(unittest.TestCase):
         emb_solver = EmbeddingAtomDiag(gf_struct)
 
         dispersion = build_cubic_dispersion(nkx,orb_dim,spatial_dim)
-        nk = dispersion.shape[-1]
+        nk = dispersion.shape[0]
 
         [R, Lambda] = build_block_mf_matrices(gf_struct)
         D = deepcopy(Lambda)

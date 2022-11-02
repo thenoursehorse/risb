@@ -49,12 +49,14 @@ def build_cubic_dispersion(nkx = 6, orb_dim = 1, spatial_dim = 2, return_bl = Fa
     
     tb = TightBinding(bl, hop)
     
+    # energies are indexed as n, k
     energies = energies_on_bz_grid(tb, nkx)
     nk = energies.shape[1]
 
+    # want dispersion indexed as k, a, b so transpose
     di = np.diag_indices(orb_dim)
-    dispersion = np.zeros([orb_dim, orb_dim, nk])
-    dispersion[di[0],di[1],:] = energies[None,:]
+    dispersion = np.zeros([nk, orb_dim, orb_dim])
+    dispersion[:,di[0],di[1]] = np.transpose(energies, (1,0))
     
     if return_bl:
         return dispersion, bl
@@ -70,10 +72,10 @@ def build_mf_matrices(orb_dim = 1):
 def build_block_mf_matrices(gf_struct = [ ["up",[1]], ["dn",[1]] ]):
     R = dict()
     Lambda = dict()
-    for block,ind in gf_struct:
-        R[block] = np.zeros((len(ind),len(ind)))
-        Lambda[block] = np.zeros((len(ind),len(ind)))
-        np.fill_diagonal(R[block], 1)
+    for bname,ind in gf_struct:
+        R[bname] = np.zeros((len(ind),len(ind)))
+        Lambda[bname] = np.zeros((len(ind),len(ind)))
+        np.fill_diagonal(R[bname], 1)
 
     #R_block = []
     #Lambda_block = []

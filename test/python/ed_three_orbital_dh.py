@@ -107,37 +107,6 @@ def hubb_N(tk, U, orbs, spins):
     return h_loc.real
 
 
-# FIXME add possible rotation
-def get_h_qp2(R, Lambda, dispersion, mu=0):
-    mesh_num = dispersion.shape[0]
-    na = dispersion.shape[1]
-    orb_dim = dispersion.shape[3]
-    
-    h_qp = np.zeros(shape=(mesh_num,na*orb_dim,na*orb_dim), dtype=complex)
-
-    for i,j in product(range(na),range(na)):
-        the_slice = np.index_exp[:, i*orb_dim:(i+1)*orb_dim, j*orb_dim:(j+1)*orb_dim]
-        h_qp[the_slice] = np.matmul( R, np.matmul(dispersion[:,i,j,...], R.conj().T) )
-        #h_qp[the_slice] = np.einsum('ac,kcd,db->kab', R, dispersion[:,i,j,...], R.conj().T)
-        if i == j:
-            h_qp[the_slice] += Lambda - mu*np.eye(Lambda.shape[0])
-    
-    eig, vec = np.linalg.eigh(h_qp)
-    return (eig, vec)
-
-def get_disp_R2(R, dispersion, vec):
-    mesh_num = dispersion.shape[0]
-    na = dispersion.shape[1]
-    orb_dim = dispersion.shape[3]
-    
-    disp_R = np.zeros(shape=(mesh_num,na*orb_dim,na*orb_dim), dtype=complex)
-    for i,j in product(range(na),range(na)):
-        the_slice = np.index_exp[:, i*orb_dim:(i+1)*orb_dim, j*orb_dim:(j+1)*orb_dim]
-        disp_R[the_slice] = np.matmul(dispersion[:,i,j,...], R.conj().T)
-        #disp_R[the_slice] = np.einsum('kac,cb->kab',dispersion[:,i,j,...], R.conj().T)
-    #A = np.einsum('kac,kcb->kab', disp_R, vec)
-    return np.matmul(disp_R, vec) # Right multiply into eigenbasis of quasiparticles
-
 class tests(unittest.TestCase):
  
     def test_dh_two_third(self):
