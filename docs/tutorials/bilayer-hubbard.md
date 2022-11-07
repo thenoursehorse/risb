@@ -11,6 +11,84 @@ mathjax: true
 - TOC
 {:toc}
 
+# Skeleton code for the self-consistent loop
+
+Below is a simple self-consistent loop that relies on everything we have set up.
+
+```python
+from copy import deepcopy
+
+U = 1
+V = 0.25
+mu = U / 2.0
+num_cycles = 25
+beta = 10
+
+# Implement A
+h_kin = 
+
+# Implement B
+h_loc = 
+
+# Implement C
+
+# Implement D
+
+# Implement E
+emb_solver = 
+
+# H^qp parameters R and Lambda initialized to the non-interacting values
+for s in ["up","dn"]:
+    Lambda[s] = np.eye(Lambda[s].shape[0]) * mu
+    np.fill_diagonal(R[s], 1)
+
+for cycle in range(num_cycles):    
+    # For convergence checking
+    norm = 0
+    R_old = deepcopy(R)
+    Lambda_old = deepcopy(Lambda)
+
+    for s in ["up","dn"]:
+        # H^qp and integration weights
+        eig, vec = sc.get_h_qp(R[s], Lambda[s], h_kin[s])
+        wks = get_wks(R[s], Lambda[s], h_kin[s], mu, beta)
+        
+        # H^qp density matrices
+        pdensity[s] = sc.get_pdensity(vec, wks)
+        disp_R = sc.get_disp_R(R[s], h_kin[s], vec)
+        ke[s] = sc.get_ke(disp_R, vec, wks)
+
+        # H^emb parameters
+        D[s] = sc.get_d(pdensity[s], ke[s])
+        Lambda_c[s] = sc.get_lambda_c(pdensity[s], R[s], Lambda[s], D[s])
+
+    # Solve H^emb
+    emb_solver.set_h_emb(h_loc, Lambda_c, D)
+    emb_solver.solve()
+
+    for s in ["up","dn"]:
+        # H^emb density matrices
+        Nf[s] = emb_solver.get_nf(s)
+        Mcf[s] = emb_solver.get_mcf(s)
+        Nc[s] = emb_solver.get_nc(s)
+
+        # New guess for H^qp parameters
+        Lambda[s] = sc.get_lambda(R[s], D[s], Lambda_c[s], Nf[s])
+        R[s] = sc.get_r(Mcf[s], Nf[s])
+
+        # Check how close the guess was
+        norm += np.linalg.norm(R[s] - R_old[s])
+        norm += np.linalg.norm(Lambda[s] - Lambda_old[s])
+
+        if norm < 1e-6:
+            break
+    
+# Quasiparticle weight
+Z = dict()
+for s in ['up','dn']:
+    Z[s] = np.dot(R[s], R[s].conj().T)
+```
+
 # Introduction
 
 We will try to reproduce the results of Sec. IIIB of 
@@ -468,84 +546,6 @@ vectors as possible, but for large problems it is not possible. I find that
 30 often works well, but this is all problem dependent.
 
 ## Method 3: Using `EmbeddingDMRG` implemented in [ITensor](https://itensor.org)
-
-# Skeleton code for the self-consistent loop
-
-Below is a simple self-consistent loop that relies on everything we have set up.
-
-```python
-from copy import deepcopy
-
-U = 1
-V = 0.25
-mu = U / 2.0
-num_cycles = 25
-beta = 10
-
-# Implement A
-h_kin = 
-
-# Implement B
-h_loc = 
-
-# Implement C
-
-# Implement D
-
-# Implement E
-emb_solver = 
-
-# H^qp parameters R and Lambda initialized to the non-interacting values
-for s in ["up","dn"]:
-    Lambda[s] = np.eye(Lambda[s].shape[0]) * mu
-    np.fill_diagonal(R[s], 1)
-
-for cycle in range(num_cycles):    
-    # For convergence checking
-    norm = 0
-    R_old = deepcopy(R)
-    Lambda_old = deepcopy(Lambda)
-
-    for s in ["up","dn"]:
-        # H^qp and integration weights
-        eig, vec = sc.get_h_qp(R[s], Lambda[s], h_kin[s])
-        wks = get_wks(R[s], Lambda[s], h_kin[s], mu, beta)
-        
-        # H^qp density matrices
-        pdensity[s] = sc.get_pdensity(vec, wks)
-        disp_R = sc.get_disp_R(R[s], h_kin[s], vec)
-        ke[s] = sc.get_ke(disp_R, vec, wks)
-
-        # H^emb parameters
-        D[s] = sc.get_d(pdensity[s], ke[s])
-        Lambda_c[s] = sc.get_lambda_c(pdensity[s], R[s], Lambda[s], D[s])
-
-    # Solve H^emb
-    emb_solver.set_h_emb(h_loc, Lambda_c, D)
-    emb_solver.solve()
-
-    for s in ["up","dn"]:
-        # H^emb density matrices
-        Nf[s] = emb_solver.get_nf(s)
-        Mcf[s] = emb_solver.get_mcf(s)
-        Nc[s] = emb_solver.get_nc(s)
-
-        # New guess for H^qp parameters
-        Lambda[s] = sc.get_lambda(R[s], D[s], Lambda_c[s], Nf[s])
-        R[s] = sc.get_r(Mcf[s], Nf[s])
-
-        # Check how close the guess was
-        norm += np.linalg.norm(R[s] - R_old[s])
-        norm += np.linalg.norm(Lambda[s] - Lambda_old[s])
-
-        if norm < 1e-6:
-            break
-    
-# Quasiparticle weight
-Z = dict()
-for s in ['up','dn']:
-    Z[s] = np.dot(R[s], R[s].conj().T)
-```
 
 # Exercises
 
