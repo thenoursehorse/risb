@@ -164,7 +164,7 @@ def bilayer_loc(V = 0.25, U = 0):
     h_loc = Operator()
     for o in [1,2]:
         h_loc += U * n("up",o) * n("dn",o)
-    for s in spin_names:
+    for s in ["up","dn"]:
         h_loc += V * ( c_dag(s,1)*c(s,2) + c_dag(s,2)*c(s,1) )
 
     return h_loc
@@ -249,7 +249,7 @@ The helper functions are used as below.
 pdensity[s] = sc.get_pdensity(vec, wks)
 
 # H^qp (lopsided) kinetic energy
-disp_R = sc.get_disp_R(R[s], h_qp[s], vec)                
+disp_R = sc.get_disp_R(R[s], h_kin[s], vec)
 ke[s] = sc.get_ke(disp_R, vec, wks)
 
 # H^emb hybridization
@@ -351,7 +351,7 @@ The code to perform this is
 ```python
 def get_wks(eig, mu=0, beta=10):
     nks = eig.shape[0]
-    return 1.0 / (np.exp(beta * (eig - mu)) + 1.0) / nk
+    return 1.0 / (np.exp(beta * (eig - mu)) + 1.0) / nks
 ```
 
 ## Method 2: Linear tetrahedron
@@ -549,6 +549,7 @@ for s in ['up','dn']:
 
 # Exercises
 
+1. Can you match each part above with the self-consistent loop defined in the literature?
 1. Fill in the gaps in the code above to make the simplest version.
 1. Change the code above to use `EmbeddingED` and `Tetras`.
 1. Solve for a range of $$U$$ values.

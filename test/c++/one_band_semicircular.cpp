@@ -95,9 +95,9 @@ TEST(one_band_semicircular, half_filling) { // NOLINT
     }
   }
 
-  std::cout << "cycles = " << total_cycles << "  error = " << error << std::endl;
-  std::cout << "R = " << R.at("up") << std::endl;
-  std::cout << "lambda = " << lambda.at("up") << std::endl;
+  //std::cout << "cycles = " << total_cycles << "  error = " << error << std::endl;
+  //std::cout << "R = " << R.at("up") << std::endl;
+  //std::cout << "lambda = " << lambda.at("up") << std::endl;
 
   double mu_calculated = 0;
   for (auto block : spin_names) mu_calculated += trace(lambda.at(block)) / 2;
