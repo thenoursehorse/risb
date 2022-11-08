@@ -12,7 +12,7 @@ class tests(unittest.TestCase):
         spatial_dim = 3
         nkx = 6
         beta = 10
-        num_cycles = 25;
+        num_cycles = 25
         
         orb_names = [1, 2]
         spin_names = ["up","dn"]

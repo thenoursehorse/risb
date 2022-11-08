@@ -51,7 +51,7 @@ for cycle in range(num_cycles):
     for s in ["up","dn"]:
         # H^qp and integration weights
         eig, vec = sc.get_h_qp(R[s], Lambda[s], h_kin[s])
-        wks = get_wks(R[s], Lambda[s], h_kin[s], mu, beta)
+        wks = get_wks(eig, mu, beta)
         
         # H^qp density matrices
         pdensity[s] = sc.get_pdensity(vec, wks)
