@@ -2,7 +2,6 @@ import pyscf
 from pyscf.pbc import gto, scf, dft, df
 from pyscf import lo
 from pyscf import lib
-from pyscf.lo.orth import vec_lowdin
 from pyscf.pbc.tools import pbc as pbctools
 import types
 import numpy as np
@@ -13,28 +12,90 @@ from copy import deepcopy
 
 from ase.build import bulk
 
+# Heavily borrows from https://github.com/SebWouters/QC-DMET/
+# and https://github.com/hungpham2017/pDMET, as well as the pyscf code itself.
+
+# s1 : The overlap matrix between the non-orthonormal atomic orbitals. See 
+# the discussion below Szabo and Ostlund, eq. 3.136. In pyscf this is obtained
+# as mf.get_ovlp() or from mol/cell as mol.intor('int1e_ovlp') or 
+# cell.pbc_into('int1e_ovlp', kpts=). It can also be obtained in sph or cubic
+# coordinates etc with, e.g.,  'int1e_ovlp_sph'. Note that get_ovlp() does 
+# not enforce s1 to be hermitian (but it does check and warn if any elements
+# are greater than some threshold). It may be worth making s1 hermitian after
+# obtaining it with s1 = np.tril(s1) + np.tril(s1,-1).conj().T
+#
+# C matrix in Szabo and Ostlund, eq 3.133 is given by ao2mo = mf.mo_coeff
+# The row index is the molecular orbital index, and the col is the atomic 
+# orbital subscript. It is the transformation matrix from the atomic orbital 
+# basis to the molecular orbitals basis.
+#
+# The density matrix in the non-orthonormal atomic orbital basis for 
+# restricted HF is D = 2 * ao2mo_occ * ao2mo_occ.T Szabo and Ostlund, eq 3.145
+# Only the indicies with occupied molecular orbitals enter into ao2mo. The 
+# occupations of the molecular orbitals are given by mf.mo_occ. In pyscf D 
+# is calculated with mf.make_rdm1.
+#
+# The rotation matrices between bases are named as basis_one2basis_two (ao2lo) 
+# where basis_one are the rows and basis_two are the columns. Therefore, each 
+# column is a vector in basis_two with each element a coefficient in basis_one.
+#
+# lo : The local orbital basis. It should be the same size as the atomic 
+# orbital basis because we construct them to be unitary.
+#
+# imp : The impurity orbital basis. This will be the size of the selected 
+# correlated space. We in principle can create multiple projections to 
+# multiple impurities. The 'rotation' matrices in this case aren't unitary, 
+# and instead will have the number of rows the size of the larger basis 
+# (atomic orbitals, or local orbitals etc), and the number of columns the 
+# size of the correlated space.
+#
+# loc : A quantity in the reference cell R=0. That is, a k-space quantity F(k)  
+# that has been Fourier transformed to R=0 with exp(i R=0 k) = 1, so that 
+# F(R=0) 1/N sum_k F(k)
+
+# TODO 
+# allow open shell HF etc. Currently only have restricted HF.
+
 # TODO
-# Move some of the explaining physics comments to a general comment section at start
+# Allow ao2lo etc to be on the IBZ. But need to figure out the correct way to 
+# transform from the IBZ to the BZ in the lo basis.
 
-# FIXME none of the transform_mo and transform_dm work in any basis other than
-# the atomic orbital basis (I guess that makes sense). So ao2iao, ao2pao, ao2lo has
-# to be on the full grid. Then when calculating density matrices etc have to transform
-# the ao dm etc and then transform. For the interface will need to store everything on the 
-# full BZ. But that's fine because as long as the DFT part can be done with symmetries
-# the rest of it being on the full BZ is not a huge deal.
+# TODO
+# If do not use psuedo potential then have to treat the core electrons 
+# correctly and freeze them. But for now we just assume that the core 
+# electrons are not in the atomic orbital basis
 
-def get_pmol(mol, reference_basis=None):
+def check_pbc(mol):
+    #return getattr(mol, 'dimension', 0) > 0
+    return isinstance(mol, pyscf.pbc.gto.Cell)
+
+def check_symm(kpts):
+    return isinstance(kpts, pyscf.pbc.symm.symmetry.Symmetry)
+
+def get_ref_mol(mol, reference_basis=None):
     '''
-    TODO: docstring here
+    Make a copy of the molecule or cell but in reference_basis. Usually this 
+    would be a smaller basis than what mol is.
+
+    Args:
+        mol : A cell or molecule object.
+        
+        reference_basis : (default None) The reference basis in the local
+            orbital space. If None, it is the same reference basis as mol.
+    
+    Returns:
+        ref_mol : Copy of mol in reference_basis.
     '''
-    pmol = mol.copy()
+    ref_mol = mol.copy()
     if reference_basis is not None:
-        old_verbose = deepcopy(pmol.verbose)
-        pmol.verbose = 0
-        pmol.build(dump_input=False, parse_arg=False, basis=reference_basis)
-        pmol.verbose = old_verbose
-    # else pmol.basis but pmol is already in this basis
-    return pmol
+        old_verbose = deepcopy(ref_mol.verbose)
+        ref_mol.verbose = 0
+        ref_mol.build(dump_input=False, parse_arg=False, basis=reference_basis)
+        ref_mol.verbose = old_verbose
+    # else ref_mol.basis but ref_mol is already in this basis
+    # Could maybe just use iao.reference_mol but it uses pyscf.gto and I'm not 
+    # sure if that will break the cell object (probably not).
+    return ref_mol
 
 def get_corr_orbs(mol, corr_orbs_labels=["Ni 3d"], reference_basis=None):
     '''
@@ -59,15 +120,16 @@ def get_corr_orbs(mol, corr_orbs_labels=["Ni 3d"], reference_basis=None):
         corr_orbs : A dictionary where the key is the index in the reference
             basis and the value is the orbital label.
     '''    
-    pmol = get_pmol(mol=mol, reference_basis=reference_basis)
+    ref_mol = get_ref_mol(mol=mol, reference_basis=reference_basis)
 
-    # This could be replaced with pmol.search_ao_label(labels) 
-    corr_orbs = {idx: s for idx,s in enumerate(pmol.ao_labels()) if any(xs in s for xs in corr_orbs_labels)}
+    # This could be replaced with ref_mol.search_ao_label(labels) 
+    corr_orbs = {idx: s for idx,s in enumerate(ref_mol.ao_labels()) if any(xs in s for xs in corr_orbs_labels)}
     corr_orbs_idx = list(corr_orbs.keys())
     return corr_orbs_idx, corr_orbs
 
+# FIXME ref_orbs and corr_orbs should just be the other way around to be honest
 # Adapted from https://github.com/SebWouters/QC-DMET iao_helper.py
-def get_porbs(mol, reference_basis=None):
+def get_ref_orbs(mol, reference_basis=None):
     '''
     Gives the indices of the the orbitals of reference_basis in the original 
     larger original atomic basis of mol.
@@ -79,25 +141,25 @@ def get_porbs(mol, reference_basis=None):
             orbital space. If None, it is the same reference basis as mol.
     
     Returns:
-        porbs_idx : The indicies of reference_basis in the original atomic 
+        ref_orbs_idx : The indicies of reference_basis in the original atomic 
             orbital basis.
 
-        porbs_com_idx : The compliment indices of reference_basis in the 
+        ref_orbs_com_idx : The compliment indices of reference_basis in the 
             original atomic orbital basis.
     '''
-    #pmol = get_pmol(mol=mol, reference_basis=reference_basis)
-    #p_list = [1 if any(xs in s for xs in pmol.ao_labels()) else 0 for s in mol.ao_labels()]
-    #assert(np.sum(p_list) == pmol.nao_nr())
+    #ref_mol = get_ref_mol(mol=mol, reference_basis=reference_basis)
+    #ref_orbs_idx = [1 if any(xs in s for xs in ref_mol.ao_labels()) else 0 for s in mol.ao_labels()]
+    #assert(np.sum(p_list) == ref_mol.nao_nr())
     
-    porbs_idx, _ = get_corr_orbs(mol=mol, corr_orbs_labels=mol.ao_labels(), reference_basis=reference_basis)
-    porbs_com_idx = [i for i in range(len(mol.ao_labels())) if i not in porbs_idx]
-    assert ( len(porbs_idx) + len(porbs_com_idx)) == len(mol.ao_labels() )
+    ref_orbs_idx, _ = get_corr_orbs(mol=mol, corr_orbs_labels=mol.ao_labels(), reference_basis=reference_basis)
+    ref_orbs_com_idx = [i for i in range(len(mol.ao_labels())) if i not in ref_orbs_idx]
+    assert ( len(ref_orbs_idx) + len(ref_orbs_com_idx)) == len(mol.ao_labels() )
     
-    # Check that pmol is actually a subset of mol
-    pmol = get_pmol(mol=mol, reference_basis=reference_basis)
-    if len(porbs_idx) != pmol.nao_nr():
-        raise ValueError(f"reference_basis {pmol.basis} must be a subset of {mol.basis}")
-    return porbs_idx, porbs_com_idx
+    # Check that ref_mol is actually a subset of mol
+    ref_mol = get_ref_mol(mol=mol, reference_basis=reference_basis)
+    if len(ref_orbs_idx) != ref_mol.nao_nr():
+        raise ValueError(f"reference_basis {ref_mol.basis} must be a subset of {mol.basis}")
+    return ref_orbs_idx, ref_orbs_com_idx
     
 def orthogonalize(C, s1, has_pbc, otype='lowdin'):
     '''
@@ -116,11 +178,16 @@ def orthogonalize(C, s1, has_pbc, otype='lowdin'):
             lowdin, knizia.
     '''
     # doi:10.1021/ct400687b appendix C
-    def knizia(C, s1):
-        return C @ scipy.linalg.fractional_matrix_power(C.conj().T @ s1 @ C, -0.5)
+    def knizia(c, s):
+        # Orthogonalize metric c.T s c
+        return c @ scipy.linalg.fractional_matrix_power(c.conj().T @ s @ c, -0.5)
     
     if otype == 'lowdin':
+        from pyscf.lo.orth import vec_lowdin
         orth = vec_lowdin
+    elif otype == 'schmidt':
+        from pyscf.lo.orth import vec_schmidt
+        orth = vec_schmidt
     elif otype == 'knizia':
         orth = knizia
     else:
@@ -192,6 +259,8 @@ def make_iaos(s1, s2, s12, mo, lindep_threshold=1e-8):
     '''
     # HACK
     # To get access to make_iaos(s1, s2, s12, mo) defined inside iao
+    global vec_lowdin
+    from pyscf.lo.orth import vec_lowdin
     _make_iaos = get_nested_function(lo.iao.iao, 'make_iaos', lindep_threshold=lindep_threshold)
     return _make_iaos(s1=s1, s2=s2, s12=s12, mo=mo)
   
@@ -224,17 +293,20 @@ def get_ao2pao(mf, ao2lo, reference_basis=None):
     num_lo = ao2lo.shape[-1]
     
     # Check if we are a lattice or molecule 
-    has_pbc = getattr(mf.mol, 'dimension', 0) > 0
+    has_pbc = check_pbc(mf.mol)
 
     s1 = mf.get_ovlp()
     if has_pbc:
-        has_symm = isinstance(mf.kpts, pyscf.pbc.symm.symmetry.Symmetry)
+        has_symm = check_symm(mf.kpts)
         if has_symm:
             s1 = np.asarray(mf.kpts.transform_1e_operator(s1))
             kpts = mf.kpts.kpts
         else:
             kpts = mf.kpts
         nkpts = len(kpts)
+
+    if len(ao2lo) != nkpts:
+        raise ValueError(f'ao2lo must be on the full BZ with {nkpts} points, but got {len(ao2lo)} !')
 
     # Get the compliment of iao
     if has_pbc: 
@@ -262,9 +334,9 @@ def get_ao2pao(mf, ao2lo, reference_basis=None):
     # Doing below causes orthogonalization issues for NiO at some k-points
 
     # Get the overlap matrices at the indices of the complement of the reference basis
-    #porbs_idx, porbs_com_idx = get_porbs(mol=mf.mol, reference_basis=reference_basis)
-    #s13 = s1[..., :, porbs_com_idx]
-    #s3 = s13[..., porbs_com_idx, :]
+    #ref_orbs_idx, ref_orbs_com_idx = get_ref_orbs(mol=mf.mol, reference_basis=reference_basis)
+    #s13 = s1[..., :, ref_orbs_com_idx]
+    #s3 = s13[..., ref_orbs_com_idx, :]
     #
     ## Construct iaos in the compliment
     #if has_pbc:
@@ -298,50 +370,38 @@ def get_ao2lo(mf, reference_basis=None):
         reference_basis = mf.mol.basis
     
     # Check if we are a lattice or molecule 
-    has_pbc = getattr(mf.mol, 'dimension', 0) > 0
+    has_pbc = check_pbc(mf.mol)
     
-    # C matrix in Szabo and Ostlund, eq 3.133
-    # the row index is the atomic orbital index, and 
-    # the col is the molecular orbital subscript
-    # It is the transformation from the molecular orbitals to the basis functions (atomic orbitals)
-    mo2ao = mf.mo_coeff
-
-    # The occupation of each molecular orbital
+    ao2mo = mf.mo_coeff
     mo_occ = mf.mo_occ
 
-    # Get the 1 elec overlap integrals in ao basis
-    # S matrix in Szabo and Ostlund, eq. 3.136
-    # (copied from lo.iao.iao code)
-    # Surely this is the same as mf.get_ovlp() ?
-    # I'm just concerned about it not being in the same basis as the int1e_ovlp
-    # Because int1e_ovlp_spherical, for example, is different
-    #s1 = np.asarray(mf.mol.pbc_intor('int1e_ovlp', hermi=1, kpts=kpts.kpts_ibz))
+    # Get overlap, the transform from mo to ao, and the mo occupations
+    # If it is a symmetry object we put these onto the entire BZ 
+    # instead of the IBZ.
     s1 = mf.get_ovlp()
     if has_pbc:
-        has_symm = isinstance(mf.kpts, pyscf.pbc.symm.symmetry.Symmetry)
+        has_symm = check_symm(mf.kpts)
         if has_symm:
             s1 = np.asarray(mf.kpts.transform_1e_operator(s1))
-            mo2ao = np.asarray(mf.kpts.transform_mo_coeff(mo2ao))
+            ao2mo = np.asarray(mf.kpts.transform_mo_coeff(ao2mo))
             mo_occ = np.asarray(mf.kpts.transform_mo_occ(mo_occ))
             kpts = mf.kpts.kpts
         else:
             kpts = mf.kpts
         nkpts = len(kpts)
 
-    # Get only the occupied molecular orbitals basis transformation from molecular to atomic
-    # P = 2 * mo2ao_occ * mo2ao_occ.T Szabo and Ostlund, eq 3.145
-    # P essentially gives the restricted density matrix in the atomic orbital basis
+    # Get only the mo indices that are occupied
     if has_pbc:
-        mo2ao_occ = []
+        ao2mo_occ = []
         for k in range(nkpts):
-            mo2ao_occ.append( mo2ao[k][:,mo_occ[k]>0.01] )
+            ao2mo_occ.append( ao2mo[k][:,mo_occ[k]>0.01] )
     else:
-        mo2ao_occ = mo2ao[:,mo_occ[k]>0.01]
+        ao2mo_occ = ao2mo[:,mo_occ[k]>0.01]
 
     # Get the intrinsic atomic orbitals (IAO)
     otype = 'lowdin'
     #otype = 'knizia'
-    ao2iao = lo.iao.iao(mf.mol, mo2ao_occ, minao=reference_basis, kpts=kpts)
+    ao2iao = lo.iao.iao(mf.mol, ao2mo_occ, minao=reference_basis, kpts=kpts)
     ao2iao = orthogonalize(C=ao2iao, s1=s1, has_pbc=has_pbc, otype=otype)
 
     num_ao = mf.mol.nao_nr()
@@ -353,18 +413,18 @@ def get_ao2lo(mf, reference_basis=None):
         ao2pao = orthogonalize(C=ao2pao, s1=s1, has_pbc=has_pbc, otype=otype)
 
         # Contrusct the localized orbitals
-        porbs_idx, porbs_com_idx = get_porbs(mol=mf.mol, reference_basis=reference_basis)
+        ref_orbs_idx, ref_orbs_com_idx = get_ref_orbs(mol=mf.mol, reference_basis=reference_basis)
         if (ao2iao.dtype == np.complex_) or (ao2pao.dtype == np.complex_) or (s1.dtype == np.complex_):
             lo_dtype = np.complex_
         else:
             lo_dtype = np.float_
         ao2lo = np.empty(shape=s1.shape, dtype=lo_dtype)
-        ao2lo[...,:,porbs_idx] = ao2iao
-        ao2lo[...,:,porbs_com_idx] = ao2pao
+        ao2lo[...,:,ref_orbs_idx] = ao2iao
+        ao2lo[...,:,ref_orbs_com_idx] = ao2pao
     
-        # FIXME reorder here, I don't think we have to because the valence orbitals are 
-        # in the order of reference_basis, while the pao are not in any order. But I don't
-        # think we really care about them?
+        # FIXME reorder here, I don't think we have to because the occupied orbitals are 
+        # in the order of reference_basis, while the virtual pao are not in whatever order. 
+        # that eigh returns. But I don't think we really care about them?
         #for k in range(nkpts):
         #    ao2lo[k] = resort_orbitals(mol=mf.mol, ao2lo=ao2lo[k], k=k)
 
@@ -393,70 +453,148 @@ def get_ao2lo(mf, reference_basis=None):
 
     return ao2lo
 
-def get_dm_lo(mf, ao2lo):
+def get_ao2corr(mf, corr_orbs_labels, reference_basis=None, ao2lo=None):
     '''
-    Get the density matrix rotated into the basis of ao2lo.
+    The projection matrix at each k-point from the atomic orbital basis 
+    to the correlated orbitals.
+
+    Args:
+        mf : A mean-field object from HF or DFT. It can be an object that 
+            uses symmetry. 
+        
+        corr_orbs_labels : The
+
+        reference_basis : (default None) The reference basis in the local
+            orbital space. If None, it is the same reference basis as mol.
+
+
+    Returns:
+        A 2-dim (molecule) or 3-dim (lattice) array that is the unitary 
+        transformation into the local orbital basis. If on a lattice it 
+        returns the transformation on the full BZ.
+    '''
+    if reference_basis is None:
+        reference_basis = mf.mol.basis
+    
+    if ao2lo is None:
+        ao2lo = get_ao2lo(mf=mf, reference_basis=reference_basis)
+
+    corr_orbs_idx, corr_orbs = get_corr_orbs(mol=mf.mol, corr_orbs_labels=corr_orbs_labels, reference_basis=reference_basis)
+    return ao2lo[..., corr_orbs_idx]
+    
+    #lo2corr = np.ones(shape=(ao2lo[0], ao2lo[1], len(corr_orbs_idx)))
+    #lo2corr = lo2corr[..., corr_orbs]
+
+
+def get_dm(mf, ao2b):
+    '''
+    Get the density matrix rotated into the basis of b.
 
     Args:
         mf : A mean-field object from HF or DFT.
 
-        ao2lo : The transformation matrix from the atomic orbital basis to the 
-            local basis. If it is on a lattice it must be on the full BZ.
+        ao2b : The transformation matrix from the atomic orbital basis to the 
+            basis b. If it is on a lattice it must be on the full BZ. It can 
+            be square (project onto some orbitals).
 
     Returns:
         A 2-dim (molecule) or 3-dim (lattice) array that is density matrix 
         in the local orbital basis
     '''
-    has_pbc = getattr(mf.mol, 'dimension', 0) > 0
+    has_pbc = check_pbc(mf.mol)
     
     s1 = mf.get_ovlp()
     
-    # The density matrix in the non-orthogonal atomic orbital basis
-    # P = 2 * mo2ao_occ * mo2ao_occ.T Szabo and Ostlund, eq 3.145
     dm_ao = mf.make_rdm1(mf.mo_coeff, mf.mo_occ)
     
     if has_pbc:
-        has_symm = isinstance(mf.kpts, pyscf.pbc.symm.symmetry.Symmetry)
+        has_symm = check_symm(mf.kpts)
         if has_symm:
             s1 = np.asarray(mf.kpts.transform_1e_operator(s1))
             dm_ao = np.asarray(mf.kpts.transform_dm(dm_ao))
+        dm = np.zeros(shape=(dm_ao.shape[0], ao2b.shape[-1], ao2b.shape[-1]), dtype=np.complex_)
 
     # einsum is very slow for large k and # of orbs
-    #dm_lo = lib.einsum('...ij,...jk,...kl,...lm,...mn->...in', np.transpose(ao2lo.conj(), (0,2,1)), s1, dm_ao, s1, ao2lo)
-    dm_lo = np.zeros(shape=dm_ao.shape, dtype=dm_ao.dtype)
+    #dm = lib.einsum('...ij,...jk,...kl,...lm,...mn->...in', np.transpose(ao2b.conj(), (0,2,1)), s1, dm_ao, s1, ao2b)
     if has_pbc:
-        for k in range(dm_lo.shape[0]):
-            dm_lo[k] = ao2lo[k].conj().T @ s1[k] @ dm_ao[k] @ s1[k] @ ao2lo[k]
+        for k in range(dm_ao.shape[0]):
+            dm[k] = ao2b[k].conj().T @ s1[k] @ dm_ao[k] @ s1[k] @ ao2b[k]
     else:
-        dm_lo = ao2lo.conj().T @ s1 @ dm_ao @ s1 @ ao2lo
+        dm = ao2b.conj().T @ s1 @ dm_ao @ s1 @ ao2b
 
-    return dm_lo
+    return dm
 
-def get_dm_loc(mf, dm):
+def get_mat_loc(mf, mat):
     '''
-    Get the local density matrix at R=0 (Fourier phase factor exp(iRk) = 1).
+    Get a matrix on the k-grid at R=0 (Fourier phase factor exp(iRk) = 1).
 
     Args:
         mf : A mean-field object from HF or DFT. It must be on the full BZ.
 
-        dm : A density matrix at each k-point on the k-grid.
+        mat : A density matrix at each k-point on the k-grid.
 
     Returns:
-        An array that is the local density matrix.
+        An matrix at R=0.
     '''
-    has_pbc = getattr(mf.mol, 'dimension', 0) > 0
-    assert (has_pbc), f"dm should be 3-dim (lattice), got: {dm.shape}"
+    has_pbc = check_pbc(mf.mol)
+    assert (has_pbc), f"mat should be 3-dim (lattice), got: {mat.shape}"
     
-    has_symm = isinstance(mf.kpts, pyscf.pbc.symm.symmetry.Symmetry)
+    has_symm = check_symm(mf.kpts)
     if has_symm:
         #dm_loc = mf.kpts.dm_at_ref_cell(dm_ibz=dm)
-        if len(dm) != len(mf.kpts.kpts):
-            raise ValueError(f"dm must be on the full BZ with {len(mf.kpts.kpts)} points, but got {len(shape)} !")
+        if len(mat) != len(mf.kpts.kpts):
+            raise ValueError(f"mat must be on the full BZ with {len(mf.kpts.kpts)} points, but got {len(mat)} !")
     
-    dm_loc = lib.einsum('kij->ij', dm) / len(dm)
+    # FIXME should we be using cell.get_lattice_Ls instead?    
+    return lib.einsum('kij->ij', mat) / len(mat)
 
-    return dm_loc
+def save_orbs_molden(mol, ao2b, filename='local_orbitals.molden', occ=None, energy=None, symm_labels=None, for_iboview=True):
+    '''
+    Output orbitals in the molden format.
 
+    Args:
+        mol : A cell or molecule object. If symm is None, then mol cannot 
+            have mol.symmetry = True unless ao2b is the matrix to the 
+            molecular orbitals because then the symmetry labels will make no 
+            sense.
+
+        ao2b : The rotation matrix from the atomic orbital basis to another 
+            basis (not sure if this can be rectangular).
+
+        filename : (default local_orbitals.molden) The output filename.
+
+        occ : (default None) A list of the occupation of each orbital. Only 
+            makes sense if the density matrix in the basis of the orbitals is 
+            diagonal. If None then assumes are molecular orbitals and will 
+            give that occupation.
+
+        energy : (default None) A list of the energy of each orbital. Same 
+            discussion as occ applies here.
+
+        symm_labels : (default None) A list of the symmetry labels of each 
+            orbital. 
+    '''
+    if len(ao2b.shape) > 2:
+        raise ValueError('Can only output orbitals to molden at a single R point, but got coefficients on a grid !')
+
+    # HACK
+    # For iboview:
+    # Even though molden outputs the core electrons when using psuedo 
+    # potentials (ECP enabled), iboview does not recognize this.
+    # Since mol.atom_charge has the core electrons screened out (subtracted), 
+    # the atom symbol should then be charge(atom_charge)+core_charge.
+    mol_copy = mol.copy()
+    if for_iboview:
+        for i in range(len(mol_copy._atm)):
+            mol_copy._atm[i][0] += mol_copy.atom_nelec_core(i)
+
+    # ignore_h prevents mol from getting rebuilt and truncating l>5 coefficients.
+    from pyscf.tools import molden
+    with open(filename,'w') as f:
+            molden.header(mol=mol_copy, fout=f, ignore_h=False)
+            molden.orbital_coeff(mol=mol, fout=f, mo_coeff=ao2b, ene=energy, occ=occ, symm=symm_labels)
+
+# FIXME This is from pdmet, but I don't think we ever need it
 def get_supercell(cell, kmesh): # Get supercell and phase
     a = cell.lattice_vectors()
     Ts = lib.cartesian_prod((np.arange(kmesh[0]), np.arange(kmesh[1]), np.arange(kmesh[2])))
@@ -471,7 +609,7 @@ def get_supercell(cell, kmesh): # Get supercell and phase
     scell = pbctools.super_cell(cell, kmesh)
     return scell, phase
 
-#nio = False
+nio = False
 nio = True
 if nio:
     # Make in ase
@@ -486,7 +624,9 @@ if nio:
     #cell.output = './log_dmet_test.txt'
     cell.build()
     reference_basis = 'gth-szv-molopt-sr' # Used in garnet chan paper for iao
-
+    
+    corr_orbs_labels = ["Ni 3d"]
+    molden_filename = 'Ni'
 else:
     # Make in pyscf
     atoms = bulk(name='Si', crystalstructure='fcc', a=5.43053)
@@ -499,8 +639,11 @@ else:
     #cell.output = './log_dmet_test.txt'
     cell.build()
     reference_basis = 'gth-szv'
+    
+    corr_orbs_labels = ["Si 3p"]
+    molden_filename = 'Si'
 
-nkx = 4
+nkx = 7
 kmesh = [nkx,nkx,nkx]
 #symm = False
 symm = True
@@ -519,106 +662,45 @@ mf.with_df.auxbasis = df.aug_etb(cell, beta=2.2) # used in dmet paper (even-temp
 mf = scf.addons.smearing_(mf, sigma=0.01, method='fermi')
 mf.kernel()
 
+ao2mo = mf.kpts.transform_mo_coeff(mf.mo_coeff)
+ao2mo_loc = get_mat_loc(mf=mf, mat=ao2mo)
+
+# Unitary to local orbital basis
 ao2lo = get_ao2lo(mf=mf, reference_basis=reference_basis)
+ao2lo_loc = get_mat_loc(mf=mf, mat=ao2lo)
 
-dm_lo = get_dm_lo(mf=mf, ao2lo=ao2lo)
-dm_lo_loc = get_dm_loc(mf=mf, dm=dm_lo)
-dm_lo_nelec = np.trace(dm_lo_loc)
+# Projector to correlated basis
+ao2corr = get_ao2corr(mf=mf, corr_orbs_labels=corr_orbs_labels, reference_basis=reference_basis)
+ao2corr_loc = get_mat_loc(mf=mf, mat=ao2corr)
 
-corr_orb_labels = ["Ni 3d"]
-corr_orbs_idx, corr_orbs = get_corr_orbs(mol=mf.mol, corr_orbs_labels=corr_orb_labels, reference_basis=reference_basis)
+# Density matrix in local orbital basis
+dm_lo = get_dm(mf=mf, ao2b=ao2lo)
+dm_lo_loc = get_mat_loc(mf=mf, mat=dm_lo)
+nelec_lo = np.trace(dm_lo_loc)
+nelec_diff = nelec_lo - np.sum(mf.mol.nelec)
+print(f"Density within window: {nelec_lo}")
+if np.abs(nelec_diff) > 1e-12:
+    raise ValueError(f"Total electrons in local orbitals differs from molecular orbitals by {nelec_diff} !")
 
-nkpts = len(mf.kpts.kpts)
+# Density matrix in correlated basis 
+dm_corr = get_dm(mf=mf, ao2b=ao2corr)
+dm_corr_loc = get_mat_loc(mf=mf, mat=dm_corr)
+nelec_corr = np.trace(dm_corr_loc)
+print(f"Impurity density: {nelec_corr}")
 
-impurityOrbs = np.zeros( [ ao2lo.shape[-1] ], dtype=int )
-impurityOrbs[corr_orbs_idx] = 1
-impurityOrbs_mat = np.matrix( impurityOrbs )
-if (impurityOrbs_mat.shape[0] > 1):
-    impurityOrbs_mat = impurityOrbs_mat.T
-isImpurity = np.dot( impurityOrbs_mat.T, impurityOrbs_mat) == 1
-numImpOrbs = np.sum(impurityOrbs)
-impurity1RDM = np.reshape( dm_lo[ ...,isImpurity ], (nkpts, numImpOrbs, numImpOrbs) )
-impurity1RDM_loc = np.reshape( dm_lo_loc[ isImpurity ], (numImpOrbs, numImpOrbs) )
+save_orbs_molden(mol=mf.mol, ao2b=ao2mo_loc, filename=molden_filename+'_molecular_orbitals.molden')
+save_orbs_molden(mol=mf.mol, ao2b=ao2lo_loc, filename=molden_filename+'_local_orbitals.molden', occ=np.diagonal(dm_lo_loc))
+save_orbs_molden(mol=mf.mol, ao2b=ao2corr_loc, filename=molden_filename+'_correlated_orbitals.molden', occ=np.diagonal(dm_corr_loc))
 
-embeddingOrbs = 1 - impurityOrbs
-embeddingOrbs = np.matrix( embeddingOrbs )
-if (embeddingOrbs.shape[0] > 1):
-    embeddingOrbs = embeddingOrbs.T
-isEmbedding = np.dot( embeddingOrbs.T, embeddingOrbs) == 1
-numEmbedOrbs = np.sum( embeddingOrbs )
-embedding1RDM = np.reshape( dm_lo[ ...,isEmbedding ], (nkpts, numEmbedOrbs, numEmbedOrbs) )
-embedding1RDM_loc = np.reshape( dm_lo_loc[ isEmbedding ], (numEmbedOrbs, numEmbedOrbs) )
+# ERI in correlated basis
 
-numTotalOrbs = len( impurityOrbs )
-
-threshold = 1e-13
-eigenvals, eigenvecs = np.linalg.eigh( embedding1RDM )
-idx = np.maximum( -eigenvals, eigenvals - 2.0 ).argsort(axis=-1) # occupation numbers closest to 1 come first
-eigenvals = np.take_along_axis(eigenvals, idx, axis=-1)
-for k in range(eigenvecs.shape[0]):
-    eigenvecs[k] = eigenvecs[k][:,idx[k]]
-# Number of bath orbitals to keep at each k-point (should take the max of this so each k-point has the same size)
-# but in principle we don't actually need that
-tokeep = np.sum( -np.maximum( -eigenvals, eigenvals - 2.0 ) > threshold, axis=-1)
-
-numBathOrbs = numImpOrbs
-numBathOrbs = min(np.max(tokeep), numBathOrbs)
-
-pureEnvironEigVals = -eigenvals[...,numBathOrbs:]
-pureEnvironEigVecs = eigenvecs[...,:,numBathOrbs:]
-idx = pureEnvironEigVals.argsort(axis=-1)
-for k in range(eigenvecs.shape[0]):
-    eigenvecs[k,:,numBathOrbs:] = pureEnvironEigVecs[k][:,idx[k]]
-pureEnvironEigVals = np.take_along_axis(-pureEnvironEigVals, idx, axis=-1)
-coreOccupations = np.empty([pureEnvironEigVals.shape[0], pureEnvironEigVals.shape[1]+numImpOrbs+numBathOrbs])
-for k in range(pureEnvironEigVals.shape[0]):
-    coreOccupations[k] = np.hstack(( np.zeros([ numImpOrbs + numBathOrbs ]), pureEnvironEigVals[k] ))
-
-# eigenvecs indexed as k,row,col
-for counter in range(0, numImpOrbs):
-    eigenvecs = np.insert(eigenvecs, counter, 0.0, axis=2) #Stack columns with zeros in the beginning
-counter = 0
-for counter2 in range(0, numTotalOrbs):
-    if ( impurityOrbs[counter2] ):
-        eigenvecs = np.insert(eigenvecs, counter2, 0.0, axis=1) #Stack rows with zeros on locations of the impurity orbitals
-        eigenvecs[:, counter2, counter] = 1.0
-        counter += 1
-assert( counter == numImpOrbs )
-
-# Orthonormality is guaranteed due to (1) stacking with zeros and (2) orthonormality eigenvecs for symmetric matrix
-assert( np.linalg.norm( lib.einsum('kij,kjl->kil', np.transpose(eigenvecs.conj(), (0,2,1)), eigenvecs) - np.eye(numTotalOrbs) ) < 1e-12 )
-
-# eigenvecs[ : , 0:numImpOrbs ]                      = impurity orbitals
-# eigenvecs[ : , numImpOrbs:numImpOrbs+numBathOrbs ] = bath orbitals
-# eigenvecs[ : , numImpOrbs+numBathOrbs: ]           = pure environment orbitals in decreasing order of occupation number
-
-# eigenvecs is the operator that goes from local orbitals to DMET orbital basis
-# coreOccupations is the reduced density matrix of of the core orbitals in the DMET basis
-
-core_cutoff = 0.01
-#core_cutoff = 0.5
-coreOccupations[ np.where(coreOccupations < core_cutoff) ] = 0.0
-coreOccupations[ np.where(coreOccupations > (2.0 - core_cutoff)) ] = 2.0
-
-for cnt in range(len(coreOccupations)):
-    if ( coreOccupations[ cnt ] < core_cutoff ):
-        coreOccupations[ cnt ] = 0.0
-    elif ( coreOccupations[ cnt ] > 2.0 - core_cutoff ):
-        coreOccupations[ cnt ] = 2.0
-    else:
-        print("Bad DMET bath orbital selection: trying to put a bath orbital with occupation", coreOccupations[ cnt ], "into the environment :-(.")
-
-lo2eo = eigenvecs
-Norb_in_imp  = numImpOrbs + numBathOrbs
-
-ao2eo = lib.einsum('...ij,...jl->...il', ao2lo, lo2eo)
-core1RDM_eo = lib.einsum('...ij,...j,...jl->...il', ao2eo, coreOccupations, np.transpose(ao2eo.conj(), (0,2,1)))
+#ao2eo = lib.einsum('...ij,...jl->...il', ao2lo, lo2eo)
 
 # eri in embedding orbital basis (impurity + bath + core/virtual)
-#eri_eo = mf.mol.ao2mo(ao2eo, intor='int2e', compact=False)
+#eri_eo = mf.mol.ao2mo(ao2corr, intor='int2e', compact=False)
 
 # eri in embedding orbital basis (impurity + bath)
-eri_eo = mf.mol.ao2mo(ao2eo[:,:Norb_in_imp], intor='int2e', compact=False)
+#eri_corr = mf.mol.ao2mo(ao2corr, intor='int2e', compact=False)
 
-from pyscf.pbc import df
-eri = df.DF(mf.mol).get_eri()
+#from pyscf.pbc import df
+#eri = df.DF(mf.mol).get_eri()
