@@ -16,7 +16,7 @@ from pyscf.pbc import gto, scf, dft, df
 # s1 : The overlap matrix between the non-orthonormal atomic orbitals. See 
 # the discussion below Szabo and Ostlund, eq. 3.136. In pyscf this is obtained
 # as mf.get_ovlp() or from mol/cell as mol.intor('int1e_ovlp') or 
-# cell.pbc_into('int1e_ovlp', kpts=). It can also be obtained in sph or cubic
+# cell.pbc_intor('int1e_ovlp', kpts=). It can also be obtained in sph or cubic
 # coordinates etc with, e.g.,  'int1e_ovlp_sph'. Note that get_ovlp() does 
 # not enforce s1 to be hermitian (but it does check and warn if any elements
 # are greater than some threshold). It may be worth making s1 hermitian after
@@ -61,7 +61,11 @@ from pyscf.pbc import gto, scf, dft, df
 # TODO
 # If do not use psuedo potential then have to treat the core electrons 
 # correctly and freeze them. But for now we just assume that the core 
-# electrons are not in the atomic orbital basis
+# electrons are not in the atomic orbital basis. See pyscf get_roothaan_fock
+# for maybe an idea on how to split the space.
+
+# NOTE
+# pyscf.lib.tag_array allows to add attributes to a numpy array
 
 def check_pbc(mol):
     #return getattr(mol, 'dimension', 0) > 0
@@ -297,12 +301,12 @@ def get_ao2pao(mf, ao2lo, reference_basis=None):
             # Projection info:
             # Projector P onto a subapce C of H maps every vector v in C to itself
             # with eigenvalue 1. Every vector v not in C maps to a vector in C. Hence, 
-            # for any vector v = Pv + (v-Pv), Pv is in C and v-Pv is in the nullspace
+            # for any vector v = Pv + (1-P)v, Pv is in C and v-Pv is in the nullspace
             # of P. We can see this by takig Pv = P^2v + Pv - P^2v = (Pv as expected 
-            # because P^2 = P) or can say that P(v-Pv) = 0. Hence, every vector can be 
+            # because P^2 = P) or can say that P(1-P)v = 0. Hence, every vector can be 
             # written as a sum of a vector in C with eigenvalue 1, and a vector in the 
             # nullspace of P with eigenvalue 0. Hence, the eigs below are the union of
-            # the the eigenbasis of C and a baisis in the null space of C.
+            # the the eigenbasis of C and a basis in the null space of C.
 
             # s1 dm s1 vecs = eigs s1 vecs    (1)    P s1 vecs = eigs s1 vecs
             #
@@ -316,10 +320,12 @@ def get_ao2pao(mf, ao2lo, reference_basis=None):
             # The vectors in C (local space) will be eigenvectors s1 vecs (unchanged) and
             # the rest will be nullspace vectors of C with eigenvalue 0.
 
-            # Below is diagonalizing the projector P = s1 dm. But, I think 
-            # in a more numerically stable way (just diagonalizing P gives some 
-            # eigenvalues not exactly 1). Or there's something to do with the overlap
-            # s1 causing issues.
+            # Below is diagonalizing the projector P = s1 dm but taking into account
+            # the non-orthogonality of the atomic orbitals (s1 is not the identity).
+            # The rotation into the local space is orthogonal as ao2lo+ s1 ao2lo = 1,
+            # but ao2lo+ ao2lo != 1. From Szabo and Ostlund this is Eq. 3.174 with
+            # symmetric orthogonalization X=s1^1/2 and C=ao2lo. Only C'=XC forms
+            # an orthogonal space.
 
             eigs, vecs = scipy.linalg.eigh(a=mx[k], b=s1[k])
             # eigs are sorted from lowest to highest
@@ -329,16 +335,18 @@ def get_ao2pao(mf, ao2lo, reference_basis=None):
             # doi: 10.1146/annurev.pc/44.100193.001241 
             # Projector onto the compliment of the local space in the atomic orbital basis
             # P = np.eye(s1[k].shape[0]) - s1[k] @ dm_lo[k]
-            # So isn't the compliment P mo_coeff mo_coeff+ P ? or P s1 mo mo+ s1 P ? 
-            # Or, could diagonalize P and take the eigenvalues = 1 eigenvectors (same
-            # discussion as above).
+            # So isn't the compliment P s1^1/2 mo mo+ s1^1/2 P ? 
+            # But then it is in the ao basis and we want it to be in the basis where it is an
+            # eigenvector of P. I can't think of a way around doing the diagonalization, either on
+            # the compliment projector taking eigenvalues 1 or the iao projector as above.
     else:
         dm_lo = ao2lo @ ao2lo.conj().T
         mx = s1 @ dm_lo @ s1
         eigs, vecs = scipy.linalg.eigh(a=mx, b=s1)
         ao2pao = vecs[..., :num_ao - num_lo]
 
-    # FIXME It isn't clear to me if you need to redo the iao for the complement, 
+    # NOTE 
+    # It isn't clear to me if you need to redo the iao for the complement, 
     # I just do because Seb does it in their code. Surely the projected atomic
     # orbitals are already obtained at this line and all that has to be done is to
     # orthogonalize? Doing iao on the projected part will just make polarized localized 
@@ -471,16 +479,23 @@ def get_ao2lo(mf, reference_basis=None):
 
     return ao2lo
 
-def get_ao2corr(mf, corr_orbs_labels, ao2lo=None):
+def get_ao2corr(mf, corr_orbs_labels, ao2lo=None, reference_basis=None):
     '''
     The projection matrix at each k-point from the atomic orbital basis 
-    to the correlated orbitals.
+    to the correlated orbitals. It can be a non-kpoint object as well 
+    for molecules.
 
     Args:
         mf : A mean-field object from HF or DFT. It can be an object that 
             uses symmetry. 
         
-        corr_orbs_labels : The
+        corr_orbs_labels : (default None) A list of orbitals. Partial 
+            matches are OK, such that "Ni" will be all Ni orbitals, and 
+            "Ni 3d" will be all 3d orbitals on Ni.
+        
+        ao2lo : (default None) The rotation matrices at each k-point from 
+            the atomic orbital basis to the local basis. If None then 
+            it will construct ao2lo.
 
         reference_basis : (default None) The reference basis in the local
             orbital space. If None, it is the same reference basis as mol.
@@ -490,21 +505,55 @@ def get_ao2corr(mf, corr_orbs_labels, ao2lo=None):
             transformation into the local orbital basis. If on a lattice it 
             returns the transformation on the full BZ.
 
-        ao2corr_com : The complement of ao2corr.
+        ao2corr_com : The compliment of ao2corr.
     '''
     if ao2lo is None:
+        if reference_basis is None:
+            raise ValueError("There must be a reference basis to construct ao2lo !")
         ao2lo = get_ao2lo(mf=mf, reference_basis=reference_basis)
 
     corr_orbs, corr_orbs_idx, corr_orbs_com_idx = get_ref_orbs(mol=mf.mol, corr_orbs_labels=corr_orbs_labels)
     return ao2lo[..., corr_orbs_idx], ao2lo[..., corr_orbs_com_idx]
     
-    #lo2corr = np.ones(shape=(ao2lo[0], ao2lo[1], len(corr_orbs_idx)))
-    #lo2corr = lo2corr[..., corr_orbs]
-
-
-def get_dm(mf, ao2b):
+def get_lo2corr(mf, corr_orbs_labels):
     '''
-    Get the density matrix rotated into the basis of b.
+    The projection matrix at each k-point from the local orbital basis 
+    to the correlated orbitals. Since the lo basis is the computational basis 
+    these are just identity matrices.
+    
+    Args:
+        mf : A mean-field object from HF or DFT. It can be an object that 
+            uses symmetry. 
+        
+        corr_orbs_labels : (default None) A list of orbitals. Partial 
+            matches are OK, such that "Ni" will be all Ni orbitals, and 
+            "Ni 3d" will be all 3d orbitals on Ni.
+
+    Returns:
+        lo2corr : A 2-dim (molecule) or 3-dim (lattice) array that is the unitary
+            transformation into the local orbital basis. If on a lattice it 
+            returns the transformation on the full BZ.
+
+        lo2corr_com : The compliment of lo2corr.
+    '''
+    corr_orbs, corr_orbs_idx, corr_orbs_com_idx = get_ref_orbs(mol=mf.mol, corr_orbs_labels=corr_orbs_labels)
+
+    lo2corr = np.zeros(shape=(len(mf.kpts.kpts), mf.mol.nao_nr(), len(corr_orbs_idx)))
+    lo2corr[...,corr_orbs_idx,:] = np.eye(len(corr_orbs_idx))
+    
+    lo2corr_com = np.zeros(shape=(len(mf.kpts.kpts), mf.mol.nao_nr(), len(corr_orbs_com_idx)))
+    lo2corr_com[...,corr_orbs_com_idx,:] = np.eye(len(corr_orbs_com_idx))
+    
+    # Will give the same as get_ao2corr, could maybe add a test for this
+    #ao2corr = pyscf.lib.einsum('kij,kjl->kil', ao2lo, lo2corr)
+    #ao2corr_com = pyscf.lib.einsum('kij,kjl->kil', ao2lo, lo2corr_com)
+
+    return lo2corr, lo2corr_com    
+
+def get_dm_rotated(mf, ao2b):
+    '''
+    Get the density matrix rotated into the basis of b from the atomic orbital 
+    basis.
 
     Args:
         mf : A mean-field object from HF or DFT.
@@ -514,8 +563,8 @@ def get_dm(mf, ao2b):
             be square (project onto some orbitals).
 
     Returns:
-        A 2-dim (molecule) or 3-dim (lattice) array that is density matrix 
-        in the local orbital basis
+        A 2-dim (molecule) or 3-dim (lattice) array that is the density matrix 
+        in the basis b.
     '''
     has_pbc = check_pbc(mf.mol)
     
@@ -540,6 +589,33 @@ def get_dm(mf, ao2b):
 
     return dm
 
+def get_1e_operator_rotated(mf, ao2b, mat_1e):
+    '''
+    Get the one-electron (1e) matrix rotated into the basis of b from the 
+    atomic orbital basis.
+    
+    Args:
+        mf : A mean-field object from HF or DFT.
+
+        ao2b : The transformation matrix from the atomic orbital basis to the 
+            basis b. If it is on a lattice it must be on the full BZ. It can 
+            be square (project onto some orbitals).
+
+        mat_1e : The 1e matrix in the atomic orbital basis.
+
+    Returns:
+        A 2-dim (molecule) or 3-dim (lattice) array that is a 1e matrix 
+        in the basis b.
+    '''
+    has_pbc = check_pbc(mf.mol)
+    
+    if has_pbc:
+        has_symm = check_symm(mf.kpts)
+        if has_symm:
+            mat_1e = np.asarray(mf.kpts.transform_1e_operator(mat_1e))
+    
+    return pyscf.lib.einsum('...ij,...jk,...kl->...il', np.transpose(ao2b.conj(), (0,2,1)), mat_1e, ao2b)
+    
 def get_mat_R0(mf, mat):
     '''
     Get a matrix on the k-grid at R=0 (Fourier phase factor exp(iRk) = 1).
@@ -609,7 +685,27 @@ def save_orbs_molden(mol, ao2b, filename='local_orbitals.molden', occ=None, ener
     with open(filename,'w') as f:
             molden.header(mol=mol_copy, fout=f, ignore_h=False)
             molden.orbital_coeff(mol=mol, fout=f, mo_coeff=ao2b, ene=energy, occ=occ, symm=symm_labels)
+    
+def fermi_smearing(eks, sigma=0.01, mu=0):
+    beta = 1.0/sigma
+    return 1.0 / (np.exp(beta * (eks - mu)) + 1.0)
+    
+def gaussian_smearing(eks, sigma=0.01, mu=0):
+    beta = 1.0/sigma
+    return 0.5 * scipy.special.erfc(beta * (eks - mu))
+    
+def get_mu(eks, nocc, smearing_fnc=fermi_smearing, sigma=0.01, mu0=0):
+    def nocc_cost_fnc(mu, eks, nocc, sigma):
+        occ = smearing_fnc(eks, sigma, mu)
+        return (occ.sum() - nocc)**2
+    res = scipy.optimize.minimize(nocc_cost_fnc, mu0, args=(eks,nocc,sigma), method='Powell',
+                                  options={'xtol': 1e-5, 'ftol': 1e-5, 'maxiter': 10000})
+    return res.x
 
+# TODO The self-consistency part. I will have to rotate from lo2ao and then probably ao2mo.
+# TODO check whether we are on a k-grid or not
+# TODO allow unrestricted/openshell HF
+# TODO save out to hdf5
 class LocalOrbitals(object):
     def __init__(self, mf, reference_basis, corr_orbs_labels, filename=None):
         self.mf = mf
@@ -617,11 +713,15 @@ class LocalOrbitals(object):
         self.corr_orbs_labels = corr_orbs_labels
         self.filename = filename
         if self.filename is None:
-            self.filename = ''.join(list(dict(mf.cell.atom).keys()))
+            self.filename = ''.join(list(dict(mf.mol.atom).keys()))
+
+        # FIXME check for restricted/unrestricted 
+        # and set a flag accordingly to handle the cases properly.
 
         self.nelec = mf.mol.nelec
+        #self.nelec = self.mf.mol.tot_electrons()
 
-        # Full basis rotated into local orbitals 
+        # Atomic orbital basis rotated into local orbitals 
         self.ao2lo = None
         self.ao2lo_R0 = None
         self.dm_lo = None
@@ -630,23 +730,57 @@ class LocalOrbitals(object):
 
         # Subset of local orbitals identified as correlated
         self.ao2corr = None
+        self.ao2corr_com = None
         self.ao2corr_R0 = None
         self.dm_corr = None
         self.dm_corr_R0 = None
         self.nelec_corr = None
+        self.lo2corr = None
+        self.lo2corr_com = None
+        self.lo2corr_R0 = None
 
+        # The molecular orbitals returned by the scf
         self.ao2mo = self.mf.kpts.transform_mo_coeff(self.mf.mo_coeff)
         self.ao2mo_R0 = get_mat_R0(mf=self.mf, mat=self.ao2mo)
 
-    def make_local_proj(self):
+        # The Hamiltonian quantities in the lo basis
+        self.fock = None
+        self.eri = None
+        self.mu = None
+    
+    def kernel(self):
+        self.make_corr_proj()
+        self.save_orbs()
+        self.make_fock()
+        self.check_fock_density()
+        self.make_eri_local()
+        self.print_out()
+
+    def make_local_rotation(self):
         """
-        Unitary to the local orbital basis.
+        Unitary rotation from atomic orbital basis to the local orbital basis.
+
+        Sets:
+            ao2lo : The rotation into the local orbital basis (at each k-point 
+                if on a k-grid).
+
+            ao2lo_R0 : The rotation into the local orbitals at the reference 
+                cell R=0 if on a k-grid.
+            
+            dm_lo : The one-electron density matrix in the local orbitals (at 
+                each k-point if on a k-grid).)
+
+            dm_lo_R0 : The one-electron density matrix at the reference cell 
+                R=0 if on a k-grid.
+
+            nelec_lo : The total number of electrons in the local orbitals.
+
         """
         self.ao2lo = get_ao2lo(mf=self.mf, reference_basis=self.reference_basis)
         self.ao2lo_R0 = get_mat_R0(mf=self.mf, mat=self.ao2lo)
 
         # FIXME checks for imaginary density components 
-        self.dm_lo = get_dm(mf=self.mf, ao2b=self.ao2lo)
+        self.dm_lo = get_dm_rotated(mf=self.mf, ao2b=self.ao2lo)
         self.dm_lo_R0 = get_mat_R0(mf=self.mf, mat=self.dm_lo)
 
         self.nelec_lo = np.trace(self.dm_lo_R0).real
@@ -654,27 +788,63 @@ class LocalOrbitals(object):
         if np.abs(nelec_diff) > 1e-12:
             raise ValueError(f"Total electrons in local orbitals differs from molecular orbitals by {nelec_diff} !")
 
-    # FIXME I am going to rotate everything into the local basis, so I really do need
-    # to make a projector from the local basis onto the correlated states
-    # FIXME Do I need the projectors for dft_tools to be orthogonal in the sense that P+ P = 1? Currently
-    # the projectors are P+ s1 P = 1 to be orthogonal. So do I need to output sqrt(s1) P?
-    # with scipy.linalg.fractional_matrix_power(s1, 0.5) ? I don't think so if I put everything into
-    # the local basis
+    # FIXME Do I need the projectors for dft_tools to be orthogonal in the sense that P+ P = 1? In the local
+    # basis they satisfy P+ P = 1 (they are just the identity). But if I am in a different basis, say, the molecular
+    # orbital basis then mo_coeff+ s1 mo_coeff = 1 (they are not stored in their orthgonal basis). I can rotate into
+    # C' = s1^(1/2) mo_coeff which will be an orthogonal basis. But then I just have to be careful about what
+    # I feed back into pyscf for self-consistency.
     def make_corr_proj(self):
         """
-        Projector to correlated orbital basis.
+        Projectors onto the correlated orbital subspace and its complement.
+
+        Sets:
+            ao2corr : The projector from the atomic orbital basis onto the 
+                correlated orbitals (at each k-point if on a grid).
+
+            ao2corr_com : The complement of ao2corr.
+
+            ao2corr_R0 : ao2corr but at the reference cell R=0 if on a 
+                k-grid.
+
+            lo2corr : The projector from the local orbital basis onto the 
+                correlated orbitals (at each k-point if on a grid). These 
+                are just identity matrices of the selected orbitals.
+
+            lo2corr_com : The complement of lo2corr.
+
+            lo2corr_R0 : lo2corr but at the reference cell R=0 if on a 
+                k-grid.
+
+            dm_corr : The density matrix in the correlated subspace (at each 
+                k-point if on a grid).
+
+            dm_corr_R0 : As above but at the reference cell R=0 if on a 
+                k-grid.
+
+            nelec_corr : The total number of electrons in the correlated 
+                subspace.
         """
         if self.ao2lo is None:
-            self.make_local_proj()
+            self.make_local_rotation()
 
         self.ao2corr, self.ao2corr_com = get_ao2corr(mf=self.mf, corr_orbs_labels=self.corr_orbs_labels, ao2lo=self.ao2lo)
         self.ao2corr_R0 = get_mat_R0(mf=self.mf, mat=self.ao2corr)
 
-        self.dm_corr = get_dm(mf=self.mf, ao2b=self.ao2corr)
+        self.dm_corr = get_dm_rotated(mf=self.mf, ao2b=self.ao2corr)
         self.dm_corr_R0 = get_mat_R0(mf=self.mf, mat=self.dm_corr)
         self.nelec_corr = np.trace(self.dm_corr_R0).real
+
+        self.lo2corr, self.lo2corr_com = get_lo2corr(mf=self.mf, corr_orbs_labels=self.corr_orbs_labels)
+        self.lo2corr_R0 = get_mat_R0(mf=self.mf, mat=self.lo2corr) # This will just be the identity
     
-    def make_eri(self):
+    # TODO
+    # the eri algorithm
+    # If I just do this onto the correlated space it will probably be faster
+    # but how long does this really take?
+    def make_eri_local(self):
+        '''
+        Two-electron repulsion integral in the local basis.
+        '''
         # Here I have to rotate the ERI into the local basis
         #ao2eo = lib.einsum('...ij,...jl->...il', ao2lo, lo2eo)
         
@@ -686,30 +856,96 @@ class LocalOrbitals(object):
 
         #from pyscf.pbc import df
         #eri = df.DF(mf.mol).get_eri()
+
+        # https://pyscf.org/develop/ao2mo_developer.html
         return None
 
-    def make_f(self):
-        # Here I have to rotate the Fock operator into the local basis
-        # Then subtrat off the ERI contribution
+    def make_fock(self):
+        '''
+        The Fock operator (1e integrals + Hartree-Fock contribution) in the 
+        local basis. This will be the non-interacting Hamiltonian for 
+        correlated methods.
+
+        Sets:
+            fock : Fock matrix (at each k-point if on a grid).
+
+            fock_R0 : Fock matrix in reference cell R0. The non-interacting 
+                local Hamiltonian which includes the Hartree-Fock component.
+        '''
+        if self.ao2lo is None:
+            self.make_local_rotation()
+
+        fock_ao = self.mf.get_fock()
+        self.fock = get_1e_operator_rotated(mf=self.mf, ao2b=self.ao2lo, mat_1e=fock_ao)
+        self.fock_R0 = get_mat_R0(mf=self.mf, mat=self.fock)
+
+    # TODO
+    # Needs the ERI algorithm
+    def make_hatree_fock_eri(self):
+        '''
+        The Hartree-Fock contribution of the two-electron integral to the Fock 
+        operator.
+        # Note that this will have to be updated at each dmft step so 
+        '''
+        # The subtrat off ERI contribution has to be a separate part becuase it only is
+        # subtracted off the impurity. So for dft-tools I could store like a 'double counting' matrix.)
+        # I'm going to be storing the ERI anyway. Or, I could calculate it at the mf level and keep
+        # the double counting fixed, and only update at each charge update. But I think this will be
+        # very wrong for single-shot!
         return None
 
+    def check_fock_density(self):
+        '''
+        Check that the Fock matrix in the local orbital basis gives the 
+        correct electron density in the reference cell R=0.
+        '''
+        if self.fock is None:
+            self.make_fock()
+        
+        # FIXME Check that smearing and sigma are in mf
+
+        # If mf uses smearing then mf.get_fermi() does not return
+        # the correct mu. So calculate it ourselves.
+        if self.mf.smearing_method == 'fermi':
+            smearing_fnc = fermi_smearing
+        elif mf.smearing_method == 'gaussian':
+            smearing_fnc = gaussian_smearing
+        else:
+            raise ValueError('Smearing must be fermi or gaussian !')
+        sigma = self.mf.sigma
+        nelec = self.mf.mol.tot_electrons(self.mf.kpts.nkpts)
+        nocc = nelec // 2
+        
+        eks, vks = np.linalg.eigh(self.fock)
+        mu0 = np.sort(eks.flatten())[nocc-1]
+        self.mu = get_mu(eks=eks, nocc=nocc, smearing_fnc=smearing_fnc, sigma=sigma, mu0=mu0)
+
+        # *2 because RHF
+        dm = 2.0 * pyscf.lib.einsum('kij,kj,kjl->il', vks, smearing_fnc(eks=eks, sigma=sigma, mu=self.mu), np.transpose(vks, (0,2,1)))
+        #dm = self.lo2corr_R0.conj().T @ dm @ self.lo2corr_R0 / eks.shape[0]
+        dm /= eks.shape[0]
+
+        if np.any( np.abs(dm - lo.dm_lo_R0).real > 1e-6):
+            print("WARNING: Elements in local orbital basis density does not match the the density calculated from the Fock matrix within 1e-6 !")
+
+        return dm
+    
     def print_out(self):
         print(f"Total number of k-points: {len(mf.kpts)}")
         print(f"Impurity density: {self.nelec_corr}")
         print(f"Total density in local space: {self.nelec_lo}")
+
+        fock_R0_corr = self.lo2corr_R0.conj().T @ self.fock_R0 @ self.lo2corr_R0
+        print(f"Local Hamiltonian:")
+        print(fock_R0_corr)
 
     def save_orbs(self, for_iboview=True):
         save_orbs_molden(mol=self.mf.mol, ao2b=self.ao2mo_R0, filename=self.filename+'_molecular_orbitals.molden', for_iboview=for_iboview)
         save_orbs_molden(mol=self.mf.mol, ao2b=self.ao2lo_R0, filename=self.filename+'_local_orbitals.molden', occ=np.diagonal(self.dm_lo_R0), for_iboview=for_iboview)
         save_orbs_molden(mol=self.mf.mol, ao2b=self.ao2corr_R0, filename=self.filename+'_correlated_orbitals.molden', occ=np.diagonal(self.dm_corr_R0), for_iboview=for_iboview)
 
-    def kernel(self):
-        self.make_corr_proj()
-        self.save_orbs()
-        self.make_f()
-        self.make_eri()
-        self.print_out()
-
+    def save(self):
+        return None
 
 class PyscfConverter(object):
     """
@@ -738,58 +974,58 @@ class PyscfConverter(object):
         self.misc_subgrp = misc_subgrp
 
 
+if __name__ == "__main__":
+    nio = False
+    #nio = True
+    if nio:
+        # Make in ase
+        atoms = bulk(name='NiO', crystalstructure='rocksalt', a=4.17)
+        # Make in pyscf
+        cell = gto.Cell()
+        cell.from_ase(atoms)
+        cell.basis = 'gth-dzvp-molopt-sr',
+        cell.pseudo = 'gth-pade'
+        cell.verbose = 5
+        cell.exp_to_discard=0.1 # maybe remove this?
+        #cell.output = './log_dmet_test.txt'
+        cell.build()
+        reference_basis = 'gth-szv-molopt-sr' # Used in garnet chan paper for iao
+        
+        corr_orbs_labels = ["Ni 3d"]
+    else:
+        # Make in pyscf
+        atoms = bulk(name='Si', crystalstructure='fcc', a=5.43053)
+        cell = gto.Cell()
+        cell.from_ase(atoms)
+        cell.basis = 'gth-dzvp',
+        cell.pseudo = 'gth-pade'
+        cell.verbose = 5
+        cell.exp_to_discard=0.1 # maybe remove this? # nah I think I need it to stop libcint having errors
+        #cell.output = './log_dmet_test.txt'
+        cell.build()
+        reference_basis = 'gth-szv'
+        
+        corr_orbs_labels = ["Si 3p"]
 
-nio = False
-#nio = True
-if nio:
-    # Make in ase
-    atoms = bulk(name='NiO', crystalstructure='rocksalt', a=4.17)
-    # Make in pyscf
-    cell = gto.Cell()
-    cell.from_ase(atoms)
-    cell.basis = 'gth-dzvp-molopt-sr',
-    cell.pseudo = 'gth-pade'
-    cell.verbose = 5
-    cell.exp_to_discard=0.1 # maybe remove this?
-    #cell.output = './log_dmet_test.txt'
-    cell.build()
-    reference_basis = 'gth-szv-molopt-sr' # Used in garnet chan paper for iao
-    
-    corr_orbs_labels = ["Ni 3d"]
-else:
-    # Make in pyscf
-    atoms = bulk(name='Si', crystalstructure='fcc', a=5.43053)
-    cell = gto.Cell()
-    cell.from_ase(atoms)
-    cell.basis = 'gth-dzvp',
-    cell.pseudo = 'gth-pade'
-    cell.verbose = 5
-    cell.exp_to_discard=0.1 # maybe remove this? # nah I think I need it to stop libcint having errors
-    #cell.output = './log_dmet_test.txt'
-    cell.build()
-    reference_basis = 'gth-szv'
-    
-    corr_orbs_labels = ["Si 3p"]
+    nkx = 2
+    kmesh = [nkx,nkx,nkx]
+    #symm = False
+    symm = True
+    if symm:
+        kpts = cell.make_kpts(kmesh, 
+                              space_group_symmetry=True, 
+                              time_reversal_symmetry=True,
+                              symmorphic=True)
+    else:
+        kpts = cell.make_kpts(kmesh)
 
-nkx = 2
-kmesh = [nkx,nkx,nkx]
-#symm = False
-symm = True
-if symm:
-    kpts = cell.make_kpts(kmesh, 
-                          space_group_symmetry=True, 
-                          time_reversal_symmetry=True,
-                          symmorphic=True)
-else:
-    kpts = cell.make_kpts(kmesh)
-
-mf = dft.KRKS(cell, kpts=kpts, exxdiv='ewald').density_fit() # restricted spin S = 0
-#mf = dft.KUKS(cell, kpts=kpts, exxdiv='ewald').density_fit()
-#mf.with_df.auxbasis = "weigend" # same as #def2-universal-jfit" recommended for dft
-mf.with_df.auxbasis = df.aug_etb(cell, beta=2.2) # used in dmet paper (even-tempered basis, beta = 2.2 for NiO)
-mf = scf.addons.smearing_(mf, sigma=0.01, method='fermi')
-mf.kernel()
+    mf = dft.KRKS(cell, kpts=kpts, exxdiv='ewald').density_fit() # restricted spin S = 0
+    #mf = dft.KUKS(cell, kpts=kpts, exxdiv='ewald').density_fit()
+    #mf.with_df.auxbasis = "weigend" # same as #def2-universal-jfit" recommended for dft
+    mf.with_df.auxbasis = df.aug_etb(cell, beta=2.2) # used in dmet paper (even-tempered basis, beta = 2.2 for NiO)
+    mf = scf.addons.smearing_(mf, sigma=0.01, method='fermi')
+    mf.kernel()
 
 
-lo = LocalOrbitals(mf=mf, reference_basis=reference_basis, corr_orbs_labels=corr_orbs_labels)
-lo.kernel()
+    lo = LocalOrbitals(mf=mf, reference_basis=reference_basis, corr_orbs_labels=corr_orbs_labels)
+    lo.kernel()
