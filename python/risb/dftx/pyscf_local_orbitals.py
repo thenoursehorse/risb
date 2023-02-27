@@ -1029,3 +1029,7 @@ if __name__ == "__main__":
 
     lo = LocalOrbitals(mf=mf, reference_basis=reference_basis, corr_orbs_labels=corr_orbs_labels)
     lo.kernel()
+
+#bpy
+#bmesh
+#matutils
