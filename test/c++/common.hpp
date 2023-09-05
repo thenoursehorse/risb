@@ -1,14 +1,15 @@
 #include <triqs/test_tools/gfs.hpp>
 #include <triqs/test_tools/arrays.hpp>
-#include <triqs/arrays.hpp>
-//#include <triqs/arrays/block_matrix.hpp>
+#include <nda/nda.hpp>
+//#include <nda/block_matrix.hpp>
 #include <triqs/lattice/tight_binding.hpp>
 #include <triqs/gfs.hpp>
+#include <triqs/mesh.hpp>
 #include <risb/common_functions.hpp>
 #include <risb/functions/functions.hpp>
 #include <risb/embedding_atom_diag/embedding_atom_diag.hpp>
 
-using namespace triqs::arrays;
+using namespace nda;
 using namespace triqs::hilbert_space;
 using namespace triqs::operators;
 using namespace triqs::gfs;
@@ -79,7 +80,7 @@ auto build_cubic_dispersion(int const orb_dim = 1, int const nkx = 6, int const 
   auto overlap_mat_vec = std::vector<matrix<dcomplex>>{{{t}}, {{t}}, {{t}}, {{t}}};
   auto tb = tight_binding{bl, displ_vec, overlap_mat_vec};
   auto energies = energies_on_bz_grid(tb, nkx);
-  int nk = second_dim(energies);
+  int nk = energies.shape()[1];
 
   array<double, 5> dispersion(na, na, orb_dim, orb_dim, nk);
   assign_foreach (dispersion, [&energies] (auto i, auto j, auto a, auto b, auto k) {
@@ -125,7 +126,7 @@ auto build_semicircular_dos(double const half_bandwidth = 1, int const epts = 10
   placeholder<2> a_;
   placeholder<3> b_;
   placeholder<4> e_;
-  auto _ = range();
+  auto _ = range::all;
 
   int na = 1;
 
@@ -154,7 +155,7 @@ auto build_g_semicircular(double const beta = 200, long const nw = 30, double co
   auto g_iw = gf<imfreq> {{beta, Fermion, nw}, {dim, dim}};
   auto const &iw_mesh = g_iw.mesh();
 
-  for (auto const &iw : iw_mesh) {
+  for (auto iw : iw_mesh) {
     auto om = iw + mu;
     g_iw[iw] = (om - I*std::copysign(1.0,imag(om))*sqrt(half_bandwidth*half_bandwidth - om*om))/half_bandwidth/half_bandwidth*2.0;
   }
@@ -166,16 +167,16 @@ auto build_g0_k_z_cubic(long const nw = 30, int const nkx = 6, double const beta
 
   auto dispersion = build_cubic_dispersion(dim, nkx);
   auto bz     = brillouin_zone{bravais_lattice{{{1, 0}, {0, 1}}}};
-  auto g_k_iw = gf<cartesian_product<brillouin_zone, imfreq>> {{{bz, nkx}, {beta, Fermion, nw}}, {dim, dim}};
+  auto g_k_iw = gf<prod<brzone, imfreq>> {{{bz, nkx}, {beta, Fermion, nw}}, {dim, dim}};
 
   auto const &k_mesh = std::get<0>(g_k_iw.mesh());
   auto const &iw_mesh = std::get<1>(g_k_iw.mesh());
 
-  auto _ = range();
+  auto _ = range::all;
 
-  for (auto const &k : k_mesh) {
-    matrix_const_view<double> disp_slice = dispersion(0,0,_,_,k.linear_index());
-    for (auto const &iw : iw_mesh) {
+  for (auto k : k_mesh) {
+    matrix_const_view<double> disp_slice = dispersion(0,0,_,_,k.data_index());
+    for (auto iw : iw_mesh) {
       g_k_iw[k,iw] = iw - disp_slice;
     }
   }

@@ -1,5 +1,5 @@
 #include "./embedding_atom_diag.hpp"
-#include <triqs/arrays/blas_lapack/dot.hpp>
+#include <nda/blas/dot.hpp>
 
 namespace risb {
   namespace embedding_atom_diag {
@@ -30,12 +30,14 @@ namespace risb {
       }
 
       // Construct local and bath hilbert space in terms of block structure
-      for (auto const &block : _gf_struct) {
+      //for (auto const &block : _gf_struct) {
+      for (auto const &[block, bl_size] : _gf_struct) {
         auto fops1 = fundamental_operator_set();
         auto fops2 = fundamental_operator_set();
-        for (auto const &inner : block.second) {
-          fops1.insert(block.first, inner);
-          fops2.insert("bath_" + block.first, inner);
+        //for (auto const &inner : block.second) {
+        for (int inner : range(bl_size)) {
+          fops1.insert(block, inner);
+          fops2.insert("bath_" + block, inner);
         }
         _fops_loc.push_back(fops1);
         _fops_bath.push_back(fops2);

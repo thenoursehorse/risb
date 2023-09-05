@@ -1,24 +1,15 @@
 version: "3.9"
 
 services:
-  triqs:
-    platform: linux/amd64
-    image: triqs:3.0.x
-    build:
-      context: https://github.com/thenoursehorse/docker.git#main:triqs
-      dockerfile: Dockerfile.3.0.x
-
   risb:
-    depends_on:
-    - triqs
-    platform: linux/amd64
-    image: risb:3.0.x
+    image: risb:3.2.x
+    container_name: risb
     build:
       context: .
       dockerfile: Dockerfile
       args:
-        - TRIQSTAG=3.0.x
+        - TRIQSTAG=3.2.0
     volumes:
-      - "./:/home/hacker/src/risb:ro"
+      - "./:/home/build/src/risb:ro"
     stdin_open: true # docker run -i
     tty: true        # docker run -t

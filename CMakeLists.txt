@@ -19,29 +19,23 @@
 #
 # ##############################################################################
 
-cmake_minimum_required(VERSION 3.3.2 FATAL_ERROR)
-cmake_policy(VERSION 3.3.2)
-if(POLICY CMP0074)
-  cmake_policy(SET CMP0074 NEW)
-endif()
-if(POLICY CMP0077)
-  cmake_policy(SET CMP0077 NEW)
-endif()
+cmake_minimum_required(VERSION 3.20 FATAL_ERROR)
+cmake_policy(VERSION 3.20)
 
 # ############
 # Define Project
-project(risb VERSION 3.0.0 LANGUAGES CXX)
+project(risb VERSION 3.2.0 LANGUAGES C CXX)
 get_directory_property(IS_SUBPROJECT PARENT_DIRECTORY)
 
 # ############
 # Load TRIQS and CPP2PY
-find_package(TRIQS 3.0 REQUIRED)
+find_package(TRIQS 3.2 REQUIRED)
 
 # FIXME Load kint
-find_package(kint 3.0 CONFIG)
+find_package(kint 3.2 CONFIG)
 
 # Some possible embedding solvers
-find_package(embedding_ed 3.0 CONFIG) #FIXME add to this project and search for ezARPACK instead
+find_package(embedding_ed 3.2 CONFIG)
 find_package(pomerol2triqs CONFIG)
 
 # Get the git hash & print status
@@ -163,7 +157,7 @@ if(BUILD_DEBIAN_PACKAGE AND NOT IS_SUBPROJECT)
   set(CPACK_PACKAGE_VERSION ${PROJECT_VERSION})
   set(CPACK_PACKAGE_CONTACT "https://github.com/TRIQS/${PROJECT_NAME}")
   execute_process(COMMAND dpkg --print-architecture OUTPUT_VARIABLE CMAKE_DEBIAN_PACKAGE_ARCHITECTURE OUTPUT_STRIP_TRAILING_WHITESPACE)
-  set(CPACK_DEBIAN_PACKAGE_DEPENDS "triqs (>= 3.0)")
+  set(CPACK_DEBIAN_PACKAGE_DEPENDS "triqs (>= 3.1)")
   set(CPACK_DEBIAN_PACKAGE_SHLIBDEPS ON)
   set(CPACK_DEBIAN_PACKAGE_GENERATE_SHLIBS ON)
   include(CPack)

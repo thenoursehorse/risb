@@ -1,20 +1,19 @@
 #pragma once
 #include <vector>
 #include <string>
-#include <triqs/arrays.hpp>
-#include <triqs/arrays/vector.hpp>
-#include <triqs/arrays/matrix.hpp>
+#include <nda/nda.hpp>
 #include <triqs/operators/many_body_operator.hpp>
 #include <triqs/hilbert_space/fundamental_operator_set.hpp>
 #include <triqs/utility/first_include.hpp>
 
 #include <triqs/gfs.hpp>
+#include <triqs/mesh.hpp>
 
 namespace risb {
   namespace functions {
 
     using dcomplex = std::complex<double>;
-    using namespace triqs::arrays;
+    using namespace nda;
     using namespace triqs::hilbert_space;
 
     using namespace triqs::gfs;

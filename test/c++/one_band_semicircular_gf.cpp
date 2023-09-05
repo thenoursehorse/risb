@@ -63,12 +63,12 @@ TEST(one_band_semicircular_gf, half_filling) { // NOLINT
       auto sigma_iw_b = get_sigma_z(g_iw_b,R_b,lambda_b,mu);
 
       // Calculate new g_iw:
-      for (auto const &iw : iw_mesh) {
+      for (auto iw : iw_mesh) {
         g_iw_b[iw] = inverse( inverse(g0_iw_b[iw]) - sigma_iw_b[iw]  );
       }
 
       // Calculate new g0_iw:
-      for (auto const &iw : iw_mesh) {
+      for (auto iw : iw_mesh) {
         g0_iw_b[iw] = inverse( iw + mu - t*t*g_iw_b[iw] );
       }
     

@@ -1,8 +1,7 @@
 #pragma once
 #include <vector>
-#include <triqs/arrays/vector.hpp>
-#include <triqs/arrays/matrix.hpp>
-#include <triqs/arrays/block_matrix.hpp>
+#include <nda/nda.hpp>
+//#include <nda/block_matrix.hpp>
 #include <triqs/operators/many_body_operator.hpp>
 #include <triqs/hilbert_space/fundamental_operator_set.hpp>
 #include <triqs/atom_diag/atom_diag.hpp>
@@ -14,7 +13,7 @@ namespace risb {
   namespace embedding_atom_diag {
 
     using namespace triqs::hilbert_space;
-    using namespace triqs::arrays;
+    using namespace nda;
     using namespace triqs::atom_diag;
 
     template <bool Complex> class embedding_atom_diag {

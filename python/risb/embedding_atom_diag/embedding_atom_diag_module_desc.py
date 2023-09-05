@@ -20,7 +20,7 @@ module.add_preamble("""
 #include <triqs/cpp2py_converters/operators_real_complex.hpp>
 #include <triqs/cpp2py_converters/fundamental_operator_set.hpp>
 
-using namespace triqs::arrays;
+using namespace nda;
 using namespace triqs::operators;
 using namespace triqs::hilbert_space;
 using namespace risb::embedding_atom_diag;

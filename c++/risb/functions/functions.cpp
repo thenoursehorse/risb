@@ -1,13 +1,11 @@
 #include "./functions.hpp"
-#include <triqs/arrays/linalg/eigenelements.hpp>
-#include <triqs/arrays/blas_lapack/gelss.hpp>
 #include <triqs/utility/is_complex.hpp>
 #include "../common_functions.hpp"
 
 namespace risb {
   namespace functions {
 
-    using namespace triqs::arrays;
+    using namespace nda;
 
     std::pair<fundamental_operator_set, fundamental_operator_set> get_embedding_space(fundamental_operator_set const &fops_local) {
 
@@ -36,22 +34,22 @@ namespace risb {
       bool const is_complex = triqs::is_complex<T>::value || triqs::is_complex<H>::value;
       using eks_scalar_t = std::conditional_t<is_complex, std::complex<double>, double>;
       
-      triqs::clef::placeholder<0> i_;
-      triqs::clef::placeholder<1> j_;
-      auto _ = range();
+      nda::clef::placeholder<0> i_;
+      nda::clef::placeholder<1> j_;
+      auto _ = range::all;
       
-      auto n_qp = first_dim(dispersion);
+      auto n_qp = dispersion.shape()[0];
       auto dim = third_dim(dispersion);
       auto mesh_num = fifth_dim(dispersion);
       
       array<eks_scalar_t,3> h_qp(n_qp * dim, n_qp * dim, mesh_num); // FIXME these dimensions are not very general
-      array<double,2> h_qp_eig(first_dim(h_qp), third_dim(h_qp));
-      array<eks_scalar_t,3> h_qp_vec(first_dim(h_qp), second_dim(h_qp), third_dim(h_qp));
-      array<eks_scalar_t,3> h_qp_vec_dag(first_dim(h_qp), second_dim(h_qp), third_dim(h_qp));
+      array<double,2> h_qp_eig(h_qp), third_dim(h_qp).shape()[0];
+      array<eks_scalar_t,3> h_qp_vec(h_qp), h_qp.shape()[1], third_dim(h_qp).shape()[0];
+      array<eks_scalar_t,3> h_qp_vec_dag(h_qp), h_qp.shape()[1], third_dim(h_qp).shape()[0];
 
       // Set the quasiparticle Hamiltonian to diagononalise
       for (auto const i : range(n_qp)) {
-        matrix<double> mu_matrix(first_dim(lambda[i]), first_dim(lambda[i]));
+        matrix<double> mu_matrix(lambda[i]), lambda[i].shape()[0].shape()[0];
         mu_matrix(i_,j_) << (i_ == j_) * mu;
         for (auto const j : range(n_qp)) {
           for (auto const k : range(mesh_num)) {
@@ -94,12 +92,12 @@ namespace risb {
       bool const is_complex = triqs::is_complex<T>::value || triqs::is_complex<H>::value;
       using eks_scalar_t = std::conditional_t<is_complex, std::complex<double>, double>;
       
-      auto _ = range();
+      auto _ = range::all;
       
-      auto n_qp = first_dim(dispersion);
+      auto n_qp = dispersion.shape()[0];
       auto dim = third_dim(dispersion); // FIXME this should be more general and be inside the some in some way
       auto mesh_num = fifth_dim(dispersion);
-      auto num_bands = first_dim(h_qp.vec);
+      auto num_bands = h_qp.vec.shape()[0];
 
       array<eks_scalar_t,3> disp_R(num_bands, num_bands, mesh_num);
 
@@ -136,10 +134,10 @@ namespace risb {
       bool const is_complex = triqs::is_complex<T>::value;
       using h_scalar_t = std::conditional_t<is_complex, std::complex<double>, double>;
       
-      auto _ = range();
+      auto _ = range::all;
       
-      auto num_bands = first_dim(vec_dag);
-      auto dim = second_dim(vec_dag);
+      auto num_bands = vec_dag.shape()[0];
+      auto dim = vec_dag.shape()[1];
       
       // Calculate the local kinetic energy on each cluster
       matrix<h_scalar_t> ke_local(dim, dim);
@@ -171,10 +169,10 @@ namespace risb {
     template <typename T>  
     auto get_pdensity(array<T,3> const &vec, array<T,3> const &vec_dag, array<double,2> const &wks)->matrix<double> {
       
-      auto _ = range();
+      auto _ = range::all;
 
-      auto num_bands = first_dim(vec_dag);
-      auto dim = second_dim(vec_dag);
+      auto num_bands = vec_dag.shape()[0];
+      auto dim = vec_dag.shape()[1];
       
       matrix<double> qp_num(dim, dim);
       set_zero(qp_num);
@@ -215,10 +213,10 @@ namespace risb {
     template <typename H>  
     auto get_lambda_c(matrix_const_view<double> pdensity, matrix_const_view<H> R, matrix_const_view<double> lambda, matrix_const_view<H> D)->matrix<double> {
      
-      auto dim = first_dim(pdensity);
+      auto dim = pdensity.shape()[0];
       
-      triqs::clef::placeholder<0> i_;
-      triqs::clef::placeholder<1> j_;
+      nda::clef::placeholder<0> i_;
+      nda::clef::placeholder<1> j_;
       matrix<double> identity(dim,dim);
       identity(i_,j_) << (i_ == j_) * 1.0;
       
@@ -241,13 +239,13 @@ namespace risb {
     template <typename H>  
     auto get_lambda(matrix_const_view<H> R, matrix_const_view<H> D, matrix_const_view<double> lambda_c, matrix_const_view<double> Nf)->matrix<double> {
 
-      auto dim = first_dim(Nf);
+      auto dim = Nf.shape()[0];
       //matrix<double> identity(dim, dim);
       //set_zero(identity);
       //identity() = 1.0;
       
-      triqs::clef::placeholder<0> i_;
-      triqs::clef::placeholder<1> j_;
+      nda::clef::placeholder<0> i_;
+      nda::clef::placeholder<1> j_;
       matrix<double> identity(dim,dim);
       identity(i_,j_) << (i_ == j_) * 1.0;
       
@@ -323,7 +321,7 @@ namespace risb {
       bool const is_complex = triqs::is_complex<H>::value;
       //using coeff_scalar_t = std::conditional_t<is_complex, std::complex<double>, double>;
      
-      auto dim = first_dim(hs[0]);
+      auto dim = hs[0].shape()[0];
       matrix<dcomplex> A(dim, dim);
       set_zero(A);
       for(auto s : range(hs.size())) A += dcomplex(coeff[s]) * hs[s];
@@ -374,18 +372,18 @@ namespace risb {
       auto const &z_mesh = g_z.mesh();
 
       /*
-      int dim = first_dim(R);
+      int dim = R.shape()[0];
       auto beta = g_z.mesh()[0].beta;
       matrix<double> pdensity(dim,dim);
       pdensity(i_,j_) << 0.5 * (i_ == j_);
-      for (auto const &z : z_mesh) {
+      for (auto z : z_mesh) {
         pdensity += real( inverse(dagger(R)) * g_z[z] * inverse(R) ) / beta;
       }
       return pdensity;
       */
 
       auto gqp_z = make_gf(g_z);
-      for (auto const &z : z_mesh) {
+      for (auto z : z_mesh) {
         gqp_z[z] = inverse(dagger(R)) *  gqp_z[z] * inverse(R);
       }
       return real(density(gqp_z));
@@ -398,27 +396,27 @@ namespace risb {
     template <typename H>
     auto get_ke_gf(gf_const_view<imfreq> g_z, gf_const_view<imfreq> delta_z, matrix_const_view<H> R)->matrix<H> {
 
-      triqs::clef::placeholder<0> i_;
-      triqs::clef::placeholder<1> j_;
+      nda::clef::placeholder<0> i_;
+      nda::clef::placeholder<1> j_;
       
       auto g_ke = make_gf(g_z);
       auto const &z_mesh = g_ke.mesh();
 
-      for (auto const &z : z_mesh) {
+      for (auto z : z_mesh) {
         g_ke[z] = delta_z[z] * g_z[z];
       }
 
-      int dim = first_dim(R);
+      int dim = R.shape()[0];
       auto beta = g_z.mesh()[0].beta;
       matrix<H> ke(dim,dim);
       ke(i_,j_) << 0.0 * (i_ == j_);
-      for (auto const &z : z_mesh) {
+      for (auto z : z_mesh) {
         ke += real(g_ke[z]) / beta;
       }
       return real( ke * inverse(R) ); // FIXME for non-real?
 
       /*
-      int dim = first_dim(R);
+      int dim = R.shape()[0];
       auto ke = (density(g_ke) - 0.5*identity) * inverse(R);
       return real(ke);
       */
@@ -433,7 +431,7 @@ namespace risb {
     auto get_delta_z(gf_const_view<imfreq> g0_z)->gf<imfreq> {
       auto delta_z = inverse(g0_z);
       auto const &z_mesh = delta_z.mesh();
-      for (auto const &z : z_mesh) {
+      for (auto z : z_mesh) {
         delta_z[z] = z - delta_z[z];
       }
       return delta_z;
@@ -443,9 +441,9 @@ namespace risb {
     template <typename H>
     auto get_sigma_z(gf_const_view<imfreq> g_z, matrix_const_view<H> R, matrix_const_view<double> lambda, double const mu)->gf<imfreq> {
       
-      auto dim = first_dim(R);
-      triqs::clef::placeholder<0> i_;
-      triqs::clef::placeholder<1> j_;
+      auto dim = R.shape()[0];
+      nda::clef::placeholder<0> i_;
+      nda::clef::placeholder<1> j_;
       matrix<double> identity(dim,dim);
       identity(i_,j_) << 1.0 * (i_ == j_);
       
@@ -454,7 +452,7 @@ namespace risb {
       auto sigma_z = make_gf(g_z);
 
       auto const &z_mesh = sigma_z.mesh();
-      for (auto const &z : z_mesh) {
+      for (auto z : z_mesh) {
         sigma_z[z] = z*(identity-Z_inv) + inverse(R)*lambda*inverse(dagger(R)); // - one_body_terms e0?
         sigma_z[z] += mu*(identity-Z_inv);
       }

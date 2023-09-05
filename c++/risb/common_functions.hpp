@@ -1,15 +1,10 @@
 #pragma once
-#include <triqs/arrays.hpp>
-#include <triqs/arrays/vector.hpp>
-#include <triqs/arrays/matrix.hpp>
-#include <triqs/arrays/linalg/eigenelements.hpp>
+#include <nda/nda.hpp>
 #include <triqs/utility/is_complex.hpp>
-#include <triqs/arrays/linalg/eigenelements.hpp>
-#include <triqs/arrays/blas_lapack/gelss.hpp>
 
 namespace risb {
 
-  using namespace triqs::arrays;  
+  using namespace nda;  
   
   template <class M> void set_zero(M &A) {
     #ifdef __GNUC__
@@ -95,15 +90,15 @@ namespace risb {
     */
   template <typename T> 
   matrix<typename T::value_type> pseudo_inverse(T const &A) {
-    int M    = first_dim(A);
-    int N    = second_dim(A);
+    int M    = A.shape()[0];
+    int N    = A.shape()[1];
 
     // Output B of identity to gess is the pseudo inverse of A
     matrix<typename T::value_type> B(N,N);
     set_zero(B);
     B() = 1.0;
 
-    //int NRHS = second_dim(B);
+    //int NRHS = B.shape()[1];
 
     auto S = vector<double>(std::min(M, N));
 

@@ -21,7 +21,7 @@ class tests(unittest.TestCase):
 
         dispersion, bl = build_cubic_dispersion(nkx = nkx, return_bl = True)
 
-        mesh_k = MeshBrillouinZone(BrillouinZone(bl), nkx)
+        mesh_k = MeshBrZone(BrillouinZone(bl), nkx)
         mesh_iw = S.G_iw.mesh
         mesh_k_iw = MeshProduct(mesh_k, mesh_iw)
         nk = len(mesh_k)

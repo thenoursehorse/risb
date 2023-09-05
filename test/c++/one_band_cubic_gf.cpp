@@ -64,15 +64,15 @@ TEST(one_band_cubic_gf, half_filling) { // NOLINT
       auto sigma_iw_b = get_sigma_z(g_iw_b,R_b,lambda_b,mu);
 
       // Calculate new g_iw:
-      for (auto const &iw : iw_mesh) {
+      for (auto iw : iw_mesh) {
         g_iw_b[iw] = 0.0;
-        for (auto const &k : k_mesh) {
+        for (auto k : k_mesh) {
           g_iw_b[iw] += inverse( inverse(g0_k_iw_b[k,iw]) + mu - sigma_iw_b[iw] ) / k_mesh.size();
         }
       }
 
       // Calculate new g0_iw:
-      for (auto const &iw : iw_mesh) {
+      for (auto iw : iw_mesh) {
         g0_iw_b[iw] = inverse( inverse(g_iw_b[iw]) + sigma_iw_b[iw] );
       }
 

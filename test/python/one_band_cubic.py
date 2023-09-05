@@ -76,7 +76,7 @@ class tests(unittest.TestCase):
         
         # Test green's function density
 #        nw = 10*beta
-#        mesh_k = MeshBrillouinZone(BrillouinZone(bl), nkx)
+#        mesh_k = MeshBrZone(BrillouinZone(bl), nkx)
 #        mesh_iw = MeshImFreq(beta= beta, S = "Fermion", n_max = nw)
 #        mesh_k_iw = MeshProduct(mesh_k, mesh_iw)
 #

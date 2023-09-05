@@ -1,18 +1,26 @@
 ARG TRIQSTAG
-FROM triqs:${TRIQSTAG}
+FROM flatironinstitute/triqs:${TRIQSTAG}
 ARG APPNAME=risb
 
-RUN mkdir -p ${SRC_DIR}/${APPNAME}
-COPY --chown=${NB_USER} requirements.txt ${SRC_DIR}/${APPNAME}/requirements.txt
-RUN pip3 install -r ${SRC_DIR}/${APPNAME}/requirements.txt
+USER root
+RUN useradd -u 990 -m build
+USER build
 
-COPY --chown=${NB_USER} . ${SRC_DIR}/${APPNAME}
+ENV SRC=/home/build/src \
+    BUILD=/home/build \
+    OMP_NUM_THREADS=4 \
+    NCORES=4
 
-RUN mkdir -p ${BUILD_DIR}/${APPNAME}
-WORKDIR ${BUILD_DIR}/${APPNAME}
+COPY --chown=build requirements.txt $SRC/$APPNAME/requirements.txt
+RUN pip3 install -r $SRC/$APPNAME/requirements.txt
 
-SHELL ["/bin/bash", "-cli"]
-RUN cmake ${SRC_DIR}/${APPNAME} -DTRIQS_ROOT=${INSTALL_PREFIX} \
-  && make -j${NCORES} \
-  || make -j1 VERBOSE=1 \
-  && make install
+COPY --chown=build . $SRC/$APPNAME
+WORKDIR $BUILD/$APPNAME
+RUN chown build .
+
+# -DTRIQS_ROOT=${INSTALL_PREFIX}
+#RUN cmake $SRC/$APPNAME
+#RUN make -j$NCORES || make -j1 VERBOSE=1
+#USER root
+#RUN make install
+#USER build
