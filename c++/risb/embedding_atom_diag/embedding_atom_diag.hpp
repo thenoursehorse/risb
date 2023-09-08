@@ -1,7 +1,6 @@
 #pragma once
 #include <vector>
 #include <nda/nda.hpp>
-//#include <nda/block_matrix.hpp>
 #include <triqs/operators/many_body_operator.hpp>
 #include <triqs/hilbert_space/fundamental_operator_set.hpp>
 #include <triqs/atom_diag/atom_diag.hpp>
@@ -21,19 +20,20 @@ namespace risb {
       static constexpr bool is_complex = Complex;
 
       public:
-      
-      /// Type of matrix elements
-      using scalar_t = std::conditional_t<Complex, std::complex<double>, double>;
-      /// Many-body operator type
-      using many_body_op_t = triqs::operators::many_body_operator_generic<scalar_t>;
-      ///
-      using gf_struct_t  = triqs::hilbert_space::gf_struct_t;
-      ///
+
       using atom_diag_t = triqs::atom_diag::atom_diag<Complex>;
       ///
-      using block_matrix_t = typename triqs::atom_diag::atom_diag<Complex>::block_matrix_t;
+      using scalar_t = typename atom_diag_t::scalar_t;
       ///
-      using full_hilbert_space_state_t = typename triqs::atom_diag::atom_diag<Complex>::full_hilbert_space_state_t;
+      using matrix_t = typename atom_diag_t::matrix_t;
+      ///
+      using block_matrix_t = typename atom_diag_t::block_matrix_t;
+      ///
+      using full_hilbert_space_state_t = typename atom_diag_t::full_hilbert_space_state_t;
+      ///
+      using many_body_op_t = typename atom_diag_t::many_body_op_t;
+      ///
+      using gf_struct_t  = triqs::hilbert_space::gf_struct_t;
       
       
       /// Construct in an uninitialized state.

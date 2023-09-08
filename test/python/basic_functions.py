@@ -4,105 +4,126 @@ from common import *
 from risb.embedding_atom_diag import *
 
 beta = 10
-nkx = 10
-orbitals_dim = 2
+gf_struct=[('up',2),('dn',2)]
 
 class tests(unittest.TestCase):
 
     def test_get_hqp(self):
-        dispersion = build_cubic_dispersion(nkx, orbitals_dim)
-        R, Lambda = build_mf_matrices(orbitals_dim)
-        eig, vec = sc.get_h_qp(R, Lambda, dispersion)
+        h0_k = build_cubic_h0_k(gf_struct=gf_struct)
+        R, Lambda = build_block_mf_matrices(gf_struct=gf_struct)
+        for block,_ in gf_struct:
+            eig, vec = sc.get_h_qp(R[block], Lambda[block], h0_k[block])
         
     def test_get_ke(self):
-        dispersion = build_cubic_dispersion(nkx, orbitals_dim)
-        nk = dispersion.shape[2]
-        R, Lambda = build_mf_matrices(orbitals_dim)
-        eig,vec = sc.get_h_qp(R, Lambda, dispersion)
-        disp_R = sc.get_disp_R(R, dispersion, vec)
-        wks = fermi_fnc(eig, beta) / nk
-        ke = sc.get_ke(disp_R, vec, wks)
-    
+        h0_k = build_cubic_h0_k(gf_struct=gf_struct)
+        nk = h0_k['up'].shape[0]
+        R, Lambda = build_block_mf_matrices(gf_struct=gf_struct)
+        for block,_ in gf_struct:
+            np.fill_diagonal(Lambda[block], 0.5)
+        eig = dict()
+        vec = dict()
+        for block,_ in gf_struct:
+            eig[block], vec[block] = sc.get_h_qp(R[block], Lambda[block], h0_k[block])
+        h0_R = dict()
+        wks = dict()
+        ke = dict()
+        for block,_ in gf_struct:
+            h0_R[block] = sc.get_h0_R(R[block], h0_k[block], vec[block])
+            wks[block] = fermi_fnc(eig[block], beta) / nk
+            ke[block] = sc.get_ke(h0_R[block], vec[block], wks[block])
+        
     def test_get_pdensity(self):
-        dispersion = build_cubic_dispersion(nkx, orbitals_dim)
-        nk = dispersion.shape[2]
-        R, Lambda = build_mf_matrices(orbitals_dim)
-        eig, vec = sc.get_h_qp(R, Lambda, dispersion)
-        wks = fermi_fnc(eig, beta) / nk
-        pdensity = sc.get_pdensity(vec, wks)
+        h0_k = build_cubic_h0_k(gf_struct=gf_struct)
+        nk = h0_k['up'].shape[0]
+        R, Lambda = build_block_mf_matrices(gf_struct=gf_struct)
+        for block,_ in gf_struct:
+            np.fill_diagonal(Lambda[block], 0.5)
+        eig = dict()
+        vec = dict()
+        for block,_ in gf_struct:
+            eig[block], vec[block] = sc.get_h_qp(R[block], Lambda[block], h0_k[block])
+        wks = dict()
+        for block,_ in gf_struct:
+            wks[block] = fermi_fnc(eig[block], beta) / nk
+        pdensity = dict()
+        for block,_ in gf_struct:
+            pdensity[block] = sc.get_pdensity(vec[block], wks[block])
 
     def test_get_d(self):
-        dispersion = build_cubic_dispersion(nkx, orbitals_dim)
-        nk = dispersion.shape[2]
-        R, Lambda = build_mf_matrices(orbitals_dim)
-        eig, vec = sc.get_h_qp(R, Lambda, dispersion)
-        disp_R = sc.get_disp_R(R, dispersion, vec)
-        wks = fermi_fnc(eig, beta) / nk
-        ke = sc.get_ke(disp_R, vec, wks)
-        pdensity = sc.get_pdensity(vec, wks)
-        D = sc.get_d(pdensity, ke)
-    
-    def test_get_lambda_c(self):
-        dispersion = build_cubic_dispersion(nkx, orbitals_dim)
-        nk = dispersion.shape[2]
-        R, Lambda = build_mf_matrices(orbitals_dim)
-        eig, vec = sc.get_h_qp(R, Lambda, dispersion)
-        disp_R = sc.get_disp_R(R, dispersion, vec)
-        wks = fermi_fnc(eig, beta) / nk
-        ke = sc.get_ke(disp_R, vec, wks)
-        pdensity = sc.get_pdensity(vec, wks)
-        D = sc.get_d(pdensity, ke)
-        Lambda_c = sc.get_lambda_c(pdensity, R, Lambda, D)
-    
-    def test_get_h_emb(self):
-        dispersion = build_cubic_dispersion(nkx, orbitals_dim)
-        nk = dispersion.shape[2]
-        R, Lambda = build_mf_matrices(orbitals_dim)
-        eig, vec = sc.get_h_qp(R, Lambda, dispersion)
-        disp_R = sc.get_disp_R(R, dispersion, vec)
-        wks = fermi_fnc(eig, beta) / nk
-        ke = sc.get_ke(disp_R, vec, wks)
-        pdensity = sc.get_pdensity(vec, wks)
-        D = sc.get_d(pdensity, ke)
-        Lambda_c = sc.get_lambda_c(pdensity, R, Lambda, D)
-
-        fops_local = [(s,o) for s,o in product(('up','dn'),list(range(1,2)))]
-        [fops_bath, fops_emb] = get_embedding_space(fops_local)
-        h_loc = 2.0 * n("up", 1) * n("dn", 1)
-        h_emb = get_h_emb(h_loc, D, Lambda_c, fops_local, fops_bath)
-    
-    def test_solve_emb(self):
-        dispersion = build_cubic_dispersion(nkx, orbitals_dim)
-        nk = dispersion.shape[2]
-        R, Lambda = build_mf_matrices(orbitals_dim)
-        eig, vec = sc.get_h_qp(R, Lambda, dispersion)
-        disp_R = sc.get_disp_R(R, dispersion, vec)
-        wks = fermi_fnc(eig, beta) / nk
-        ke = sc.get_ke(disp_R, vec, wks)
-        pdensity = sc.get_pdensity(vec, wks)
-        D = sc.get_d(pdensity, ke)
-        Lambda_c = sc.get_lambda_c(pdensity, R, Lambda, D)
-
-        fops_local = [(s,o) for s,o in product(('up','dn'),list(range(1,2)))]
-        [fops_bath, fops_emb] = get_embedding_space(fops_local)
-        h_loc = 0.5 * n("up", 1) * n("dn", 1)
-        #h_loc = Operator()
-        set_approx_zero(D)
-        set_approx_zero(Lambda_c)
-        h_emb = get_h_emb(h_loc, D, Lambda_c, fops_local, fops_bath)
-
-        gf_struct = [ ["up", [1]], ["dn", [1]] ]
-        emb_solver = EmbeddingAtomDiag(gf_struct)
+        pdensity = {'up': np.array([[0.19618454, 0.        ],
+                                    [0.        , 0.19618454]]), 
+                    'dn': np.array([[0.19618454, 0.        ],
+                                    [0.        , 0.19618454]])}
+        ke = {'up': np.array([[-0.13447044,  0.        ],
+                              [ 0.        , -0.13447044]]),
+              'dn': np.array([[-0.13447044,  0.        ],
+                              [ 0.        , -0.13447044]])}
+        D = dict()
+        for block,_ in gf_struct:
+            D[block] = sc.get_d(pdensity[block], ke[block])
+        D_expected = {'up': np.array([[-0.33862285,  0.        ],
+                                      [ 0.        , -0.33862285]]), 
+                      'dn': np.array([[-0.33862285,  0.       ],
+                                      [ 0.        , -0.33862285 ]])}
+        for block,_ in gf_struct:
+            assert_arrays_are_close(D_expected[block], D[block], 1e-8)
         
-        #Nf = emb_solver.get_nf()
-        #Mcf = emb_solver.get_mcf()
+    def test_get_lambda_c(self): 
+        Lambda = {'up': np.array([[0.5, 0. ],
+                                  [ 0., 0.5]]), 
+                  'dn': np.array([[0.5, 0.  ],
+                                  [ 0., 0.5]])}
+        R = {'up': np.array([[1., 0. ],
+                             [0., 1.]]), 
+             'dn': np.array([[1., 0.  ],
+                             [0., 1.]])}
+        pdensity = {'up': np.array([[0.19618454, 0.        ],
+                                    [0.        , 0.19618454]]), 
+                    'dn': np.array([[0.19618454, 0.        ],
+                                    [0.        , 0.19618454]])}
+        D = {'up': np.array([[-0.33862285,  0.        ],
+                             [ 0.        , -0.33862285]]), 
+             'dn': np.array([[-0.33862285,  0.       ],
+                             [ 0.        , -0.33862285 ]])}
+        Lambda_c = dict()
+        for block,_ in gf_struct:
+            Lambda_c[block] = sc.get_lambda_c(pdensity[block], R[block], Lambda[block], D[block])
+        Lambda_c_expected = {'up': np.array([[ 0.01813814, -0.        ],
+                                             [-0.        ,  0.01813814]]),
+                             'dn': np.array([[ 0.01813814, -0.        ],
+                                             [-0.        ,  0.01813814]])}
+        for block,_ in gf_struct:
+            assert_arrays_are_close(Lambda_c_expected[block], Lambda_c[block], 1e-8)
 
-        #Lambda_1 = get_lambda(R, D, Lambda_c, Nf);
-        #R_1 = get_r(Mcf, Nf)
+    def test_solve_emb(self):
+        #fops_local = [(s,o) for s,o in product(('up','dn'),list(range(1,2)))]
+        Lambda_c = {'up': np.array([[ 0.01813814, -0.        ],
+                                    [-0.        ,  0.01813814]]),
+                    'dn': np.array([[ 0.01813814, -0.        ],
+                                    [-0.        ,  0.01813814]])}
+        D = {'up': np.array([[-0.33862285,  0.        ],
+                             [ 0.        , -0.33862285]]), 
+             'dn': np.array([[-0.33862285,  0.       ],
+                             [ 0.        , -0.33862285 ]])}
+        h_loc = n('up',0) * n('dn',0)
+        emb_solver = EmbeddingAtomDiag(gf_struct) 
+        emb_solver.set_h_emb(h_loc, Lambda_c, D)
+        emb_solver.solve()
+        Nf = dict()
+        Mcf = dict()
+        for block,_ in gf_struct:
+            Nf[block] = emb_solver.get_nf(block)
+            Mcf[block] = emb_solver.get_mcf(block)
 
-        #assert_arrays_are_close(R, R_1)
-        #assert_arrays_are_close(Lambda, Lambda_1)
-
+        #print("TEST", Nf)
+        #print("TEST2", Mcf)
+        #print("D", D)
+        #print("Lambda_c", Lambda_c)
+        #print(null)
+        
+        #for block,_ in gf_struct:
+        #    assert_arrays_are_close(Nf_expected[block], Nf[block], 1e-8)
+        #    assert_arrays_are_close(Mcf_expected[block], Mcf[block], 1e-8)
 
 if __name__ == '__main__':
     unittest.main()

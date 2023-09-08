@@ -61,31 +61,9 @@ namespace risb {
       // NOTE: atom_diag only needs particle sectors around half-filling for the interaction term
       //       and for calculating the densities
       int M = _fops_emb.size() / 2;
-      _ad = atom_diag_t(_h_emb, _fops_emb, M-2, M+2); 
-      
-      /*
-      // Test of adding constraint to h_emb to restrict to half-filled particle sector
-      // Doesn't work
-      double M = _fops_emb.size() / 2.0;
-      double weight = 0.1;
-      auto h = _h_emb;
-      for (auto const block : range(_fops_loc.size())) {
-        auto const& fops_l = _fops_loc[block];
-        auto const& fops_b = _fops_bath[block];
-        for (auto const &o : fops_l) {
-          auto nalpha  = many_body_op_t::make_canonical(true, o.index)
-                        * many_body_op_t::make_canonical(false, o.index);
-          h -= weight * nalpha;
-        }
-        for (auto const &o : fops_b) {
-          auto na  = many_body_op_t::make_canonical(true, o.index)
-                        * many_body_op_t::make_canonical(false, o.index);
-          h -= weight * na;
-        }
-      }
-      h += weight * M;
-      _ad = atom_diag_t(h, _fops_emb);
-      */
+      //_ad = atom_diag_t(_h_emb, _fops_emb);
+      //_ad = atom_diag_t(_h_emb, _fops_emb, M-2, M+2);
+      _ad = atom_diag_t(_h_emb, _fops_emb, M, M);
 
       std::cout << "Found " << _ad.n_subspaces() << " subspaces." << std::endl;
 
@@ -121,21 +99,22 @@ namespace risb {
       }
 
       // Basis of vectors are in the eigenbasis,
-      // organised from lowest energy to highest energy
+      // organised from lowest energy to highest energy (in each block)
+      // FIXME if using this it is not safe because the block ordering can mess it up
+      // FIXME Should get all states with M particles, and then sort their energies and pick the lowest one
+      //_gs_vec.resize(_ad.get_full_hilbert_space_dim());
+      //_gs_vec() = 0;
+      //for (auto i : range(_ad.get_full_hilbert_space_dim())) {
+      //  _gs_vec(i) = 1;
+      //  auto N_part = real( dot( _gs_vec, act(N, _gs_vec, _ad) ) );
+      //  if (std::abs(N_part - (double)M) < 1e-12) break;
+      //  _gs_vec(i) = 0;
+      //}
+
+      // If constraining to only M subsector then the groundstate will always be this instead
       _gs_vec.resize(_ad.get_full_hilbert_space_dim());
       _gs_vec() = 0;
-      for (auto i : range(_ad.get_full_hilbert_space_dim())) {
-        _gs_vec(i) = 1;
-        auto N_part = real( dot( _gs_vec, act(N, _gs_vec, _ad) ) );
-        if (std::abs(N_part - (double)M) < 1e-12) break;
-        _gs_vec(i) = 0;
-      }
-
-      // FIXME Now need to add an overlap function so trace_rho_op is not used, or expose
-      // _gs_vec to public (and then fix the tests to use this correctly)
-      // Above also makes three_orbital take forever 
-      
-      //_gs_vec(0) = 1; // Ground state vector in the eigenbasis of the full hilbert space
+      _gs_vec(0) = 1; // Ground state vector in the eigenbasis of the full hilbert space
     }
     
     

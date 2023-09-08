@@ -136,21 +136,21 @@ def get_f1(Mcf,pdensity,R):
 def get_f2(Nf, pdensity):
     return Nf - pdensity.T
 
-def get_h_qp(R, Lambda, dispersion, mu=0):
-    #h_qp = np.einsum('ac,cdk,db->kab', R, dispersion, R.conj().T, optimize='optimal') + (Lambda - mu*np.eye(Lambda.shape[0]))
-    h_qp = np.einsum('ac,kcd,db->kab', R, dispersion, R.conj().T) + (Lambda - mu*np.eye(Lambda.shape[0]))
+def get_h_qp(R, Lambda, h0_k, mu=0):
+    #h_qp = np.einsum('ac,cdk,db->kab', R, h0_k, R.conj().T, optimize='optimal') + (Lambda - mu*np.eye(Lambda.shape[0]))
+    h_qp = np.einsum('ac,kcd,db->kab', R, h0_k, R.conj().T) + (Lambda - mu*np.eye(Lambda.shape[0]))
     eig, vec = np.linalg.eigh(h_qp)
     return (eig, vec)
 
-def get_disp_R(R, dispersion, vec):
-    #return np.einsum('ack,cd,kdb->kab', dispersion, R.conj().T, vec, optimize='optimal')
-    return np.einsum('kac,cd,kdb->kab', dispersion, R.conj().T, vec)
+def get_h0_R(R, h0_k, vec):
+    #return np.einsum('ack,cd,kdb->kab', h0_k, R.conj().T, vec, optimize='optimal')
+    return np.einsum('kac,cd,kdb->kab', h0_k, R.conj().T, vec)
 
 # FIXME add possible rotation
-def get_h_qp2(R, Lambda, dispersion, mu=0):
-    mesh_num = dispersion.shape[0]
-    na = dispersion.shape[1]
-    orb_dim = dispersion.shape[3]
+def get_h_qp2(R, Lambda, h0_k, mu=0):
+    mesh_num = h0_k.shape[0]
+    na = h0_k.shape[1]
+    orb_dim = h0_k.shape[3]
 
     # FIXME what if each inequivalent cluster is not the same internal dimension?
     h_qp = np.zeros(shape=(mesh_num,na*orb_dim,na*orb_dim), dtype=complex)
@@ -158,26 +158,27 @@ def get_h_qp2(R, Lambda, dispersion, mu=0):
     for i,j in product(range(na),range(na)):
         mu_mat = mu * np.eye(Lambda[i].shape[0])
         the_slice = np.index_exp[:, i*orb_dim:(i+1)*orb_dim, j*orb_dim:(j+1)*orb_dim]
-        h_qp[the_slice] = np.matmul( R[i], np.matmul(dispersion[:,i,j,...], R[j].conj().T) )
-        #h_qp[the_slice] = np.einsum('ac,kcd,db->kab', R[i], dispersion[:,i,j,...], R[j].conj().T)
+        h_qp[the_slice] = np.matmul( R[i], np.matmul(h0_k[:,i,j,...], R[j].conj().T) )
+        #h_qp[the_slice] = np.einsum('ac,kcd,db->kab', R[i], h0_k[:,i,j,...], R[j].conj().T)
         if i == j:
             h_qp[the_slice] += Lambda[i] - mu_mat
 
     eig, vec = np.linalg.eigh(h_qp)
     return (eig, vec)
 
-def get_disp_R2(R, dispersion, vec):
-    mesh_num = dispersion.shape[0]
-    na = dispersion.shape[1]
-    orb_dim = dispersion.shape[3]
+def get_h0_R2(R, h0_k, vec):
+    mesh_num = h0_k.shape[0]
+    na = h0_k.shape[1]
+    orb_dim = h0_k.shape[3]
 
-    disp_R = np.zeros(shape=(mesh_num,na*orb_dim,na*orb_dim), dtype=complex)
+    h0_R = np.zeros(shape=(mesh_num,na*orb_dim,na*orb_dim), dtype=complex)
     for i,j in product(range(na),range(na)):
         the_slice = np.index_exp[:, i*orb_dim:(i+1)*orb_dim, j*orb_dim:(j+1)*orb_dim]
-        disp_R[the_slice] = np.matmul(dispersion[:,i,j,...], R[j].conj().T)
-        #disp_R[the_slice] = np.einsum('kac,cb->kab',dispersion[:,i,j,...], R[j].conj().T)
-    #A = np.einsum('kac,kcb->kab', disp_R, vec)
-    return np.matmul(disp_R, vec) # Right multiply into eigenbasis of quasiparticles
+        h0_R[the_slice] = np.matmul(h0_k[:,i,j,...], R[j].conj().T)
+        #h0_R[the_slice] = np.einsum('kac,cb->kab', h0_k[:,i,j,...], R[j].conj().T)
+    #A = np.einsum('kac,kcb->kab', h0_R, vec)
+    return np.matmul(h0_R, vec) # Right multiply into eigenbasis of quasiparticles
+
 
 # FIXME add projectors
 #\sum_n \sum_k [A_k P_k]_{an} [D_k]_n  [P_k^+ B_k]_{nb}
@@ -187,10 +188,10 @@ def get_pdensity(vec, wks):
     return np.real( np.einsum('kan,kn,knb->ab', vec, wks, vec_dag).T )
 
 # FIXME add projectors
-def get_ke(disp_R, vec, wks):
+def get_ke(h0_R, vec, wks):
     vec_dag = np.transpose(vec.conj(), (0,2,1))
-    #return np.einsum('kan,kn,knb->ab', disp_R, wks, vec_dag, optimize='optimal')
-    return np.einsum('kan,kn,knb->ab', disp_R, wks, vec_dag)
+    #return np.einsum('kan,kn,knb->ab', h0_R, wks, vec_dag, optimize='optimal')
+    return np.einsum('kan,kn,knb->ab', h0_R, wks, vec_dag)
 
 def get_sigma_z(mesh_z, R, Lambda, mu = 0.0, e0 = 0.0):
     sigma_z = Gf(mesh = mesh_z, target_shape = R.shape, name = "$\Sigma(z)$")
@@ -210,14 +211,14 @@ def get_gqp_z(g_z, R):
     gp_z.from_L_G_R( np.linalg.inv(R.conj().T), g_z, np.linalg.inv(R) )
     return gp_z
 
-def get_gqp_k_z(g_k_z, R, Lambda, dispersion, mu = 0):
+def get_gqp_k_z(g_k_z, R, Lambda, h0_k, mu = 0):
     gqp_k_z = g_k_z.copy() # name = "$G^\mathrm{qp}(k,z)$"
     mu_matrix = mu * np.eye(R.shape[0])
 
     gqp_z = Gf(mesh = gqp_k_z.mesh[1], target_shape = R.shape)
 
     for k,kay in enumerate(gqp_k_z.mesh.components[0]):
-        gqp_z << inverse( iOmega_n  - np.dot( np.dot(R, dispersion[...,k]), R.conj().T ) - Lambda + mu_matrix )
+        gqp_z << inverse( iOmega_n  - np.dot( np.dot(R, h0_k[...,k]), R.conj().T ) - Lambda + mu_matrix )
         gqp_k_z[kay,:].data[:] = gqp_z.data
     return gqp_k_z
 

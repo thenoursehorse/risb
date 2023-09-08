@@ -25,7 +25,6 @@ r"""
 DOC
 
 """
-from triqs.operators import Operator
 from .embedding_atom_diag_module import EmbeddingAtomDiagReal, EmbeddingAtomDiagComplex
 
 # Construct real/complex (literally copied from triqs.atom_diag)

@@ -3,7 +3,11 @@ FROM flatironinstitute/triqs:${TRIQSTAG}
 ARG APPNAME=risb
 
 USER root
-RUN useradd -u 990 -m build
+RUN apt-get update && \
+      apt-get -y install sudo
+RUN adduser --disabled-password --gecos '' build
+RUN adduser build sudo
+RUN echo '%sudo ALL=(ALL) NOPASSWD:ALL' >> /etc/sudoers
 USER build
 
 ENV SRC=/home/build/src \
