@@ -3,11 +3,10 @@ FROM flatironinstitute/triqs:${TRIQSTAG}
 ARG APPNAME=risb
 
 USER root
-RUN apt-get update \
-  && apt-get -y install sudo \
-  && adduser --disabled-password --gecos '' build \
-  && adduser build sudo \
-  && echo '%sudo ALL=(ALL) NOPASSWD:ALL' >> /etc/sudoers
+ARG USER_UID=1000
+ARG USER_GID=$USER_UID
+RUN groupadd --gid $USER_GID build \
+    && useradd --uid $USER_UID --gid $USER_GID -m build
 USER build
 
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
@@ -24,4 +23,7 @@ WORKDIR $BUILD/$APPNAME
 RUN chown build .
 RUN cmake $SRC/$APPNAME \
   && make -j$NCORES || make -j1 VERBOSE=1
-#RUN sudo make install
+#USER root
+#RUN make install
+
+USER triqs
