@@ -4,6 +4,7 @@ import numpy as np
 numpy = np
 import scipy
 from copy import deepcopy
+import h5py
 
 
 from ase.build import bulk
@@ -939,6 +940,7 @@ class LocalOrbitals(object):
         print(f"Local Hamiltonian:")
         print(fock_R0_corr)
 
+    # TODO give proper occ, symm labels, etc for molden
     def save_orbs(self, for_iboview=True):
         save_orbs_molden(mol=self.mf.mol, ao2b=self.ao2mo_R0, filename=self.filename+'_molecular_orbitals.molden', for_iboview=for_iboview)
         save_orbs_molden(mol=self.mf.mol, ao2b=self.ao2lo_R0, filename=self.filename+'_local_orbitals.molden', occ=np.diagonal(self.dm_lo_R0), for_iboview=for_iboview)
@@ -976,7 +978,7 @@ class PyscfConverter(object):
 
 if __name__ == "__main__":
     nio = False
-    #nio = True
+    nio = True
     if nio:
         # Make in ase
         atoms = bulk(name='NiO', crystalstructure='rocksalt', a=4.17)
@@ -1029,3 +1031,83 @@ if __name__ == "__main__":
 
     lo = LocalOrbitals(mf=mf, reference_basis=reference_basis, corr_orbs_labels=corr_orbs_labels)
     lo.kernel()
+
+# IBOVIEW Apple M1 Monterey 12.3.1 install 
+#
+# brew install gcc openblas lapack boost qt5 llvm libomp
+# echo 'export PATH="/opt/homebrew/opt/qt@5/bin:$PATH"' >> ~/.zshrc
+#
+# Install process is this, but we need to make some changes
+# mkdir build && cd buil
+# qmake ../main.pro
+# make
+#
+###################################
+# FOR CLANG
+###################################
+# echo 'export PATH="/opt/homebrew/opt/llvm/bin:$PATH"' >> ~/.zshrc
+#
+# # I don't think these do anything to be honest
+# export LDFLAGS="-L/opt/homebrew/opt/openblas/lib -L/opt/homebrew/opt/lapack/lib -L/opt/homebrew/opt/llvm/lib -L/opt/homebrew/opt/libomp/lib"
+# export CPPFLAGS="-I/opt/homebrew/opt/openblas/include -I/opt/homebrew/opt/lapack/include -I/opt/homebrew/opt/llvm/include -I/opt/homebrew/opt/libomp/include -std=c++14"
+# export CXXFLAGS="-I/opt/homebrew/opt/openblas/include -I/opt/homebrew/opt/lapack/include -I/opt/homebrew/opt/llvm/include -I/opt/homebrew/opt/libomp/include -std=c++14"
+# export BBLAS="-L/opt/homebrew/opt/openblas/lib -L/opt/homebrew/opt/lapack/lib"
+# 
+# # I don't think these do anything
+# # Need to figure out how to make qmake recognize env
+# export CC=/opt/homebrew/opt/llvm/bin/clang
+# export CXX=/opt/homebrew/opt/llvm/bin/clang++
+# export CPP=/opt/homebrew/opts/llvm/bin/clang++
+#
+# Chang/add below to Makefile after doing qmake
+#
+# CC=/opt/homebrew/opt/llvm/bin/clang
+# CXX=/opt/homebrew/opt/llvm/bin/clang++/
+# LINK=/opt/homebrew/opt/llvm/bin/clang++
+# under line moc_predefs.h: make sure the compiler is /opt/homebrew/opt/llvm/bin/clang++
+#
+# change -march=native to -mcpu=apple-m1
+#
+# change -std=gnu++11 to -std=c++14
+#
+###################################
+# FOR GCC
+###################################
+#
+# export PATH=/opt/homebrew/opt/gcc@12/bin/:$PATH
+#
+# export LDFLAGS="-L/opt/homebrew/opt/openblas/lib -L/opt/homebrew/opt/lapack/lib"
+# export CPPFLAGS="-I/opt/homebrew/opt/openblas/include -I/opt/homebrew/opt/lapack/include"
+# export CXXFLAGS="-I/opt/homebrew/opt/openblas/include -I/opt/homebrew/opt/lapack/include"
+# export BBLAS="-L/opt/homebrew/opt/openblas/lib -L/opt/homebrew/opt/lapack/lib"
+#
+# Chang/add below to Makefile after doing qmake
+#
+# CC = /opt/homebrew/opt/gcc/bin/gcc-12
+# CXX = /opt/homebrew/opt/gcc/bin/g++-12
+# LINK = /opt/homebrew/opt/gcc/bin/c++-12
+# 
+# change -std=gnu++11 to -std=c++14
+# change all -stdlib=libc++ to -stdlib=libstdc++
+# add #include <cstddef> to /src/Common/CxIntrusivePtr.h to fix a qt5 issue with newer libc (https://forum.qt.io/topic/16531/error-ptrdiff_t-does-not-name-a-type/2)
+#
+###################################
+# FOR BOTH
+###################################
+#
+# add -I/opt/homebrew/opt/boost@1.80/include/ to INCPATH
+#
+# See https://stackoverflow.com/a/74757391
+# in src/Common/CxTiming.cpp remove the asm (assembly) x86 specific code and change to
+# struct timespec *tp;
+# // maybe should be CLOCK_PROCESS_CPUTIME_ID instead of CLOCK_MONOTONIC
+# clock_gettime(CLOCK_MONOTONIC,tp);
+# // tv_nsec is (long) time in nanoseconds, tv_sec is (time_t) time in seconds
+# // maybe should be tv_sec returned instead
+# return (unsigned long long)tp->tv_nsec; 
+#
+# add #include "CxParse1.h" to src/Common/CxPrintLevel.h so it forward declares correctly
+#
+# now compile
+#
+# whenever get "condition of OpenMP for loop must be a relational comparison" change the line in the cpp file to remove the size_t(var) part, e.g., change size_t(iView) to just iView
