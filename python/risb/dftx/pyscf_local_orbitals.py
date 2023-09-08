@@ -1032,6 +1032,10 @@ if __name__ == "__main__":
     lo = LocalOrbitals(mf=mf, reference_basis=reference_basis, corr_orbs_labels=corr_orbs_labels)
     lo.kernel()
 
+#bpy
+#bmesh
+#matutils
+=======
 # IBOVIEW Apple M1 Monterey 12.3.1 install 
 #
 # brew install gcc openblas lapack boost qt5 llvm libomp

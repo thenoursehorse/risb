@@ -15,7 +15,7 @@ from scipy.special import factorial
 from scipy.special import erfc
 from scipy.special import hermite
 
-from scipy.optimize import minimize_scalar
+from scipy import optimize
 
 class SumkDFTRISB(SumkDFT):
     """This class extends the SumK method (ab-initio code and triqs) to use RISB"""
@@ -28,17 +28,17 @@ class SumkDFTRISB(SumkDFT):
         self.N_mp = N_mp
         
         # Some set up fo RISB parameters
-        self.R = [{} for ish in range(self.n_inequiv_shells)]
-        self.Lambda = [{} for ish in range(self.n_inequiv_shells)]
-        self.R_sumk = [{} for ish in range(self.n_inequiv_shells)]
-        self.Lambda_sumk = [{} for ish in range(self.n_inequiv_shells)]
-        self.pdensity = [{} for ish in range(self.n_inequiv_shells)]
-        self.pdensity_sumk = [{} for ish in range(self.n_inequiv_shells)]
-        self.ke = [{} for ish in range(self.n_inequiv_shells)]
-        self.ke_sumk = [{} for ish in range(self.n_inequiv_shells)]
+        self.R = [{} for ish_inequiv in range(self.n_inequiv_shells)]
+        self.Lambda = [{} for ish_inequiv in range(self.n_inequiv_shells)]
+        self.pdensity = [{} for ish_inequiv in range(self.n_inequiv_shells)]
+        self.pdensity_sumk = [{} for ish_inequiv in range(self.n_inequiv_shells)]
+        self.ke = [{} for ish_inequiv in range(self.n_inequiv_shells)]
+        self.ke_sumk = [{} for ish_inequiv in range(self.n_inequiv_shells)]
 
         # The identitity of the correlated subspace in the sumk representation
-        self.identity_sumk = [{} for ish in range(self.n_inequiv_shells)]
+        self.R_sumk = [{} for ish_corr in range(self.n_corr_shells)]
+        self.Lambda_sumk = [{} for ish_corr in range(self.n_corr_shells)]
+        self.identity_sumk = [{} for ish_corr in range(self.n_corr_shells)]
         
     def fermi_distribution(self, eks, mu=0, beta=5):
         return 1.0 / (numpy.exp(beta * (eks - mu)) + 1.0)
@@ -73,13 +73,20 @@ class SumkDFTRISB(SumkDFT):
 # CORE FUNCTIONS FOR RISB
 ################
 
+# NOTE
+# inequiv indexes are always in 'solver' space. corr indexes are always in 'bloch,sumk' space
+# FIXME
+# I'm not sure what happens when include non-correlated projectors? Test with NiO and uncorrelated
+# p orbitals
+
     def downfold_matrix(self, ik, ish, bname, matrix_to_downfold, shells='corr', ir=None):
         # get spin index for proj. matrices
         isp = self.spin_names_to_ind[self.SO][bname]
         n_orb = self.n_orbitals[ik, isp]
         if shells == 'corr':
             dim = self.corr_shells[ish]['dim']
-            projmat = self.proj_mat[ik, isp, ish, 0:dim, 0:n_orb]
+            #projmat = self.proj_mat[ik, isp, ish, 0:dim, 0:n_orb]
+            projmat = self.proj_mat[ik, isp, ish, 0:dim, :] #FIXME
         elif shells == 'all':
             if ir is None:
                 raise ValueError("downfold: provide ir if treating all shells.")
@@ -112,7 +119,7 @@ class SumkDFTRISB(SumkDFT):
 
         return matrix_upfolded
     
-    def rotloc_matrix(self, icrsh, matrix_to_rotate, direction, shells='corr'):
+    def rotloc_matrix(self, ish, matrix_to_rotate, direction, shells='corr'):
         assert ((direction == 'toLocal') or (direction == 'toGlobal')
                 ), "rotloc: Give direction 'toLocal' or 'toGlobal'."
         matrix_rotated = copy.deepcopy(matrix_to_rotate)
@@ -125,17 +132,17 @@ class SumkDFTRISB(SumkDFT):
 
         if direction == 'toGlobal':
 
-            if (rot_mat_time_inv[icrsh] == 1) and self.SO:
-                matrix_rotated = numpy.dot(rot_mat[icrsh].conjugate, numpy.dot(matrix_rotated.transpose(), rot_mat[icrsh].transpose() ) )
+            if (rot_mat_time_inv[ish] == 1) and self.SO:
+                matrix_rotated = numpy.dot(rot_mat[ish].conjugate, numpy.dot(matrix_rotated.transpose(), rot_mat[ish].transpose() ) )
             else:
-                matrix_rotated = numpy.dot(rot_mat[icrsh], numpy.dot(matrix_rotated, rot_mat[icrsh].conjugate().transpose() ) )
+                matrix_rotated = numpy.dot(rot_mat[ish], numpy.dot(matrix_rotated, rot_mat[ish].conjugate().transpose() ) )
 
         elif direction == 'toLocal':
 
-            if (rot_mat_time_inv[icrsh] == 1) and self.SO:
-                matrix_rotated = numpy.dot(rot_mat[icrsh].transpose(), numpy.dot(matrix_rotated.transpose(), rot_mat[icrsh].conjugate() ) )
+            if (rot_mat_time_inv[ish] == 1) and self.SO:
+                matrix_rotated = numpy.dot(rot_mat[ish].transpose(), numpy.dot(matrix_rotated.transpose(), rot_mat[ish].conjugate() ) )
             else:
-                matrix_rotated = numpy.dot(rot_mat[icrsh].conjugate().transpose(), numpy.dot(matrix_rotated, rot_mat[icrsh] ) )
+                matrix_rotated = numpy.dot(rot_mat[ish].conjugate().transpose(), numpy.dot(matrix_rotated, rot_mat[ish] ) )
         return matrix_rotated
    
 #    def flatten_deg_mat(self, mat_to_flat):
@@ -169,8 +176,8 @@ class SumkDFTRISB(SumkDFT):
 #                counter += 1
 #        return Lambda, R
 
-    def symm_deg_mat(self, mat_to_symm, ish=0):
-        for degsh in self.deg_shells[ish]:
+    def symm_deg_mat(self, mat_to_symm, ish_inequiv=0):
+        for degsh in self.deg_shells[ish_inequiv]:
             # ss will hold the averaged orbitals in the basis where the
             # blocks are all equal
             ss = None
@@ -214,44 +221,44 @@ class SumkDFTRISB(SumkDFT):
             
                 mat_to_symm[key] = mat_to_symm[key].astype(dtype[key])
          
-    # FIXME
+    # HACK
     # hack to only select the orbitals in the solver space for the sumk space
     # e.g., if used block_structure.pick_gf_struct_solver
-    def mat_remove_non_solvers_in_sumk(self, mat, icrsh=0):
-        ish = self.corr_to_inequiv[icrsh]
+    def mat_remove_non_solvers_in_sumk(self, mat, ish_corr=0):
+        ish_inequiv = self.corr_to_inequiv[ish_corr]
         mat_out = self.block_structure.convert_matrix(G=mat,
-                                            ish_from=icrsh,
-                                            ish_to=ish, 
+                                            ish_from=ish_corr,
+                                            ish_to=ish_inequiv,
                                             space_from='sumk',
                                             space_to='solver',
                                             show_warnings=True)
         
         mat_out = self.block_structure.convert_matrix(G=mat_out,
-                                            ish_from=ish,
-                                            ish_to=icrsh,
+                                            ish_from=ish_inequiv,
+                                            ish_to=ish_corr,
                                             space_from='solver',
                                             space_to='sumk',
                                             show_warnings=True)
         
         return mat_out
 
-    def mat_solver_to_sumk(self, mat, icrsh=0):
-        ish = self.corr_to_inequiv[icrsh]
+    def mat_solver_to_sumk(self, mat, ish_corr=0):
+        ish_inequiv = self.corr_to_inequiv[ish_corr]
         mat_out = self.block_structure.convert_matrix(
                 G=mat,
-                ish_from=ish,
-                ish_to=icrsh,
+                ish_from=ish_inequiv,
+                ish_to=ish_corr,
                 space_from='solver',
                 space_to='sumk',
                 show_warnings=True)
         return mat_out
     
-    def mat_sumk_to_solver(self, mat, icrsh=0):
-        ish = self.corr_to_inequiv[icrsh]
+    def mat_sumk_to_solver(self, mat, ish_corr=0):
+        ish_inequiv = self.corr_to_inequiv[ish_corr]
         mat_out = self.block_structure.convert_matrix(
                 G=mat,
-                ish_from=icrsh,
-                ish_to=ish,
+                ish_from=ish_corr,
+                ish_to=ish_inequiv,
                 space_from='sumk',
                 space_to='solver',
                 show_warnings=True)
@@ -259,12 +266,11 @@ class SumkDFTRISB(SumkDFT):
 
     # The identity in the truncated solver space
     def set_identity_sumk(self):
-        for ish in range(self.n_inequiv_shells):
-            icrsh = self.corr_to_inequiv[ish]
-            self.identity_sumk[ish] = self.block_structure.create_matrix(ish=ish, space='sumk')
-            for sp in self.spin_block_names[self.corr_shells[icrsh]['SO']]:
-                self.identity_sumk[ish][sp] = numpy.eye(self.corr_shells[icrsh]['dim'], dtype=numpy.complex)
-            self.identity_sumk[ish] = self.mat_remove_non_solvers_in_sumk(mat=self.identity_sumk[ish], icrsh=icrsh)
+        for ish_corr in range(self.n_corr_shells):
+            self.identity_sumk[ish_corr] = self.block_structure.create_matrix(ish=ish_corr, space='sumk')
+            for sp in self.spin_block_names[self.corr_shells[ish_corr]['SO']]:
+                self.identity_sumk[ish_corr][sp] = numpy.eye(self.corr_shells[ish_corr]['dim'], dtype=numpy.complex)
+            #self.identity_sumk[ish_corr] = self.mat_remove_non_solvers_in_sumk(mat=self.identity_sumk[ish_corr], ish_corr=ish_corr)
     
     # From solver structure to sumk structure in local frame
     def set_R_Lambda_sumk(self, Lambda=None, R=None):
@@ -273,54 +279,67 @@ class SumkDFTRISB(SumkDFT):
         if R is None:
             R = self.R 
         
-        for ish in range(self.n_inequiv_shells):
-            icrsh = self.inequiv_to_corr[ish]
-            self.Lambda_sumk[ish] = self.mat_solver_to_sumk(self.Lambda[ish], icrsh=icrsh)
-            self.R_sumk[ish] = self.mat_solver_to_sumk(self.R[ish], icrsh=icrsh)
+        for ish_corr in range(self.n_corr_shells):
+            ish_inequiv = self.corr_to_inequiv[ish_corr]
+            self.Lambda_sumk[ish_corr] = self.mat_solver_to_sumk(self.Lambda[ish_inequiv], ish_corr=ish_corr)
+            self.R_sumk[ish_corr] = self.mat_solver_to_sumk(self.R[ish_inequiv], ish_corr=ish_corr)
         return self.Lambda_sumk, self.R_sumk
     
-    def initialize_R_Lambda(self, h_ksr_loc=None, random=True, zero_Lambda=False):
-        if h_ksr_loc is None:
-            h_ksr_loc = self.get_h_ksr_loc() # for all correlated shells
+    # From sumk structure to solver structure in local frame
+    def set_R_Lambda_solver(self, Lambda_sumk=None, R_sumk=None):
+        if Lambda_sumk is None:
+            Lambda_sumk = self.Lambda_sumk
+        if R_sumk is None:
+            R_sumk = self.R_sumk
+        
+        for ish_inequiv in range(self.n_inequiv_shells):
+            ish_corr = self.inequiv_to_corr[ish_inequiv]
+            self.Lambda[ish_inequiv] = self.mat_sumk_to_solver(self.Lambda_sumk[ish_corr], ish_corr=ish_corr)
+            self.R[ish_inequiv] = self.mat_sumk_to_solver(self.R_sumk[ish_corr], ish_corr=ish_corr)
+        return self.Lambda, self.R
+    
+    def initialize_R_Lambda(self, h0_sumk_loc=None, random=True, zero_Lambda=False):
+        if h0_sumk_loc is None:
+            h0_sumk_loc = self.get_h0_sumk_loc() # for all correlated shells
 
-        for ish in range(self.n_inequiv_shells):
-            icrsh = self.inequiv_to_corr[ish]
+        for ish_inequiv in range(self.n_inequiv_shells):
+            ish_corr = self.inequiv_to_corr[ish_inequiv]
 
-            self.R[ish] = self.block_structure.create_matrix(ish=ish, space='solver')
+            self.R[ish_inequiv] = self.block_structure.create_matrix(ish=ish_inequiv, space='solver')
             
-            for key in self.R[ish].keys():
-                numpy.fill_diagonal(self.R[ish][key], 1)
+            for key in self.R[ish_inequiv].keys():
+                numpy.fill_diagonal(self.R[ish_inequiv][key], 1)
             
             if random:
-                for key in self.R[ish].keys():    
-                    self.R[ish][key] *= numpy.random.rand(
-                                            self.R[ish][key].shape[0],
-                                            self.R[ish][key].shape[1])
+                for key in self.R[ish_inequiv].keys():    
+                    self.R[ish_inequiv][key] *= numpy.random.rand(
+                                            self.R[ish_inequiv][key].shape[0],
+                                            self.R[ish_inequiv][key].shape[1])
 
             # transform the local terms from sumk blocks to the solver blocks
-            self.Lambda[ish] = self.block_structure.convert_matrix(
-                    G=h_ksr_loc[icrsh],
-                    ish_from=icrsh,
-                    ish_to=ish,
+            self.Lambda[ish_inequiv] = self.block_structure.convert_matrix(
+                    G=h0_sumk_loc[ish_corr],
+                    ish_from=ish_corr,
+                    ish_to=ish_inequiv,
                     space_from='sumk',
                     space_to='solver',
                     show_warnings=True)
             
             if random:
-                for key in self.Lambda[ish].keys():
-                    self.Lambda[ish][key] *= 2. * numpy.random.rand(
-                                                    self.Lambda[ish][key].shape[0],
-                                                    self.Lambda[ish][key].shape[1])
+                for key in self.Lambda[ish_inequiv].keys():
+                    self.Lambda[ish_inequiv][key] *= 2. * numpy.random.rand(
+                                                    self.Lambda[ish_inequiv][key].shape[0],
+                                                    self.Lambda[ish_inequiv][key].shape[1])
                         
             # Make sure Lambda is real (discard imaginary)
-            for key in self.Lambda[ish].keys():
-                self.Lambda[ish][key] = self.Lambda[ish][key].astype(numpy.float_) # FIXME
+            for key in self.Lambda[ish_inequiv].keys():
+                self.Lambda[ish_inequiv][key] = self.Lambda[ish_inequiv][key].astype(numpy.float_) # FIXME
                 if zero_Lambda:
-                    self.Lambda[ish][key][:] = 0.0
+                    self.Lambda[ish_inequiv][key][:] = 0.0
 
             # Symmetrize
-            self.symm_deg_mat(self.R[ish], ish=ish)
-            self.symm_deg_mat(self.Lambda[ish], ish=ish)
+            self.symm_deg_mat(self.R[ish_inequiv], ish_inequiv=ish_inequiv)
+            self.symm_deg_mat(self.Lambda[ish_inequiv], ish_inequiv=ish_inequiv)
         
         # Store in the sumk block space as well
         self.set_R_Lambda_sumk(Lambda=self.Lambda, R=self.R)
@@ -330,84 +349,92 @@ class SumkDFTRISB(SumkDFT):
 
         return self.Lambda, self.R
     
-    # Kohn-Sham eigenenergies
-    def get_h_ks_k(self, ik):
+    # Non-interacting Hamiltonian at point k in large Bloch space
+    def get_h0_bl_k(self, ik):
         ntoi = self.spin_names_to_ind[self.SO]
         spn = self.spin_block_names[self.SO]
-        h_ks_k = dict()
+        h0_bl_k = dict()
         for sp in spn:
             n_orb = self.n_orbitals[ik, ntoi[sp]]
-            h_ks_k[sp] = copy.deepcopy( self.hopping[ik, ntoi[sp], 0:n_orb, 0:n_orb] )
-        return h_ks_k       
+            #h0_bl_k[sp] = copy.deepcopy( self.hopping[ik, ntoi[sp], 0:n_orb, 0:n_orb] )
+            h0_bl_k[sp] = copy.deepcopy( self.hopping[ik, ntoi[sp], :, :] )
+        return h0_bl_k       
 
-    # the W restricted Kohn-Sham Hamiltonian (ksr) at a specified k-pt (in the projected space) in the local frame
-    # for each correlated shell (not inequivalent, just all of them)
-    def get_h_ksr_k(self, ik):
-        h_ksr_k = [{} for icrsh in range(self.n_corr_shells)]
-        for icrsh in range(self.n_corr_shells):
-            for sp in self.spin_block_names[self.corr_shells[icrsh]['SO']]:
-                ind = self.spin_names_to_ind[self.corr_shells[icrsh]['SO']][sp]
-                n_orb = self.n_orbitals[ik, ind]
-                MMat = self.hopping[ik, ind, 0:n_orb, 0:n_orb]
-                h_ksr_k[icrsh][sp] = self.downfold_matrix(ik=ik, ish=icrsh, bname=sp, matrix_to_downfold=MMat)
+    # Non-interacting Hamiltonian at point k in each correlated shell (not inequivalent, all of them)
+    # in sumk structure
+    def get_h0_sumk_k(self, ik):
+        spn = self.spin_block_names[self.SO]
+        h0_bl_k = self.get_h0_bl_k(ik=ik)
+        
+        h0_sumk_k = [{} for ish_corr in range(self.n_corr_shells)]
+        for ish_corr in range(self.n_corr_shells):
+            for sp in spn:
+                h0_sumk_k[ish_corr][sp] = self.downfold_matrix(ik=ik, ish=ish_corr, bname=sp, matrix_to_downfold=h0_bl_k[sp])
+        
+        #for ish_corr in range(self.n_corr_shells):
+        #    for sp in self.spin_block_names[self.corr_shells[ish_corr]['SO']]:
+        #        ind = self.spin_names_to_ind[self.corr_shells[ish_corr]['SO']][sp]
+        #        n_orb = self.n_orbitals[ik, ind]
+        #        MMat = self.hopping[ik, ind, 0:n_orb, 0:n_orb]
+        #        h0_sumk_k[ish_corr][sp] = self.downfold_matrix(ik=ik, ish=ish_corr, bname=sp, matrix_to_downfold=MMat)
 
+        # FIXME need to check how symmetrize works properly
         # symmetrisation:
-        if self.symm_op != 0:
-            h_ksr_k = self.symmcorr.symmetrize(h_ksr_k)
+        #if self.symm_op != 0:
+        #    h0_sumk_k = self.symmcorr.symmetrize(h0_sumk_k)
         
         # rotate to local frame
         if self.use_rotations:
-            for icrsh in range(len(h_ksr_k)):
-                for block in h_ksr_k[icrsh].keys():
-                    h_ksr_k[icrsh][block] = self.rotloc_matrix(icrsh, h_ksr_k[icrsh][block], direction='toLocal')
+            for ish_corr in range(len(h0_sumk_k)):
+                for block in h0_sumk_k[ish_corr].keys():
+                    h0_sumk_k[ish_corr][block] = self.rotloc_matrix(ish_corr, h0_sumk_k[ish_corr][block], direction='toLocal')
     
-        for icrsh in range(self.n_corr_shells):
-            h_ksr_k[icrsh] = self.mat_remove_non_solvers_in_sumk(mat=h_ksr_k[icrsh], icrsh=icrsh)
+        #for ish_corr in range(self.n_corr_shells):
+        #    h0_sumk_k[ish_corr] = self.mat_remove_non_solvers_in_sumk(mat=h0_sumk_k[ish_corr], ish_corr=ish_corr)
         
-        return h_ksr_k
+        return h0_sumk_k
     
-    # the local parts of the W restricted Kohn-Sham Hamiltonian (ksr) in the local frame
-    # for each correlated shell (not inequivalent, just all of them)
-    def get_h_ksr_loc(self):
-        if not hasattr(self, "h_ksr_loc"):
-            self.h_ksr_loc = [{} for icrsh in range(self.n_corr_shells)]
-            for icrsh in range(len(self.h_ksr_loc)):
-                for sp in self.spin_block_names[self.corr_shells[icrsh]['SO']]:
-                    self.h_ksr_loc[icrsh][sp] = numpy.zeros([self.corr_shells[icrsh]['dim'],self.corr_shells[icrsh]['dim']], numpy.complex_)
+    # Local parts of non-interacting Hamiltonian in each correlated shell in sumk structure
+    def get_h0_sumk_loc(self):
+        if not hasattr(self, "h0_sumk_loc"):
+            self.h0_sumk_loc = [{} for ish_corr in range(self.n_corr_shells)]
+            for ish_corr in range(self.n_corr_shells):
+                for sp in self.spin_block_names[self.corr_shells[ish_corr]['SO']]:
+                    self.h0_sumk_loc[ish_corr][sp] = numpy.zeros([self.corr_shells[ish_corr]['dim'],self.corr_shells[ish_corr]['dim']], numpy.complex_)
 
             # do the integral
             ikarray = numpy.array(list(range(self.n_k)))
             for ik in mpi.slice_array(ikarray):
-                h_ksr_k = self.get_h_ksr_k(ik=ik)
-                for icrsh in range(len(self.h_ksr_loc)):
-                    for block in self.h_ksr_loc[icrsh].keys():
-                        self.h_ksr_loc[icrsh][block] += self.bz_weights[ik] * h_ksr_k[icrsh][block]
+                h0_sumk_k = self.get_h0_sumk_k(ik=ik)
+                for ish_corr in range(len(self.h0_sumk_loc)):
+                    for block in self.h0_sumk_loc[ish_corr].keys():
+                        self.h0_sumk_loc[ish_corr][block] += self.bz_weights[ik] * h0_sumk_k[ish_corr][block]
 
             # collect data from mpi:
-            for icrsh in range(len(self.h_ksr_loc)):
-                for block in self.h_ksr_loc[icrsh].keys():
-                    self.h_ksr_loc[icrsh][block] = mpi.all_reduce(mpi.world, self.h_ksr_loc[icrsh][block], lambda x, y: x + y)
+            for ish_corr in range(len(self.h0_sumk_loc)):
+                for block in self.h0_sumk_loc[ish_corr].keys():
+                    self.h0_sumk_loc[ish_corr][block] = mpi.all_reduce(mpi.world, self.h0_sumk_loc[ish_corr][block], lambda x, y: x + y)
             mpi.barrier()
         
-            # already symmetrized from h_ksr_k
+            # already symmetrized from h0_bl_k
         
             # already in local frame
         
-        return self.h_ksr_loc
+        return self.h0_sumk_loc
 
-    # Kinetic part of Kohn-Sham Hamiltonian 
-    def get_h_ks_kin_k(self, ik):
-        h_ks_k = self.get_h_ks_k(ik=ik)
-        h_ksr_loc = self.get_h_ksr_loc()
+    # Kinetic part of non-interacting Hamiltonian
+    def get_h0_bl_kin_k(self, ik):
+        h0_bl_k = self.get_h0_bl_k(ik=ik)
+        h0_sumk_loc = self.get_h0_sumk_loc()
         
-        h_ks_kin_k = copy.deepcopy(h_ks_k)
+        h0_bl_kin_k = copy.deepcopy(h0_bl_k)
         # H - sum_i H^loc
-        for icrsh in range(self.n_corr_shells):
-            for sp in self.spin_block_names[self.corr_shells[icrsh]['SO']]:
-                h_ks_kin_k[sp] -= self.upfold_matrix( ik=ik, ish=icrsh, bname=sp, matrix_to_upfold=h_ksr_loc[icrsh][sp] )
-                #h_ks_kin_k[sp] -= self.upfold_matrix( ik=ik, ish=icrsh, bname=sp, matrix_to_upfold=self.dc_imp[ish][sp] )
+        for ish_corr in range(self.n_corr_shells):
+            for sp in self.spin_block_names[self.corr_shells[ish_corr]['SO']]:
+                h0_bl_kin_k[sp] -= self.upfold_matrix( ik=ik, ish=ish_corr, bname=sp, matrix_to_upfold=h0_sumk_loc[ish_corr][sp] )
+                #h0_bl_kin_k[sp] -= self.upfold_matrix( ik=ik, ish=ish_corr, bname=sp, matrix_to_upfold=self.dc_imp[ish_corr][sp] )
 
-        return h_ks_kin_k
+        return h0_bl_kin_k
     
     def get_R_bl_uncorr_k(self, ik):
         ntoi = self.spin_names_to_ind[self.SO]
@@ -417,47 +444,45 @@ class SumkDFTRISB(SumkDFT):
             n_orb = self.n_orbitals[ik, ntoi[sp]]
             R_bl_uncorr_k[sp] = numpy.eye(n_orb, dtype=numpy.complex_)
         
-        for icrsh in range(self.n_corr_shells):
-            ish = self.corr_to_inequiv[icrsh]
-            for sp in self.spin_block_names[self.corr_shells[icrsh]['SO']]:
-                R_bl_uncorr_k[sp] -= self.upfold_matrix( ik=ik, ish=icrsh, bname=sp, matrix_to_upfold=self.identity_sumk[ish][sp] )
+        for ish_corr in range(self.n_corr_shells):
+            for sp in self.spin_block_names[self.corr_shells[ish_corr]['SO']]:
+                R_bl_uncorr_k[sp] -= self.upfold_matrix( ik=ik, ish=ish_corr, bname=sp, matrix_to_upfold=self.identity_sumk[ish_corr][sp] )
         
         return R_bl_uncorr_k
 
     # sumk objects are in 'global' frame
     # solver objects are in 'local' frame
-    def get_R_bl_k(self, ik, R=None):
-        if R is None:
-            R = self.R_sumk
+    def get_R_bl_k(self, ik, R_sumk=None):
+        if R_sumk is None:
+            R_sumk = self.R_sumk
 
         # FIXME does this have to rotate each corr shell individually?
         # rotate to global frame
         #if self.use_rotations:
         #    for ish in range(len(R)):
-        #        icrsh = self.inequiv_to_corr[ish]
+        #        ish_corr = self.inequiv_to_corr[ish]
         #        for block in R[ish].keys():
-        #            R[ish][block] = self.rotloc_matrix(icrsh, R[ish][block], direction='toGlobal')
+        #            R[ish][block] = self.rotloc_matrix(ish_corr, R[ish][block], direction='toGlobal')
 
         
         R_bl_k = self.get_R_bl_uncorr_k(ik=ik)
 
-        for icrsh in range(self.n_corr_shells):
-            ish = self.corr_to_inequiv[icrsh]
-            for sp in self.spin_block_names[self.corr_shells[icrsh]['SO']]:
-                R_bl_k[sp] += self.upfold_matrix( ik=ik, ish=icrsh, bname=sp, matrix_to_upfold=R[ish][sp] )
+        for ish_corr in range(self.n_corr_shells):
+            for sp in self.spin_block_names[self.corr_shells[ish_corr]['SO']]:
+                R_bl_k[sp] += self.upfold_matrix( ik=ik, ish=ish_corr, bname=sp, matrix_to_upfold=R_sumk[ish_corr][sp] )
         
         return R_bl_k
 
-    def get_Lambda_bl_k(self, ik, Lambda=None):
-        if Lambda is None:
-            Lambda = self.Lambda_sumk
+    def get_Lambda_bl_k(self, ik, Lambda_sumk=None):
+        if Lambda_sumk is None:
+            Lambda_sumk = self.Lambda_sumk
         
         # rotate to global frame
         #if self.use_rotations:
         #    for ish in range(len(Lambda)):
-        #        icrsh = self.inequiv_to_corr[ish]
+        #        ish_corr = self.inequiv_to_corr[ish]
         #        for block in Lambda[ish].keys():
-        #            Lambda[ish][block] = self.rotloc_matrix(icrsh, Lambda[ish][block], direction='toGlobal')
+        #            Lambda[ish][block] = self.rotloc_matrix(ish_corr, Lambda[ish][block], direction='toGlobal')
         
         ntoi = self.spin_names_to_ind[self.SO]
         spn = self.spin_block_names[self.SO]
@@ -466,54 +491,53 @@ class SumkDFTRISB(SumkDFT):
             n_orb = self.n_orbitals[ik, ntoi[sp]]
             Lambda_bl_k[sp] = numpy.zeros(shape=(n_orb,n_orb), dtype=numpy.complex_)
 
-        for icrsh in range(self.n_corr_shells):
-            ish = self.corr_to_inequiv[icrsh]
-            for sp in self.spin_block_names[self.corr_shells[icrsh]['SO']]:
-                Lambda_bl_k[sp] += self.upfold_matrix( ik=ik, ish=icrsh, bname=sp, matrix_to_upfold=Lambda[ish][sp] )
+        for ish_corr in range(self.n_corr_shells):
+            for sp in self.spin_block_names[self.corr_shells[ish_corr]['SO']]:
+                Lambda_bl_k[sp] += self.upfold_matrix( ik=ik, ish=ish_corr, bname=sp, matrix_to_upfold=Lambda_sumk[ish_corr][sp] )
         
         return Lambda_bl_k
 
     # The quasiparticle Hamiltonian in the Bloch space
-    def get_h_bl_qp_k(self, ik, Lambda=None, R=None):
-        if Lambda is None:
-            Lambda = self.Lambda_sumk
-        if R is None:
-            R = self.R_sumk
+    def get_h_bl_qp_k(self, ik, Lambda_sumk=None, R_sumk=None):
+        if Lambda_sumk is None:
+            Lambda_sumk = self.Lambda_sumk
+        if R_sumk is None:
+            R_sumk = self.R_sumk
         
-        h_ks_kin_k = self.get_h_ks_kin_k(ik=ik)
+        h0_bl_kin_k = self.get_h0_bl_kin_k(ik=ik)
         
         h_bl_qp_k = dict()
-        R_bl_k = self.get_R_bl_k(ik=ik, R=R)
+        R_bl_k = self.get_R_bl_k(ik=ik, R_sumk=R_sumk)
         for sp in R_bl_k:
-            h_bl_qp_k[sp] = numpy.dot( R_bl_k[sp], numpy.dot(h_ks_kin_k[sp], R_bl_k[sp].conj().T) )
+            h_bl_qp_k[sp] = numpy.dot( R_bl_k[sp], numpy.dot(h0_bl_kin_k[sp], R_bl_k[sp].conj().T) )
 
-        Lambda_bl_k = self.get_Lambda_bl_k(ik=ik, Lambda=Lambda)
+        Lambda_bl_k = self.get_Lambda_bl_k(ik=ik, Lambda_sumk=Lambda_sumk)
         for sp in Lambda_bl_k:
             h_bl_qp_k[sp] += Lambda_bl_k[sp]
         
         # below will be wrong because mu is in quasiparticle space
         # and dc_imp is included in the impurity
-        #for icrsh in range(self.n_corr_shells):
+        #for ish_corr in range(self.n_corr_shells):
         #    for sp in h_bl_qp_k:
-        #       h_bl_qp_k[sp] -= self.upfold_matrix( ik=ik, ish=icrsh, bname=sp, matrix_to_upfold=self.dc_imp[icrsh][sp] ) # would be multiplied by R etc
+        #       h_bl_qp_k[sp] -= self.upfold_matrix( ik=ik, ish=ish_corr, bname=sp, matrix_to_upfold=self.dc_imp[ish_corr][sp] ) # would be multiplied by R etc
         #       h_bl_qp_k[sp] -= mu * numpy.dot( R_bl_k[sp], R_bl_k[sp].conj().T)
 
         return h_bl_qp_k
     
     # The lopsided quasiparticle kinetic energy in the Bloch space
-    def get_h_bl_qp_kin_k(self, ik, R=None, lopsided=True):
-        if R is None:
-            R = self.R_sumk
+    def get_h_bl_qp_kin_k(self, ik, R_sumk=None, lopsided=True):
+        if R_sumk is None:
+            R_sumk = self.R_sumk
         
-        h_ks_kin_k = self.get_h_ks_kin_k(ik=ik)
+        h0_bl_kin_k = self.get_h0_bl_kin_k(ik=ik)
         
         h_bl_qp_kin_k = dict()
-        R_bl_k = self.get_R_bl_k(ik=ik, R=R)
+        R_bl_k = self.get_R_bl_k(ik=ik, R_sumk=R_sumk)
         for sp in R_bl_k:
             if lopsided:
-                h_bl_qp_kin_k[sp] = numpy.dot(h_ks_kin_k[sp], R_bl_k[sp].conj().T)
+                h_bl_qp_kin_k[sp] = numpy.dot(h0_bl_kin_k[sp], R_bl_k[sp].conj().T)
             else:
-                h_bl_qp_kin_k[sp] = numpy.dot(R_bl_k[sp], numpy.dot(h_ks_kin_k[sp], R_bl_k[sp].conj().T) )
+                h_bl_qp_kin_k[sp] = numpy.dot(R_bl_k[sp], numpy.dot(h0_bl_kin_k[sp], R_bl_k[sp].conj().T) )
         
         return h_bl_qp_kin_k
 
@@ -706,148 +730,145 @@ class SumkDFTRISB(SumkDFT):
     # FIXME
     def get_Sigma(self): # Can I use dyson's equation to get this? Or will doing inverses be fine?
         return None
-
+    
+    # FIXME
     def get_dens_uncorr_k(self, mu=None, beta=None):
         return None
 
     # quasiparticle density matrix calculated from mean-field
-    def get_pdensity(self, ish=0, Lambda=None, R=None, mu=None, beta=None):
-        if Lambda is None:
-            Lambda = self.Lambda_sumk
-        if R is None:
-            R = self.R_sumk
+    def get_pdensity(self, ish_inequiv=0, Lambda_sumk=None, R_sumk=None, mu=None, beta=None):
+        if Lambda_sumk is None:
+            Lambda_sumk = self.Lambda_sumk
+        if R_sumk is None:
+            R_sumk = self.R_sumk
         if mu is None:
             mu = self.chemical_potential
         if beta is None:
             beta = self.beta
          
-        icrsh = self.inequiv_to_corr[ish]
+        ish_corr = self.inequiv_to_corr[ish_inequiv]
         
-        for sp in self.spin_block_names[self.corr_shells[icrsh]['SO']]:
-            self.pdensity_sumk[ish][sp] = numpy.zeros([self.corr_shells[icrsh]['dim'],self.corr_shells[icrsh]['dim']], numpy.complex_)
+        for sp in self.spin_block_names[self.corr_shells[ish_corr]['SO']]:
+            self.pdensity_sumk[ish_inequiv][sp] = numpy.zeros([self.corr_shells[ish_corr]['dim'],self.corr_shells[ish_corr]['dim']], numpy.complex_)
         
         # do the integral
         ikarray = numpy.array(list(range(self.n_k)))
         for ik in mpi.slice_array(ikarray):
-            h_bl_qp_k = self.get_h_bl_qp_k(ik=ik, Lambda=Lambda, R=R)
-            for block in self.pdensity_sumk[ish].keys():
+            h_bl_qp_k = self.get_h_bl_qp_k(ik=ik, Lambda_sumk=Lambda_sumk, R_sumk=R_sumk)
+            for block in self.pdensity_sumk[ish_inequiv].keys():
                 eig, vec = numpy.linalg.eigh(h_bl_qp_k[block])
                 f_bl_qp = numpy.dot(vec, numpy.dot( numpy.diag(self.fweights(eks=eig, mu=mu, beta=beta)), vec.conjugate().transpose() ) )
                 f_bl_qp *= self.bz_weights[ik]
-                f_bl_qp = self.downfold_matrix(ik=ik, ish=icrsh, bname=block, matrix_to_downfold=f_bl_qp)
-                self.pdensity_sumk[ish][block] += f_bl_qp
+                f_bl_qp = self.downfold_matrix(ik=ik, ish=ish_corr, bname=block, matrix_to_downfold=f_bl_qp)
+                self.pdensity_sumk[ish_inequiv][block] += f_bl_qp
             
         # collect data from mpi:
-        for block in self.pdensity_sumk[ish].keys():
-            self.pdensity_sumk[ish][block] = mpi.all_reduce(mpi.world, self.pdensity_sumk[ish][block], lambda x, y: x + y)
+        for block in self.pdensity_sumk[ish_inequiv].keys():
+            self.pdensity_sumk[ish_inequiv][block] = mpi.all_reduce(mpi.world, self.pdensity_sumk[ish_inequiv][block], lambda x, y: x + y)
         mpi.barrier()
 
         # pdensity is transposed
-        for block in self.pdensity_sumk[ish].keys():
-            self.pdensity_sumk[ish][block] = self.pdensity_sumk[ish][block].transpose()
+        for block in self.pdensity_sumk[ish_inequiv].keys():
+            self.pdensity_sumk[ish_inequiv][block] = self.pdensity_sumk[ish_inequiv][block].transpose()
 
-        ## FIXME symmcorr.symmetrize is over all correlated shells, so this needs to be fixed
+        ## FIXME symmcorr.symmetrize is over all correlated shells, so I would have to change
+        # to solving over all ish_corr and then returning only the inequivalent ones
         ## symmetrisation:
         #if self.symm_op != 0:
-        #    self.pdensity_sumk[ish] = self.symmcorr.symmetrize(self.pdensity_sumk[ish])
+        #    self.pdensity_sumk[ish_inequiv] = self.symmcorr.symmetrize(self.pdensity_sumk[ish_inequiv])
         
         # FIXME
         # report on how large the imaginary components are and discard
-        err = 0
-        for block in self.pdensity_sumk[ish].keys():
-            err += numpy.sum(numpy.abs(self.pdensity_sumk[ish][block].imag))
-            self.pdensity_sumk[ish][block] = self.pdensity_sumk[ish][block].astype(numpy.float_)
-        if abs(err) > 1e-20:
-            mpi.report("Warning: Imaginary part in pdensity will be ignored. The sum is ({})".format(str(abs(err))))
+        err_max = 0
+        for block in self.pdensity_sumk[ish_inequiv].keys():
+            err_max = max( err_max, numpy.abs(self.pdensity_sumk[ish_inequiv][block].imag).max() )
+            #err += numpy.sum(numpy.abs(self.pdensity_sumk[ish_inequiv][block].imag))
+            self.pdensity_sumk[ish_inequiv][block] = self.pdensity_sumk[ish_inequiv][block].astype(numpy.float_)
+        if abs(err_max) > 1e-6:
+            #mpi.report("Warning: Imaginary part in pdensity will be ignored (sum({}))".format(str(abs(err))))
+            mpi.report("Warning: Imaginary part in pdensity will be ignored (max_imag = {})".format(str(abs(err_max))))
         
         # transform from sumk blocks to the solver blocks
-        # Note that sumk in this convert_matrix function is always indexed for all correlated shells
+        # Note that sumk in this convert_matrix function is always indexed for all correlated shells (maybe also uncorrelated)
         # And solver is always indexed for inequivalent shells
-        self.pdensity[ish] = self.block_structure.convert_matrix(
-                G=self.pdensity_sumk[ish],
+        self.pdensity[ish_inequiv] = self.block_structure.convert_matrix(
+                G=self.pdensity_sumk[ish_inequiv],
                 G_struct=None,
-                ish_from=icrsh,
-                ish_to=ish,
+                ish_from=ish_corr,
+                ish_to=ish_inequiv,
                 space_from='sumk',
                 space_to='solver',
                 show_warnings=True)
 
-        # FIXME
-        # report on how large the imaginary components are and discard
-        #err = 0
-        #for block in self.pdensity[ish].keys():
-        #    err += numpy.sum(numpy.abs(self.pdensity[ish][block].imag))
-        #    self.pdensity[ish][block] = self.pdensity[ish][block].astype(numpy.float_)
-        #if abs(err) > 1e-20:
-        #    mpi.report("Warning: Imaginary part in pdensity will be ignored. The sum is ({})".format(str(abs(err))))
-            
-        return self.pdensity[ish]
+        return self.pdensity[ish_inequiv]
    
     # lopsided quasiparticle kinetic energy calculated from mean-field
-    def get_ke(self, ish=0, Lambda=None, R=None, mu=None, beta=None, lopsided=True):
-        if Lambda is None:
-            Lambda = self.Lambda_sumk
-        if R is None:
-            R = self.R_sumk
+    def get_ke(self, ish_inequiv=0, Lambda_sumk=None, R_sumk=None, mu=None, beta=None, lopsided=True):
+        if Lambda_sumk is None:
+            Lambda_sumk = self.Lambda_sumk
+        if R_sumk is None:
+            R_sumk = self.R_sumk
         if mu is None:
             mu = self.chemical_potential
         if beta is None:
             beta = self.beta
         
-        icrsh = self.inequiv_to_corr[ish]
+        ish_corr = self.inequiv_to_corr[ish_inequiv]
          
-        for sp in self.spin_block_names[self.corr_shells[icrsh]['SO']]:
-            self.ke_sumk[ish][sp] = numpy.zeros([self.corr_shells[icrsh]['dim'],self.corr_shells[icrsh]['dim']], numpy.complex_)
+        for sp in self.spin_block_names[self.corr_shells[ish_corr]['SO']]:
+            self.ke_sumk[ish_inequiv][sp] = numpy.zeros([self.corr_shells[ish_corr]['dim'],self.corr_shells[ish_corr]['dim']], numpy.complex_)
 
         # Do the integral
         ikarray = numpy.array(list(range(self.n_k)))
         for ik in mpi.slice_array(ikarray):
-            h_bl_qp_k = self.get_h_bl_qp_k(ik=ik, Lambda=Lambda, R=R)
-            h_bl_qp_kin_k = self.get_h_bl_qp_kin_k(ik=ik, R=R, lopsided=lopsided)
-            for block in self.ke_sumk[ish].keys():
+            h_bl_qp_k = self.get_h_bl_qp_k(ik=ik, Lambda_sumk=Lambda_sumk, R_sumk=R_sumk)
+            h_bl_qp_kin_k = self.get_h_bl_qp_kin_k(ik=ik, R_sumk=R_sumk, lopsided=lopsided)
+            for block in self.ke_sumk[ish_inequiv].keys():
                 eig, vec = numpy.linalg.eigh(h_bl_qp_k[block])
                 f_bl_qp = numpy.dot(vec, numpy.dot( numpy.diag(self.fweights(eks=eig, mu=mu, beta=beta)), vec.conjugate().transpose() ) )
                 f_bl_qp *= self.bz_weights[ik]
                 ke_bl = numpy.dot(h_bl_qp_kin_k[block], f_bl_qp)
-                self.ke_sumk[ish][block] += self.downfold_matrix(ik=ik, ish=icrsh, bname=block, matrix_to_downfold=ke_bl)
+                self.ke_sumk[ish_inequiv][block] += self.downfold_matrix(ik=ik, ish=ish_corr, bname=block, matrix_to_downfold=ke_bl)
 
         # collect data from mpi:
-        for block in self.ke_sumk[ish].keys():
-            self.ke_sumk[ish][block] = mpi.all_reduce(mpi.world, self.ke_sumk[ish][block], lambda x, y: x + y)
+        for block in self.ke_sumk[ish_inequiv].keys():
+            self.ke_sumk[ish_inequiv][block] = mpi.all_reduce(mpi.world, self.ke_sumk[ish_inequiv][block], lambda x, y: x + y)
         mpi.barrier()
 
         ## FIXME symmcorr.symmetrize is over all correlated shells, so this needs to be fixed
         ## symmetrisation:
         #if self.symm_op != 0:
-        #    self.ke_sumk[ish] = self.symmcorr.symmetrize(self.ke_sumk[ish])
+        #    self.ke_sumk[ish_inequiv] = self.symmcorr.symmetrize(self.ke_sumk[ish_inequiv])
         
         # FIXME
         # report on how large the imaginary components are and discard
-        err = 0
-        for block in self.ke_sumk[ish].keys():
-            err += numpy.sum(numpy.abs(self.ke_sumk[ish][block].imag))
-            self.ke_sumk[ish][block] = self.ke_sumk[ish][block].astype(numpy.float_)
-        if abs(err) > 1e-20:
-            mpi.report("Warning: Imaginary part in ke will be ignored. The sum is ({})".format(str(abs(err))))
+        err_max = 0
+        for block in self.ke_sumk[ish_inequiv].keys():
+            err_max = max( err_max, numpy.abs(self.ke_sumk[ish_inequiv][block].imag).max() )
+            #err += numpy.sum(numpy.abs(self.ke_sumk[ish_inequiv][block].imag))
+            self.ke_sumk[ish_inequiv][block] = self.ke_sumk[ish_inequiv][block].astype(numpy.float_)
+        if abs(err_max) > 1e-6:
+            #mpi.report("Warning: Imaginary part in ke will be ignored (sum({}))".format(str(abs(err))))
+            mpi.report("Warning: Imaginary part in ke will be ignored (max_imag = {})".format(str(abs(err_max))))
          
         # transform from sumk blocks to the solver blocks
-        self.ke[ish] = self.block_structure.convert_matrix(
-                G=self.ke_sumk[ish],
+        self.ke[ish_inequiv] = self.block_structure.convert_matrix(
+                G=self.ke_sumk[ish_inequiv],
                 G_struct=None,
-                ish_from=icrsh,
-                ish_to=ish,
+                ish_from=ish_corr,
+                ish_to=ish_inequiv,
                 space_from='sumk',
                 space_to='solver',
                 show_warnings=True)
         
-        return self.ke[ish]
+        return self.ke[ish_inequiv]
     
     # Total kinetic energy in all of the bands (not lopsided)
-    def get_ke_total(self, ish=0, Lambda=None, R=None, mu=None, beta=None, lopsided=False):
+    def get_ke_total(self, Lambda_sumk=None, R_sumk=None, mu=None, beta=None, lopsided=False):
         if Lambda is None:
-            Lambda = self.Lambda_sumk
+            Lambda_sumk = self.Lambda_sumk
         if R is None:
-            R = self.R_sumk
+            R_sumk = self.R_sumk
         if mu is None:
             mu = self.chemical_potential
         if beta is None:
@@ -858,8 +879,8 @@ class SumkDFTRISB(SumkDFT):
         # Do the integral
         ikarray = numpy.array(list(range(self.n_k)))
         for ik in mpi.slice_array(ikarray):
-            h_bl_qp_k = self.get_h_bl_qp_k(ik=ik, Lambda=Lambda, R=R)
-            h_bl_qp_kin_k = self.get_h_bl_qp_kin_k(ik=ik, R=R, lopsided=lopsided)
+            h_bl_qp_k = self.get_h_bl_qp_k(ik=ik, Lambda_sumk=Lambda_sumk, R=R_sumk)
+            h_bl_qp_kin_k = self.get_h_bl_qp_kin_k(ik=ik, R_sumk=R_sumk, lopsided=lopsided)
             for block in h_bl_qp_k.keys():
                 eig, vec = numpy.linalg.eigh(h_bl_qp_k[block])
                 f_bl_qp = numpy.dot(vec, numpy.dot( numpy.diag(self.fweights(eks=eig, mu=mu, beta=beta)), vec.conjugate().transpose() ) )
@@ -869,12 +890,12 @@ class SumkDFTRISB(SumkDFT):
         
         return ke_total
 
-    def get_density_k_risb(self, ik, Lambda=None, R=None, mu=None, beta=None, dm=None, for_rho=False):
+    def get_density_k_risb(self, ik, Lambda_sumk=None, R_sumk=None, mu=None, beta=None, dm=None, for_rho=False):
         
-        if Lambda is None:
-            Lambda = self.Lambda_sumk
-        if R is None:
-            R = self.R_sumk
+        if Lambda_sumk is None:
+            Lambda_sumk = self.Lambda_sumk
+        if R_sumk is None:
+            R_sumk = self.R_sumk
         if mu is None:
             mu = self.chemical_potential
         if beta is None:
@@ -883,7 +904,7 @@ class SumkDFTRISB(SumkDFT):
         if for_rho:
             R_bl_k = self.get_R_bl_k(ik)
         
-        h_bl_qp_k = self.get_h_bl_qp_k(ik=ik, Lambda=Lambda, R=R)
+        h_bl_qp_k = self.get_h_bl_qp_k(ik=ik, Lambda_sumk=Lambda_sumk, R_sumk=R_sumk)
         
         dens_k = {}
         for bname in h_bl_qp_k.keys():
@@ -893,25 +914,25 @@ class SumkDFTRISB(SumkDFT):
             if for_rho:
                 dens_k[bname] = numpy.dot( R_bl_k[bname].conjugate().transpose(), numpy.dot(dens_k[bname], R_bl_k[bname]) )                
 
-            if dm != None:
-                for icrsh in range(self.n_corr_shells):
-                    ish = self.corr_to_inequiv[icrsh]
+            if dm is not None:
+                for ish_corr in range(self.n_corr_shells):
+                    ish_inequiv = self.corr_to_inequiv[ish_corr]
     
                     # density of imp in large space for block subtracted
-                    dens_bl_corr_k = self.downfold_matrix(ik=ik, ish=icrsh, bname=bname, matrix_to_downfold=dens_k[bname])
-                    dens_k[bname] -= self.upfold_matrix( ik=ik, ish=icrsh, bname=bname, \
+                    dens_bl_corr_k = self.downfold_matrix(ik=ik, ish=ish_corr, bname=bname, matrix_to_downfold=dens_k[bname])
+                    dens_k[bname] -= self.upfold_matrix( ik=ik, ish=ish_corr, bname=bname, \
                                                         matrix_to_upfold=dens_bl_corr_k )
                     
                     # density of imp from impurity problem added back in
-                    dens_k[bname] += self.upfold_matrix( ik=ik, ish=icrsh, bname=bname, \
-                                                        matrix_to_upfold=dm[ish][bname] )
+                    dens_k[bname] += self.upfold_matrix( ik=ik, ish=ish_corr, bname=bname, \
+                                                        matrix_to_upfold=dm[ish_inequiv][bname] )
         return dens_k
 
-    def total_density_risb(self, Lambda=None, R=None, mu=None, beta=None, dm=None):
-        if Lambda is None:
-            Lambda = self.Lambda_sumk
-        if R is None:
-            R = self.R_sumk
+    def total_density_risb(self, Lambda_sumk=None, R_sumk=None, mu=None, beta=None, dm=None):
+        if Lambda_sumk is None:
+            Lambda_sumk = self.Lambda_sumk
+        if R_sumk is None:
+            R_sumk = self.R_sumk
         if mu is None:
             mu = self.chemical_potential
         if beta is None:
@@ -921,7 +942,7 @@ class SumkDFTRISB(SumkDFT):
         dens = 0.0
         ikarray = numpy.array(list(range(self.n_k)))
         for ik in mpi.slice_array(ikarray):
-            dens_k = self.get_density_k_risb(ik=ik, Lambda=Lambda, R=R, mu=mu, beta=beta, dm=dm)
+            dens_k = self.get_density_k_risb(ik=ik, Lambda_sumk=Lambda_sumk, R_sumk=R_sumk, mu=mu, beta=beta, dm=dm)
             for bname in dens_k.keys():
                 dens += self.bz_weights[ik] * dens_k[bname].trace()
         
@@ -929,17 +950,23 @@ class SumkDFTRISB(SumkDFT):
         dens = mpi.all_reduce(mpi.world, dens, lambda x, y: x + y)
         mpi.barrier()
 
-        if abs(dens.imag) > 1e-20:
+        if abs(dens.imag) > 1e-6:
             mpi.report("Warning: Imaginary part in density will be ignored ({})".format(str(abs(dens.imag))))
         return dens.real
 
-    def calc_mu_risb(self, Lambda=None, R=None, beta=None, dm=None, 
-                           precision=0.01, delta=0.5, mu_max_iter=100, method='dichotomy',
+    def calc_mu_risb(self, Lambda_sumk=None,
+                           R_sumk=None, 
+                           beta=None, 
+                           dm=None, 
+                           precision=0.01, 
+                           delta=0.5, 
+                           mu_max_iter=100, 
+                           method='dichotomy',
                            offset=0):
-        if Lambda is None:
-            Lambda = self.Lambda_sumk
-        if R is None:
-            R = self.R_sumk
+        if Lambda_sumk is None:
+            Lambda_sumk = self.Lambda_sumk
+        if R_sumk is None:
+            R_sumk = self.R_sumk
         if beta is None:
             beta = self.beta
             
@@ -947,7 +974,7 @@ class SumkDFTRISB(SumkDFT):
 
         dichotomy_fail = False
         if method == 'dichotomy':
-            F = lambda mu: self.total_density_risb(Lambda=Lambda, R=R, mu=mu, beta=beta, dm=dm)
+            F = lambda mu: self.total_density_risb(Lambda_sumk=Lambda_sumk, R_sumk=R_sumk, mu=mu, beta=beta, dm=dm)
             res = dichotomy.dichotomy(function=F,
                                       x_init=self.chemical_potential, y_value=density,
                                       precision_on_y=precision, delta_x=delta, max_loops=mu_max_iter,
@@ -961,11 +988,17 @@ class SumkDFTRISB(SumkDFT):
                 self.chemical_potential = res
         
         # Slow but 'more robust' method
-        if (method != 'dichotomy') or dichotomy_fail:
-            F = lambda mu: numpy.abs(self.total_density_risb(Lambda=Lambda, R=R, mu=mu, beta=beta, dm=dm) - density)
-            res = minimize_scalar(F, method='brent', tol=precision, bracket=(self.chemical_potential-delta, self.chemical_potential+delta),
-                                  options={'maxiter':mu_max_iter})
+        if (method == 'brent'):
+            F = lambda mu: (self.total_density_risb(Lambda_sumk=Lambda_sumk, R_sumk=R_sumk, mu=mu, beta=beta, dm=dm) - density)**2
+            res = optimize.minimize_scalar(F, method='brent', tol=precision, bracket=(self.chemical_potential-delta, self.chemical_potential+delta),
+                                  options={'maxiter': mu_max_iter})
             self.chemical_potential = res.x
+
+        if (method == 'powell') or dichotomy_fail:
+            F = lambda mu: (self.total_density_risb(Lambda_sumk=Lambda_sumk, R_sumk=R_sumk, mu=mu, beta=beta, dm=dm) - density)**2
+            res = optimize.minimize(F, self.chemical_potential, method='Powell',
+                           options={'xtol': precision, 'ftol': precision, 'maxiter': mu_max_iter})
+            self.chemical_potential = res.x[0]
         
         return self.chemical_potential
         
@@ -1043,7 +1076,7 @@ class SumkDFTRISB(SumkDFT):
             raise NotImplementedError("Unknown density matrix type: '%s'"%(dm_type))
    
     # deltaN = N_RISB - N_ks
-    def deltaN_risb(self, dm, filename=None, dm_type='wien2k', R=None, Lambda=None, mu=None, beta=None):
+    def deltaN_risb(self, dm, filename=None, dm_type='wien2k', R_sumk=None, Lambda_sumk=None, mu=None, beta=None):
         assert dm_type in ('vasp', 'wien2k'), "'dm_type' must be either 'vasp' or 'wienk'"
 
         if filename is None:
@@ -1055,10 +1088,10 @@ class SumkDFTRISB(SumkDFT):
         assert isinstance(filename, str), ("deltaN_risb: "
                                               "filename has to be a string!")
         
-        if Lambda is None:
-            Lambda = self.Lambda_sumk
-        if R is None:
-            R = self.R_sumk
+        if Lambda_sumk is None:
+            Lambda_sumk = self.Lambda_sumk
+        if R_sumk is None:
+            R_sumk = self.R_sumk
         if mu is None:
             mu = self.chemical_potential
         if beta is None:
@@ -1098,7 +1131,7 @@ class SumkDFTRISB(SumkDFT):
           
         ikarray = numpy.array(list(range(self.n_k)))
         for ik in mpi.slice_array(ikarray):
-            dens_k = self.get_density_k_risb(ik=ik, Lambda=Lambda, R=R, mu=mu, beta=beta, dm=dm, for_rho=True)
+            dens_k = self.get_density_k_risb(ik=ik, Lambda_sumk=Lambda_sumk, R_sumk=R_sumk, mu=mu, beta=beta, dm=dm, for_rho=True)
             
             for bname in dens_k.keys():
                 # rotate into the DFT band basis
@@ -1146,7 +1179,7 @@ class SumkDFTRISB(SumkDFT):
     
     # FIXME below is technically not correct (tried to adapt from DMFT)
     # It does not take the correlated density for the correction, and instead takes the pdensity
-    def calc_density_correction_risb(self, filename=None, dm_type='wien2k', Lambda=None, R=None, mu=None, beta=None):
+    def calc_density_correction_risb(self, filename=None, dm_type='wien2k', Lambda_sumk=None, R_sumk=None, mu=None, beta=None):
         assert dm_type in ('vasp', 'wien2k'), "'dm_type' must be either 'vasp' or 'wienk'"
 
         if filename is None:
@@ -1158,10 +1191,10 @@ class SumkDFTRISB(SumkDFT):
         assert isinstance(filename, str), ("calc_density_correction: "
                                               "filename has to be a string!")
 
-        if Lambda is None:
-            Lambda = self.Lambda_sumk
-        if R is None:
-            R = self.R_sumk
+        if Lambda_sumk is None:
+            Lambda_sumk = self.Lambda_sumk
+        if R_sumk is None:
+            R_sumk = self.R_sumk
         if mu is None:
             mu = self.chemical_potential
         if beta is None:
@@ -1194,12 +1227,11 @@ class SumkDFTRISB(SumkDFT):
             deltaN[sp] = [numpy.zeros([self.n_orbitals[ik, ntoi[sp]], self.n_orbitals[
                                       ik, ntoi[sp]]], numpy.complex_) for ik in range(self.n_k)]
 
-
         # Calculate (change in) density matrix
         ikarray = numpy.array(list(range(self.n_k)))
         for ik in mpi.slice_array(ikarray):
-            #h_bl_k = self.get_h_bl_k(ik=ik, Lambda=Lambda, R=R)
-            h_bl_qp_k = self.get_h_bl_qp_k(ik=ik, Lambda=Lambda, R=R)
+            #h_bl_k = self.get_h_bl_k(ik=ik, Lambda_sumk=Lambda_sumk, R_sumk=R_sumk)
+            h_bl_qp_k = self.get_h_bl_qp_k(ik=ik, Lambda_sumk=Lambda_sumk, R_sumk=R_sumk)
 
             if dm_type == 'vasp' and self.proj_or_hk == 'hk':
                 # rotate into the DFT band basis
