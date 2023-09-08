@@ -1,0 +1,11 @@
+services:
+  risb:
+    image: risb-dev:3.2.x
+    container_name: risb
+    build:
+      context: ../
+      dockerfile: packaging/Dockerfile.dev
+    volumes:
+      - "../:/home/build/src/risb:ro"
+    stdin_open: true # docker run -i
+    tty: true        # docker run -t
