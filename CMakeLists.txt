@@ -31,12 +31,11 @@ get_directory_property(IS_SUBPROJECT PARENT_DIRECTORY)
 # Load TRIQS and CPP2PY
 find_package(TRIQS 3.2 REQUIRED)
 
-# FIXME Load kint
+# Load kint if possible for tests
 find_package(kint 3.2 CONFIG)
 
 # Some possible embedding solvers
 find_package(embedding_ed 3.2 CONFIG)
-find_package(pomerol2triqs CONFIG)
 
 # Get the git hash & print status
 triqs_get_git_hash_of_source_dir(PROJECT_GIT_HASH)

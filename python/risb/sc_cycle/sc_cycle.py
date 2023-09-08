@@ -156,11 +156,11 @@ def get_h_qp2(R, Lambda, h0_k, mu=0):
     h_qp = np.zeros(shape=(mesh_num,na*orb_dim,na*orb_dim), dtype=complex)
 
     for i,j in product(range(na),range(na)):
-        mu_mat = mu * np.eye(Lambda[i].shape[0])
         the_slice = np.index_exp[:, i*orb_dim:(i+1)*orb_dim, j*orb_dim:(j+1)*orb_dim]
         h_qp[the_slice] = np.matmul( R[i], np.matmul(h0_k[:,i,j,...], R[j].conj().T) )
         #h_qp[the_slice] = np.einsum('ac,kcd,db->kab', R[i], h0_k[:,i,j,...], R[j].conj().T)
         if i == j:
+            mu_mat = mu * np.eye(Lambda[i].shape[0])
             h_qp[the_slice] += Lambda[i] - mu_mat
 
     eig, vec = np.linalg.eigh(h_qp)

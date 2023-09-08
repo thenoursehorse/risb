@@ -5,14 +5,8 @@ foreach(file ${all_h5_ref_files})
 endforeach()
 
 # atom_diag impurity solver tests
-set(all_tests basic_functions one_band_cubic two_band_cubic_kanamori two_band_cubic_bilayer)
-#three_orbital_dh
+set(all_tests basic_functions one_band_cubic two_band_cubic_kanamori two_band_cubic_bilayer three_orbital_dh)
 #one_band_cubic_gf one_band_semicircular_gf two_band_semicircular_gf
-
-# pomerol impurity solver tests
-if(pomerol2triqs_FOUND)
-  set(all_tests ${all_tests} pomerol_one_band_cubic)
-endif()
 
 # embedding_ed impurity solver tests
 if(embedding_ed_FOUND AND kint_FOUND)

@@ -7,58 +7,64 @@ from triqs.operators.util.observables import N_op
 
 from risb.embedding_atom_diag import *
 
-def build_dh_h0_k(tg=0.5, nkx=18):
-        na = 2
-        orb_dim = 3
-        phi = 2.0 * np.pi / 3.0
+def build_dh_h0_k(tg=0.5, nkx=18, block_names=['up','dn']):
+    na = 2
+    orb_dim = 3
+    phi = 2.0 * np.pi / 3.0
 
-        # Build shifted 2D mesh
-        mesh = np.empty(shape=(nkx*nkx, 2))
-        for idx,coords in enumerate(zip(range(nkx), range(nkx))):
-            mesh[idx,0] = coords[0]/nkx + 0.5/nkx
-            mesh[idx,1] = coords[1]/nkx + 0.5/nkx
+    # Build shifted 2D mesh
+    mesh = np.empty(shape=(nkx*nkx, 2))
+    for idx,coords in enumerate(zip(range(nkx), range(nkx))):
+        mesh[idx,0] = coords[0]/nkx + 0.5/nkx
+        mesh[idx,1] = coords[1]/nkx + 0.5/nkx
         
-        mesh_num = mesh.shape[0]
+    mesh_num = mesh.shape[0]
 
-        # Unit cell lattice vectors and Bravai lattice vectors
-        R1 = ( 3.0/2.0, np.sqrt(3.0)/2.0)
-        R2 = ( 3.0/2.0, -np.sqrt(3.0)/2.0)
-        R = np.array((R1, R2)).T
-        G = 2.0*np.pi*np.linalg.inv(R)
+    # Unit cell lattice vectors and Bravai lattice vectors
+    R1 = ( 3.0/2.0, np.sqrt(3.0)/2.0)
+    R2 = ( 3.0/2.0, -np.sqrt(3.0)/2.0)
+    R = np.array((R1, R2)).T
+    G = 2.0*np.pi*np.linalg.inv(R)
 
-        # Vectors to inter-triangle nearest neighbors
-        d0 = ( 1.0, 0.0 )
-        d1 = ( -0.5, np.sqrt(3.0)/2.0 )
-        d2 = ( -0.5, -np.sqrt(3.0)/2.0 )
+    # Vectors to inter-triangle nearest neighbors
+    d0 = ( 1.0, 0.0 )
+    d1 = ( -0.5, np.sqrt(3.0)/2.0 )
+    d2 = ( -0.5, -np.sqrt(3.0)/2.0 )
         
-        h0_k = np.zeros([mesh_num,na,na,orb_dim,orb_dim],dtype=complex)
+    h0_k = np.zeros([mesh_num,na,na,orb_dim,orb_dim],dtype=complex)
 
-        for k,i,j,m,mm in product(range(mesh_num),range(na),range(na),range(orb_dim),range(orb_dim)):
-            kay = np.dot(G.T, mesh[k,:])
-            if (i == 0) and (j == 1):
-                h0_k[k,i,j,m,mm] = -(tg/3.0) * ( np.exp(1j * np.dot(kay,d0)) 
-                                   + np.exp(1j * np.dot(kay,d1)) * np.exp(1j * phi * (mm-m)) 
-                                   + np.exp(1j * (np.dot(kay,d2)))*np.exp(1j * 2.0 * phi * (mm-m)) )
-            elif (i == 1) and (j == 0):
-                h0_k[k,i,j,m,mm] = -(tg/3.0) * ( np.exp(-1j * np.dot(kay,d0)) 
-                                   + np.exp(-1j * np.dot(kay,d1)) * np.exp(-1j *phi * (m-mm)) 
-                                   + np.exp(-1j * np.dot(kay,d2)) * np.exp(-1j * 2.0 * phi * (m-mm)) )
-            else:
-                h0_k[k,i,j,m,mm] = 0
+    for k,i,j,m,mm in product(range(mesh_num),range(na),range(na),range(orb_dim),range(orb_dim)):
+        kay = np.dot(G.T, mesh[k,:])
+        if (i == 0) and (j == 1):
+            h0_k[k,i,j,m,mm] = -(tg/3.0) * ( np.exp(1j * np.dot(kay,d0)) 
+                               + np.exp(1j * np.dot(kay,d1)) * np.exp(1j * phi * (mm-m)) 
+                               + np.exp(1j * (np.dot(kay,d2)))*np.exp(1j * 2.0 * phi * (mm-m)) )
+        elif (i == 1) and (j == 0):
+            h0_k[k,i,j,m,mm] = -(tg/3.0) * ( np.exp(-1j * np.dot(kay,d0)) 
+                               + np.exp(-1j * np.dot(kay,d1)) * np.exp(-1j *phi * (m-mm)) 
+                               + np.exp(-1j * np.dot(kay,d2)) * np.exp(-1j * 2.0 * phi * (m-mm)) )
+        else:
+            h0_k[k,i,j,m,mm] = 0
 
-        return h0_k
+    h0_k_out = dict()
+    for bl in block_names:
+        h0_k_out[bl] = h0_k
+    return h0_k_out
 
-def hubb_N(tk, U, spins):
+def hubb_N(tk, U, spin_names):
     n_orbs = 3
-    phi = 2.0 * np.pi / N
+    phi = 2.0 * np.pi / n_orbs
     h_loc = Operator()
 
-    for a,m,mm,s in product(n_orbs,n_orbs,n_orbs,spins):
-        h_loc += (-tk / N) * c_dag(s,m) * c(s,mm) * np.exp(-1j * phi * a * m) * np.exp(1j * phi * np.mod(a+1,N) * mm)
-        h_loc += (-tk / N) * c_dag(s,m) * c(s,mm) * np.exp(-1j * phi * np.mod(a+1,N) * m) * np.exp(1j * phi * a * mm)
+    spin_up = spin_names[0]
+    spin_dn = spin_names[1]
+
+    for a,m,mm,s in product(range(n_orbs), range(n_orbs), range(n_orbs), spin_names):
+        h_loc += (-tk / float(n_orbs)) * c_dag(s,m) * c(s,mm) * np.exp(-1j * phi * a * m) * np.exp(1j * phi * np.mod(a+1,n_orbs) * mm)
+        h_loc += (-tk / float(n_orbs)) * c_dag(s,m) * c(s,mm) * np.exp(-1j * phi * np.mod(a+1,n_orbs) * m) * np.exp(1j * phi * a * mm)
     
-    for m,mm,mmm in product(n_orbs,n_orbs,n_orbs):
-        h_loc += (U / N) * c_dag("up",m) * c("up",mm) * c_dag("dn",mmm) * c("dn",np.mod(m+mmm-mm,N))
+    for m,mm,mmm in product(range(n_orbs), range(n_orbs), range(n_orbs)):
+        h_loc += (U / float(n_orbs)) * c_dag(spin_up,m) * c(spin_up,mm) * c_dag(spin_dn,mmm) * c(spin_dn,np.mod(m+mmm-mm,n_orbs))
     
     return h_loc.real
 
@@ -66,132 +72,129 @@ class tests(unittest.TestCase):
  
     def test_dh_two_third(self):
         n_orbs = 3
+        nkx = 18
+        beta = 40
+        num_cycles = 5
+
         tk = 1.0
         tg = 0.5
-        nkx = 18
-        beta = 10
-        num_cycles = 5
-        mu = 1
+        U = 3
+        fixed = 'density'
+        N_target = 8
         
         spin_names = ['up','dn']
         block_names = spin_names
-        gf_struct = set_operator_structure(spin_names, n_orbs, True)
+        gf_struct = set_operator_structure(spin_names, n_orbs, off_diag=True)
         
         emb_solver = EmbeddingAtomDiag(gf_struct)
 
-        [dispersion, kintegrator] = build_dh_dispersion(tg, nkx)
+        h0_k = build_dh_h0_k(tg, nkx, block_names)
 
         [R, Lambda] = build_block_mf_matrices(gf_struct)
-        [D, Lambda_c] = build_block_mf_matrices(gf_struct)
 
-        U = 1.
-        h_loc = hubb_N(tk, U, orb_names, spin_names)
-
-        eprint("U =", U, "tk =", tk)
+        h_loc = hubb_N(tk, U, spin_names)
 
         # First guess for Lambda is the quadratic terms in h_loc
-        for block in block_names:
-            Lambda[block] = np.array([[-2,0,0],[0,1,0],[0,0,1]])
+        for bl in block_names:
+            Lambda[bl] = np.array([[-2,0,0],[0,1,0],[0,0,1]])
+
+        pdensity = deepcopy(R)
+        Lambda_c = deepcopy(R)
+        D = deepcopy(R)
+
+        P = np.zeros(shape=(6,3))
+        P[0,0] = 1
+        P[1,1] = 1
+        P[2,2] = 1
+        print(P)
         
+        n_k = h0_k['up'].shape[0]
         for cycle in range(num_cycles):
 
-            # Symmetrize
-            #symmetrize(R,block_names)
-            #symmetrize(Lambda,block_names)
-                
             norm = 0
             R_old = deepcopy(R)
             Lambda_old = deepcopy(Lambda)
 
-            #for b, block in enumerate(block_names):
-            for b, block in enumerate(['up']):
+            eig = dict()
+            vec = dict()
+            for bl in block_names:
+                eig[bl], vec[bl] = sc.get_h_qp2([R[bl],R[bl]], [Lambda[bl],Lambda[bl]], h0_k[bl])
+  
+            if fixed == 'density':
+                mu = update_mu(eig, N_target, beta, n_k)
 
-                # python
-                eig, vec = sc.get_h_qp2([R[block],R[block]], [Lambda[block],Lambda[block]], dispersion, mu)
-                disp_R = sc.get_disp_R2([R[block],R[block]], dispersion, vec)
+            for bl in ['up']:
+                disp_R = sc.get_h0_R2([R[bl],R[bl]], h0_k[bl], vec[bl])
+                wks = fermi_fnc(eig[bl], beta, mu) / n_k
+
+                vec[bl] = np.einsum('ij,kjl->kil', P.conj().T, vec[bl])
+                disp_R = np.einsum('ij,kjl->kil', P.conj().T, disp_R)
+                pdensity = sc.get_pdensity(vec[bl], wks) # Project onto one of the triangles in the unit cell
+                ke = np.real( sc.get_ke(disp_R, vec[bl], wks) )
                 
-                # Using fermi smear
-                wks = fermi_fnc(eig, beta) / nkx**2
-                
-                # python
-                pdensity = sc.get_pdensity(vec[:,0:3,:], wks) # Project onto one of the triangles in the unit cell
-                ke = np.real( sc.get_ke(disp_R[:,0:3,:], vec[:,0:3,:], wks) )
+                #pdensity = sc.get_pdensity(vec[bl][:,0:3,:], wks) # Project onto one of the triangles in the unit cell
+                #ke = np.real( sc.get_ke(disp_R[:,0:3,:], vec[bl][:,0:3,:], wks) )
                 
                 # Set non-diagonal elements to zero
                 pdensity = np.diag(np.diag(pdensity))
                 ke = np.diag(np.diag(ke))
 
-                eprint("pdensity =", pdensity)
-
-                D[block] = sc.get_d(pdensity, ke)
-                Lambda_c[block] = sc.get_lambda_c(pdensity, R[block], Lambda[block], D[block])
+                D[bl] = sc.get_d(pdensity, ke)
+                Lambda_c[bl] = sc.get_lambda_c(pdensity, R[bl], Lambda[bl], D[bl])
 
             Lambda_c['dn'] = Lambda_c['up']
             D['dn'] = D['up']
                 
-            emb_solver.set_h_emb(h_loc, Lambda_c, D) #, mu)
+            emb_solver.set_h_emb(h_loc, Lambda_c, D)
             emb_solver.solve()
         
-            N = N_op(spin_names,orb_names,off_diag=True)
-            #eprint("N =", trace_rho_op(emb_solver.get_dm(), N, emb_solver.get_ad()) )
-            eprint("N =", emb_solver.overlap(N))
-
-            #for b, block in enumerate(block_names):
-            for b, block in enumerate(['up']):
-                Nf = emb_solver.get_nf(block)
-                Mcf = emb_solver.get_mcf(block)
-                Nc = emb_solver.get_nc(block)
+            for bl in ['up']:
+                Nf = emb_solver.get_nf(bl)
+                Mcf = emb_solver.get_mcf(bl)
+                Nc = emb_solver.get_nc(bl)
                 
                 # Set non-diagonal elements to zero
                 Nf = np.diag(np.diag(Nf))
                 Mcf = np.diag(np.diag(Mcf))
                 Nc = np.diag(np.diag(Nc))
         
-                eprint("D =", D)
-                eprint("Lambda_c =", Lambda_c)
-                eprint("Nf =", Nf)
-                eprint("Mcf =", Mcf)
-                eprint("Nc =", Nc)
-                
-                Lambda[block] = sc.get_lambda(R[block], D[block], Lambda_c[block], Nf)
-                R[block] = sc.get_r(Mcf, Nf)
+                Lambda[bl] = sc.get_lambda(R[bl], D[bl], Lambda_c[bl], Nf)
+                R[bl] = sc.get_r(Mcf, Nf)
                 
                 # Set non-diagonal elements to zero
-                Lambda[block] = np.diag(np.diag(Lambda[block]))
-                R[block] = np.diag(np.diag(R[block]))
+                Lambda[bl] = np.diag(np.diag(Lambda[bl]))
+                R[bl] = np.diag(np.diag(R[bl]))
                 
-                norm += np.linalg.norm(R[block] - R_old[block])
-                norm += np.linalg.norm(Lambda[block] - Lambda_old[block])
+                norm += np.linalg.norm(R[bl] - R_old[bl])
+                norm += np.linalg.norm(Lambda[bl] - Lambda_old[bl])
 
             Lambda['dn'] = Lambda['up']
             R['dn'] = R['up']
 
             if norm < 1e-6:
                 break
+            
 
-        eprint("D =", D)
-        eprint("Lambda_c =", Lambda_c)
         eprint("Nf =", Nf)
         eprint("Mcf =", Mcf)
         eprint("Nc =", Nc)
 
-        N = N_op(spin_names,orb_names,off_diag=True)
-        S2 = S2_op(spin_names,orb_names,off_diag=True)
-        #S2_avg = trace_rho_op(emb_solver.get_dm(), S2, emb_solver.get_ad())
+        N = N_op(spin_names, n_orbs, off_diag=True)
+        S2 = S2_op(spin_names, n_orbs, off_diag=True)
         S2_avg = emb_solver.overlap(S2)
 
-
         Z = dict()
-        for block in block_names:
-            Z[block] = np.dot(R[block], R[block])
+        for bl in block_names:
+            Z[bl] = np.dot(R[bl], R[bl])
         eprint("cycles =", cycle, "norm =", norm)
         eprint("Z =", Z)
         eprint("Lambda =", Lambda)
         eprint("mu =", mu)
-        #eprint("N =", trace_rho_op(emb_solver.get_dm(), N, emb_solver.get_ad()) )
         eprint("N =", emb_solver.overlap(N))
         eprint("S2 =", S2_avg)
         eprint("S =", np.sqrt(S2_avg + 0.25) - 0.5 )
+
+        print(null)
 
         #mu_calculated = 0
         #for block in block_names:
