@@ -1,7 +1,13 @@
 #!/usr/bin/env python
 
-from common import *
-from risb.embedding_atom_diag import *
+import numpy as np
+import unittest
+from common import build_cubic_h0_k, build_block_mf_matrices
+from triqs.operators import *
+from risb import sc
+from risb import LatticeSolver
+from risb.kweight import SmearingKWeight
+from risb.embedding_atom_diag import EmbeddingAtomDiag
 
 beta = 10
 gf_struct=[('up',2),('dn',2)]
@@ -16,7 +22,6 @@ class tests(unittest.TestCase):
         
     def test_get_ke(self):
         h0_k = build_cubic_h0_k(gf_struct=gf_struct)
-        nk = h0_k['up'].shape[0]
         R, Lambda = build_block_mf_matrices(gf_struct=gf_struct)
         for block,_ in gf_struct:
             np.fill_diagonal(Lambda[block], 0.5)
@@ -24,17 +29,16 @@ class tests(unittest.TestCase):
         vec = dict()
         for block,_ in gf_struct:
             eig[block], vec[block] = sc.get_h_qp(R[block], Lambda[block], h0_k[block])
+        sumk = SmearingKWeight(beta=beta, mu=0)
+        wks = sumk.update_weights(eig)
         h0_R = dict()
-        wks = dict()
         ke = dict()
         for block,_ in gf_struct:
             h0_R[block] = sc.get_h0_R(R[block], h0_k[block], vec[block])
-            wks[block] = fermi_fnc(eig[block], beta) / nk
             ke[block] = sc.get_ke(h0_R[block], vec[block], wks[block])
         
     def test_get_pdensity(self):
         h0_k = build_cubic_h0_k(gf_struct=gf_struct)
-        nk = h0_k['up'].shape[0]
         R, Lambda = build_block_mf_matrices(gf_struct=gf_struct)
         for block,_ in gf_struct:
             np.fill_diagonal(Lambda[block], 0.5)
@@ -42,9 +46,8 @@ class tests(unittest.TestCase):
         vec = dict()
         for block,_ in gf_struct:
             eig[block], vec[block] = sc.get_h_qp(R[block], Lambda[block], h0_k[block])
-        wks = dict()
-        for block,_ in gf_struct:
-            wks[block] = fermi_fnc(eig[block], beta) / nk
+        sumk = SmearingKWeight(beta=beta, mu=0)
+        wks = sumk.update_weights(eig)
         pdensity = dict()
         for block,_ in gf_struct:
             pdensity[block] = sc.get_pdensity(vec[block], wks[block])
@@ -66,7 +69,7 @@ class tests(unittest.TestCase):
                       'dn': np.array([[-0.33862285,  0.       ],
                                       [ 0.        , -0.33862285 ]])}
         for block,_ in gf_struct:
-            assert_arrays_are_close(D_expected[block], D[block], 1e-8)
+            np.testing.assert_allclose(D_expected[block], D[block], rtol=0, atol=1e-8)
         
     def test_get_lambda_c(self): 
         Lambda = {'up': np.array([[0.5, 0. ],
@@ -93,7 +96,7 @@ class tests(unittest.TestCase):
                              'dn': np.array([[ 0.01813814, -0.        ],
                                              [-0.        ,  0.01813814]])}
         for block,_ in gf_struct:
-            assert_arrays_are_close(Lambda_c_expected[block], Lambda_c[block], 1e-8)
+            np.testing.assert_allclose(Lambda_c_expected[block], Lambda_c[block], rtol=0, atol=1e-8)
 
     def test_solve_emb(self):
         #fops_local = [(s,o) for s,o in product(('up','dn'),list(range(1,2)))]
@@ -106,8 +109,8 @@ class tests(unittest.TestCase):
              'dn': np.array([[-0.33862285,  0.       ],
                              [ 0.        , -0.33862285 ]])}
         h_loc = n('up',0) * n('dn',0)
-        emb_solver = EmbeddingAtomDiag(gf_struct) 
-        emb_solver.set_h_emb(h_loc, Lambda_c, D)
+        emb_solver = EmbeddingAtomDiag(h_loc, gf_struct) 
+        emb_solver.set_h_emb(Lambda_c, D)
         emb_solver.solve()
         Nf = dict()
         Mcf = dict()

@@ -1,11 +1,17 @@
 #!/usr/bin/env python
 
-from common import *
+import numpy as np
+from itertools import product
+import unittest
+from common import symmetrize_blocks
+from triqs.operators import *
 from triqs.operators.util.op_struct import set_operator_structure
 from triqs.operators.util.observables import S2_op
 from triqs.operators.util.observables import N_op
 
-from risb.embedding_atom_diag import *
+from risb import LatticeSolver
+from risb.kweight import SmearingKWeight
+from risb.embedding_atom_diag import EmbeddingAtomDiag
 
 def build_dh_h0_k(tg=0.5, nkx=18, block_names=['up','dn']):
     na = 2
@@ -74,139 +80,65 @@ class tests(unittest.TestCase):
         n_orbs = 3
         nkx = 18
         beta = 40
-        num_cycles = 5
+        n_cycles = 5
+        n_target = 8
 
         tk = 1.0
         tg = 0.5
         U = 3
-        fixed = 'density'
-        N_target = 8
         
         spin_names = ['up','dn']
         block_names = spin_names
         gf_struct = set_operator_structure(spin_names, n_orbs, off_diag=True)
-        
-        emb_solver = EmbeddingAtomDiag(gf_struct)
 
         h0_k = build_dh_h0_k(tg, nkx, block_names)
-
-        [R, Lambda] = build_block_mf_matrices(gf_struct)
-
         h_loc = hubb_N(tk, U, spin_names)
+        
+        emb_solver = EmbeddingAtomDiag(h_loc, gf_struct)
+        kweight_solver = SmearingKWeight(beta=beta, n_target=n_target)
+        S = LatticeSolver(h0_k=h0_k,
+                          gf_struct=gf_struct,
+                          emb_solver=emb_solver,
+                          kweight_solver=kweight_solver,
+                          symmetries=[symmetrize_blocks])
 
         # First guess for Lambda is the quadratic terms in h_loc
         for bl in block_names:
-            Lambda[bl] = np.array([[-2,0,0],[0,1,0],[0,0,1]])
-
-        pdensity = deepcopy(R)
-        Lambda_c = deepcopy(R)
-        D = deepcopy(R)
-
-        P = np.zeros(shape=(6,3))
+            S.Lambda[bl] = np.array([[-2,0,0],[0,1,0],[0,0,1]])
+        
+        # Set up projectors onto a triangle
+        P = np.zeros(shape=(3,6))
         P[0,0] = 1
         P[1,1] = 1
         P[2,2] = 1
         print(P)
         
-        n_k = h0_k['up'].shape[0]
-        for cycle in range(num_cycles):
-
-            norm = 0
-            R_old = deepcopy(R)
-            Lambda_old = deepcopy(Lambda)
-
-            eig = dict()
-            vec = dict()
-            for bl in block_names:
-                eig[bl], vec[bl] = sc.get_h_qp2([R[bl],R[bl]], [Lambda[bl],Lambda[bl]], h0_k[bl])
-  
-            if fixed == 'density':
-                mu = update_mu(eig, N_target, beta, n_k)
-
-            for bl in ['up']:
-                disp_R = sc.get_h0_R2([R[bl],R[bl]], h0_k[bl], vec[bl])
-                wks = fermi_fnc(eig[bl], beta, mu) / n_k
-
-                vec[bl] = np.einsum('ij,kjl->kil', P.conj().T, vec[bl])
-                disp_R = np.einsum('ij,kjl->kil', P.conj().T, disp_R)
-                pdensity = sc.get_pdensity(vec[bl], wks) # Project onto one of the triangles in the unit cell
-                ke = np.real( sc.get_ke(disp_R, vec[bl], wks) )
-                
-                #pdensity = sc.get_pdensity(vec[bl][:,0:3,:], wks) # Project onto one of the triangles in the unit cell
-                #ke = np.real( sc.get_ke(disp_R[:,0:3,:], vec[bl][:,0:3,:], wks) )
-                
-                # Set non-diagonal elements to zero
-                pdensity = np.diag(np.diag(pdensity))
-                ke = np.diag(np.diag(ke))
-
-                D[bl] = sc.get_d(pdensity, ke)
-                Lambda_c[bl] = sc.get_lambda_c(pdensity, R[bl], Lambda[bl], D[bl])
-
-            Lambda_c['dn'] = Lambda_c['up']
-            D['dn'] = D['up']
-                
-            emb_solver.set_h_emb(h_loc, Lambda_c, D)
-            emb_solver.solve()
+        S.solve(n_cycles=n_cycles)
         
-            for bl in ['up']:
-                Nf = emb_solver.get_nf(bl)
-                Mcf = emb_solver.get_mcf(bl)
-                Nc = emb_solver.get_nc(bl)
+        #eig[bl], vec[bl] = sc.get_h_qp2([R[bl],R[bl]], [Lambda[bl],Lambda[bl]], h0_k[bl])
+        #disp_R = sc.get_h0_R2([R[bl],R[bl]], h0_k[bl], vec[bl])
+        #wks = fermi_fnc(eig[bl], beta, mu) / n_k
+        #vec[bl] = np.einsum('ij,kjl->kil', P, vec[bl])
+        #disp_R = np.einsum('ij,kjl->kil', P, disp_R)
+        ##pdensity = sc.get_pdensity(vec[bl][:,0:3,:], wks) # Project onto one of the triangles in the unit cell
+        ##ke = np.real( sc.get_ke(disp_R[:,0:3,:], vec[bl][:,0:3,:], wks) )
                 
-                # Set non-diagonal elements to zero
-                Nf = np.diag(np.diag(Nf))
-                Mcf = np.diag(np.diag(Mcf))
-                Nc = np.diag(np.diag(Nc))
-        
-                Lambda[bl] = sc.get_lambda(R[bl], D[bl], Lambda_c[bl], Nf)
-                R[bl] = sc.get_r(Mcf, Nf)
-                
-                # Set non-diagonal elements to zero
-                Lambda[bl] = np.diag(np.diag(Lambda[bl]))
-                R[bl] = np.diag(np.diag(R[bl]))
-                
-                norm += np.linalg.norm(R[bl] - R_old[bl])
-                norm += np.linalg.norm(Lambda[bl] - Lambda_old[bl])
-
-            Lambda['dn'] = Lambda['up']
-            R['dn'] = R['up']
-
-            if norm < 1e-6:
-                break
-            
-
-        eprint("Nf =", Nf)
-        eprint("Mcf =", Mcf)
-        eprint("Nc =", Nc)
+        print("Nf =", S.Nf)
+        print("Mcf =", S.Mcf)
+        print("Nc =", S.Nc)
 
         N = N_op(spin_names, n_orbs, off_diag=True)
         S2 = S2_op(spin_names, n_orbs, off_diag=True)
         S2_avg = emb_solver.overlap(S2)
 
-        Z = dict()
-        for bl in block_names:
-            Z[bl] = np.dot(R[bl], R[bl])
-        eprint("cycles =", cycle, "norm =", norm)
-        eprint("Z =", Z)
-        eprint("Lambda =", Lambda)
-        eprint("mu =", mu)
-        eprint("N =", emb_solver.overlap(N))
-        eprint("S2 =", S2_avg)
-        eprint("S =", np.sqrt(S2_avg + 0.25) - 0.5 )
+        print("Z =", S.Z)
+        print("Lambda =", S.Lambda)
+        print("mu =", kweight_solver.mu)
+        print("N =", emb_solver.overlap(N))
+        print("S2 =", S2_avg)
+        print("S =", np.sqrt(S2_avg + 0.25) - 0.5 )
 
         print(null)
-
-        #mu_calculated = 0
-        #for block in block_names:
-        #    mu_calculated += np.trace(Lambda[block]) / (len(orb_names) * len(block_names))
-        #mu_expected = mu
-        #Z_expected = np.array([[0.780708,0,0],[0,0.780708,0],[0,0,0.780708]])
-        #Lambda_expected = np.array([[mu_expected,0,0],[0,mu_expected,0],[0,0,mu_expected]])
-
-        #assert are_close(mu_calculated, mu_expected, 1e-6), "mu_calculated = {0}, mu_expected = {1}".format(mu_calculated,mu_expected)
-        #for block in block_names:
-        #    assert_arrays_are_close(Lambda_expected, Lambda[block], 1e-6)
-        #    assert_arrays_are_close(Z_expected, Z[block], 1e-6)
 
 if __name__ == '__main__':
     unittest.main()

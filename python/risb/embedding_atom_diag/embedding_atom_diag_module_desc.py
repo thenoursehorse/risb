@@ -41,7 +41,7 @@ for c_py, c_cpp, in (('Real','false'),('Complex','true')):
             hdf5 = False,
     )
     
-    c.add_constructor("(gf_struct_t gf_struct, double beta = 1e6)",
+    c.add_constructor("(many_body_operator h_loc, gf_struct_t gf_struct, double beta = 1e6)",
                       doc = "atom_diag autopartition constructor")
 
     c.add_method("%s::atom_diag_t get_ad()" % c_type, # FIXME this does not convert properly
@@ -50,10 +50,10 @@ for c_py, c_cpp, in (('Real','false'),('Complex','true')):
     c.add_method("%s::block_matrix_t get_dm()" % c_type,
                  doc = "The density matrix")
 
-    c.add_method("void solve ()",
+    c.add_method('void solve (std::string fixed = "M")',
                  doc = "Solve the embedding Hamiltonian")
     
-    c.add_method("void set_h_emb (many_body_operator h_loc, std::map<std::string,matrix<double>> lambda_c, std::map<std::string, matrix<%s::scalar_t>> D, double mu = 0)" % c_type,
+    c.add_method("void set_h_emb (std::map<std::string,matrix<double>> lambda_c, std::map<std::string, matrix<%s::scalar_t>> D, double mu = 0)" % c_type,
                  doc = "Sets the embedding Hamiltonian for the solver")
     
     c.add_method("double overlap (many_body_operator Op)",

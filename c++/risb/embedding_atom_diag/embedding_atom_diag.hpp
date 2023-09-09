@@ -1,5 +1,6 @@
 #pragma once
 #include <vector>
+#include <string>
 #include <nda/nda.hpp>
 #include <triqs/operators/many_body_operator.hpp>
 #include <triqs/hilbert_space/fundamental_operator_set.hpp>
@@ -46,9 +47,10 @@ namespace risb {
        *
        * @param h_loc The local Hamiltonian describing the impurity.
        * @param gf_struct The structure of the matrices/Green's functions in the local space
+       * @param beta (Default 1e6) The inverse temperature
        * @note See atom_diag in TRIQS for more details on how the diagonalization is performed.
        */
-      embedding_atom_diag(gf_struct_t const &gf_struct, double const beta = 1e6);
+      embedding_atom_diag(many_body_op_t const &h_loc, gf_struct_t const &gf_struct, double const beta = 1e6);
 
       
       /// 
@@ -64,11 +66,16 @@ namespace risb {
 
 
       ///
-      void solve();
+      void solve(std::string const& fixed = "M");
       
 
       /// 
-      template <class M, class N> void set_h_emb(many_body_op_t const &h_loc, M const &lambda_c, N const &D, double const mu = 0);
+      template <class M, class N> void set_h_emb(M const &lambda_c, N const &D, double const mu = 0);
+      /**
+       * @param lambda_c The bath orbitals of the impurity
+       * @param D The hybridization of the impurity
+       * @return Sets the Hamiltonian of the impurity, also using h_loc
+       */
 
       ///
       double overlap(many_body_op_t const& Op) const;
@@ -102,6 +109,7 @@ namespace risb {
 
       private:
      
+      many_body_op_t _h_loc;
       gf_struct_t const _gf_struct;
       double const _beta;
       

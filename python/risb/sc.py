@@ -180,18 +180,27 @@ def get_h0_R2(R, h0_k, vec):
     return np.matmul(h0_R, vec) # Right multiply into eigenbasis of quasiparticles
 
 
-# FIXME add projectors
 #\sum_n \sum_k [A_k P_k]_{an} [D_k]_n  [P_k^+ B_k]_{nb}
-def get_pdensity(vec, wks):
-    vec_dag = np.transpose(vec.conj(), (0,2,1))
+def get_pdensity(vec, wks, P=None):
+    #vec_dag = np.transpose(vec.conj(), (0,2,1))
+    vec_dag = np.swapaxes(vec.conj(), -1, -2)
     #return np.real( np.einsum('kan,kn,knb->ab', vec, wks, vec_dag, optimize='optimal').T )
-    return np.real( np.einsum('kan,kn,knb->ab', vec, wks, vec_dag).T )
+    if P is None:
+        return np.real( np.einsum('kan,kn,knb->ab', vec, wks, vec_dag).T )
+    else:
+        P_dag = np.swapaxes(P.conj(), -2, 1)
+        middle = np.einsum('kan,kn,knb->kab', vec, wks, vec_dag)
+        return np.real( np.sum(P @ middle @ P_dag, axis=0).T )
 
-# FIXME add projectors
-def get_ke(h0_R, vec, wks):
-    vec_dag = np.transpose(vec.conj(), (0,2,1))
-    #return np.einsum('kan,kn,knb->ab', h0_R, wks, vec_dag, optimize='optimal')
-    return np.einsum('kan,kn,knb->ab', h0_R, wks, vec_dag)
+def get_ke(h0_R, vec, wks, P=None):
+    vec_dag = np.swapaxes(vec.conj(), -1, -2)
+    if P is None:
+        return np.einsum('kan,kn,knb->ab', h0_R, wks, vec_dag)
+    else:
+        P_dag = np.swapaxes(P.conj(), -2, 1)
+        middle = np.einsum('kan,kn,knb->kab', h0_R, wks, vec_dag)
+        return np.sum(P @ middle @ P_dag, axis=0)
+
 
 def get_sigma_z(mesh_z, R, Lambda, mu = 0.0, e0 = 0.0):
     sigma_z = Gf(mesh = mesh_z, target_shape = R.shape, name = "$\Sigma(z)$")

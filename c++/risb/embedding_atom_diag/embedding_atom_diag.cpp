@@ -7,8 +7,8 @@ namespace risb {
 #define EMBEDDING_ATOM_DIAG_CONSTRUCTOR(ARGS) template <bool Complex> embedding_atom_diag<Complex>::embedding_atom_diag ARGS
 #define EMBEDDING_ATOM_DIAG_METHOD(RET, F) template <bool Complex> auto embedding_atom_diag<Complex>::F->RET
 
-    EMBEDDING_ATOM_DIAG_CONSTRUCTOR((gf_struct_t const &gf_struct, double const beta))
-      : _gf_struct(gf_struct), _beta(beta) {
+    EMBEDDING_ATOM_DIAG_CONSTRUCTOR((many_body_op_t const &h_loc, gf_struct_t const &gf_struct, double const beta))
+      : _h_loc(h_loc), _gf_struct(gf_struct), _beta(beta) {
       _set_structure();
     }
 
@@ -54,16 +54,54 @@ namespace risb {
     // -----------------------------------------------------------------
     
     
-    EMBEDDING_ATOM_DIAG_METHOD(void, solve()) {
-      //_ad = atom_diag_t(_h_emb, _fops_emb);
-      
+    EMBEDDING_ATOM_DIAG_METHOD(void, solve(std::string const& fixed)) { 
       // Test to reduce how expensive it is to solve by restricting particle sectors
       // NOTE: atom_diag only needs particle sectors around half-filling for the interaction term
-      //       and for calculating the densities
+      //       and for calculating the densities (this is not true in 3.2.x)
       int M = _fops_emb.size() / 2;
-      //_ad = atom_diag_t(_h_emb, _fops_emb);
-      //_ad = atom_diag_t(_h_emb, _fops_emb, M-2, M+2);
-      _ad = atom_diag_t(_h_emb, _fops_emb, M, M);
+      
+      if (fixed == "M") {
+        _ad = atom_diag_t(_h_emb, _fops_emb, M, M);
+        _gs_vec.resize(_ad.get_full_hilbert_space_dim());
+        _gs_vec() = 0;
+        _gs_vec(0) = 1; // Ground state vector in the eigenbasis of the full hilbert space
+      }
+      else if (fixed == "M_around") _ad = atom_diag_t(_h_emb, _fops_emb, M-2, M+2);
+      else _ad = atom_diag_t(_h_emb, _fops_emb);
+      
+      if (fixed != "M") {
+        // Below is very inefficient because it has to create the full vector and take the overlap every time 
+        // Find lowest energy vector in in subspace of M particles
+        // We require \hat{N} |Phi> = M |Phi> for risb
+        many_body_op_t N;
+        for (auto const block : range(_fops_loc.size())) {
+          auto const& fops_l = _fops_loc[block];
+          auto const& fops_b = _fops_bath[block];
+          for (auto const &o : fops_l) {
+            auto nalpha  = many_body_op_t::make_canonical(true, o.index)
+                          * many_body_op_t::make_canonical(false, o.index);
+            N += nalpha;
+          }
+          for (auto const &o : fops_b) {
+            auto na  = many_body_op_t::make_canonical(true, o.index)
+                          * many_body_op_t::make_canonical(false, o.index);
+            N += na;
+          }
+        }
+      
+        // Basis of vectors are in the eigenbasis,
+        // organised from lowest energy to highest energy (in each block)
+        // FIXME if using this it is not safe because the block ordering can mess it up
+        // FIXME Should get all states with M particles, and then sort their energies and pick the lowest one
+        _gs_vec.resize(_ad.get_full_hilbert_space_dim());
+        _gs_vec() = 0;
+        for (auto i : range(_ad.get_full_hilbert_space_dim())) {
+          _gs_vec(i) = 1;
+          auto N_part = real( dot( _gs_vec, act(N, _gs_vec, _ad) ) );
+          if (std::abs(N_part - (double)M) < 1e-12) break;
+          _gs_vec(i) = 0;
+        }
+      }
 
       std::cout << "Found " << _ad.n_subspaces() << " subspaces." << std::endl;
 
@@ -79,42 +117,6 @@ namespace risb {
 
       //_dm = atomic_density_matrix(_ad,_beta);
 
-      // Below is very inefficient because it has to create the full vector and take the overlap every time 
-      // Find lowest energy vector in in subspace of M particles
-      // We require \hat{N} |Phi> = M |Phi> for risb
-      many_body_op_t N;
-      for (auto const block : range(_fops_loc.size())) {
-        auto const& fops_l = _fops_loc[block];
-        auto const& fops_b = _fops_bath[block];
-        for (auto const &o : fops_l) {
-          auto nalpha  = many_body_op_t::make_canonical(true, o.index)
-                        * many_body_op_t::make_canonical(false, o.index);
-          N += nalpha;
-        }
-        for (auto const &o : fops_b) {
-          auto na  = many_body_op_t::make_canonical(true, o.index)
-                        * many_body_op_t::make_canonical(false, o.index);
-          N += na;
-        }
-      }
-
-      // Basis of vectors are in the eigenbasis,
-      // organised from lowest energy to highest energy (in each block)
-      // FIXME if using this it is not safe because the block ordering can mess it up
-      // FIXME Should get all states with M particles, and then sort their energies and pick the lowest one
-      //_gs_vec.resize(_ad.get_full_hilbert_space_dim());
-      //_gs_vec() = 0;
-      //for (auto i : range(_ad.get_full_hilbert_space_dim())) {
-      //  _gs_vec(i) = 1;
-      //  auto N_part = real( dot( _gs_vec, act(N, _gs_vec, _ad) ) );
-      //  if (std::abs(N_part - (double)M) < 1e-12) break;
-      //  _gs_vec(i) = 0;
-      //}
-
-      // If constraining to only M subsector then the groundstate will always be this instead
-      _gs_vec.resize(_ad.get_full_hilbert_space_dim());
-      _gs_vec() = 0;
-      _gs_vec(0) = 1; // Ground state vector in the eigenbasis of the full hilbert space
     }
     
     
@@ -129,9 +131,9 @@ namespace risb {
     
     //EMBEDDING_ATOM_DIAG_METHOD(template <class M, class N> void, set_h_emb(many_body_op_t const &h_loc, M const &lambda_c, N const &D, double const mu)) {
     template <bool Complex> 
-    template<class M, class N> auto embedding_atom_diag<Complex>::set_h_emb(many_body_op_t const &h_loc, M const &lambda_c, N const &D, double const mu)->void {
+    template<class M, class N> auto embedding_atom_diag<Complex>::set_h_emb(M const &lambda_c, N const &D, double const mu)->void {
 
-      _h_emb = h_loc;
+      _h_emb = _h_loc;
 
       for (auto const block : range(_fops_loc.size())) {
         auto const& fops_b = _fops_bath[block];
@@ -170,11 +172,8 @@ namespace risb {
         }
       }
     }
-    //template void embedding_atom_diag<false>::set_h_emb(many_body_op_t const &, block_matrix<double> const &, block_matrix<embedding_atom_diag::scalar_t> const &, double const);
-    //template void embedding_atom_diag<true>::set_h_emb(many_body_op_t const &, block_matrix<double> const &, block_matrix<embedding_atom_diag::scalar_t> const &, double const);
-
-    template void embedding_atom_diag<false>::set_h_emb(many_body_op_t const &, std::map<std::string,matrix<double>> const &, std::map<std::string,matrix<scalar_t>> const &, double const);
-    template void embedding_atom_diag<true>::set_h_emb(many_body_op_t const &, std::map<std::string,matrix<double>> const &, std::map<std::string,matrix<scalar_t>> const &, double const);
+    template void embedding_atom_diag<false>::set_h_emb(std::map<std::string,matrix<double>> const &, std::map<std::string,matrix<scalar_t>> const &, double const);
+    template void embedding_atom_diag<true>::set_h_emb(std::map<std::string,matrix<double>> const &, std::map<std::string,matrix<scalar_t>> const &, double const);
     
     // -----------------------------------------------------------------
     
