@@ -5,6 +5,8 @@ from risb.embedding_atom_diag import *
 import triqs.utility.mpi as mpi
 from copy import deepcopy
 
+# FIXME this is all very old and has to be changed
+
 class Solver():
     """"""
 

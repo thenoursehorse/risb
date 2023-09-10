@@ -4,7 +4,7 @@ import numpy as np
 from itertools import product
 import unittest
 from common import build_cubic_h0_k, symmetrize_blocks
-from triqs.operators import *
+from triqs.operators import Operator, c_dag, c, n
 from triqs.operators.util.hamiltonians import h_int_kanamori
 from triqs.operators.util.op_struct import set_operator_structure
 from risb import LatticeSolver
@@ -35,7 +35,6 @@ class tests(unittest.TestCase):
         spatial_dim = 3
         nkx = 10
         beta = 40
-        num_cycles = 25
         filling = 'half'
                 
         # Note that one can instead do four blocks
@@ -81,13 +80,11 @@ class tests(unittest.TestCase):
         
         S.solve()
         
-        mu_calculated = 0
-        for bl in block_names:
-            mu_calculated += np.trace(S.Lambda[bl]) / (n_orb * len(block_names))
+        mu_calculated = kweight_solver.mu
         mu_expected = mu
-        Z_expected = np.array([[0.57494033,0],[0,0.57494033]])
-        Lambda_expected = np.array([[mu_expected,0],[0,mu_expected]])
-        
+        Lambda_expected = np.array([[3.0, 0.0],[0.0, 3.0]])
+        Z_expected = np.array([[0.574940323948, 0.0],[0.0, 0.574940323948]])
+                
         np.testing.assert_allclose(mu_calculated, mu_expected, rtol=0, atol=1e-6)
         for bl in block_names:
             np.testing.assert_allclose(Lambda_expected, S.Lambda[bl], rtol=0, atol=1e-6)

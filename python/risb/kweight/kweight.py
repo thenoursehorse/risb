@@ -29,7 +29,7 @@ class SmearingKWeight:
             self.smear_function = self.fermi
         elif method == 'gaussian':
             self.smear_function = self.gaussian
-        elif method == 'methfessel_paxton':
+        elif method == 'methfessel-paxton':
             self.smear_function = self.methfessel_paxton
         else:
             raise ValueError('Unrecoganized smearing function !')
@@ -77,7 +77,8 @@ class SmearingKWeight:
             self._n_k = self._energies.shape[0]
         return self.n_k
     
-    def update_mu(self): 
+    def update_mu(self):
+        # Standard brentq, but for transparancy copied from github.com/TRIQS/hartree_fock
         e_min = np.inf
         e_max = -np.inf
         for en in self.energies.values():
@@ -103,7 +104,7 @@ class SmearingKWeight:
         Parameters
         ----------
 
-        energies : dict(array)
+        energies : dict of arrays
             Energies at each k-point. Each key in dictionary is a different
             symmetry block, and its associated value is a list of energies.
 

@@ -4,7 +4,7 @@ import numpy as np
 from itertools import product
 import unittest
 from common import build_cubic_h0_k, symmetrize_blocks
-from triqs.operators import *
+from triqs.operators import Operator, c_dag, c, n
 from triqs.operators.util.op_struct import set_operator_structure
 
 from risb import LatticeSolver
@@ -18,7 +18,6 @@ class tests(unittest.TestCase):
         spatial_dim = 3
         nkx = 10
         beta = 40
-        num_cycles = 25
         
         U = 4
         V = 0.25
@@ -53,12 +52,10 @@ class tests(unittest.TestCase):
 
         S.solve()
         
-        mu_calculated = 0
-        for bl in block_names:
-            mu_calculated += np.trace(S.Lambda[bl]) / (n_orb * len(spin_names))
+        mu_calculated = kweight_solver.mu
         mu_expected = mu
-        Z_expected = np.array([[0.452846432,0],[0,0.452846432]])
-        Lambda_expected = np.array([[mu_expected,0.11456981],[0.11456981,mu_expected]])
+        Lambda_expected = np.array([[2.0, 0.114569681915],[0.114569681915, 2.0]])
+        Z_expected = np.array([[0.452846149446, 0],[0, 0.452846149446]])
         
         np.testing.assert_allclose(mu_calculated, mu_expected, rtol=0, atol=1e-6)
         for bl in block_names:

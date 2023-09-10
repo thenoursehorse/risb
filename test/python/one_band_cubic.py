@@ -3,7 +3,7 @@
 import numpy as np
 import unittest
 from common import build_cubic_h0_k, symmetrize_blocks
-from triqs.operators import *
+from triqs.operators import n
 from risb import LatticeSolver
 from risb.kweight import SmearingKWeight
 from risb.embedding_atom_diag import EmbeddingAtomDiag
@@ -15,7 +15,6 @@ class tests(unittest.TestCase):
         spatial_dim = 3
         nkx = 10
         beta = 40
-        num_cycles = 25
 
         block_names = ['up','dn']
         gf_struct = [ (bl, n_orb) for bl in block_names ]
@@ -34,23 +33,17 @@ class tests(unittest.TestCase):
                           kweight_solver=kweight_solver,
                           symmetries=[symmetrize_blocks])
         
-        # First guess for Lambda will have mu on the diagonal
-        for bl,_ in S.gf_struct:
-            np.fill_diagonal(S.Lambda[bl], mu)
-        
         S.solve()
             
-        mu_calculated = 0
-        for bl in block_names:
-            mu_calculated += np.sum(S.Lambda[bl]) / 2.0
-        mu_expected = U/2.
-        R_expected = np.array([[0.66168702]])
-        Lambda_expected = np.array([[mu_expected]])
-        
+        mu_calculated = kweight_solver.mu
+        mu_expected = mu
+        Lambda_expected = np.array([[2.0]])
+        Z_expected = np.array([[0.437828801025]])
+                
         np.testing.assert_allclose(mu_calculated, mu_expected, rtol=0, atol=1e-6)
         for bl in block_names:
             np.testing.assert_allclose(Lambda_expected, S.Lambda[bl], rtol=0, atol=1e-6)
-            np.testing.assert_allclose(R_expected, S.R[bl], rtol=0, atol=1e-6)
+            np.testing.assert_allclose(Z_expected, S.Z[bl], rtol=0, atol=1e-6)
         
         # Test green's function density
 #        nw = 10*beta

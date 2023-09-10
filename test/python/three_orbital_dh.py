@@ -4,7 +4,7 @@ import numpy as np
 from itertools import product
 import unittest
 from common import symmetrize_blocks
-from triqs.operators import *
+from triqs.operators import Operator, c_dag, c
 from triqs.operators.util.op_struct import set_operator_structure
 from triqs.operators.util.observables import S2_op
 from triqs.operators.util.observables import N_op
@@ -122,11 +122,16 @@ class tests(unittest.TestCase):
         #disp_R = np.einsum('ij,kjl->kil', P, disp_R)
         ##pdensity = sc.get_pdensity(vec[bl][:,0:3,:], wks) # Project onto one of the triangles in the unit cell
         ##ke = np.real( sc.get_ke(disp_R[:,0:3,:], vec[bl][:,0:3,:], wks) )
+        
+        with np.printoptions(suppress=True, precision=12):
+            print("mu:", kweight_solver.mu)
+            print("Lambda:", S.Lambda)
+            print("Z:", S.Z)
+            print("Nf =", S.Nf)
+            print("Mcf =", S.Mcf)
+            print("Nc =", S.Nc)
+        print(null)
                 
-        print("Nf =", S.Nf)
-        print("Mcf =", S.Mcf)
-        print("Nc =", S.Nc)
-
         N = N_op(spin_names, n_orbs, off_diag=True)
         S2 = S2_op(spin_names, n_orbs, off_diag=True)
         S2_avg = emb_solver.overlap(S2)
