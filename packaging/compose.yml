@@ -7,7 +7,7 @@ services:
       dockerfile: packaging/Dockerfile
       args:
         - TRIQSTAG=3.2.0
-    volumes:
-      - "../:/home/build/src/risb:ro"
+    #volumes:
+    #  - "../:/home/build/src/risb:ro"
     stdin_open: true # docker run -i
     tty: true        # docker run -t

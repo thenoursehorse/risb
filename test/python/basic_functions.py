@@ -4,8 +4,7 @@ import numpy as np
 import unittest
 from common import build_cubic_h0_k, build_block_mf_matrices
 from triqs.operators import *
-from risb import sc
-from risb import LatticeSolver
+from risb import helpers
 from risb.kweight import SmearingKWeight
 from risb.embedding_atom_diag import EmbeddingAtomDiag
 
@@ -18,7 +17,7 @@ class tests(unittest.TestCase):
         h0_k = build_cubic_h0_k(gf_struct=gf_struct)
         R, Lambda = build_block_mf_matrices(gf_struct=gf_struct)
         for block,_ in gf_struct:
-            eig, vec = sc.get_h_qp(R[block], Lambda[block], h0_k[block])
+            eig, vec = helpers.get_h_qp(R[block], Lambda[block], h0_k[block])
         
     def test_get_ke(self):
         h0_k = build_cubic_h0_k(gf_struct=gf_struct)
@@ -28,14 +27,14 @@ class tests(unittest.TestCase):
         eig = dict()
         vec = dict()
         for block,_ in gf_struct:
-            eig[block], vec[block] = sc.get_h_qp(R[block], Lambda[block], h0_k[block])
+            eig[block], vec[block] = helpers.get_h_qp(R[block], Lambda[block], h0_k[block])
         sumk = SmearingKWeight(beta=beta, mu=0)
         wks = sumk.update_weights(eig)
         h0_R = dict()
         ke = dict()
         for block,_ in gf_struct:
-            h0_R[block] = sc.get_h0_R(R[block], h0_k[block], vec[block])
-            ke[block] = sc.get_ke(h0_R[block], vec[block], wks[block])
+            h0_R[block] = helpers.get_h0_R(R[block], h0_k[block], vec[block])
+            ke[block] = helpers.get_ke(h0_R[block], vec[block], wks[block])
         
     def test_get_pdensity(self):
         h0_k = build_cubic_h0_k(gf_struct=gf_struct)
@@ -45,12 +44,12 @@ class tests(unittest.TestCase):
         eig = dict()
         vec = dict()
         for block,_ in gf_struct:
-            eig[block], vec[block] = sc.get_h_qp(R[block], Lambda[block], h0_k[block])
+            eig[block], vec[block] = helpers.get_h_qp(R[block], Lambda[block], h0_k[block])
         sumk = SmearingKWeight(beta=beta, mu=0)
         wks = sumk.update_weights(eig)
         pdensity = dict()
         for block,_ in gf_struct:
-            pdensity[block] = sc.get_pdensity(vec[block], wks[block])
+            pdensity[block] = helpers.get_pdensity(vec[block], wks[block])
 
     def test_get_d(self):
         pdensity = {'up': np.array([[0.19618454, 0.        ],
@@ -63,7 +62,7 @@ class tests(unittest.TestCase):
                               [ 0.        , -0.13447044]])}
         D = dict()
         for block,_ in gf_struct:
-            D[block] = sc.get_d(pdensity[block], ke[block])
+            D[block] = helpers.get_d(pdensity[block], ke[block])
         D_expected = {'up': np.array([[-0.33862285,  0.        ],
                                       [ 0.        , -0.33862285]]), 
                       'dn': np.array([[-0.33862285,  0.       ],
@@ -90,7 +89,7 @@ class tests(unittest.TestCase):
                              [ 0.        , -0.33862285 ]])}
         Lambda_c = dict()
         for block,_ in gf_struct:
-            Lambda_c[block] = sc.get_lambda_c(pdensity[block], R[block], Lambda[block], D[block])
+            Lambda_c[block] = helpers.get_lambda_c(pdensity[block], R[block], Lambda[block], D[block])
         Lambda_c_expected = {'up': np.array([[ 0.01813814, -0.        ],
                                              [-0.        ,  0.01813814]]),
                              'dn': np.array([[ 0.01813814, -0.        ],

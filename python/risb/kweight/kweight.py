@@ -1,6 +1,22 @@
+# Copyright (c) 2023 H. L. Nourse
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You may obtain a copy of the License at
+#     https:#www.gnu.org/licenses/gpl-3.0.txt
+#
+# Authors: H. L. Nourse
 
 import numpy as np
-from scipy.optimize import brentq
+from risb.other.from_triqs_hartree import update_mu, fermi
 
 class SmearingKWeight:
     """
@@ -16,7 +32,8 @@ class SmearingKWeight:
         Chemical potential. One of mu or n_target needs to be provided.
 
     n_target : optional, float
-        Target lattice filling per unit cell. One of mu or n_target needs to be provided.
+        Target lattice filling per unit cell. One of mu or n_target needs to be 
+        provided.
     
     """
     
@@ -37,7 +54,7 @@ class SmearingKWeight:
     @staticmethod
     def fermi(energies, beta, mu):
         e = energies - mu
-        return np.exp(-beta*e*(e > 0))/(1 + np.exp(-beta*np.abs(e)))
+        return fermi(e, beta)
     
     @staticmethod
     def gaussian(energies, beta, mu):
@@ -78,23 +95,7 @@ class SmearingKWeight:
         return self.n_k
     
     def update_mu(self):
-        # Standard brentq, but for transparancy copied from github.com/TRIQS/hartree_fock
-        e_min = np.inf
-        e_max = -np.inf
-        for en in self.energies.values():
-            bl_min = en.min()
-            bl_max = en.max()
-            if bl_min < e_min:
-                e_min = bl_min
-            if bl_max > e_max:
-                e_max = bl_max
-            
-        def target_function(mu):
-            n = 0
-            for en in self.energies.values():
-                n += np.sum(self.smear_function(en, self.beta, mu)) / self.n_k
-            return n - self.n_target
-        self._mu = brentq(target_function, e_min, e_max)
+        self._mu = update_mu(self._n_target, self._energies, self._beta, self._n_k, self.smear_function)
         return self.mu
 
     def update_weights(self, energies):
@@ -104,7 +105,7 @@ class SmearingKWeight:
         Parameters
         ----------
 
-        energies : dict of arrays
+        energies : dict of ndarray
             Energies at each k-point. Each key in dictionary is a different
             symmetry block, and its associated value is a list of energies.
 

@@ -1,7 +1,25 @@
-from risb import sc
-from risb.optimize import DIIS2
+# Copyright (c) 2023 H. L. Nourse
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You may obtain a copy of the License at
+#     https:#www.gnu.org/licenses/gpl-3.0.txt
+#
+# Authors: H. L. Nourse
+
 import numpy as np
 from copy import deepcopy
+from risb import helpers
+from risb.optimize import DIIS2
+from risb.other.from_triqs_hartree import flatten, unflatten
 
 # The structure and methods here have been modeled 
 # after github.com/TRIQS/hartree_fock
@@ -13,7 +31,7 @@ class LatticeSolver:
     Parameters
     ----------
 
-    h0_k : dict of arrays
+    h0_k : dict of ndarray
         Single-particle dispersion between local clusters. Each key 
         in dictionary must follow the gf_struct.
         FIXME Make it the full h0_k, and work out the h0_loc and add to
@@ -46,13 +64,13 @@ class LatticeSolver:
     force_real : optional, bool
         True if the mean-field matrices are forced to be real
 
-    R : optional, dict of arrays
+    R : optional, dict of ndarray
         The unitary matrix from the f-electrons to the c-electrons at the
         mean-field level. Also called renormalization matrix. Each key in 
         dictionary must follow gf_struct. Defaults to the identity in each 
         block.
 
-    Lambda : optional, dict of arrays
+    Lambda : optional, dict of ndarray
         The correlation potential matrix experienced by the f-electrons.
         Each key in dictionary must follow gf_struct. Defaults to the zero 
         matrix in each block.
@@ -111,32 +129,11 @@ class LatticeSolver:
             np.fill_diagonal(R[bl], 1)
         return (R, Lambda)
     
-    # Flatten and unflatten copied from triqs/hartree_fock because 
-    # their method is much smarter than what I ever did
     def flatten(self, Lambda, R):
-        x = []
-        x.append([mat.flatten().real for mat in Lambda.values()])
-        if self._force_real:
-            x.append([mat.flatten().real for mat in R.values()])
-        else:
-            x.append([mat.flatten().view(float) for mat in R.values()])
-        return np.array(x).flatten()
+        return flatten(Lambda, R, self._force_real)
     
     def unflatten(self, x):
-        Lambda = dict()
-        R = dict()
-        offset = 0
-        for bl, bl_size in self._gf_struct:
-            Lambda[bl] = x[list(range(offset, offset + bl_size**2))].reshape(bl_size, bl_size)
-            offset += bl_size**2
-        for bl, bl_size in self._gf_struct:
-            if self._force_real:
-                R[bl] = x[list(range(offset, offset + bl_size**2))].reshape(bl_size, bl_size)
-                offset += bl_size**2
-            else:
-                R[bl] = x[list(range(offset, offset + bl_size**2))].view(complex).reshape(bl_size, bl_size)
-                offset += 2*bl_size**2
-        return Lambda, R
+        return unflatten(x, self._gf_struct, self._force_real)
     
     def target_function(self, x, return_new=True):
         self._Lambda, self._R = self.unflatten(x)
@@ -173,20 +170,20 @@ class LatticeSolver:
         vec_qp = dict()
 
         for bl in self._block_names:
-            eig_qp[bl], vec_qp[bl] = sc.get_h_qp(self._R[bl], self._Lambda[bl], self._h0_k[bl])
+            eig_qp[bl], vec_qp[bl] = helpers.get_h_qp(self._R[bl], self._Lambda[bl], self._h0_k[bl])
         
         self._wks = self._kweight_solver.update_weights(eig_qp, **kweight_parameters)
 
         for bl in self._block_names:
-            h0_R = sc.get_h0_R(self._R[bl], self._h0_k[bl], vec_qp[bl])
+            h0_R = helpers.get_h0_R(self._R[bl], self._h0_k[bl], vec_qp[bl])
 
-            self._rho_qp[bl] = sc.get_pdensity(vec_qp[bl], self._wks[bl])
-            ke = sc.get_ke(h0_R, vec_qp[bl], self._wks[bl])
+            self._rho_qp[bl] = helpers.get_pdensity(vec_qp[bl], self._wks[bl])
+            ke = helpers.get_ke(h0_R, vec_qp[bl], self._wks[bl])
         
-            self._D[bl] = sc.get_d(self._rho_qp[bl], ke)
+            self._D[bl] = helpers.get_d(self._rho_qp[bl], ke)
             if self._force_real:
                 self._D[bl] = self._D[bl].real
-            self._Lambda_c[bl] = sc.get_lambda_c(self._rho_qp[bl], self._R[bl], self._Lambda[bl], self._D[bl])
+            self._Lambda_c[bl] = helpers.get_lambda_c(self._rho_qp[bl], self._R[bl], self._Lambda[bl], self._D[bl])
         
         for function in self._symmetries:
             self._D = function(self._D)
@@ -206,14 +203,14 @@ class LatticeSolver:
         f1 = dict()
         f2 = dict()
         for bl in self._block_names:
-            f1[bl] = sc.get_f1(self._Mcf[bl], self._rho_qp[bl], self._R[bl])
-            f2[bl] = sc.get_f2(self._Nf[bl], self._rho_qp[bl])
+            f1[bl] = helpers.get_f1(self._Mcf[bl], self._rho_qp[bl], self._R[bl])
+            f2[bl] = helpers.get_f2(self._Nf[bl], self._rho_qp[bl])
         
         Lambda = dict()
         R = dict()
         for bl in self._block_names:
-            Lambda[bl] = sc.get_lambda(self._R[bl], self._D[bl], self._Lambda_c[bl], self._Nf[bl])
-            R[bl] = sc.get_r(self._Mcf[bl], self._Nf[bl])
+            Lambda[bl] = helpers.get_lambda(self._R[bl], self._D[bl], self._Lambda_c[bl], self._Nf[bl])
+            R[bl] = helpers.get_r(self._Mcf[bl], self._Nf[bl])
             
         for function in self._symmetries:
             Lambda = function(Lambda)
@@ -249,7 +246,8 @@ class LatticeSolver:
             Options to pass to ``emb_solver.solve``. Not implemented.
 
         kweight_parameters : optional, dict
-            Options to pass to ``kweight_solver.update_weight``. Not implemented.
+            Options to pass to ``kweight_solver.update_weight``. 
+            Not implemented.
 
         """
         if one_shot:

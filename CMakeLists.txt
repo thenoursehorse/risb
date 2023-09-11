@@ -1,20 +1,20 @@
 # ##############################################################################
 #
-# risb - RISB in the TRIQS library
+# risb - An example application using triqs
 #
-# Copyright (C) 2016 by H. L. Nourse
+# Copyright (C) ...
 #
-# risb is free software: you can redistribute it and/or modify it under the
+# hartree_fock is free software: you can redistribute it and/or modify it under the
 # terms of the GNU General Public License as published by the Free Software
 # Foundation, either version 3 of the License, or (at your option) any later
 # version.
 #
-# risb is distributed in the hope that it will be useful, but WITHOUT ANY
+# hartree_fock is distributed in the hope that it will be useful, but WITHOUT ANY
 # WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR
 # A PARTICULAR PURPOSE. See the GNU General Public License for more details.
 #
 # You should have received a copy of the GNU General Public License along with
-# risb (in the file COPYING.txt in this directory). If not, see
+# hartree_fock (in the file COPYING.txt in this directory). If not, see
 # <http://www.gnu.org/licenses/>.
 #
 # ##############################################################################

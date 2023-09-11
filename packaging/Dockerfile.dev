@@ -56,15 +56,15 @@ ENV SRC=/home/build/src \
     CC=clang-${LLVM} CXX=clang++-${LLVM} CXXFLAGS="-stdlib=libc++" \
     CPLUS_INCLUDE_PATH=/usr/include/openmpi:/usr/include/hdf5/serial/:$CPLUS_INCLUDE_PATH
 
-# Install TRIQS
-FROM clang_dev as build_amd64
-ONBUILD USER root
-ONBUILD RUN DEBIAN_FRONTEND=noninteractive apt-get install -y software-properties-common apt-transport-https curl \
-  . /etc/lsb-release \
-  && curl -L https://users.flatironinstitute.org/~ccq/triqs3/$DISTRIB_CODENAME/public.gpg | gpg --dearmor -o /usr/share/keyrings/triqs3.gpg \
-  && echo "deb [arch=amd64,arm64 signed-by=/usr/share/keyrings/triqs3.gpg] https://users.flatironinstitute.org/~ccq/triqs3/$DISTRIB_CODENAME/ /" | tee /etc/apt/sources.list.d/triqs3.list > /dev/null \
-  && DEBIAN_FRONTEND=noninteractive apt-get install -y triqs
-ONBUILD USER build
+# Install TRIQS (they do not have TRIQS 3.2 deb file yet)
+#FROM clang_dev as build_amd64
+#ONBUILD USER root
+#ONBUILD RUN DEBIAN_FRONTEND=noninteractive apt-get install -y software-properties-common apt-transport-https curl \
+#  && . /etc/lsb-release \
+#  && curl -L https://users.flatironinstitute.org/~ccq/triqs3/$DISTRIB_CODENAME/public.gpg | gpg --dearmor -o /usr/share/keyrings/triqs3.gpg \
+#  && echo "deb [arch=amd64,arm64 signed-by=/usr/share/keyrings/triqs3.gpg] https://users.flatironinstitute.org/~ccq/triqs3/$DISTRIB_CODENAME/ /" | tee /etc/apt/sources.list.d/triqs3.list > /dev/null \
+#  && apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y triqs
+#ONBUILD USER build
 
 # Install TRIQS from source if on apple arm
 FROM clang_dev as build_arm64
@@ -83,7 +83,8 @@ ONBUILD ENV PYTHONPATH=/usr/lib/python$PYTHON_VERSION/site-packages/:$PYTHONPATH
 
 # Continue build (BUILDARCH inbuilt Docker variable that we first expose to the script)
 ARG BUILDARCH
-FROM build_${BUILDARCH}
+#FROM build_${BUILDARCH}
+FROM build_arm64
 USER build
 
 # Install any other software we need
