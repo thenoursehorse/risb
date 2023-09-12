@@ -4,7 +4,7 @@ services:
     container_name: risb
     build:
       context: ../
-      dockerfile: packaging/Dockerfile
+      dockerfile: docker/Dockerfile
       args:
         - TRIQSTAG=3.2.0
     ports:

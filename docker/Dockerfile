@@ -13,7 +13,7 @@ RUN python3 -m pip install -r $SRC/$APPNAME/requirements.txt
 
 COPY . $SRC/$APPNAME
 WORKDIR $SRC/$APPNAME
-RUN python3 -m pip install --no-warn-script-location --upgrade pip pytest \
+RUN python3 -m pip install --no-warn-script-location --upgrade pip \
   && python3 -m pip install . \
   && rm -rf $SRC/$APPNAME
 WORKDIR /home/triqs/

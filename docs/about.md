@@ -1,7 +1,5 @@
 ---
-layout: default
 title: About
-mathjax: true
 ---
 
 # Authors
@@ -38,11 +36,10 @@ Lanatà, et al. [[3]](#ref3)[[4]](#ref4).
 
 # Embedding solvers
 
+1. `EmbeddingAtomDiag` uses [TRIQS](https://triqs.github.io/) [[5]](#ref5).
+
 1. `EmbeddingED` uses [TRIQS](https://triqs.github.io/) [[5]](#ref5) and 
 [ezARPACK](https://krivenko.github.io/ezARPACK/) [[6]](#ref6).
-
-1. `EmbeddingDMRG` uses [TRIQS](https://triqs.github.io/) [[5]](#ref5) and 
-[ITensor](https://itensor.org/) [[7]](#ref7).
 
 # License
 

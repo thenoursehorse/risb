@@ -1,10 +1,10 @@
 [project]
 name = "risb"
-version = "3.2"
+version = "3.2.0"
 description = "Rotationally invariant slave boson mean-field theory."
 readme = "README.md"
-requires-python = ">=3.7"
-license = {file = "LICENSE"}
+requires-python = ">=3.9"
+license = {file = "LICENSE.txt"}
 keywords = ["quantum", "mean field", 'correlated electrons', 'quantum embedding']
 authors = [
   {name = "H. L. Nourse"}
@@ -21,7 +21,8 @@ classifiers = [
 ]
 
 [project.urls]
-"Homepage" = "https://github.com/thenoursehorse/risb"
+Homepage = "https://github.com/thenoursehorse/risb"
+Documentation = "https://thenoursehorse.github.io/risb"
 
 [tool.setuptools]
 

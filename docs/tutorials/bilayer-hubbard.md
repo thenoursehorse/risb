@@ -1,8 +1,6 @@
 ---
-layout: default
 title: Bilayer Hubbard model
 parent: Tutorials
-mathjax: true
 ---
 
 # Table of Contents

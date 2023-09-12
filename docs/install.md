@@ -1,5 +1,4 @@
 ---
-layout: default
 title: Install
 ---
 
@@ -11,48 +10,29 @@ title: Install
 
 # From source
 
-{: .warning }
-Minimum GCC version 10 or clang 13 is required.
+## The main python package risb
 
-Follow the 
-[installation intructions](https://triqs.github.io/triqs/latest/install.html)
-for TRIQS. Crucially, this project requires an older version `3.0.x`. If 
-compiling from 
-[source](https://triqs.github.io/triqs/latest/install.html#compiling-triqs-from-source-advanced)
-you will need to specifify an older branch when you `git clone` with
+1. Update packaging software
+    ```
+    python3 -m pip install --upgrade pip setuptools wheel
+    ```
 
-```bash
-git clone https://github.com/TRIQS/triqs --branch 3.0.x triqs.src
-```
+1. (Optional) Create a 
+[virtual environment](https://packaging.python.org/en/latest/tutorials/installing-packages/#creating-virtual-environments).
 
-If compiling from source you have to be careful about library versions and 
-compilers. We are not sure if higher than `gcc` `11.x` will work on this older 
-version of TRIQS.
+1. Clone source
+    ```
+    git clone https://github.com/thenoursehorse/risb
+    ```
 
-The below instructions are taken from the Docker files in each repository. 
-Each repository requires TRIQS `3.0.x` to be installed, and will by default 
-be installed into the same location as TRIQS. Note that instead, each repo can 
-be installed in separate locations by appropriately adding
+1. Install from local (-e allows to develop code without reinstalling, omit if
+not editing the source code)
+    ```
+    cd risb
+    python3 -m pip install -e ./
+    ```
 
-```bash
--DCMAKE_INSTALL_PREFIX=
-```
-
-in the build process.
-
-Make sure that TRIQS is loaded into your environment with
-
-```bash
-source $INSTALL_PREFIX/share/triqs/triqsvars.sh
-```
-
-The number of cores to use for compiling should be set with
-
-```bash
-export NCORES=
-```
-
-## k-space integration kint
+## `TetrahedronKWeight` k-space integrator
 
 ```bash
 git clone https://github.com/thenoursehorse/kint kint.src
@@ -60,117 +40,55 @@ mkdir -p kint.build && cd kint.build
 cmake ../kint.src/ -DTRIQS_ROOT=${TRIQS_ROOT}
 ```
 
-## Embedding solver embedding_ed
+## `EmbeddingEd` embedding space solver
 
 ### ARPACK-NG
 
 Install [ARPACK-NG](https://github.com/opencollab/arpack-ng). A specific 
-version can be requested with `--branch <version>`. Currently, 
-versions `3.6.0` to `3.9.0` are tested and work.
+version can be requested with `--branch <version>`. Minimum
+version is `3.8.0`.
 
 ```bash
-export ARPACK_NG_ROOT=${HOME}/arpack-ng
-
 git clone https://github.com/opencollab/arpack-ng arpack-ng.src
 mkdir -p arpack-ng.build && cd arpack-ng.build 
-cmake ../arpack-ng.src/ -DCMAKE_INSTALL_PREFIX=${ARPACK_NG_ROOT} \
-                        -DBUILD_SHARED_LIBS=ON
+cmake ../arpack-ng.src/ -DBUILD_SHARED_LIBS=ON \
+                        --DMPI=ON
 make -j${NCORES}
 make test
-make install
-```
-
-In order for the project to find the libraries at runtime you have to 
-add their location to your environment. For example, they can be added as
-
-```bash
-export LD_LIBRARY_PATH=${ARPACK_NG_ROOT}/lib/:${LD_LIBRARY_PATH}
-echo "export LD_LIBRARY_PATH=${ARPACK_NG_ROOT}/lib/:${LD_LIBRARY_PATH}" >> ${HOME}/.bashrc
-```
-
-#### Fixing `lib64` in versions less than `3.8.0`
-
-On some operating systems (e.g., Ubuntu 20.04) on some machines ARPACK-NG 
-versions below `3.8.0` will install libraries to `${ARPACK_NG_ROOT}/lib64/`. 
-An obvious change is that now the libraries at runtime have to be included as
-
-```bash
-export LD_LIBRARY_PATH=${ARPACK_NG_ROOT}/lib64/:${LD_LIBRARY_PATH}
-echo "export LD_LIBRARY_PATH=${ARPACK_NG_ROOT}/lib64/:${LD_LIBRARY_PATH}" >> ${HOME}/.bashrc
-```
-
-But there is another change required for `cmake` to correctly find the 
-ARPACK-NG libraries. Inside 
-`${ARPACK_NG_ROOT}/lib64/cmake/arpack-ng-config.cmake`
-all of the phrases that have
-
-```bash
-${ARPACK_NG_ROOT}/lib
-```
-
-have to be changed to
-
-```bash
-${ARPACK_NG_ROOT}/lib64
+sudo make install
 ```
 
 ### ezARPACK
 
-Install [ezARPACK](https://github.com/krivenko/ezARPACK).
-Currently, the minimum version has to be 1.0 for our project.
+Install [ezARPACK](https://github.com/krivenko/ezARPACK). Minimum version 
+is `1.0`.
 
 ```bash
-export EZARPACK_ROOT=${HOME}/ezARPACK
-
 git clone https://github.com/krivenko/ezARPACK ezARPACK.src
 mkdir -p ezARPACK.build && cd ezARPACK.build 
-cmake ../ezARPACK.src/ -DCMAKE_INSTALL_PREFIX=${EZARPACK_ROOT} \
-                       -DARPACK_NG_ROOT=${ARPACK_NG_ROOT}
+cmake ../ezARPACK.src/
+make -j${NCORES}
+make test
+sudo make install
 ```
-
-As above, the project has to find these libraries at runtime. E.g., they are 
-added to the environment as
-
-```bash
-export LD_LIBRARY_PATH=${EZARPACK_ROOT}/lib/:${LD_LIBRARY_PATH}
-echo "export LD_LIBRARY_PATH=${EZARPACK_ROOT}/lib/:${LD_LIBRARY_PATH}" >> ${HOME}/.bashrc
-```
-
-{: .warning }
-> ezARPACK may automatically assume that PARPACK is installed if it correctly detects
-MPI on your system. Sometimes ezARPACK will compile fine, but then it will 
-fail on any of the MPI tests. You can ignore this because our project does not 
-currently use PARPACK. If ezARPACK does not compile you have to build 
-ARPACK-NG with MPI support with
->
-> ```bash
-> cmake ../arpack-ng.src/ -DCMAKE_INSTALL_PREFIX=${ARPACK_NG_ROOT} \
-                        -DBUILD_SHARED_LIBS=ON \
-                        -DMPI=ON
-> ```
 
 ### embedding_ed
+
+Below assumes TRIQS is installed to system path. If it is not 
+then `-DTRIQS_ROOT=/path/to/triqs` has to be passed to `cmake`.
 
 ```bash
 git clone https://github.com/thenoursehorse/embedding_ed embedding_ed.src
 mkdir -p embedding_ed.build && cd embedding_ed.build 
-cmake ../embedding_ed.src/ -DTRIQS_ROOT=${TRIQS_ROOT} \
-                           -DARPACK_NG_ROOT=${ARPACK_NG_ROOT} \
-                           -DEZARPACK_ROOT=${EZARPACK_ROOT}
-```
-
-## Embedding solver embedding_dmrg
-
-## risb
-
-```bash
-git clone https://github.com/thenoursehorse/risb risb.src
-mkdir -p risb.build && cd risb.build
-cmake ../risb.src/ -DTRIQS_ROOT=${TRIQS_ROOT}
+cmake ../embedding_ed.src/ -DEZARPACK_ROOT=/path/to/ezARPACK
 make -j${NCORES}
 make test
-make install
+sudo make install
 ```
+
+The `ezARPACK` path has to be given because `cmake` does not find 
+the configuration correctly. By default it is `/usr/local/` if 
+no `CMAKE_INSTALL_PREFIX` is specified.
 
 # With Docker
 
@@ -180,16 +98,14 @@ from the operating system. Using a container gaurantees that risb will install
 and work without further testing, because it has been setup by the project 
 maintainers.
 
-There are Docker files in the risb repositories. They rely on a Docker file 
-that sets up a container for TRIQS, located in the 
-[thenoursehorse/docker](https://github.com/thenoursehorse/docker/) repository.
+A container can be set up using [Compose](https://docs.docker.com/compose/), 
+with the YAML file [docker-compose.yml]. This uses the 
+[official TRIQS docker image](https://hub.docker.com/r/flatironinstitute/triqs).
 
-A complete container can be set up using 
-[Compose](https://docs.docker.com/compose/), 
-with the YAML file located at
+There is a complete container setup includeing TRIQS, dft-tools, cthyb, risb, 
+kint, embedding_ed and a Jupyter notebook with this compose file
 [docker-compose.yml](https://github.com/thenoursehorse/docker/blob/main/risb_all/docker-compose.yml).
-This installs TRIQS, dft-tools, cthyb, risb, and a Jupyter notebook. The YAML 
-file has to be edited where the comments suggest.
+THe file has to be edited where the comments suggest.
 
 For any private repos, a very insecure way to get Compose to be able to clone 
 them is to create an 
@@ -201,11 +117,11 @@ repos within the YAML file as
 context: https://ACCESS-TOKEN@github.com/private/repo
 ```
 
+{: .warning }
 Anyone that has access to the Docker images will also have access to your 
 access token, so be very careful. There are other ways to do the above that 
 are more secure, just Google around.
 
 Unfortunately, Compose can be non-trivial to get working. It is difficult to 
 give comprehensive instructions until more of the features of Compose 
-are better ironed out. You can contact us for additional support and we will 
-try our best to help.
+are better ironed out.

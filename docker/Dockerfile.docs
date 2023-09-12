@@ -1,0 +1,17 @@
+FROM ruby:3.2.2
+
+ENV LC_ALL C.UTF-8
+ENV LANG en_US.UTF-8
+ENV LANGUAGE en_US.UTF-8
+
+ENV SRC=/usr/src/app
+
+WORKDIR /usr/src/app_serve
+COPY . $SRC
+# symlink files so we do not contaminate the source build
+RUN cp -as $SRC/* .
+
+RUN gem install bundler
+RUN bundle install
+
+EXPOSE 4000

@@ -1,5 +1,4 @@
-risb - Rotationally invariant slave-boson mean-field theory implemented in 
-the TRIQS library.
+risb - Rotationally invariant slave-boson mean-field theory.
 
 risb copyright:
 Copyright (C) 2022-, H. L. Nourse, B. J. Powell

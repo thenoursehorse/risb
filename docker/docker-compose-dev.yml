@@ -4,8 +4,8 @@ services:
     container_name: risb
     build:
       context: ../
-      dockerfile: packaging/Dockerfile.dev
+      dockerfile: docker/Dockerfile.dev
     volumes:
-      - "../:/home/build/src/risb:ro"
+      - "../:/home/build/src/app:ro"
     stdin_open: true # docker run -i
     tty: true        # docker run -t

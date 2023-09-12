@@ -1,29 +1,42 @@
-remote_theme: just-the-docs/just-the-docs
 title: risb
-description: Rotationally invariant slave bosons for correlated many-body physics.
+description: Rotationally invariant slave bosons for correlated many-body electrons
+theme: just-the-docs
+
 baseurl: "/risb" # the subpath of your site, e.g. /blog
-url: "https://thenoursehorse.github.io" # the base hostname & protocol for your site, e.g. http://example.com
+url: "https://thenoursehorse.github.io"
+repository: thenoursehorse/risb
 
-color_scheme: light
+color_scheme: dark
 
-kramdown:
-  syntax_highlighter_opts:
-    block:
-      line_numbers: false
-
-mathjax:
-  source: https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.5/latest.js?config=TeX-AMS_CHTML
-  config: 'MathJax.Hub.Config({ TeX: { equationNumbers: { autoNumber: "AMS" } } })'
-
-back_to_top: true
-back_to_top_text: "Back to top"
+plugins:
+  - jekyll-default-layout
+  - jekyll-github-metadata
 
 aux_links:
   "risb on GitHub":
     - "//github.com/thenoursehorse/risb"
 
+math: mathjax
+
+enable_copy_code_button: true
+
+back_to_top: true
+back_to_top_text: "Back to top"
+
+footer_content: "Copyright &copy; 2016-2023 H. L. Nourse.</a>"
+
 callouts:
+  highlight:
+    color: yellow
+  important:
+    title: Important
+    color: blue
+  new:
+    title: New
+    color: green
+  note:
+    title: Note
+    color: purple
   warning:
     title: Warning
     color: red
-

@@ -1,15 +1,17 @@
-# risb - Rotationally invariant slave boson mean-field theory
+# risb - Rotationally invariant slave bosons for correlated many-body electrons
+
+Documentation at [https://thenoursehorse.github.io/risb](https://thenoursehorse.github.io/risb)
 
 ## Dependencies
 
 * [TRIQS](https://github.com/TRIQS/triqs) v3.2.x if using `EmbeddingAtomDiag`
-and for the tests.
+and for the tests
 * numpy
 * scipy
 
 ## Installation
 
-1. Update packaging softare
+1. Update packaging software
     ```
     python3 -m pip install --upgrade pip setuptools wheel
     ```
@@ -23,7 +25,7 @@ and for the tests.
     ```
 
 1. Install from local (-e allows to develop code without reinstalling, omit if
-not necessary)
+not editing the source code)
     ```
     cd risb
     python3 -m pip install -e ./
@@ -37,7 +39,7 @@ python3 -m pip uninstall risb
 
 ### Docker
 
-There is a Dockerfile and compose.yml inside ./docker/. The Dockerfile will 
+There is a Dockerfile and docker-compose.yml inside ./docker/. The Dockerfile will 
 pull the TRIQS [docker from the hub](https://hub.docker.com/r/flatironinstitute/triqs) 
 and install risb. Using the Docker image will be the same as the instructions 
 for TRIQS (e.g., Jupyter). To connect to the Jupyter notebook it is probably
@@ -54,14 +56,26 @@ jupyter server list
 ```
 
 There is also a development Dockerfile.dev and the corresponding 
-compose-dev.yml in order to have a container to develop code. It installs 
-TRIQS from source, and works on Apple M1/M2 (arm64), and any amd64 system.
+docker-compose-dev.yml in order to have a container to develop code. It 
+installs TRIQS from source, and works on Apple M1/M2 (arm64), and any amd64 
+system.
+
+There is also a Dockerfile.docs and the corresponding docker-compose-docs.yml 
+in order to locally edit and preview the documentation. It is served at
+[localhost:4000/risb/](localhost:4000/risb/).
 
 ## Tests
 
 Tests are run with
+
 ```
-python3 -m pytest
+python3 -m pytest -v
+```
+
+For developers, coverage can be determined with `pytest-cov` using
+
+```
+python3 -m pytest -ra --cov=risb --cov-branch
 ```
 
 ## Examples
@@ -83,3 +97,4 @@ test/python for examples.
 * Add kweights tests
 * Sort out basic_functions tests
 * Fix passing emb_parameters and kweight_parameters to stuff
+* Sort out automatic versioning with git hash (setuptools_scm? versioneer?)
