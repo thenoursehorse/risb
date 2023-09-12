@@ -6,11 +6,6 @@ file(GLOB_RECURSE python_sources RELATIVE ${CMAKE_CURRENT_SOURCE_DIR} *.py)
 file(GLOB_RECURSE wrap_generators RELATIVE ${CMAKE_CURRENT_SOURCE_DIR} *_desc.py)
 list(REMOVE_ITEM python_sources "${wrap_generators}")
 
-if(NOT pomerol2triqs_FOUND)
-  list(FILTER python_sources EXCLUDE REGEX ".*pomerol*")
-  list(FILTER wrap_generators EXCLUDE REGEX ".*pomerol*")
-endif()
-
 foreach(file ${python_sources})
   configure_file(${file} ${file} COPYONLY)
 endforeach()

@@ -9,7 +9,7 @@ from triqs.operators.util.op_struct import set_operator_structure
 
 from risb import LatticeSolver
 from risb.kweight import SmearingKWeight
-from risb.embedding_atom_diag import EmbeddingAtomDiag
+from risb.embedding import EmbeddingAtomDiag
 
 class tests(unittest.TestCase):
  

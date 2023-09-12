@@ -6,7 +6,7 @@ from common import build_cubic_h0_k, symmetrize_blocks
 from triqs.operators import n
 from risb import LatticeSolver
 from risb.kweight import SmearingKWeight
-from risb.embedding_atom_diag import EmbeddingAtomDiag
+from risb.embedding import EmbeddingAtomDiag
 
 class tests(unittest.TestCase):
  

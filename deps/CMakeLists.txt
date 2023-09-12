@@ -46,24 +46,3 @@ else()
     message(WARNING "For builds with llvm sanitizers (ASAN/UBSAN) it is recommended to use -DBuild_Deps=Always to avoid false positives.")
   endif()
 endif()
-
-# -- Cpp2Py --
-if(PythonSupport OR Build_Documentation)
- external_dependency(Cpp2Py
-   GIT_REPO https://github.com/TRIQS/cpp2py
-   VERSION 2.0
-   GIT_TAG master
- )
- execute_process(COMMAND ${CPP2PY_PYTHON_EXECUTABLE} -c "import mpi4py" RESULT_VARIABLE failed ERROR_QUIET)
- if(failed)
-   message(FATAL_ERROR "Failed to import mpi4py Python module.")
- endif()
-endif()
-
-# -- GTest --
-external_dependency(GTest
-  GIT_REPO https://github.com/google/googletest
-  GIT_TAG main
-  BUILD_ALWAYS
-  EXCLUDE_FROM_ALL
-)

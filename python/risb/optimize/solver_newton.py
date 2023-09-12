@@ -20,30 +20,53 @@ import numpy as np
 from .common import load_history, insert_vector
 
 class Annealing:
-    def __init__(self, alpha=1.0, anneal_type='flat', reset_iter=5, step_scaling=2):
+    '''
+    Scheduler for optimization to alter the step size alpha.
+
+    Parameters
+    ----------
+
+    alpha : optional, float
+        Initial alpha. Default is 1.
+
+    method : optional, string
+        Scheduling method. Optionals are:
+        'flat' : Do not change initial alpha.
+        'step' : Multiplicatively change alpha.
+        Default is 'flat'.
+
+    t_reset : optional, int
+        Reset alpha to initial value after this many iterations. Default is 5.
+
+    step_scaling : optional, float
+        Scaling factor for changing alpha at each time step. Default is 0.5.
+
+    '''
+    def __init__(self, alpha=1.0, method='flat', t_reset=5, step_scaling=0.5):
         self.alpha = alpha
-        self.anneal_type = anneal_type
+        self.alpha0 = deepcopy(self.alpha)
+        self.method = method
 
         # for step
-        self.reset_iter = reset_iter
+        self.t_reset = t_reset
         self.step_scaling = step_scaling
         
-        if anneal_type == 'flat':
+        if method == 'flat':
             self.get_alpha = self._get_flat
-        elif anneal_type == 'step':
+        elif method == 'step':
             self.get_alpha = self._step
         else:
-            raise ValueError("unrecognized annealing type !")
+            raise ValueError("Unrecognized method !")
 
         self.t = 0
 
     def _step(self):
-        if self.t > self.reset_iter:
+        if self.t > self.t_reset:
             self.alpha *= self.step_scaling
         else:
             self.t += 1
         if self.alpha >= 1.0:
-            self.alpha = 1.0
+            self.alpha = deepcopy(self.alpha0)
         return self.alpha
         
     def _get_flat(self):

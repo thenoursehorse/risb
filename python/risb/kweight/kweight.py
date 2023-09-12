@@ -34,6 +34,10 @@ class SmearingKWeight:
     n_target : optional, float
         Target lattice filling per unit cell. One of mu or n_target needs to be 
         provided.
+
+    method : optional, string
+        The smearing method. Options are 'fermi', 'gaussian', and 
+        'methfessel-paxton'. Default is 'fermi'.
     
     """
     

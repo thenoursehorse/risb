@@ -18,7 +18,7 @@
 import numpy as np
 from copy import deepcopy
 from risb import helpers
-from risb.optimize import DIIS2
+from risb.optimize import DIIS
 from risb.other.from_triqs_hartree import flatten, unflatten
 
 # The structure and methods here have been modeled 
@@ -80,7 +80,7 @@ class LatticeSolver:
         a method ``solve(fun, x0)``, where x0 is the initial guess vector, 
         and fun is the function to minimize, where fun=self.target_function 
         and returns x_new and x_error vectors). E.g., to use with scipy 
-        use ``root(fun, x0, args=(False)``. Defaults to ``DIIS2``.
+        use ``root(fun, x0, args=(False)``. Defaults to ``DIIS``.
 
     error_root : optional, string
         At each self-consistent cycle, whether the error is 
@@ -255,7 +255,7 @@ class LatticeSolver:
         
         else:
             if self._optimize_solver is None:
-                self._optimize_solver = DIIS2()
+                self._optimize_solver = DIIS()
             self._optimize_solver.solve(fun=self.target_function, 
                                         x0=self.flatten(self._Lambda, self._R), 
                                         tol=tol,
