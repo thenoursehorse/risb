@@ -5,11 +5,6 @@ risb copyright:
 Copyright (C) 2022-, H. L. Nourse, B. J. Powell
 Copyright (C) 2016-2022, H. L. Nourse, R. H. McKenzie, B. J. Powell
 
-app4triqs copyright:
-Copyright (C) 2017-2018, N. Wentzell, O. Parcollet
-Copyright (C) 2018-2019, The Simons Foundation
-  authors: N. Wentzell, D. Simons, H. Strand, O. Parcollet
-
 risb is free software: you can redistribute it and/or modify it under the
 terms of the GNU General Public License as published by the Free Software
 Foundation, either version 3 of the License, or (at your option) any later
