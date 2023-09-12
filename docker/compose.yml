@@ -7,5 +7,7 @@ services:
       dockerfile: packaging/Dockerfile
       args:
         - TRIQSTAG=3.2.0
+    ports:
+      - "8888:8888"
     stdin_open: true # docker run -i
     tty: true        # docker run -t
