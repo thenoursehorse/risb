@@ -1,4 +1,4 @@
-FROM ruby:3.2.2
+FROM ruby:3.1.1
 
 ENV LC_ALL C.UTF-8
 ENV LANG en_US.UTF-8
@@ -6,10 +6,15 @@ ENV LANGUAGE en_US.UTF-8
 
 ENV SRC=/usr/src/app
 
-WORKDIR /usr/src/app_serve
+WORKDIR /usr/src/app
 COPY . $SRC
+
 # symlink files so we do not contaminate the source build
-RUN cp -as $SRC/* .
+# This won't automatically update the pages because the timestamps
+# of symlinks to not get changed if original file changes. So jekyll
+# never knos to update anything! That sucks
+#WORKDIR /usr/src/app_serve
+#RUN cp -as $SRC/* .
 
 RUN gem install bundler
 RUN bundle install

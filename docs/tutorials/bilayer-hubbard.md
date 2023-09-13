@@ -15,15 +15,19 @@ Below is a simple self-consistent loop that relies on everything we have set up.
 
 ```python
 from copy import deepcopy
+from risb import helpers
 
-U = 1
+U = 4
 V = 0.25
 mu = U / 2.0
-num_cycles = 25
+n_cycles = 25
 beta = 10
+n_orb = 2
+block_names = ['up','dn']
+gf_struct = [(bl, n_orb) for bl in block_names]
 
 # Implement A
-h_kin = 
+h0_k = 
 
 # Implement B
 h_loc = 
@@ -36,55 +40,63 @@ h_loc =
 emb_solver = 
 
 # H^qp parameters R and Lambda initialized to the non-interacting values
-for s in ["up","dn"]:
-    Lambda[s] = np.eye(Lambda[s].shape[0]) * mu
-    np.fill_diagonal(R[s], 1)
+for bl, bl_size in gf_struct:
+    np.fill_diagonal(Lambda[bl], mu)
+    np.fill_diagonal(R[bl], 1)
 
-for cycle in range(num_cycles):    
+for cycle in range(n_cycles):    
     # For convergence checking
     norm = 0
     R_old = deepcopy(R)
     Lambda_old = deepcopy(Lambda)
 
-    for s in ["up","dn"]:
-        # H^qp and integration weights
-        eig, vec = sc.get_h_qp(R[s], Lambda[s], h_kin[s])
-        wks = get_wks(eig, mu, beta)
-        
-        # H^qp density matrices
-        pdensity[s] = sc.get_pdensity(vec, wks)
-        disp_R = sc.get_disp_R(R[s], h_kin[s], vec)
-        ke[s] = sc.get_ke(disp_R, vec, wks)
 
-        # H^emb parameters
-        D[s] = sc.get_d(pdensity[s], ke[s])
-        Lambda_c[s] = sc.get_lambda_c(pdensity[s], R[s], Lambda[s], D[s])
+    # H^qp and integration weights
+    for bl, bl_size in gf_struct:
+        eig_qp[bl], vec_qp[bl] = helpers.get_h_qp(R[bl], Lambda[bl], h0_k[bl])
+
+    # k-space integration weights
+    for bl, bl_size in gf_struct:
+        kweights[bl] = 
+
+    # H^qp density matrices
+    for bl, bl_size in gf_struct:
+        pdensity[bl] = helpers.get_pdensity(vec_qp[bl], wks[bl])
+        h0_R[bl] = helpers.get_h0_R(R[bl], h0_k[bl], vec_qp[bl])
+        ke[bl] = helpers.get_ke(h0_R[bl], vec_qp[bl], kweights[bl])
+
+    # H^emb parameters
+    for bl, bl_size in gf_struct:
+        D[bl] = helpers.get_d(pdensity[bl], ke[bl])
+        Lambda_c[bl] = helpers.get_lambda_c(pdensity[bl], R[bl], Lambda[bl], D[bl])
 
     # Solve H^emb
     emb_solver.set_h_emb(h_loc, Lambda_c, D)
     emb_solver.solve()
 
-    for s in ["up","dn"]:
-        # H^emb density matrices
-        Nf[s] = emb_solver.get_nf(s)
-        Mcf[s] = emb_solver.get_mcf(s)
-        Nc[s] = emb_solver.get_nc(s)
+    # H^emb density matrices
+    for bl, bl_size in gf_struct:
+        Nf[bl] = emb_solver.get_nf(bl)
+        Mcf[bl] = emb_solver.get_mcf(bl)
+        Nc[bl] = emb_solver.get_nc(bl)
 
-        # New guess for H^qp parameters
-        Lambda[s] = sc.get_lambda(R[s], D[s], Lambda_c[s], Nf[s])
-        R[s] = sc.get_r(Mcf[s], Nf[s])
+    # New guess for H^qp parameters
+    for bl, bl_size in gf_struct:
+        Lambda[bl] = sc.get_lambda(R[bl], D[bl], Lambda_c[bl], Nf[bl])
+        R[bl] = sc.get_r(Mcf[bl], Nf[bl])
 
-        # Check how close the guess was
-        norm += np.linalg.norm(R[s] - R_old[s])
-        norm += np.linalg.norm(Lambda[s] - Lambda_old[s])
+    # Check how close the guess was
+    for bl, bl_size in gf_struct:
+        norm += np.linalg.norm(R[bl] - R_old[bl])
+        norm += np.linalg.norm(Lambda[bl] - Lambda_old[bl])
 
         if norm < 1e-6:
             break
     
 # Quasiparticle weight
 Z = dict()
-for s in ['up','dn']:
-    Z[s] = np.dot(R[s], R[s].conj().T)
+for bl, bl_size in gf_struct:
+    Z[bl] = R[bl] @ R[bl].conj().T
 ```
 
 # Introduction
@@ -95,7 +107,7 @@ PRB **76**, 155102 (2007).
 The bilayer Hubbard model on the hypercubic lattice is given by
 
 $$
-\hat{H} = \hat{H}^{\mathrm{kin}} + \sum_i \hat{H}_i^{\mathrm{loc}},
+\hat{H} = \hat{H}^0_{\mathrm{kin}} + \sum_i \hat{H}_i^{\mathrm{loc}},
 $$
 
 where $$i$$ indexes a site.
@@ -103,7 +115,7 @@ where $$i$$ indexes a site.
 The kinetic part of the Hamiltonian is given by
 
 $$
-\hat{H}^{\mathrm{kin}} = - \frac{1}{d} 
+\hat{H}^0_{\mathrm{kin}} = - \frac{1}{d} 
 \sum_{\langle i j \rangle} \sum_{\sigma} \sum_{\alpha=1,2} 
 ( t_{\alpha} \hat{d}_{i \alpha \sigma}^{\dagger} \hat{d}_{j \alpha \sigma}
 + \mathrm{H.c.} ),
@@ -122,7 +134,7 @@ $$
 $$
 
 where $$k$$ labels a reciprocol lattice vector. Hence, 
-$$\hat{H}_{k \alpha \beta}^{\mathrm{kin}} = \varepsilon_{k\alpha}$$ 
+$$\hat{H}_{0, k \alpha \beta}^{\mathrm{kin}} = \varepsilon_{k\alpha}$$ 
 for $$\alpha = \beta$$ and zero otherwise.
 
 The local part of the Hamiltonian is given by
@@ -141,7 +153,7 @@ the local Coulomb repulsion.
 
 The Hamiltonian is block diagonal in spin. Hence, for each spin $$\sigma$$, 
 the hopping terms are given by the kinetic Hamiltonian 
-$$\hat{H}^{\mathrm{kin}}_{k \alpha\beta}[\sigma]$$. This is 
+$$\hat{H}^{\mathrm{kin}}_{0,k \alpha\beta}[\sigma]$$. This is 
 represented as an $$\mathcal{N} \times M \times M$$ matrix, where 
 $$\mathcal{N}$$ is the number of unit cells (sites in this case) on the 
 lattice and $$M$$ is the number of orbitals. If the Hamiltonian was not 
@@ -176,10 +188,10 @@ def cubic_kin(mesh, t = 1, a = 1, orb_dim = 2):
     mesh_num = mesh.shape[0]
     di = np.diag_indices(orb_dim)
 
-    h_kin = dict()
+    h0_k = dict()
     for s in ["up","dn"]:
-        h_kin[s] = np.zeros([mesh_num, orb_dim, orb_dim])
-        h_kin[s][:,di[0],di[1]] = -2.0 * t * np.sum(np.cos(a * 2.0 * np.pi * mesh), axis=1)[:, None]
+        h0_k[s] = np.zeros([mesh_num, orb_dim, orb_dim])
+        h0_k[s][:,di[0],di[1]] = -2.0 * t * np.sum(np.cos(a * 2.0 * np.pi * mesh), axis=1)[:, None]
 
     return h_kin
 ```

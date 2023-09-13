@@ -32,7 +32,7 @@ not editing the source code)
     python3 -m pip install -e ./
     ```
 
-## `TetrahedronKWeight` k-space integrator
+## TetrahedronKWeight k-space integrator
 
 ```bash
 git clone https://github.com/thenoursehorse/kint kint.src
@@ -40,19 +40,22 @@ mkdir -p kint.build && cd kint.build
 cmake ../kint.src/ -DTRIQS_ROOT=${TRIQS_ROOT}
 ```
 
-## `EmbeddingEd` embedding space solver
+## EmbeddingEd embedding space solver
+
+Below `CMAKE_INSTALL_PREFIX=path/to/install` can be specified to install 
+software not in system locations (and then `sudo` is not needed in 
+`sudo make install`).
 
 ### ARPACK-NG
 
 Install [ARPACK-NG](https://github.com/opencollab/arpack-ng). A specific 
-version can be requested with `--branch <version>`. Minimum
-version is `3.8.0`.
+version can be requested with `--branch <version>` (minimum
+version is `3.8.0`).
 
 ```bash
 git clone https://github.com/opencollab/arpack-ng arpack-ng.src
 mkdir -p arpack-ng.build && cd arpack-ng.build 
-cmake ../arpack-ng.src/ -DBUILD_SHARED_LIBS=ON \
-                        --DMPI=ON
+cmake ../arpack-ng.src/ -DBUILD_SHARED_LIBS=ON -DMPI=ON
 make -j${NCORES}
 make test
 sudo make install
@@ -60,8 +63,8 @@ sudo make install
 
 ### ezARPACK
 
-Install [ezARPACK](https://github.com/krivenko/ezARPACK). Minimum version 
-is `1.0`.
+Install [ezARPACK](https://github.com/krivenko/ezARPACK) (minimum version 
+is `1.0`).
 
 ```bash
 git clone https://github.com/krivenko/ezARPACK ezARPACK.src
@@ -72,10 +75,13 @@ make test
 sudo make install
 ```
 
-### embedding_ed
+If ARPACK-NG is not installed in a standard place, you can specify it with 
+`-DARPACK_NG_ROOT=path/to/arpack-ng` to `cmake`.
 
-Below assumes TRIQS is installed to system path. If it is not 
-then `-DTRIQS_ROOT=/path/to/triqs` has to be passed to `cmake`.
+If TRIQS is not installed in a standard place, you can specify it with 
+`-DTRIQS_ROOT=/path/to/triqs` to `cmake`.
+
+### embedding_ed
 
 ```bash
 git clone https://github.com/thenoursehorse/embedding_ed embedding_ed.src
@@ -87,8 +93,7 @@ sudo make install
 ```
 
 The `ezARPACK` path has to be given because `cmake` does not find 
-the configuration correctly. By default it is `/usr/local/` if 
-no `CMAKE_INSTALL_PREFIX` is specified.
+the configuration correctly. By default it is `/usr/local/` or `/usr/`.
 
 # With Docker
 
@@ -99,13 +104,13 @@ and work without further testing, because it has been setup by the project
 maintainers.
 
 A container can be set up using [Compose](https://docs.docker.com/compose/), 
-with the YAML file [docker-compose.yml]. This uses the 
+with the YAML file `docker-compose.yml`. This uses the 
 [official TRIQS docker image](https://hub.docker.com/r/flatironinstitute/triqs).
 
-There is a complete container setup includeing TRIQS, dft-tools, cthyb, risb, 
-kint, embedding_ed and a Jupyter notebook with this compose file
+There is a complete container setup including TRIQS, risb, kint, embedding_ed 
+and a Jupyter notebook with this compose file
 [docker-compose.yml](https://github.com/thenoursehorse/docker/blob/main/risb_all/docker-compose.yml).
-THe file has to be edited where the comments suggest.
+The file has to be edited where the comments suggest.
 
 For any private repos, a very insecure way to get Compose to be able to clone 
 them is to create an 

@@ -39,7 +39,8 @@ Lanatà, et al. [[3]](#ref3)[[4]](#ref4).
 1. `EmbeddingAtomDiag` uses [TRIQS](https://triqs.github.io/) [[5]](#ref5).
 
 1. `EmbeddingED` uses [TRIQS](https://triqs.github.io/) [[5]](#ref5) and 
-[ezARPACK](https://krivenko.github.io/ezARPACK/) [[6]](#ref6).
+[arpack-ng](https://github.com/opencollab/arpack-ng) with the
+[ezARPACK](https://krivenko.github.io/ezARPACK/) [[6]](#ref6) wrapper.
 
 # License
 
@@ -70,10 +71,6 @@ Phys. Rev. Lett. **118**, 126401 (2017)](https://doi.org/10.1103/PhysRevLett.118
 L. Messio, and P. Seth, *TRIQS: A toolbox for research on interacting quantum systems*, 
 Comp. Phys. Comm. **196**, 398-415 (2015)](https://doi.org/10.1016/j.cpc.2015.04.023)
 
-6\. <a id="ref6"> [I. Krivenko, *ezARPACK - a C++ ARPACK-NG wrapper compatible with 
-multiple matrix/vector algebra libraries: Release 0.9*, 
-10.5281/zenodo.3930203 (2020).](https://doi.org/10.5281/zenodo.3930202)
-
-7\. <a id="ref7"> [M. Fishman, S. R. White, E. M. Stoudenmire, *The ITensor Software Library 
-for Tensor Network Calculations*, 
-SciPost Phys. Codebases 4 (2022)](https://doi.org/10.21468/SciPostPhysCodeb.4)
+6\. <a id="ref6"> [I. Krivenko, *ezARPACK - ezARPACK - a C++ ARPACK-NG wrapper 
+compatible with multiple matrix/vector algebra libraries: Release 1.0*, 
+10.5281/zenodo.3930203 (2022).](https://doi.org/10.5281/zenodo.3930202)

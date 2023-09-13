@@ -11,4 +11,4 @@ services:
       - "../docs/:/usr/src/app"
     stdin_open: true
     tty: true
-    command: bundle exec jekyll serve -H 0.0.0.0 -t
+    command: bundle exec jekyll serve --force_polling -H 0.0.0.0 -t

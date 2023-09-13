@@ -42,13 +42,13 @@ python3 -m pip uninstall risb
 There is a Dockerfile and docker-compose.yml inside ./docker/. The Dockerfile will 
 pull the TRIQS [docker from the hub](https://hub.docker.com/r/flatironinstitute/triqs) 
 and install risb. Using the Docker image will be the same as the instructions 
-for TRIQS (e.g., Jupyter). To connect to the Jupyter notebook it is probably
+for TRIQS (e.g., Jupyter). To connect to the Jupyter notebook it is 
 
 ```
-http://localhost:8888/?token=3aa53ba98d29e7605ad59941937907aa610f27a35e334bb2
+localhost:8888/?token=put/token/here
 ```
 
-but if the token is wrong you can find it by attaching a shell to the container 
+You can find the token by attaching a shell to the container 
 and running
 
 ```
@@ -94,7 +94,10 @@ test/python for examples.
 ## To do
 
 * Fix docs to work with newer TRIQS.
+* Add EmbeddingAtomDiag tests
 * Add kweights tests
 * Sort out basic_functions tests
 * Fix passing emb_parameters and kweight_parameters to stuff
 * Sort out automatic versioning with git hash (setuptools_scm? versioneer?)
+* Make h0_k all h0 hoppings, and work out h0_loc and add to h_int to make a 
+h_loc = h0_loc + h_int, and then h0_kin_k = h0_k - h_0_loc.

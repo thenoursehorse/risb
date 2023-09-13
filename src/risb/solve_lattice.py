@@ -34,9 +34,6 @@ class LatticeSolver:
     h0_k : dict of ndarray
         Single-particle dispersion between local clusters. Each key 
         in dictionary must follow the gf_struct.
-        FIXME Make it the full h0_k, and work out the h0_loc and add to
-        h_int to make a h_loc = h0_loc + h_int, and then
-        h0_kin_k = h0_k - h_0_loc.
 
     gf_struct : list of pairs [ (str,int), ...]
         Structure of the matrices. It must be a
