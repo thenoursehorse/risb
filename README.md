@@ -93,11 +93,9 @@ test/python for examples.
 
 ## To do
 
-* Fix docs to work with newer TRIQS.
 * Add EmbeddingAtomDiag tests
 * Add kweights tests
 * Sort out basic_functions tests
-* Fix passing emb_parameters and kweight_parameters to stuff
 * Sort out automatic versioning with git hash (setuptools_scm? versioneer?)
 * Make h0_k all h0 hoppings, and work out h0_loc and add to h_int to make a 
 h_loc = h0_loc + h_int, and then h0_kin_k = h0_k - h_0_loc.

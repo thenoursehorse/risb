@@ -132,9 +132,9 @@ class LatticeSolver:
     def unflatten(self, x):
         return unflatten(x, self._gf_struct, self._force_real)
     
-    def target_function(self, x, return_new=True):
+    def target_function(self, x, embedding_param, kweight_param, return_new=True):
         self._Lambda, self._R = self.unflatten(x)
-        Lambda_new, R_new, f1, f2  = self.one_cycle()
+        Lambda_new, R_new, f1, f2  = self.one_cycle(embedding_param, kweight_param)
         x_new = self.flatten(Lambda_new, R_new)
         
         if self._error_root == 'root':
@@ -219,7 +219,7 @@ class LatticeSolver:
     def solve(self, 
               one_shot=False, 
               tol=1e-12, 
-              options={'maxiter': 1000}, 
+              optimize_param={'maxiter': 1000}, 
               embedding_param=dict(), 
               kweight_param=dict()):
         """ 
@@ -237,7 +237,7 @@ class LatticeSolver:
             Convergence tolerance to pass to ``optimize_root`` class.
             Default is 1e-12.
 
-        options : optional, dict
+        optimize_param : optional, dict
             Additional options to pass to ``optimize_root`.
 
         embedding_param : optional, dict
@@ -256,10 +256,14 @@ class LatticeSolver:
                 self._optimize_solver = DIIS()
             self._optimize_solver.solve(fun=self.target_function, 
                                         x0=self.flatten(self._Lambda, self._R), 
+                                        args=(embedding_param, kweight_param),
                                         tol=tol,
-                                        options=options)
+                                        options=optimize_param)
             #from scipy.optimize import root
-            #root_finder = root(fun=self.target_function, x0=self.flatten(self._Lambda, self._R), args=(False), method='broyden1')
+            #root_finder = root(fun=self.target_function, 
+            #                   x0=self.flatten(self._Lambda, self._R), 
+            #                   args=(embedding_param, kweight_param, False), 
+            #                   method='broyden1')
 
     @property
     def gf_struct(self):

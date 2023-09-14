@@ -123,7 +123,7 @@ class NewtonSolver:
     def insert_vector(self, vec, vec_new, max_size):
         insert_vector(vec, vec_new, max_size)
 
-    def solve(self, fun, x0, tol=1e-12, options={'maxiter':1000}):
+    def solve(self, fun, x0, args=(), tol=1e-12, options={'maxiter':1000}):
         self.success = False
         x = deepcopy(x0)
 
@@ -132,7 +132,7 @@ class NewtonSolver:
 
         for self.n in range(options['maxiter']):
 
-            g_x, error = fun(x=x)
+            g_x, error = fun(x, *args)
 
             self.norm = np.linalg.norm(error)
             if self.verbose:

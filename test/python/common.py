@@ -1,11 +1,6 @@
-#from __future__ import print_function
 import numpy as np
 from triqs.gf import *
 from triqs.lattice.tight_binding import *
-#from h5 import *
-
-#def eprint(*args, **kwargs):
-#    print(*args, file=sys.stderr, **kwargs)
 
 def symmetrize_blocks(A):
     A_sym = 0
@@ -48,12 +43,6 @@ def build_cubic_h0_k(gf_struct=[('up',1),('dn',1)], nkx=6, spatial_dim=2, t=1):
         h0_out[bl] = h0_k[bl].data
     return h0_out
     
-#def build_mf_matrices(orb_dim = 1):
-#    R = np.zeros([orb_dim, orb_dim])
-#    np.fill_diagonal(R, 1.)
-#    Lambda = np.zeros([orb_dim, orb_dim])
-#    return (R, Lambda)
-
 def build_block_mf_matrices(gf_struct=[('up',1),('dn',1)]):
     R = dict()
     Lambda = dict()
@@ -62,9 +51,3 @@ def build_block_mf_matrices(gf_struct=[('up',1),('dn',1)]):
         Lambda[bl] = np.zeros((bsize,bsize))
         np.fill_diagonal(R[bl], 1)
     return (R,Lambda)
-
-#def build_fops_local(orb_dim = 1):
-#    orb_names = list(range(1,orb_dim+1))
-#    spin_names = ['up','dn']
-#    fops = [(s,o) for s,o in product(spin_names,orb_names)]
-#    return (fops, orb_names, spin_names)
