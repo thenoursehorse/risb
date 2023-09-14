@@ -37,13 +37,13 @@ not editing the source code)
 ```bash
 git clone https://github.com/thenoursehorse/kint kint.src
 mkdir -p kint.build && cd kint.build
-cmake ../kint.src/ -DTRIQS_ROOT=${TRIQS_ROOT}
+cmake ../kint.src/
 ```
 
 ## EmbeddingEd embedding space solver
 
-Below `CMAKE_INSTALL_PREFIX=path/to/install` can be specified to install 
-software not in system locations (and then `sudo` is not needed in 
+Below (and above) `CMAKE_INSTALL_PREFIX=path/to/install` can be specified to 
+install software not in system locations (and then `sudo` is not needed in 
 `sudo make install`).
 
 ### ARPACK-NG
@@ -93,7 +93,8 @@ sudo make install
 ```
 
 The `ezARPACK` path has to be given because `cmake` does not find 
-the configuration correctly. By default it is `/usr/local/` or `/usr/`.
+the configuration correctly. By default it is `/usr/local/` or `/usr/` if 
+installed to system directories.
 
 # With Docker
 
@@ -105,7 +106,8 @@ maintainers.
 
 A container can be set up using [Compose](https://docs.docker.com/compose/), 
 with the YAML file `docker-compose.yml`. This uses the 
-[official TRIQS docker image](https://hub.docker.com/r/flatironinstitute/triqs).
+[official TRIQS docker image](https://hub.docker.com/r/flatironinstitute/triqs), 
+which includes a Jupyter notebook.
 
 There is a complete container setup including TRIQS, risb, kint, embedding_ed 
 and a Jupyter notebook with this compose file

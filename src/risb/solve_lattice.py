@@ -41,18 +41,18 @@ class LatticeSolver:
         matrix block as a string and the size of that block.
         For example: ``[ ('up', 3), ('down', 3) ]``.
                  
-    emb_solver : class
+    embedding : class
         The class that solves the embedding problem. It must already 
         store the local Hamiltonian, h_loc, on a cluster, have a method 
         ``set_h_emb(Lambda_c, D)`` to setup the impurity problem, a method
-        ``solve(**emb_parameters)`` that solves the impurity problem, and 
+        ``solve(**embedding_param)`` that solves the impurity problem, and 
         methods ``get_nf(block)`` and ``get_mcf(block)`` for the bath and 
         hybridization density matrices. See class ``EmbeddingAtomDiag``.
         
-    kweight_solver : class
+    kweight : class
         The class that sets the integral weights at each k-point on the 
         lattice. It must have a method 
-        ``update_weights(energies, **kweight_parameters)``, where the energies 
+        ``update_weights(energies, **kweight_param)``, where the energies 
         are a dictionary with each key a list. See class ``SmearingKWeight``.
 
     symmeties : optional, list of functions
@@ -89,8 +89,8 @@ class LatticeSolver:
     def __init__(self, 
                  h0_k,
                  gf_struct,
-                 emb_solver, 
-                 kweight_solver,
+                 embedding, 
+                 kweight,
                  symmetries=[],
                  force_real=True,
                  R=None,
@@ -102,8 +102,8 @@ class LatticeSolver:
         self._gf_struct = gf_struct
         self._block_names = [bl for bl,_ in self._gf_struct]
         
-        self._emb_solver = emb_solver
-        self._kweight_solver = kweight_solver
+        self._embedding = embedding
+        self._kweight = kweight
         
         self._R = deepcopy(R)
         self._Lambda = deepcopy(Lambda)
@@ -149,7 +149,7 @@ class LatticeSolver:
         else:
             return x_error
 
-    def one_cycle(self, emb_parameters=dict(), kweight_parameters=dict()):
+    def one_cycle(self, embedding_param=dict(), kweight_param=dict()):
 
         for function in self._symmetries:
             self._R = function(self.R)
@@ -163,21 +163,22 @@ class LatticeSolver:
         self._Mcf = dict()
         self._wks = dict()
         
-        eig_qp = dict()
-        vec_qp = dict()
+        self._energies_qp = dict()
+        self._bloch_vector_qp = dict()
+        self._kinetic_energy_qp = dict()
 
         for bl in self._block_names:
-            eig_qp[bl], vec_qp[bl] = helpers.get_h_qp(self._R[bl], self._Lambda[bl], self._h0_k[bl])
+            self._energies_qp[bl], self._bloch_vector_qp[bl] = helpers.get_h_qp(self._R[bl], self._Lambda[bl], self._h0_k[bl])
         
-        self._wks = self._kweight_solver.update_weights(eig_qp, **kweight_parameters)
+        self._wks = self._kweight.update_weights(self._energies_qp, **kweight_param)
 
         for bl in self._block_names:
-            h0_R = helpers.get_h0_R(self._R[bl], self._h0_k[bl], vec_qp[bl])
+            h0_R = helpers.get_h0_R(self._R[bl], self._h0_k[bl], self._bloch_vector_qp[bl])
 
-            self._rho_qp[bl] = helpers.get_pdensity(vec_qp[bl], self._wks[bl])
-            ke = helpers.get_ke(h0_R, vec_qp[bl], self._wks[bl])
+            self._rho_qp[bl] = helpers.get_pdensity(self._bloch_vector_qp[bl], self._wks[bl])
+            self._kinetic_energy_qp[bl] = helpers.get_ke(h0_R, self._bloch_vector_qp[bl], self._wks[bl])
         
-            self._D[bl] = helpers.get_d(self._rho_qp[bl], ke)
+            self._D[bl] = helpers.get_d(self._rho_qp[bl], self._kinetic_energy_qp[bl])
             if self._force_real:
                 self._D[bl] = self._D[bl].real
             self._Lambda_c[bl] = helpers.get_lambda_c(self._rho_qp[bl], self._R[bl], self._Lambda[bl], self._D[bl])
@@ -186,12 +187,12 @@ class LatticeSolver:
             self._D = function(self._D)
             self._Lambda_c = function(self._Lambda_c)
 
-        self._emb_solver.set_h_emb(self._Lambda_c, self._D)
-        self._emb_solver.solve(**emb_parameters)
+        self._embedding.set_h_emb(self._Lambda_c, self._D)
+        self._embedding.solve(**embedding_param)
 
         for bl in self._block_names:
-            self._Nf[bl] = self._emb_solver.get_nf(bl)
-            self._Mcf[bl] = self._emb_solver.get_mcf(bl)
+            self._Nf[bl] = self._embedding.get_nf(bl)
+            self._Mcf[bl] = self._embedding.get_mcf(bl)
         
         for function in self._symmetries:
             self._Nf = function(self._Nf)
@@ -219,8 +220,8 @@ class LatticeSolver:
               one_shot=False, 
               tol=1e-12, 
               options={'maxiter': 1000}, 
-              emb_parameters=dict(), 
-              kweight_parameters=dict()):
+              embedding_param=dict(), 
+              kweight_param=dict()):
         """ 
         Solve for the renormalization matrix ``R`` and correlation potential
         matrix ``Lambda``.
@@ -239,16 +240,16 @@ class LatticeSolver:
         options : optional, dict
             Additional options to pass to ``optimize_root`.
 
-        emb_parameters : optional, dict
-            Options to pass to ``emb_solver.solve``. Not implemented.
+        embedding_param : optional, dict
+            Options to pass to ``embedding.solve``.
 
-        kweight_parameters : optional, dict
-            Options to pass to ``kweight_solver.update_weight``. 
-            Not implemented.
+        kweight_param : optional, dict
+            Options to pass to ``kweight.update_weight``. 
 
         """
+
         if one_shot:
-            self._Lambda, self._R, _, _ = self.one_cycle(emb_parameters, kweight_parameters)
+            self._Lambda, self._R, _, _ = self.one_cycle(embedding_param, kweight_param)
         
         else:
             if self._optimize_solver is None:

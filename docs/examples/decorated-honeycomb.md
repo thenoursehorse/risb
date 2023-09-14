@@ -1,6 +1,6 @@
 ---
 title: Decorated honeycomb lattice
-parent: Tutorials
+parent: Examples
 ---
 
 # Table of Contents

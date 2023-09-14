@@ -25,17 +25,17 @@ class tests(unittest.TestCase):
         h_loc = U * n('up',0) * n('dn',0)
         mu = U / 2
         
-        emb_solver = EmbeddingAtomDiag(h_loc, gf_struct)
-        kweight_solver = SmearingKWeight(beta=beta, mu=mu)
+        embedding = EmbeddingAtomDiag(h_loc, gf_struct)
+        kweight = SmearingKWeight(beta=beta, mu=mu)
         S = LatticeSolver(h0_k=h0_k,
                           gf_struct=gf_struct,
-                          emb_solver=emb_solver,
-                          kweight_solver=kweight_solver,
+                          embedding=embedding,
+                          kweight=kweight,
                           symmetries=[symmetrize_blocks])
         
         S.solve()
             
-        mu_calculated = kweight_solver.mu
+        mu_calculated = kweight.mu
         mu_expected = mu
         Lambda_expected = np.array([[2.0]])
         Z_expected = np.array([[0.437828801025]])

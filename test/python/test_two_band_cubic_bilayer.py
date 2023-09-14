@@ -38,12 +38,12 @@ class tests(unittest.TestCase):
         for s1,s2 in product(spin_names,spin_names):
             h_loc += 0.5 * J * c_dag(s1,0) * c(s2,0) * c_dag(s2,1) * c(s1,1)
         
-        emb_solver = EmbeddingAtomDiag(h_loc, gf_struct)
-        kweight_solver = SmearingKWeight(beta=beta, mu=mu)
+        embedding = EmbeddingAtomDiag(h_loc, gf_struct)
+        kweight = SmearingKWeight(beta=beta, mu=mu)
         S = LatticeSolver(h0_k=h0_k,
                           gf_struct=gf_struct,
-                          emb_solver=emb_solver,
-                          kweight_solver=kweight_solver,
+                          embedding=embedding,
+                          kweight=kweight,
                           symmetries=[symmetrize_blocks])
         
         # First guess for Lambda will have mu on the diagonal
@@ -52,7 +52,7 @@ class tests(unittest.TestCase):
 
         S.solve()
         
-        mu_calculated = kweight_solver.mu
+        mu_calculated = kweight.mu
         mu_expected = mu
         Lambda_expected = np.array([[2.0, 0.114569681915],[0.114569681915, 2.0]])
         Z_expected = np.array([[0.452846149446, 0],[0, 0.452846149446]])

@@ -30,8 +30,8 @@ class tests(unittest.TestCase):
         vec = dict()
         for block,_ in gf_struct:
             eig[block], vec[block] = helpers.get_h_qp(R[block], Lambda[block], h0_k[block])
-        sumk = SmearingKWeight(beta=beta, mu=0)
-        wks = sumk.update_weights(eig)
+        kweight = SmearingKWeight(beta=beta, mu=0)
+        wks = kweight.update_weights(eig)
         h0_R = dict()
         ke = dict()
         for block,_ in gf_struct:
@@ -48,8 +48,8 @@ class tests(unittest.TestCase):
         vec = dict()
         for block,_ in gf_struct:
             eig[block], vec[block] = helpers.get_h_qp(R[block], Lambda[block], h0_k[block])
-        sumk = SmearingKWeight(beta=beta, mu=0)
-        wks = sumk.update_weights(eig)
+        kweight = SmearingKWeight(beta=beta, mu=0)
+        wks = kweight.update_weights(eig)
         pdensity = dict()
         for block,_ in gf_struct:
             pdensity[block] = helpers.get_pdensity(vec[block], wks[block])
@@ -111,16 +111,16 @@ class tests(unittest.TestCase):
              'dn': np.array([[-0.33862285,  0.       ],
                              [ 0.        , -0.33862285 ]])}
         h_loc = n('up',0) * n('dn',0)
-        emb_solver = EmbeddingAtomDiag(h_loc, gf_struct) 
-        emb_solver.set_h_emb(Lambda_c, D)
-        emb_solver.solve()
+        embedding = EmbeddingAtomDiag(h_loc, gf_struct) 
+        embedding.set_h_emb(Lambda_c, D)
+        embedding.solve()
         Nf = dict()
         Nc = dict()
         Mcf = dict()
         for bl, bl_size in gf_struct:
-            Nf[bl] = emb_solver.get_nf(bl)
-            Nc[bl] = emb_solver.get_nc(bl)
-            Mcf[bl] = emb_solver.get_mcf(bl)
+            Nf[bl] = embedding.get_nf(bl)
+            Nc[bl] = embedding.get_nc(bl)
+            Mcf[bl] = embedding.get_mcf(bl)
 
 if __name__ == '__main__':
     unittest.main()
