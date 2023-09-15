@@ -50,7 +50,7 @@ myst_enable_extensions = [
     "strikethrough",
     "substitution",
     "tasklist",
-    "linkify",
+    #"linkify",
 ]
 
 intersphinx_mapping = {

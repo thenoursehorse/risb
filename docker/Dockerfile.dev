@@ -43,8 +43,8 @@ RUN apt-get update \
 
 # Setup non-root user and environment
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
-ENV SRC=/src/build/src \
-    BUILD=/src/build \
+ENV SRC=/src/ \
+    BUILD=/build/ \
     OMP_NUM_THREADS=4 \
     NCORES=4 \
     PYTHON_VERSION=3.10 \
@@ -99,4 +99,5 @@ RUN pip install -e .
 #CMD nox -s docs -- --serve
 
 EXPOSE 8000
-CMD sphinx-autobuild -b html --host 0.0.0.0 --port 8000 -n -T -b=html $SRC/$APPNAME/docs $SRC/$APPNAME/docs/_build
+ENV APPNAME=$APPNAME
+CMD sphinx-autobuild -b html --host 0.0.0.0 --port 8000 -n -T -b=html $BUILD/$APPNAME/docs $BUILD/$APPNAME/docs/_build
