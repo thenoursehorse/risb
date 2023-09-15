@@ -2,7 +2,7 @@
 
 ## Introduction
 
-In this tutorial, you will construct the self-consisten loop in rotationally 
+In this tutorial, you will construct the self-consistent loop in rotationally 
 invariant slave-bosons, and use it to solve the bilayer Hubbard model.
 
 We will try to reproduce the results of Sec. IIIB of 
