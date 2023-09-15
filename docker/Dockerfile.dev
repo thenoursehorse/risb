@@ -77,21 +77,26 @@ ARG BUILDARCH
 #FROM build_${BUILDARCH}
 FROM build_arm64
 
-# Convenient pythong things to install
-RUN DEBIAN_FRONTEND=noninteractive apt-get install -y python3-venv \
-  && pip install --no-warn-script-location --upgrade pip pipx pytest mypy nox
-
 # Install any other software we need
 COPY requirements.txt $SRC/$APPNAME/requirements.txt
 RUN pip install -r $SRC/$APPNAME/requirements.txt
+RUN pip install --upgrade pip \
+  && pip install pytest mypy nox
 
-# Setup code
+# For the docs because I can't get nox to work inside docker properly
+RUN pip install sphinx sphinx-autobuild \
+  myst_parser sphinx_autodoc_typehints sphinx_copybutton linkify \
+  furo
+
+# Install library
 WORKDIR $BUILD/$APPNAME
 COPY . $SRC/$APPNAME
-RUN cp -as $SRC/$APPNAME/* . \
-  && pip install -e .
+RUN cp -as $SRC/$APPNAME/* . 
+RUN pip install -e .
 
 # Build documentation
 #RUN nox -s buld_api_docs
+#CMD nox -s docs -- --serve
 
 EXPOSE 8000
+CMD sphinx-autobuild -b html --host 0.0.0.0 --port 8000 -n -T -b=html $SRC/$APPNAME/docs $SRC/$APPNAME/docs/_build

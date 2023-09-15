@@ -5,7 +5,10 @@ import importlib.metadata
 project = "risb"
 copyright = "2016-2023 H. L. Nourse, 2016-2022 B. J. Powell & R. H. McKenzie"
 author = "H. L. Nourse"
-version = release = importlib.metadata.version("risb")
+try:
+    version = release = importlib.metadata.version("risb")
+except:
+    version = release = "3.2.0"
 master_doc = "contents"
 
 extensions = [
@@ -42,12 +45,12 @@ myst_enable_extensions = [
     "fieldlist",
     "html_admonition",
     "html_image",
-    "linkify",
     "replacements",
     "smartquotes",
     "strikethrough",
     "substitution",
     "tasklist",
+    "linkify",
 ]
 
 intersphinx_mapping = {

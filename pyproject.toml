@@ -41,6 +41,7 @@ docs = [
   "sphinx >=4.0",
   "sphinx-copybutton",
   "sphinx-autodoc-typehints",
+  "linkify",
 ]
 
 [tool.pytest.ini_options]

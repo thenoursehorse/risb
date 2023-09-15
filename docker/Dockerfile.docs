@@ -1,0 +1,15 @@
+FROM alpine:latest
+WORKDIR /etc/
+RUN mkdir -p /etc/sphinx/build
+
+RUN apk add --no-cache python3 py3-pip make
+RUN pip3 install sphinx sphinx-autobuild \
+  myst_parser sphinx_autodoc_typehints sphinx_copybutton linkify \
+  furo
+
+# Build documentation
+#RUN sphinx-apidoc -o api/ --module-first --no-toc --force ../src/risb
+#CMD nox -s docs -- --serve
+
+EXPOSE 8000
+CMD sphinx-autobuild -b html --host 0.0.0.0 --port 8000 -n -T -b=html /etc/sphinx/src/ /etc/sphinx/build
