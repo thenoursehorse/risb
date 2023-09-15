@@ -1,15 +1,7 @@
----
-title: RISB self-consistent loop
-parent: Tutorials
----
+## RISB loop
 
-# Table of Contents
-{: .no_toc .text-delta }
 
-- TOC
-{:toc}
-
-# Introduction
+### Introduction
 
 In this tutorial, you will construct the self-consisten loop in rotationally 
 invariant slave-bosons, and use it to solve the bilayer Hubbard model.
@@ -23,7 +15,7 @@ $$
 \hat{H} = \hat{H}_0^{\mathrm{kin}} + \sum_i \hat{H}_i^{\mathrm{loc}},
 $$
 
-where $$i$$ indexes a site.
+where $i$ indexes a site.
 
 The non-interacting kinetic part of the Hamiltonian that describes hopping 
 between clusters (sites) on the lattice is given by
@@ -35,10 +27,10 @@ $$
 + \mathrm{H.c.} ),
 $$
 
-where $$d$$ is the number of spatial dimensions ($$d=3$$ on the cubic 
-lattice), $$\sigma$$ is a spin label, $$\alpha$$ is an orbital label, 
-$$\langle i j \rangle$$ indicates nearest-neighbor bonds, 
-$${\mathrm{H.c.}}$$ is Hermitian conjugate, and $$t_{\alpha}$$ is the 
+where $d$ is the number of spatial dimensions ($d=3$ on the cubic 
+lattice), $\sigma$ is a spin label, $\alpha$ is an orbital label, 
+$\langle i j \rangle$ indicates nearest-neighbor bonds, 
+${\mathrm{H.c.}}$ is Hermitian conjugate, and $t_{\alpha}$ is the 
 probability amplitude to move an electron between nearest neighbor sites.
 
 For degenerate orbitals on the cubic lattice, the dispersion for each 
@@ -48,9 +40,9 @@ $$
 \varepsilon_{k\alpha} = -\frac{2}{d} t_{\alpha} \sum_{\mu}^d \cos(k_\mu a),
 $$
 
-where $$k$$ labels a reciprocol lattice vector. Hence, 
-$$\hat{H}_{0, k \alpha \beta}^{\mathrm{kin}} = \varepsilon_{k\alpha}$$ 
-for $$\alpha = \beta$$ and zero otherwise.
+where $k$ labels a reciprocol lattice vector. Hence, 
+$\hat{H}_{0, k \alpha \beta}^{\mathrm{kin}} = \varepsilon_{k\alpha}$ 
+for $\alpha = \beta$ and zero otherwise.
 
 The local part of the Hamiltonian is given by
 
@@ -61,22 +53,22 @@ V \sum_{\sigma} (\hat{d}_{i 1 \sigma}^{\dagger} \hat{d}_{i 2 \sigma}
 + U \sum_{\alpha} \hat{n}_{i \alpha \uparrow} \hat{n}_{i \alpha \downarrow},
 $$
 
-where $$V$$ is the interlayer hopping between the orbitals, and $$U$$ is 
+where $V$ is the interlayer hopping between the orbitals, and $U$ is 
 the local Coulomb repulsion.
 
-# A: Construct $$\hat{H}_0^{\mathrm{kin}}$$
+### A: Construct $\hat{H}_0^{\mathrm{kin}}$
 
 First, construct the dispersion between clusters on the lattice. It should 
 not include the non-interacting quadratic terms within a cluster. 
 
 Notice that the Hamiltonian is block diagonal in spin. Hence, the hopping terms 
-are given by the kinetic Hamiltonian $$\hat{H}^{\mathrm{kin}}_{0,k \alpha\beta}[\sigma]$$, 
-and we can construct an array for each spin $$\sigma$$ separately. Each array 
-will be $$\mathcal{N} \times n_{\mathrm{orb}} \times n_{\mathrm{orb}}$$, where 
-$$\mathcal{N}$$ is the number of unit cells (sites in this case) on the 
-lattice and $$n_{\mathrm{orb}}$$ is the number of orbitals in each unit cell. 
+are given by the kinetic Hamiltonian $\hat{H}^{\mathrm{kin}}_{0,k \alpha\beta}[\sigma]$, 
+and we can construct an array for each spin $\sigma$ separately. Each array 
+will be $\mathcal{N} \times n_{\mathrm{orb}} \times n_{\mathrm{orb}}$, where 
+$\mathcal{N}$ is the number of unit cells (sites in this case) on the 
+lattice and $n_{\mathrm{orb}}$ is the number of orbitals in each unit cell. 
 If the Hamiltonian was not block diagonal in spin, we would instead construct a 
-single $$\mathcal{N} \times 2M \times 2M$$ array.
+single $\mathcal{N} \times 2M \times 2M$ array.
 
 The easiest way to create this is as an array using `numpy`. We will 
 intentionally do this in a computationally slow way. The intention here is to 
@@ -116,7 +108,7 @@ def make_kmesh(n_kx = 6, d = 3):
     return mesh
 ```
 
-Now construct $$\hat{H}_0^{\mathrm{kin}}$$ on this mesh.
+Now construct $\hat{H}_0^{\mathrm{kin}}$ on this mesh.
 
 ```python
 def make_h0_k(mesh, gf_struct, t = 1, a = 1):
@@ -158,7 +150,7 @@ Green's functions as
 gf_struct = [ ("up", 2), ("dn", 2) ],
 ```
 
-# B: Construct $$\hat{H}_i^{\mathrm{loc}}$$
+### B: Construct $\hat{H}_i^{\mathrm{loc}}$
 
 Next, construct the local Hamiltonian on each cluster (site) $$i$$. It has to 
 include all of the many-body interactions on each cluster as well as the 
@@ -194,7 +186,7 @@ def make_h_loc(V = 0.25, U = 5):
     return h_loc
 ```
 
-# C: Setup mean-field matrices
+### C: Setup mean-field matrices
 
 We now need to initialize the mean-field matrices used in RISB. In RISB the
 homogenous assumption is taken, so that the matrices are the same on every site.
@@ -202,21 +194,21 @@ Below we describe what each mean-field matrix physically relates to within
 the algorithm.
 
 The mean-field matrices that characterize the quasiparticle Hamiltonian 
-$$\hat{H}^{\mathrm{qp}}$$ are the renormalization matrix $$\mathcal{R}$$ and
-the correlation matrix $$\lambda$$. The single-particle quasiparticle density 
-matrix of $$\hat{H}^{\mathrm{qp}}$$ is $$\Delta^p$$ and the lopsided 
-quasiparticle kinetic energy is $$\mathcal{K}$$.
+$\hat{H}^{\mathrm{qp}}$ are the renormalization matrix $\mathcal{R}$ and
+the correlation matrix $\lambda$. The single-particle quasiparticle density 
+matrix of $\hat{H}^{\mathrm{qp}}$ is $\Delta^p$ and the lopsided 
+quasiparticle kinetic energy is $\mathcal{K}$.
 
 The non-interacting quadratic parts of the embedding Hamiltonian 
-$$\hat{H}^{\mathrm{emb}}$$ are described by the hybridization matrix 
-$$\mathcal{D}$$, and the matrix that describes the couplings in the bath 
-$$\lambda^c$$.
+$\hat{H}^{\mathrm{emb}}$ are described by the hybridization matrix 
+$\mathcal{D}$, and the matrix that describes the couplings in the bath 
+$\lambda^c$.
 
-The single-particle density matrices of $$\hat{H}^{\mathrm{emb}}$$ are the 
-density matrix of the f-electrons (the bath, these are quasiparticles) $$N^f$$, 
+The single-particle density matrices of $\hat{H}^{\mathrm{emb}}$ are the 
+density matrix of the f-electrons (the bath, these are quasiparticles) $N^f$, 
 the density matrix of the c-electrons (the impurity, these are physical 
 electrons), and the off-diagonal density matrix between the c- and f- 
-electrons (the impurity and the bath) $$M^{cf}$$. 
+electrons (the impurity and the bath) $M^{cf}$.
 
 ```python 
 # H^qp parameters R and Lambda
@@ -250,7 +242,7 @@ for bl, bl_size in gf_struct:
     Nc[bl] = np.zeros((bl_size, bl_size))   
 ```
 
-## Helper functions
+#### Helper functions
 
 As an aside, let me describe how to obtain the above mean-field matrices, which 
 has to be done at eacheiteration of the self-consistent process. There are 
@@ -304,7 +296,7 @@ for bl, bl_size in gf_struct:
     f2 = helpers.get_f2(Nf[bl], rho_qp[bl])
 ```
 
-# D: The $$k$$-space integrator
+### D: The $k$-space integrator
 
 Next you will specify how k-space integrals are performed. RISB requires 
 integrating many mean-field matrices. The way to do this that generalizes to 
@@ -312,7 +304,7 @@ many kinds of $$k$$-space integration methods is to
 find the weight of the integral at each $$k$$-point. This is, e.g., how 
 linear tetrahedron works and smearing methods work. As you will see below, 
 because the reference energy for the integration are the eigenenergies of 
-$$\hat{H}^{\mathrm{qp}}$$, the weight at each $$k$$-point has to be updated at 
+$\hat{H}^{\mathrm{qp}}$, the weight at each $$k$$-point has to be updated at 
 each iteration of the self-consistency method. Not to worry though, 
 in practice this can be very fast. Below we will describe the general theory 
 for taking these integrals in multi-orbital cases. 
@@ -325,7 +317,7 @@ $$
 + \lambda,
 $$
 
-which, in this case, are block diagonal in $$k$$. All of the integrals take 
+which, in this case, are block diagonal in $k$. All of the integrals take 
 the form
 
 $$
@@ -333,28 +325,28 @@ $$
 \frac{1}{\mathcal{N}} \sum_k A_k f(\hat{H}_k^{\mathrm{qp}}),
 $$
 
-where $$\mathcal{N}$$ is the number of unit cells, $$A_k$$ is a generic 
-function, and $$f(\xi_n)$$ is the Fermi-Dirac distribution. The meaning 
-of $$f(\hat{H}^{\mathrm{qp}})$$ is specifically the operation
+where $\mathcal{N}$ is the number of unit cells, $A_k$ is a generic 
+function, and $f(\xi_n)$ is the Fermi-Dirac distribution. The meaning 
+of $f(\hat{H}^{\mathrm{qp}}$$ is specifically the operation
 
 $$
 U_k U_k^{\dagger} f(\hat{H}_k^{\mathrm{qp}}) U_k U_k^{\dagger} 
 = U_k f(\xi_{kn}) U_k^{\dagger},
 $$
 
-where $$U_k$$ is the matrix representation of the unitary that diagonalizes 
-$$\hat{H}_k^{\mathrm{qp}}$$, $$\xi_{kn}$$ are its eigenenergies, and 
-$$f(\xi_{kn})$$ is a diagonal matrix of the Fermi-Dirac distribution for 
+where $U_k$ is the matrix representation of the unitary that diagonalizes 
+$\hat{H}_k^{\mathrm{qp}}$, $\xi_{kn}$ are its eigenenergies, and 
+$f(\xi_{kn})$ is a diagonal matrix of the Fermi-Dirac distribution for 
 each eigenvalue.
 
-The integral can be converted to a series of finite $$k$$-points, with an 
+The integral can be converted to a series of finite $k$-points, with an 
 appropriate integration weight such that the integral now takes the form 
 
 $$
 \sum_k A_k w(\varepsilon_{kn}).
 $$
 
-There is a helper function that constructs $$\hat{H}^{\mathrm{qp}}$$ and 
+There is a helper function that constructs $\hat{H}^{\mathrm{qp}}$ and 
 returns its eigenvalues and eigenvectors at each $$k$$-point on the finite 
 grid.
 
@@ -369,7 +361,7 @@ energies_qp[bl], bloch_qp[bl] = helpers.get_h_qp(R[bl], Lambda[bl], h0_k[bl])
 
 The simplest definition for the integration weight is to just calculate the 
 integration weight using the Fermi-Dirac distribution function on a finite grid 
-at the inverse temperature $$\beta$$. That is,
+at the inverse temperature $\beta$. That is,
 
 $$
 w(\varepsilon_{kn}) = \frac{1}{\mathcal{N}} f(\varepsilon_{kn}).
@@ -399,10 +391,10 @@ def update_weights(energies, mu=0, beta=10):
     return 1.0 / (np.exp(beta * (energies - mu)) + 1.0) / n_k
 ```
 
-# E: Solving $$\hat{H}^{\mathrm{emb}}$$
+### E: Solving $\hat{H}^{\mathrm{emb}}$
 
 Now we have to solve the impurity problem defined by the embedding Hamiltonian 
-$$\hat{H}^{\mathrm{emb}}$$. There is a simple, but relatively slow, 
+$\hat{H}^{\mathrm{emb}}$. There is a simple, but relatively slow, 
 implementation that only uses [TRIQS](https://triqs.github.io/).
 
 ```python
@@ -411,13 +403,13 @@ from risb.embedding import EmbeddingAtomDiag
 embedding = EmbeddingAtomDiag(h_loc, gf_struct)
 ```
 
-Setting the embedding Hamiltonian $$\hat{H}^{\mathrm{emb}}$$ is done with 
+Setting the embedding Hamiltonian $\hat{H}^{\mathrm{emb}}$ is done with 
 
 ```python
 embedding.set_h_emb(Lambda_c, D)
 ```
 
-Solving for the ground state in the $$2M$$ particle sector, which 
+Solving for the ground state in the $2M$ particle sector, which 
 corresponds to the embedding problem being half-filled, is done with 
 
 ```python
@@ -433,24 +425,24 @@ for bl, bl_size in gf_struct:
     Nc[bl] = embedding.get_nc(bl)
 ```
 
-# Exercises
+### Exercises
 
 1. Can you match each part above with the self-consistent loop defined in the 
 literature?
 1. Piece together everything above and write your own code.
-1. Solve for a range of $$U$$ values at half-filling ($$\mu = U / 2$$).
-1. How does $$\beta$$ and the size of the k-space mesh affect the results?
-1. What is the evolution of the quasiparticle weight $$Z$$ at 
+1. Solve for a range of $U$ values at half-filling ($\mu = U / 2$).
+1. How does $\beta$ and the size of the k-space mesh affect the results?
+1. What is the evolution of the quasiparticle weight $Z$ at 
 half-filling (Fig. 7)?
 1. What is the evolution of the electron filling in the 
-bonding/anti-bonding ($$\pm$$) basis?
-1. Implement a method to solve for the chemical potential $$\mu$$ at a fixed 
-electron density $$n$$ (you may find `brentq` or `bisect` from `scipy.optimize` 
+bonding/anti-bonding ($\pm$) basis?
+1. Implement a method to solve for the chemical potential $\mu$ at a fixed 
+electron density $n$ (you may find `brentq` or `bisect` from `scipy.optimize` 
 useful).
 1. What is the evolution of the quasiparticle weight at electron filling 
-$$n = 1.88$$ (Fig. 10)?
+$n = 1.88$ (Fig. 10)?
 
-# Conclusion
+### Conclusion
 
 You have built the self-consistent loop for RISB and solved a (not so simple) 
 interacting fermion problem. The code in `LatticeSolver` is not much more 
@@ -464,7 +456,7 @@ much more about RISB if you try to piece everything together from the
 self-consistent equations found in the literature found in 
 [About]({% link about.md %})
 
-## Skeleton code cheat sheet
+#### Skeleton code cheat sheet
 
 Below is a simple self-consistent loop that relies on everything we have set up.
 

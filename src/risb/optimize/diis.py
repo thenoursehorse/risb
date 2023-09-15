@@ -17,6 +17,7 @@
 
 import numpy as np
 import scipy
+from numpy.typing import ArrayLike
 from . import NewtonSolver
 
 class DIIS(NewtonSolver):
@@ -29,27 +30,35 @@ class DIIS(NewtonSolver):
     ----------
         
     history_size : optional, int
-        Maximum size of subspace. Defaults to 5.
+        Maximum size of subspace. Default 5.
 
     t_restart : optional, int
-        Fully reset subspace after this many iterations. Defaults infinity.
+        Fully reset subspace after this many iterations. Default infinity.
 
     verbose : optional, bool
         Whether to report information during optimization. Default False.
 
     t_period : optional, int
-        Take a linear mixing step afer this many iterations. Defaults to
+        Take a linear mixing step afer this many iterations. Default 
         round(history_size / 2).
     
     '''
-    def __init__(self, *args, history_size=5, t_period=0, **kwargs):
-        super().__init__(*args, history_size=history_size, **kwargs)
+    def __init__(self, /, 
+                 history_size : int = 5, 
+                 t_period : int = 0, 
+                 **kwargs) -> None:
+        super().__init__(history_size=history_size, **kwargs)
+        
         if t_period == 0:
             self.t_period = int(np.round(self.history_size/2.0))
         else:
             self.t_period = t_period
 
-    def extrapolate(self):
+    def extrapolate(self) -> np.ndarray:
+        """
+        The DIIS extrapolation algorithm for the new guess for x.
+        """
+        
         # Construct the B matrix
         m = len(self.error)
         B = np.empty(shape=(m,m))
@@ -76,7 +85,37 @@ class DIIS(NewtonSolver):
 
     # x_i, error(x_i), g(x_i) where g(x_i) is the fixed-point function 
     # that gives a new x_i
-    def update_x(self, x, g_x, error, alpha=1.0):
+    def update_x(self, 
+                 x : list[ArrayLike], 
+                 g_x : list[ArrayLike], 
+                 error : list[ArrayLike], 
+                 alpha : float = 1.0) -> np.ndarray:
+        """
+        The new guess for x according to the DIIS extrapolation.
+        
+        Parameters
+        ----------
+        
+        x : list of array_like
+            Every guess for x in the history.
+
+        g_x : list of array_like
+            The solution to the fixed-point function, g(x), that gives a new 
+            x.
+
+        error : list of array_like
+            The error function that is minimized. This is often g(x) - x.
+
+        alpha : float, optional
+            The step size for linear-mixing.
+
+        Returns
+        -------
+
+        x : ndarray
+            The new guess for x.
+
+        """
         
         if (self.t % self.t_restart) == 0:
             self.x = []

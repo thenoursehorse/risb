@@ -1,3 +1,4 @@
+from numpy.typing import ArrayLike
 from . import NewtonSolver
 
 # error function f(x_i) = x_i - x_i-1
@@ -16,15 +17,16 @@ class LinearMixing(NewtonSolver):
     verbose : optional, bool
         Whether to report information during optimization. Default False.
 
-    annealer : optional, class
-        A scheduling class to update the step size alpha. Must have a method
-        ``get_alpha()`` that returns alpha at the current step. Defaults to 
-        alpha = 1 at each timestep.
-
     '''
-    def __init__(self, *args, history_size=0, **kwargs):
-        super().__init__(*args, history_size=history_size, **kwargs)
+    def __init__(self, /,
+                  history_size : int = 0, 
+                  **kwargs):
+        super().__init__(history_size=history_size, **kwargs)
     
-    def update_x(self, x, g_x, error=None, alpha=1.0):
+    def update_x(self, 
+                 x : ArrayLike, 
+                 g_x : ArrayLike, 
+                 error : None = None, 
+                 alpha : float = 1.0):
         self.t += 1
         return x + alpha * (g_x - x)

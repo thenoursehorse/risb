@@ -21,7 +21,8 @@ class EmbeddingAtomDiag:
 
     """
 
-    def __init__(self, h_loc, gf_struct):
+    def __init__(self, 
+                 h_loc, gf_struct):
         self._h_loc = h_loc
         self._gf_struct = gf_struct
 

@@ -1,6 +1,13 @@
-# risb - Rotationally invariant slave bosons for correlated many-body electrons
+# risb - Rotationally invariant slave bosons
+
+Rotationally invariant slave-bosons (RISB) is a non-perturbative method to 
+approximately solve many-body fermionic problems. 
 
 Documentation at [https://thenoursehorse.github.io/risb](https://thenoursehorse.github.io/risb)
+
+Source at [https://github.com/thenoursehorse/risb](https://github.com/thenoursehorse/risb)
+
+<!-- SPHINX-START -->
 
 ## Dependencies
 
@@ -11,25 +18,42 @@ and for the tests
 
 ## Installation
 
-1. Update packaging software
-    ```
-    python3 -m pip install --upgrade pip setuptools wheel
-    ```
+Update packaging software
 
-1. (Optional) Create a 
+```
+python3 -m pip install --upgrade pip setuptools wheel
+```
+
+Clone source
+
+```
+git clone https://github.com/thenoursehorse/risb
+cd risb
+```
+
+### With pipx
+
+```
+pipx install .
+```
+
+To develop code without reinstalling
+
+```
+pipx install --editable .
+```
+
+### With pip
+
+(Optional) Create a 
 [virtual environment](https://packaging.python.org/en/latest/tutorials/installing-packages/#creating-virtual-environments).
 
-1. Clone source
-    ```
-    git clone https://github.com/thenoursehorse/risb
-    ```
-
-1. Install from local (-e allows to develop code without reinstalling, omit if
+Install from local (-e allows to develop code without reinstalling, omit if
 not editing the source code)
-    ```
-    cd risb
-    python3 -m pip install -e ./
-    ```
+
+```
+python3 -m pip install -e ./
+```
 
 ### Uninstall
 
@@ -60,16 +84,18 @@ docker-compose-dev.yml in order to have a container to develop code. It
 installs TRIQS from source, and works on Apple M1/M2 (arm64), and any amd64 
 system.
 
-There is also a Dockerfile.docs and the corresponding docker-compose-docs.yml 
-in order to locally edit and preview the documentation. It is served at
-[localhost:4000/risb/](localhost:4000/risb/).
-
 ## Tests
 
 Tests are run with
 
 ```
 python3 -m pytest -v
+```
+
+or
+
+```
+nox -s pytest -v
 ```
 
 For developers, coverage can be determined with `pytest-cov` using
@@ -96,6 +122,6 @@ test/python for examples.
 * Add EmbeddingAtomDiag tests
 * Add kweights tests
 * Sort out basic_functions tests
-* Sort out automatic versioning with git hash (setuptools_scm? versioneer?)
 * Make h0_k all h0 hoppings, and work out h0_loc and add to h_int to make a 
 h_loc = h0_loc + h_int, and then h0_kin_k = h0_k - h_0_loc.
+* Use static type hints for functions (learning work in progress)

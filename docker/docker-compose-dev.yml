@@ -5,7 +5,10 @@ services:
     build:
       context: ../
       dockerfile: docker/Dockerfile.dev
+    ports:
+      - 8000:8000
     volumes:
       - "../:/home/build/src/risb:ro"
     stdin_open: true # docker run -i
     tty: true        # docker run -t
+    #command: nox -s docs -- --serve

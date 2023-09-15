@@ -17,9 +17,14 @@
 
 import numpy as np
 from copy import deepcopy
+from numpy.typing import ArrayLike
+from typing import Any, Callable, TypeAlias
 from risb import helpers
 from risb.optimize import DIIS
 from .other.from_triqs_hartree import flatten, unflatten
+
+GfStructType : TypeAlias = list[tuple[str,int]]
+MFType : TypeAlias = dict[ArrayLike]
 
 # The structure and methods here have been modeled 
 # after github.com/TRIQS/hartree_fock
@@ -31,7 +36,7 @@ class LatticeSolver:
     Parameters
     ----------
 
-    h0_k : dict of ndarray
+    h0_k : dict of array_like
         Single-particle dispersion between local clusters. Each key 
         in dictionary must follow the gf_struct.
 
@@ -72,7 +77,7 @@ class LatticeSolver:
         Each key in dictionary must follow gf_struct. Defaults to the zero 
         matrix in each block.
 
-    optimize_solver : optional, class
+    optimize : optional, class
         The class that drives the self-consistent procedure. It must have 
         a method ``solve(fun, x0)``, where x0 is the initial guess vector, 
         and fun is the function to minimize, where fun=self.target_function 
@@ -87,16 +92,16 @@ class LatticeSolver:
 
     """
     def __init__(self, 
-                 h0_k,
-                 gf_struct,
-                 embedding, 
-                 kweight,
-                 symmetries=[],
-                 force_real=True,
-                 R=None,
-                 Lambda=None, 
-                 optimize_solver=None,
-                 error_root='root'):
+                 h0_k : MFType,
+                 gf_struct : GfStructType,
+                 embedding : Any, 
+                 kweight : Any,
+                 symmetries : list[Callable[[MFType], dict[MFType]]] | None = [],
+                 force_real : bool = True,
+                 R : dict[ArrayLike] | None = None,
+                 Lambda : dict[ArrayLike] | None = None, 
+                 optimize : Any = None,
+                 error_root : str = 'root'):
         
         self._h0_k = h0_k
         self._gf_struct = gf_struct
@@ -113,11 +118,11 @@ class LatticeSolver:
         self._symmetries = symmetries
         self._force_real = force_real
 
-        self._optimize_solver = optimize_solver
+        self._optimize = optimize
         self._error_root = error_root
 
     @staticmethod
-    def initialize_block_mf_matrices(gf_struct):
+    def initialize_block_mf_matrices(gf_struct : GfStructType) -> tuple[GfStructType, GfStructType]:
         R = dict()
         Lambda = dict()
         for bl, bsize in gf_struct:
@@ -126,13 +131,20 @@ class LatticeSolver:
             np.fill_diagonal(R[bl], 1)
         return (R, Lambda)
     
-    def flatten(self, Lambda, R):
+    def flatten(self, 
+                Lambda : GfStructType, 
+                R : GfStructType) -> np.ndarray:
         return flatten(Lambda, R, self._force_real)
     
-    def unflatten(self, x):
+    def unflatten(self, x : ArrayLike) -> tuple[MFType, MFType]:
         return unflatten(x, self._gf_struct, self._force_real)
     
-    def target_function(self, x, embedding_param, kweight_param, return_new=True):
+    def target_function(self, 
+                        x : ArrayLike, 
+                        embedding_param : dict[str, Any], 
+                        kweight_param : dict[str, Any], 
+                        return_new : bool = True) -> np.ndarray | tuple[np.ndarray, np.ndarray]:
+        
         self._Lambda, self._R = self.unflatten(x)
         Lambda_new, R_new, f1, f2  = self.one_cycle(embedding_param, kweight_param)
         x_new = self.flatten(Lambda_new, R_new)
@@ -149,8 +161,40 @@ class LatticeSolver:
         else:
             return x_error
 
-    def one_cycle(self, embedding_param=dict(), kweight_param=dict()):
+    def one_cycle(self, 
+                  embedding_param : dict[str, Any] = dict(), 
+                  kweight_param : dict[str, Any] = dict()) \
+                    -> tuple[MFType, MFType, MFType, MFType]:
+        """
+        A single iteratino of the RISB self-consistent cycle.
 
+        Parameters
+        ----------
+
+        embedding_param : dict, optional
+            The kwarg arguments to pass to the embedding solver.
+
+        kweight_param : dict, optional
+            The kwarg arguments to pass to the kweight solver.
+        
+        Returns
+        -------
+
+        Lambda : dict of array_like
+            The new guess for the correlation potential matrix.
+
+        R : dict of array_like
+            The new guess for the renormalization matrix.
+
+        f1 : dict of array_like
+            The return of the fixed-point function that matches the 
+            quasiparticle density matrices.
+
+        f2 : dict of array_like
+            The return of the fixed-point function that matches the 
+            hybridzation density matrices.
+        """
+    
         for function in self._symmetries:
             self._R = function(self.R)
             self._Lambda = function(self.Lambda)
@@ -217,11 +261,11 @@ class LatticeSolver:
         return Lambda, R, f1, f2
     
     def solve(self, 
-              one_shot=False, 
-              tol=1e-12, 
-              optimize_param={'maxiter': 1000}, 
-              embedding_param=dict(), 
-              kweight_param=dict()):
+              one_shot : bool = False, 
+              tol : float = 1e-12, 
+              optimize_param : dict[str, Any] = {'maxiter': 1000, 'alpha': 1}, 
+              embedding_param : dict[str, Any] = dict(), 
+              kweight_param : dict[str, Any] = dict()) -> None:
         """ 
         Solve for the renormalization matrix ``R`` and correlation potential
         matrix ``Lambda``.
@@ -246,15 +290,20 @@ class LatticeSolver:
         kweight_param : optional, dict
             Options to pass to ``kweight.update_weight``. 
 
+        Returns
+        -------
+
+        Sets the self-consistent solutions self.Lambda and self.R.
+
         """
 
         if one_shot:
             self._Lambda, self._R, _, _ = self.one_cycle(embedding_param, kweight_param)
         
         else:
-            if self._optimize_solver is None:
-                self._optimize_solver = DIIS()
-            self._optimize_solver.solve(fun=self.target_function, 
+            if self._optimize is None:
+                self._optimize = DIIS()
+            self._optimize.solve(fun=self.target_function, 
                                         x0=self.flatten(self._Lambda, self._R), 
                                         args=(embedding_param, kweight_param),
                                         tol=tol,
@@ -266,47 +315,47 @@ class LatticeSolver:
             #                   method='broyden1')
 
     @property
-    def gf_struct(self):
+    def gf_struct(self) -> GfStructType:
         return self._gf_struct
     
     @property
-    def Lambda(self):
+    def Lambda(self) -> MFType:
         return self._Lambda
     
     @Lambda.setter
-    def Lambda(self, value):
+    def Lambda(self, value : MFType) -> None:
         self._Lambda = value
     
     @property
-    def R(self):
+    def R(self) -> MFType:
         return self._R
     
     @R.setter
-    def R(self, value):
+    def R(self, value : MFType) -> None:
         self._R = value
         
     @property
-    def rho(self):
+    def rho(self) -> MFType:
         return self._Nc
     
     @property
-    def rho_f(self):
+    def rho_f(self) -> MFType:
         return self._Nf
     
     @property
-    def rho_qp(self):
+    def rho_qp(self) -> MFType:
         return self._rho_qp
     
     @property
-    def bath_coupling(self):
+    def bath_coupling(self) -> MFType:
         return self._Lambda_c
 
     @property
-    def hybrid_coupling(self):
+    def hybrid_coupling(self) -> MFType:
         return self._D
         
     @property
-    def Z(self):
+    def Z(self) -> MFType:
         Z = dict()
         for bl in self._block_names:
             Z[bl] = self._R[bl] @ self._R[bl].conj().T

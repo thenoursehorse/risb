@@ -17,116 +17,122 @@
 
 from copy import deepcopy
 import numpy as np
-from .common import load_history, insert_vector
+from typing import Any, Callable
+from numpy.typing import ArrayLike
 
-class Annealing:
-    '''
-    Scheduler for optimization to alter the step size alpha.
-
-    Parameters
-    ----------
-
-    alpha : optional, float
-        Initial alpha. Default is 1.
-
-    method : optional, string
-        Scheduling method. Optionals are:
-        'flat' : Do not change initial alpha.
-        'step' : Multiplicatively change alpha.
-        Default is 'flat'.
-
-    t_reset : optional, int
-        Reset alpha to initial value after this many iterations. Default is 5.
-
-    step_scaling : optional, float
-        Scaling factor for changing alpha at each time step. Default is 0.5.
-
-    '''
-    def __init__(self, alpha=1.0, method='flat', t_reset=5, step_scaling=0.5):
-        self.alpha = alpha
-        self.alpha0 = deepcopy(self.alpha)
-        self.method = method
-
-        # for step
-        self.t_reset = t_reset
-        self.step_scaling = step_scaling
-        
-        if method == 'flat':
-            self.get_alpha = self._get_flat
-        elif method == 'step':
-            self.get_alpha = self._step
-        else:
-            raise ValueError("Unrecognized method !")
-
-        self.t = 0
-
-    def _step(self):
-        if self.t > self.t_reset:
-            self.alpha *= self.step_scaling
-        else:
-            self.t += 1
-        if self.alpha >= 1.0:
-            self.alpha = deepcopy(self.alpha0)
-        return self.alpha
-        
-    def _get_flat(self):
-        return self.alpha
-        
 class NewtonSolver:
     '''
-    A general driving class for quasi-Newton methods to minimize a function.
+    Base class for quasi-Newton methods to find the root of a function.
 
     Parameters
     ----------
         
-    history_size : optional, int
+    history_size : int, optional
         Maximum size of subspace. Defaults to 5.
 
-    t_restart : optional, int
+    t_restart : int, optional
         Fully reset subspace after this many iterations. Defaults infinity.
 
-    verbose : optional, bool
+    verbose : bool, optional
         Whether to report information during optimization. Default False.
 
-    annealer : optional, class
-        A scheduling class to update the step size alpha. Must have a method
-        ``get_alpha()`` that returns alpha at the current step. Defaults to 
-        alpha = 1 at each timestep.
+    Note: The method self.update_x must be defined in the child class, and it 
+    is called as self.update_x(x, g_x, error, options['alpha']).
 
-    todo : fix up verbose messages
+    todo: fix up verbose messages
     '''
-    def __init__(self, history_size=5, t_restart=np.inf, verbose=False, annealer=None):
+    def __init__(self, 
+                 history_size : int = 5, 
+                 t_restart : float = np.inf, 
+                 verbose : bool = False) -> None:
+
         self.history_size = history_size
         self.t_restart = t_restart
         self.verbose = verbose
         
-        if not annealer:
-            self.annealer = Annealing()
-        else:
-            self.annealer = annealer
-
-        self.n = None
-        self.norm = None
-        self.success = None
-        
-        self.x = []
-        self.g_x = []
-        self.error = []
+        self.x : list[ArrayLike] = []
+        self.g_x : list[ArrayLike] = [] 
+        self.error : list[ArrayLike] = []
         
         self.initialized = False
         self.t = 0
 
-    def load_history(self, x, error):
-        self.x, self.error = load_history(x, error, self.history_size)
-        self.initialized = True
+    @staticmethod
+    def load_history(x : list[ArrayLike], 
+                     error : list[ArrayLike], 
+                     max_size : int) -> tuple[ list[ArrayLike], list[ArrayLike] ]:
 
-    def insert_vector(self, vec, vec_new, max_size):
-        insert_vector(vec, vec_new, max_size)
+        if (len(x) != len(error)) and (len(x) != (len(error) + 1)):
+            raise ValueError('x and error are the wrong lengths !')
 
-    def solve(self, fun, x0, args=(), tol=1e-12, options={'maxiter':1000}):
+        x_out = deepcopy(x)
+        error_out = deepcopy(error)
+
+        while len(x_out) >= max_size:
+            x_out.pop()
+        while len(error_out) >= max_size:
+            error_out.pop()
+
+        return x_out, error_out
+
+    @staticmethod
+    def insert_vector(vec : list[ArrayLike], 
+                      vec_new : ArrayLike, 
+                      max_size : int | None = None) -> None:
+
+        # Note these operations are mutable on input list
+        vec.insert(0, vec_new)
+        if max_size is not None:
+            if len(vec) >= max_size:
+                vec.pop()
+
+    def solve(self, 
+              fun : Callable[..., ArrayLike],
+              x0 : ArrayLike, 
+              args : tuple[Any, ...] = (), 
+              tol : float = 1e-12, 
+              options : dict[str, Any] = {'maxiter': 1000, 'alpha': 1}) -> ArrayLike:
+        """
+        Find the root of a function. It is called similarly to 
+        scipy.optimize.root
+
+        Parameters
+        ----------
+
+        fun : callable
+            The function to find the root of. It must be callable as 
+            fun(x, *args).
+
+        x0 : array_like
+            Initial guess of the parameters. This does not neccessarily have to 
+            be flattened, but it usually is.
+
+        args : tuple, optional
+            Additional arguments to pass to the function. Default none.
+
+        tol : float, optional
+            The tolerance. When the 2-norm difference of the return of the 
+            function is less than this, the solver stops. Default 1e-12.
+
+        options : dict, optional
+            Additional options. 
+                maxiter : Maximum number of iterations. Default 1000.
+                alpha : Step size. Default 1.
+        
+        Returns
+        -------
+
+        x : array_like
+            The x that is the root of the function.
+        
+        """
+        if 'maxiter' not in options:
+            options['maxiter'] = 1000
+        if 'alpha' not in options:
+            options['alpha'] = 1
+
         self.success = False
         x = deepcopy(x0)
-
         if self.history_size > 0:
             self.insert_vector(self.x, x, self.history_size)
 
@@ -141,10 +147,7 @@ class NewtonSolver:
                 self.success = True
                 break
 
-            # Scheduling
-            alpha = self.annealer.get_alpha()
-            
-            x = self.update_x(x, g_x, error, alpha)
+            x = self.update_x(x, g_x, error, options['alpha'])
             
             if self.history_size > 0:
                 self.insert_vector(self.x, x, self.history_size)

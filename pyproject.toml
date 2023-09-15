@@ -1,6 +1,6 @@
 [project]
 name = "risb"
-version = "3.2.0"
+dynamic = ["version"]
 description = "Rotationally invariant slave boson mean-field theory."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -18,19 +18,44 @@ classifiers = [
     "License :: OSI Approved :: GNU General Public License v3 (GPLv3)",
     "Operating System :: OS Independent",
     "Intended Audience :: Science/Research",
+    "Topic :: Scientific/Engineering :: Physics",
 ]
 
 [project.urls]
 Homepage = "https://github.com/thenoursehorse/risb"
 Documentation = "https://thenoursehorse.github.io/risb"
 
-[tool.setuptools]
-
 [build-system]
-requires = ["setuptools", "wheel"]
-build-backend = "setuptools.build_meta"
+requires = ["hatchling", "hatch-vcs"]
+build-backend = "hatchling.build"
+
+[tool.hatch]
+version.source = "vcs"
+build.hooks.vcs.version-file = "src/risb/version.py"
+version.fallback-version = "3.2.0"
+
+[project.optional-dependencies]
+docs = [
+  "furo",
+  "myst_parser >=0.13",
+  "sphinx >=4.0",
+  "sphinx-copybutton",
+  "sphinx-autodoc-typehints",
+]
 
 [tool.pytest.ini_options]
 filterwarnings = [
     "ignore:invalid escape sequence:DeprecationWarning"
 ]
+
+[tool.mypy]
+files = "src"
+python_version = "3.10"
+strict = true
+show_error_codes = true
+enable_error_code = ["ignore-without-code", "redundant-expr", "truthy-bool"]
+warn_unreachable = true
+
+[[tool.mypy.overrides]]
+module = [ "numpy.*", "scipy.*", "triqs.*", "nox.*"]
+ignore_missing_imports = true
