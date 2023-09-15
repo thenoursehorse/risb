@@ -1,12 +1,10 @@
-## About
-
-TEST
+# About
 
 :::{tip}
 Let's give readers a helpful hint!
 :::
 
-### Authors
+## Authors
 
 Originally authored by 
 
@@ -32,7 +30,7 @@ Contributors
 {% endfor %}
 </ul>
 
-### Original theory
+## Original theory
 
 Slave-bosons as introduced by Kotliar and Ruckenstein [[1]](#ref1) was 
 extended to the rotationally invariant (RISB) case by Lechermann, 
@@ -40,7 +38,7 @@ et al. [[2]](#ref2). The implementation in this project uses the
 embedding construction as introduced by 
 Lanatà, et al. [[3]](#ref3)[[4]](#ref4). 
 
-### Embedding solvers
+## Embedding solvers
 
 1. `EmbeddingAtomDiag` uses [TRIQS](https://triqs.github.io/) [[5]](#ref5).
 
@@ -48,11 +46,11 @@ Lanatà, et al. [[3]](#ref3)[[4]](#ref4).
 [arpack-ng](https://github.com/opencollab/arpack-ng) with the
 [ezARPACK](https://krivenko.github.io/ezARPACK/) [[6]](#ref6) wrapper.
 
-### License
+## License
 
 [GNU General Public License, version 3](http://www.gnu.org/licenses/gpl.html)
 
-### References
+## References
 
 1\. <a id="ref1"> [G. Kotliar and A. E. Ruckenstein, 
 *New Functional Integral Approach to Strongly Correlated Fermi Systems: 

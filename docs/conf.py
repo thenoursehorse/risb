@@ -9,19 +9,24 @@ try:
     version = release = importlib.metadata.version("risb")
 except:
     version = release = "3.2.0"
-master_doc = "contents"
 
 extensions = [
     "myst_parser",
     "sphinx.ext.autodoc",
+    "sphinx.ext.extlinks",
     "sphinx.ext.intersphinx",
     "sphinx.ext.mathjax",
+    "sphinx.ext.todo",
     "sphinx.ext.napoleon",
     "sphinx.ext.viewcode",
     "sphinx.ext.autosummary",
     "sphinx_autodoc_typehints",
     "sphinx_copybutton",
+    "furo.sphinxext" # furo says only for their docs, but the toc left pane does not work as I like without this
 ]
+
+# Don't show typehints/annotations
+autodoc_typehints = "none"
 
 source_suffix = [".rst", ".md"]
 exclude_patterns = [
@@ -34,6 +39,7 @@ exclude_patterns = [
 ]
 
 html_theme = "furo"
+#html_title = "risb"
 
 myst_enable_extensions = [
     "colon_fence",
@@ -50,11 +56,12 @@ myst_enable_extensions = [
     "strikethrough",
     "substitution",
     "tasklist",
-    #"linkify",
+    #"linkify", # always says this is not installed, when it is
 ]
 
 intersphinx_mapping = {
     "python": ("https://docs.python.org/3", None),
+    "numpy": ("https://numpy.org/doc/stable/", None),
 }
 
 nitpick_ignore = [

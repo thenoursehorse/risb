@@ -1,7 +1,6 @@
-## RISB loop
+# RISB loop
 
-
-### Introduction
+## Introduction
 
 In this tutorial, you will construct the self-consisten loop in rotationally 
 invariant slave-bosons, and use it to solve the bilayer Hubbard model.
@@ -56,7 +55,7 @@ $$
 where $V$ is the interlayer hopping between the orbitals, and $U$ is 
 the local Coulomb repulsion.
 
-### A: Construct $\hat{H}_0^{\mathrm{kin}}$
+## A: Construct $\hat{H}_0^{\mathrm{kin}}$
 
 First, construct the dispersion between clusters on the lattice. It should 
 not include the non-interacting quadratic terms within a cluster. 
@@ -73,7 +72,7 @@ single $\mathcal{N} \times 2M \times 2M$ array.
 The easiest way to create this is as an array using `numpy`. We will 
 intentionally do this in a computationally slow way. The intention here is to 
 be explicit for clarity. First create the 
-$$k$$-grid mesh of the Brillouin zone in crystal coordinates
+$k$-grid mesh of the Brillouin zone in crystal coordinates
 
 ```python
 import numpy as np
@@ -150,12 +149,12 @@ Green's functions as
 gf_struct = [ ("up", 2), ("dn", 2) ],
 ```
 
-### B: Construct $\hat{H}_i^{\mathrm{loc}}$
+## B: Construct $\hat{H}_i^{\mathrm{loc}}$
 
-Next, construct the local Hamiltonian on each cluster (site) $$i$$. It has to 
+Next, construct the local Hamiltonian on each cluster (site) $i$. It has to 
 include all of the many-body interactions on each cluster as well as the 
 non-interacting quadratic terms that describe orbital energies and
-hopping between orbitals on site $$i$$. For more details refer to the 
+hopping between orbitals on site $i$. For more details refer to the 
 [TRIQS](https://triqs.github.io/) documentation on constructing 
 second-quantized operators.
 
@@ -186,7 +185,7 @@ def make_h_loc(V = 0.25, U = 5):
     return h_loc
 ```
 
-### C: Setup mean-field matrices
+## C: Setup mean-field matrices
 
 We now need to initialize the mean-field matrices used in RISB. In RISB the
 homogenous assumption is taken, so that the matrices are the same on every site.
@@ -242,7 +241,7 @@ for bl, bl_size in gf_struct:
     Nc[bl] = np.zeros((bl_size, bl_size))   
 ```
 
-#### Helper functions
+### Helper functions
 
 As an aside, let me describe how to obtain the above mean-field matrices, which 
 has to be done at eacheiteration of the self-consistent process. There are 
@@ -277,7 +276,7 @@ for bl, bl_size in gf_struct:
 After the embedding Hamiltonian is solved and the single-particle density 
 matrices of the impurity model are obtained, there are two ways to do the 
 self-consistency loop. The first is to calculate a new guess for 
-$$\mathcal{R}$$ and $$\lambda$$ which re-parameterizes $$H^{\mathrm{qp}}$$. 
+$\mathcal{R}$ and $\lambda$ which re-parameterizes $H^{\mathrm{qp}}$. 
 The helper functions to do this are
 
 ```python
@@ -286,9 +285,9 @@ for bl, bl_size in gf_struct:
     R[bl] = helpers.get_r(Mcf[bl], Nf[bl])
 ```
 
-The second is as a root problem, adjusting $$\mathcal{R}$$ and $$\lambda$$ to
-ensure that the density matrices from $$\hat{H}^{\mathrm{qp}}$$ match the 
-density matrices from $$\hat{H}^{\mathrm{emb}}$$.
+The second is as a root problem, adjusting $\mathcal{R}$ and $\lambda$ to
+ensure that the density matrices from $\hat{H}^{\mathrm{qp}}$ match the 
+density matrices from $\hat{H}^{\mathrm{emb}}$.
 
 ```python
 for bl, bl_size in gf_struct:
@@ -296,15 +295,15 @@ for bl, bl_size in gf_struct:
     f2 = helpers.get_f2(Nf[bl], rho_qp[bl])
 ```
 
-### D: The $k$-space integrator
+## D: The $k$-space integrator
 
 Next you will specify how k-space integrals are performed. RISB requires 
 integrating many mean-field matrices. The way to do this that generalizes to 
-many kinds of $$k$$-space integration methods is to 
-find the weight of the integral at each $$k$$-point. This is, e.g., how 
+many kinds of $k$-space integration methods is to 
+find the weight of the integral at each $k$-point. This is, e.g., how 
 linear tetrahedron works and smearing methods work. As you will see below, 
 because the reference energy for the integration are the eigenenergies of 
-$\hat{H}^{\mathrm{qp}}$, the weight at each $$k$$-point has to be updated at 
+$\hat{H}^{\mathrm{qp}}$, the weight at each $k$-point has to be updated at 
 each iteration of the self-consistency method. Not to worry though, 
 in practice this can be very fast. Below we will describe the general theory 
 for taking these integrals in multi-orbital cases. 
@@ -327,7 +326,7 @@ $$
 
 where $\mathcal{N}$ is the number of unit cells, $A_k$ is a generic 
 function, and $f(\xi_n)$ is the Fermi-Dirac distribution. The meaning 
-of $f(\hat{H}^{\mathrm{qp}}$$ is specifically the operation
+of $f(\hat{H}^{\mathrm{qp}}$ is specifically the operation
 
 $$
 U_k U_k^{\dagger} f(\hat{H}_k^{\mathrm{qp}}) U_k U_k^{\dagger} 
@@ -347,7 +346,7 @@ $$
 $$
 
 There is a helper function that constructs $\hat{H}^{\mathrm{qp}}$ and 
-returns its eigenvalues and eigenvectors at each $$k$$-point on the finite 
+returns its eigenvalues and eigenvectors at each $k$-point on the finite 
 grid.
 
 ```python
@@ -391,7 +390,7 @@ def update_weights(energies, mu=0, beta=10):
     return 1.0 / (np.exp(beta * (energies - mu)) + 1.0) / n_k
 ```
 
-### E: Solving $\hat{H}^{\mathrm{emb}}$
+## E: Solving $\hat{H}^{\mathrm{emb}}$
 
 Now we have to solve the impurity problem defined by the embedding Hamiltonian 
 $\hat{H}^{\mathrm{emb}}$. There is a simple, but relatively slow, 
@@ -425,7 +424,7 @@ for bl, bl_size in gf_struct:
     Nc[bl] = embedding.get_nc(bl)
 ```
 
-### Exercises
+## Exercises
 
 1. Can you match each part above with the self-consistent loop defined in the 
 literature?
@@ -442,7 +441,7 @@ useful).
 1. What is the evolution of the quasiparticle weight at electron filling 
 $n = 1.88$ (Fig. 10)?
 
-### Conclusion
+## Conclusion
 
 You have built the self-consistent loop for RISB and solved a (not so simple) 
 interacting fermion problem. The code in `LatticeSolver` is not much more 
@@ -456,7 +455,7 @@ much more about RISB if you try to piece everything together from the
 self-consistent equations found in the literature found in 
 [About]({% link about.md %})
 
-#### Skeleton code cheat sheet
+### Skeleton code cheat sheet
 
 Below is a simple self-consistent loop that relies on everything we have set up.
 
