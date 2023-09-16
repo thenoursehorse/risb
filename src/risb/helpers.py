@@ -21,39 +21,44 @@ from scipy.linalg import inv
 #from scipy.linalg import pinv
 from scipy.special import binom
 
-# Formula is (1-A)^{-1/2} = sum_r=0^{infty} (-1)^r * 1/2 choose r * A^r
-def one_sqrtm_inv(A, tol=np.finfo(float).eps, N=10000):
-    # Do r = 0 manually (it is just the identity)
-    A_r = np.eye(A.shape[0])
-    out = np.eye(A.shape[0])
-    for r in range(1,N+1):
-        old = out.copy()
-        A_r = A_r @ A
-        out += (-1)**r * binom(-1/2., r) * A_r
-        err = np.linalg.norm(out - old)
-        if err < tol:
-            break
-    print(r,err)
-    return out
+## Formula is (1-A)^{-1/2} = sum_r=0^{infty} (-1)^r * 1/2 choose r * A^r
+#def one_sqrtm_inv(A, tol=np.finfo(float).eps, N=10000):
+#    # Do r = 0 manually (it is just the identity)
+#    A_r = np.eye(A.shape[0])
+#    out = np.eye(A.shape[0])
+#    for r in range(1,N+1):
+#        old = out.copy()
+#        A_r = A_r @ A
+#        out += (-1)**r * binom(-1/2., r) * A_r
+#        err = np.linalg.norm(out - old)
+#        if err < tol:
+#            break
+#    print(r,err)
+#    return out
+#
+#def get_K_sq_inv(pdensity, hdensity, tol=np.finfo(float).eps, N=10000):
+#    return one_sqrtm_inv(A=pdensity, tol=tol, N=N) @ one_sqrtm_inv(A=hdensity, tol=tol, N=N)
 
-def get_K_sq_inv(pdensity, hdensity, tol=np.finfo(float).eps, N=10000):
-    return one_sqrtm_inv(A=pdensity, tol=tol, N=N) @ one_sqrtm_inv(A=hdensity, tol=tol, N=N)
-
-def get_d(pdensity, ke):
+def get_d(pdensity : np.ndarray, 
+          ke : np.ndarray):
     """
-    Return the hybridization coupling for rotationally invariant slave-bosons.
-    
-    This is Eq. 35 in 10.1103/PhysRevX.5.011008.
-
     Parameters
     ----------
-
-    pdensity : ndarray
+    pdensity : numpy.ndarray
         Quasiparticle density matrix obtained from the mean-field.
-
-    ke : ndarray
+    ke : numpy.ndarray
         Lopsided quasiparticle kinetic energy.
 
+    Returns
+    -------
+    D : numpy.ndarray
+        Hybridization coupling.
+    
+    Notes
+    -----
+    Eq. 35 in `10.1103/PhysRevX.5.011008 <PRX011008_>`__.
+
+    .. _PRX011008: https://doi.org/10.1103/PhysRevX.5.011008
     """
     K = pdensity - pdensity @ pdensity
     K_sq = sqrtm(K)
@@ -64,26 +69,31 @@ def get_d(pdensity, ke):
 
 def get_lambda_c(pdensity, R, Lambda, D):
     """
-    Return the bath coupling for rotationally invariant slave-bosons.
-    
-    This is Eq. 36 in 10.1103/PhysRevX.5.011008.
-
     Parameters
     ----------
-
-    pdensity : ndarray
+    pdensity : numpy.ndarray
         Quasiparticle density matrix obtained from the mean-field.
 
-    R : ndarray
+    R : numpy.ndarray
         Unitary transformation (renormalization matrix) from quasiparticles to 
         electrons.
     
-    Lambda : ndarray
+    Lambda : numpy.ndarray
         Correlation potential of quasiparticles.
 
-    D : ndarray
+    D : numpy.ndarray
         Hybridization coupling.
 
+    Returns
+    -------
+    Lambda_c : numpy.ndarray
+        Bath coupling.    
+    
+    Notes
+    -----
+    Eq. 36 in `10.1103/PhysRevX.5.011008 <PRX011008_>`__.
+
+    .. _PRX011008: https://doi.org/10.1103/PhysRevX.5.011008
     """
     P = np.eye(pdensity.shape[0]) - 2.0*pdensity
     K = pdensity - pdensity @ pdensity
@@ -93,29 +103,30 @@ def get_lambda_c(pdensity, R, Lambda, D):
 
 def get_lambda(R, D, Lambda_c, Nf):
     """
-    Return the correlation potential of the quasiparticles for rotationally 
-    invariant slave-bosons.
+    Parameters
+    ----------
+    R : numpy.ndarray
+        Unitary transformation (renormalization matrix) from quasiparticles to 
+        electrons.
+    D : numpy.ndarray
+        Hybridization coupling.
+    Lambda_c : numpy.ndarray
+        Bath coupling.
+    Nf : numpy.ndarray
+        f-electron density matrix from impurity.
+
+    Returns
+    -------
+    Lambda : numpy.ndarray
+        Correlation potential of quasiparticles. 
     
-    This is derived from Eq. 36 in 10.1103/PhysRevX.5.011008 by replacing 
+    Notes
+    -----
+    Derived from Eq. 36 in `10.1103/PhysRevX.5.011008 <PRX011008_>`__ by replacing 
     the quasipartice density matrix with the f-electron density matrix using 
     Eq. 39.
 
-    Parameters
-    ----------
-    
-    R : ndarray
-        Unitary transformation (renormalization matrix) from quasiparticles to 
-        electrons.
-    
-    D : ndarray
-        Hybridization coupling.
-
-    Lambda_c : ndarray
-        Bath coupling.
-
-    Nf : ndarray
-        f-electron density matrix from impurity.
-    
+    .. _PRX011008: https://doi.org/10.1103/PhysRevX.5.011008
     """
     P = np.eye(Nf.shape[0]) - 2.0*Nf
     K = Nf - Nf @ Nf
@@ -128,21 +139,25 @@ def get_lambda(R, D, Lambda_c, Nf):
 
 def get_r(Mcf, Nf):
     """
-    Return the renormalization matrix for rotationally invariant slave-bosons.
-
     Parameters
     ----------
-    
-    Mcf : ndarray
+    Mcf : numpy.ndarray
         c,f-electron hybridization density matrix from impurity.
-    
-    Nf : ndarray
+    Nf : numpy.ndarray
         f-electron density matrix from impurity.
-    
-    This is derived from Eq. 38 in 10.1103/PhysRevX.5.011008 by replacing 
-    the quasipartice density matrix with the f-electron density matrix using 
-    Eq. 39.
 
+    Returns
+    -------
+    R : numpy.ndarray
+        Renormalization (mean-field unitary transformation) matrix.
+    
+    Notes
+    -----
+    Derived from Eq. 38 in `10.1103/PhysRevX.5.011008 <PRX011008_>`__ by 
+    replacing the quasiparticle density matrix sith the f-electron density matrix 
+    using Eq. 39.
+
+    .. _PRX011008: https://doi.org/10.1103/PhysRevX.5.011008
     """
     K = Nf - Nf @ Nf
     K_sq = sqrtm(K)
@@ -151,24 +166,26 @@ def get_r(Mcf, Nf):
 
 def get_f1(Mcf, pdensity, R):
     """
-    Return the first self-consistency equation for rotationally invariant 
-    slave-bosons.
-
-    This is Eq. 38 in 10.1103/PhysRevX.5.011008.
-
     Parameters
     ----------
-    
-    Mcf : ndarray
+    Mcf : numpy.ndarray
         c,f-electron hybridization density matrix from impurity.
-    
-    pdensity : ndarray
+    pdensity : numpy.ndarray
         Quasiparticle density matrix obtained from the mean-field.
-
-    R : ndarray
+    R : numpy.ndarray
         Unitary transformation (renormalization matrix) from quasiparticles to 
         electrons.
 
+    Returns
+    -------
+    f1 : numpy.ndarray
+        First self-consistency equation.
+
+    Notes
+    -----
+    Eq. 38 in `10.1103/PhysRevX.5.011008 <PRX011008_>`__.
+
+    .. _PRX011008: https://doi.org/10.1103/PhysRevX.5.011008
     """
     K = pdensity - pdensity @ pdensity
     K_sq = sqrtm(K)
@@ -176,46 +193,54 @@ def get_f1(Mcf, pdensity, R):
 
 def get_f2(Nf, pdensity):
     """
-    Return the second self-consistency equation for rotationally invariant 
-    slave-bosons.
-
-    This is Eq. 39 in 10.1103/PhysRevX.5.011008.
-
     Parameters
     ----------
-    
-    Nf : ndarray
+    Nf : numpy.ndarray
         f-electron density matrix from impurity.
-    
-    pdensity : ndarray
+    pdensity : numpy.ndarray
         Quasiparticle density matrix obtained from the mean-field.
 
+    Returns
+    -------
+    f2 : numpy.ndarray
+        Second self-consistency equation.
+        
+    Notes
+    -----
+    Eq. 39 in `10.1103/PhysRevX.5.011008 <PRX011008_>`__.
+
+    .. _PRX011008: https://doi.org/10.1103/PhysRevX.5.011008
     """
     return Nf - pdensity.T
 
 def get_h_qp(R, Lambda, h0_kin_k, mu=0):
     """
-    Return the eigenvalues and eigenvectors of the quasiparticle Hamiltonian 
-    for rotationally invariant slave-bosons.
+    Construct eigenvalues and eigenvectors of the quasiparticle Hamiltonian.
     
-    This is Eq. A34 in 10.1103/PhysRevX.5.011008.
-
     Parameters
     ----------
-    
-    R : ndarray
+    R : numpy.ndarray
         Unitary transformation (renormalization matrix) from quasiparticles to 
         electrons.
-    
-    Lambda : ndarray
+    Lambda : numpy.ndarray
         Correlation potential of quasiparticles.
-
-    h0_kin_k : ndarray
-        Single-particle dispersion between local clusters.
-
-    mu : optional, float
+    h0_kin_k : numpy.ndarray
+        Single-particle dispersion between local clusters. Indexed as k, orb_i, orb_j.
+    mu : float, optional
         Chemical potential.
 
+    Return
+    ------
+    eigenvalues : numpy.ndarray
+        Indexed as k, band.
+    eigenvectors : numpy.ndarray
+        Indexed as k, each column an eigenvector.
+    
+    Notes
+    -----
+    Eq. A34 in `10.1103/PhysRevX.5.011008 <PRX011008_>`__.
+
+    .. _PRX011008: https://doi.org/10.1103/PhysRevX.5.011008
     """
     #h_qp = np.einsum('ac,cdk,db->kab', R, h0_kin_k, R.conj().T, optimize='optimal') + (Lambda - mu*np.eye(Lambda.shape[0]))
     h_qp = np.einsum('ac,kcd,db->kab', R, h0_kin_k, R.conj().T) + \
@@ -225,49 +250,53 @@ def get_h_qp(R, Lambda, h0_kin_k, mu=0):
 
 def get_h0_R(R, h0_kin_k, vec):
     """
-    Return the matrix representation of the lopsided quasiparticle Hamiltonian 
-    for rotationally invariant slave-bosons.
-
-    This is ``H^qp`` with the inverse of the renormalization matrix R 
-    multiplied on the left.
-
     Parameters
     ----------
-    
-    R : ndarray
+    R : numpy.ndarray
         Unitary transformation (renormalization matrix) from quasiparticles to 
         electrons.
-    
-    h0_kin_k : ndarray
-        Single-particle dispersion between local clusters.
-    
-    vec : ndarray
-        Eigenvectors of quasiparticle Hamiltonian.
+    h0_kin_k : numpy.ndarray
+        Single-particle dispersion between local clusters. Indexed as k, orb_i, orb_j.
+    vec : numpy.ndarray
+        Eigenvectors of quasiparticle Hamiltonian. Indexed as k, each column an eigenvector.
 
+    Returns
+    -------
+    h0_kin_R : numpy.ndarray
+        Matrix representation of lopsided quasiparticle Hamiltonian. 
+
+    Notes
+    -----
+    This is ``H^qp`` with the inverse of the renormalization matrix R 
+    multiplied on the left.
     """
     return np.einsum('kac,cd,kdb->kab', h0_kin_k, R.conj().T, vec)
 
 #\sum_n \sum_k [A_k P_k]_{an} [D_k]_n  [P_k^+ B_k]_{nb}
 def get_pdensity(vec, wks, P=None):
     """
-    Return the quasiparticle density matrix for rotationally invariant 
-    slave-bosons.
-    
-    This is Eqs. 32 and 34 in 10.1103/PhysRevX.5.011008, but not in the 
-    natural-basis gauge. See Eq. 112 in the supplemental of 
-    10.1103/PhysRevLett.118.126401.
-
     Parameters
     ----------
-    
-    vec : ndarray
+    vec : numpy.ndarray
         Eigenvectors of quasiparticle Hamiltonian.
-
-    wks : ndarray
-        Integration weights at each k-point.
-
-    P : optional, ndarray
+    wks : numpy.ndarray
+        Integration weights at each k-point for each band (eigenvector).
+    P : numpy.ndarray, optional
         Projection matrix onto correlated subspace.
+
+    Returns
+    -------
+    pdensity : numpy.ndarray
+        Quasiparticle density matrix from mean-field.
+    
+    Notes
+    -----
+    Eqs. 32 and 34 in `10.1103/PhysRevX.5.011008 <PRX011008_>`__, but not in the 
+    natural-basis gauge. See Eq. 112 in the supplemental of 
+    `10.1103/PhysRevLett.118.126401 <PRL126401_>`__.
+
+    .. _PRX011008: https://doi.org/10.1103/PhysRevX.5.011008
+    .. _PRL126401: https://doi.org/10.1103/PhysRevLett.118.126401
 
     """
     vec_dag = np.swapaxes(vec.conj(), -1, -2)
@@ -280,25 +309,27 @@ def get_pdensity(vec, wks, P=None):
 
 def get_ke(h0_kin_R, vec, wks, P=None):
     """
-    Return the lopsided quasiparticle kinetic energy for rotationally invariant 
-    slave-bosons.
-    
-    This is Eq. 35 in 10.1103/PhysRevX.5.011008.
-
     Parameters
     ----------
-    
-    h0_kin_k : ndarray
+    h0_kin_k : numpy.ndarray
         Single-particle dispersion between local clusters.
-    
-    vec : ndarray
+    vec : numpy.ndarray
         Eigenvectors of quasiparticle Hamiltonian.
-
-    wks : ndarray
-        Integration weights at each k-point.
-
-    P : optional, ndarray
+    wks : numpy.ndarray
+        Integration weights at each k-point for each band (eigenvector).
+    P : numpy.ndarray, optional
         Projection matrix onto correlated subspace.
+
+    Returns
+    -------
+    ke : numpy.ndarray
+        Lopsided quasiparticle kinetic energy from the mean-field.
+    
+    Notes
+    -----
+    Eq. 35 in `10.1103/PhysRevX.5.011008 <PRX011008_>`__.
+
+    .. _PRX011008: https://doi.org/10.1103/PhysRevX.5.011008
 
     """
     vec_dag = np.swapaxes(vec.conj(), -1, -2)
