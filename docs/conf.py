@@ -3,7 +3,7 @@ from __future__ import annotations
 import importlib.metadata
 
 project = "risb"
-copyright = "2016-2023 H. L. Nourse, 2016-2022 B. J. Powell & R. H. McKenzie"
+copyright = "2023 H. L. Nourse"
 author = "H. L. Nourse"
 try:
     version = release = importlib.metadata.version("risb")

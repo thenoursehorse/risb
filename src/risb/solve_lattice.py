@@ -331,10 +331,7 @@ class LatticeSolver:
     @property
     def Z(self) -> MFType:
         """
-        Returns
-        -------
-        Z : dict[numpy.ndarray]
-            Qausiparticle weight.
+        dict[numpy.ndarray] : Qausiparticle weight.
         """
         Z = dict()
         for bl in self.block_names:
