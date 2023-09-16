@@ -148,6 +148,11 @@ class NewtonSolver:
         for self.n in range(options['maxiter']):
 
             g_x, error = fun(x, *args)
+            
+            if self.history_size > 0:
+                self._insert_vector(self.x, x, self.history_size)
+                self._insert_vector(self.g_x, g_x, self.history_size)
+                self._insert_vector(self.error, error, self.history_size)
 
             self.norm = np.linalg.norm(error)
             if self.verbose:
@@ -157,12 +162,7 @@ class NewtonSolver:
                 break
 
             x = self.update_x(x, g_x, error, options['alpha'])
-            
-            if self.history_size > 0:
-                self._insert_vector(self.x, x, self.history_size)
-                self._insert_vector(self.g_x, g_x, self.history_size)
-                self._insert_vector(self.error, error, self.history_size)
-        
+                    
         if self.verbose:
             if self.success:
                 print(f"The solution converged. nit: {self.n}, tol: {self.norm}")

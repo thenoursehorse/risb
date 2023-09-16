@@ -122,11 +122,6 @@ class DIIS(NewtonSolver):
             self.g_x = []
             self.error = []
         
-        # Collect history
-        self._insert_vector(self.x, x, self.history_size)
-        self._insert_vector(self.g_x, g_x, self.history_size)
-        self._insert_vector(self.error, alpha*error, self.history_size)
-
         if ((self.t+1) % self.t_period == 0):
             # Do DIIS
             x_opt = self.extrapolate()
