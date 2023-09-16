@@ -18,12 +18,6 @@ and for the tests
 
 ## Installation
 
-Update packaging software
-
-```
-python3 -m pip install --upgrade pip setuptools wheel
-```
-
 Clone source
 
 ```
@@ -96,12 +90,6 @@ or
 
 ```
 nox -s pytest -v
-```
-
-For developers, coverage can be determined with `pytest-cov` using
-
-```
-python3 -m pytest -ra --cov=risb --cov-branch
 ```
 
 ## Examples
