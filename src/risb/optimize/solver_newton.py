@@ -36,11 +36,11 @@ class NewtonSolver:
     
     Attributes
     ----------
-    x : dict[numpy.array]
+    x : numpy.ndarray
         Solution to the root function.
-    g_x : dict[numpy.array]
+    g_x : numpy.ndarray
         Result of fixed point function with `x` as the input.
-    error : dict[numpy.array]
+    error : numpy.ndarray
         Error vector of `x`.
     n : int
         Number of iterations the solver took.
@@ -132,7 +132,7 @@ class NewtonSolver:
         Returns
         -------
         x : numpy.ndarray
-            The x that is the root of the `fun`.
+            Root of `fun`.
         
         """
         if 'maxiter' not in options:
