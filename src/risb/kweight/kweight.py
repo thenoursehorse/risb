@@ -16,8 +16,7 @@
 # Authors: H. L. Nourse
 
 import numpy as np
-#from numpy.typing import ArrayLike
-import numpy.typing
+from numpy.typing import ArrayLike
 from risb.other.from_triqs_hartree import update_mu, fermi
 
 class SmearingKWeight:
@@ -61,8 +60,8 @@ class SmearingKWeight:
         self.mu = mu
         self.n_target = n_target
 
-        #self.energies : dict[numpy.typing.ArrayLike]
-        #self.weight : dict[numpy.typing.ArrayLike]
+        #self.energies : dict[ArrayLike]
+        #self.weight : dict[ArrayLike]
         #self.n_k : int
         
         if method == 'fermi':
@@ -75,24 +74,24 @@ class SmearingKWeight:
             raise ValueError('Unrecoganized smearing function !')
         
     @staticmethod
-    def _fermi(energies : numpy.typing.ArrayLike, 
+    def _fermi(energies : ArrayLike, 
                beta : float, 
-               mu : float) -> numpy.typing.ArrayLike:
+               mu : float) -> ArrayLike:
         e = energies - mu
         return fermi(e, beta)
     
     @staticmethod
-    def _gaussian(energies : numpy.typing.ArrayLike, 
+    def _gaussian(energies : ArrayLike, 
                   beta : float, 
-                  mu : float) -> numpy.typing.ArrayLike:
+                  mu : float) -> ArrayLike:
         from scipy.special import erfc
         return 0.5 * erfc( beta * (energies - mu) )
 
     @staticmethod    
-    def _methfessel_paxton(energies : numpy.typing.ArrayLike, 
+    def _methfessel_paxton(energies : ArrayLike, 
                            beta : float, 
                            mu : float, 
-                           N : int = 1) -> numpy.typing.ArrayLike:
+                           N : int = 1) -> ArrayLike:
         from scipy.special import erfc
         from scipy.special import factorial
         from scipy.special import hermite
@@ -119,7 +118,7 @@ class SmearingKWeight:
             self.n_k = self.energies.shape[0]
         return self.n_k
     
-    def update_weights(self, energies : dict[numpy.typing.ArrayLike]) -> dict[numpy.typing.ArrayLike]:
+    def update_weights(self, energies : dict[ArrayLike]) -> dict[ArrayLike]:
         """
         Update the integral weighting factors at each k-point.
 
@@ -134,7 +133,6 @@ class SmearingKWeight:
         weights : dict[numpy.ndarray]
         """
         self.energies = energies
-        self.update_energies(energies)
         self._update_n_k()
         if self.n_target is not None:
             self.mu = update_mu(self.n_target, self.energies, self.beta, self.n_k, self.smear_function)

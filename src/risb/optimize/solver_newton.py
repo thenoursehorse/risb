@@ -20,27 +20,40 @@ import numpy as np
 from typing import Any, Callable
 from numpy.typing import ArrayLike
 
+# TODO fix up verbose messages
 class NewtonSolver:
-    '''
+    """
     Base class for quasi-Newton methods to find the root of a function.
 
     Parameters
     ----------
-        
     history_size : int, optional
-        Maximum size of subspace. Defaults to 5.
-
+        Maximum size of subspace.
     t_restart : int, optional
-        Fully reset subspace after this many iterations. Defaults infinity.
-
+        Fully reset subspace after this many iterations.
     verbose : bool, optional
-        Whether to report information during optimization. Default False.
+        Whether to report information during optimization.
+    
+    Attributes
+    ----------
+    x : dict[numpy.array]
+        Solution to the root function.
+    g_x : dict[numpy.array]
+        Result of fixed point function with `x` as the input.
+    error : dict[numpy.array]
+        Error vector of `x`.
+    n : int
+        Number of iterations the solver took.
+    success : bool
+        Whether the solver converged to within tolerance.
+    norm : float
+        2-norm error of `error`.
 
-    Note: The method self.update_x must be defined in the child class, and it 
-    is called as ``self.update_x(x, g_x, error, options['alpha'])``.
-
-    todo: fix up verbose messages
-    '''
+    Notes
+    -----
+    The method `self.update_x` must be defined in the child class, and it 
+    is called as self.update_x(x, g_x, error, options['alpha']).
+    """
     def __init__(self, 
                  history_size : int = 5, 
                  t_restart : float = np.inf, 
@@ -58,7 +71,7 @@ class NewtonSolver:
         self.t = 0
 
     @staticmethod
-    def load_history(x : list[ArrayLike], 
+    def _load_history(x : list[ArrayLike], 
                      error : list[ArrayLike], 
                      max_size : int) -> tuple[ list[ArrayLike], list[ArrayLike] ]:
 
@@ -76,7 +89,7 @@ class NewtonSolver:
         return x_out, error_out
 
     @staticmethod
-    def insert_vector(vec : list[ArrayLike], 
+    def _insert_vector(vec : list[ArrayLike], 
                       vec_new : ArrayLike, 
                       max_size : int | None = None) -> None:
 
@@ -102,28 +115,24 @@ class NewtonSolver:
         fun : callable
             The function to find the root of. It must be callable as 
             fun(x, *args).
-
-        x0 : array_like
+        x0 : numpy.ndarray
             Initial guess of the parameters. This does not neccessarily have to 
             be flattened, but it usually is.
-
         args : tuple, optional
-            Additional arguments to pass to the function. Default none.
-
+            Additional arguments to pass to `fun`.
         tol : float, optional
-            The tolerance. When the 2-norm difference of the return of the 
-            function is less than this, the solver stops. Default 1e-12.
+            The tolerance. When the 2-norm difference of the return of `fun` 
+            is less than this, the solver stops.
+        options : {'maxiter', 'alpha'}
+            Additional options.
 
-        options : dict, optional
-            Additional options. 
-                maxiter : Maximum number of iterations. Default 1000.
-                alpha : Step size. Default 1.
+                - maxiter : int, Maximum number of iterations.
+                - alpha : float, Step size.
         
         Returns
         -------
-
-        x : array_like
-            The x that is the root of the function.
+        x : numpy.ndarray
+            The x that is the root of the `fun`.
         
         """
         if 'maxiter' not in options:
@@ -134,7 +143,7 @@ class NewtonSolver:
         self.success = False
         x = deepcopy(x0)
         if self.history_size > 0:
-            self.insert_vector(self.x, x, self.history_size)
+            self._insert_vector(self.x, x, self.history_size)
 
         for self.n in range(options['maxiter']):
 
@@ -150,9 +159,9 @@ class NewtonSolver:
             x = self.update_x(x, g_x, error, options['alpha'])
             
             if self.history_size > 0:
-                self.insert_vector(self.x, x, self.history_size)
-                self.insert_vector(self.g_x, g_x, self.history_size)
-                self.insert_vector(self.error, error, self.history_size)
+                self._insert_vector(self.x, x, self.history_size)
+                self._insert_vector(self.g_x, g_x, self.history_size)
+                self._insert_vector(self.error, error, self.history_size)
         
         if self.verbose:
             if self.success:
