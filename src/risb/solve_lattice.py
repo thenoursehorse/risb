@@ -35,10 +35,9 @@ class LatticeSolver:
 
     Parameters
     ----------
-
-    h0_k : dict of array_like
+    h0_k : dict[numpy.ndarray]
         Single-particle dispersion between local clusters. Each key 
-        in dictionary must follow the gf_struct.
+        in dictionary must follow `gf_struct`.
 
     gf_struct : list of pairs [ (str,int), ...]
         Structure of the matrices. It must be a
@@ -52,42 +51,45 @@ class LatticeSolver:
         ``set_h_emb(Lambda_c, D)`` to setup the impurity problem, a method
         ``solve(**embedding_param)`` that solves the impurity problem, and 
         methods ``get_nf(block)`` and ``get_mcf(block)`` for the bath and 
-        hybridization density matrices. See class ``EmbeddingAtomDiag``.
+        hybridization density matrices. 
+        See class :class:`risb.embedding.EmbeddingAtomDiag`.
         
     kweight : class
         The class that sets the integral weights at each k-point on the 
         lattice. It must have a method 
         ``update_weights(energies, **kweight_param)``, where the energies 
-        are a dictionary with each key a list. See class ``SmearingKWeight``.
+        are a dictionary with each key a list. 
+        See class :class:`risb.kweight.SmearingKWeight`.
 
-    symmeties : optional, list of functions
+    symmeties : list[callable], optional
         Symmetry functions acting on the mean-field matrices.
 
-    force_real : optional, bool
+    force_real : bool, optional
         True if the mean-field matrices are forced to be real
 
-    R : optional, dict of ndarray
+    R : dict[numpy.ndarray], optional
         The unitary matrix from the f-electrons to the c-electrons at the
         mean-field level. Also called renormalization matrix. Each key in 
-        dictionary must follow gf_struct. Defaults to the identity in each 
+        dictionary must follow `gf_struct`. Defaults to the identity in each 
         block.
 
-    Lambda : optional, dict of ndarray
+    Lambda : dict[numpy.ndarray], optional
         The correlation potential matrix experienced by the f-electrons.
-        Each key in dictionary must follow gf_struct. Defaults to the zero 
+        Each key in dictionary must follow `gf_struct`. Defaults to the zero 
         matrix in each block.
 
-    optimize : optional, class
+    optimize : class, optional
         The class that drives the self-consistent procedure. It must have 
         a method ``solve(fun, x0)``, where x0 is the initial guess vector, 
-        and fun is the function to minimize, where fun=self.target_function 
-        and returns x_new and x_error vectors). E.g., to use with scipy 
-        use ``root(fun, x0, args=(False)``. Defaults to ``DIIS``.
+        and fun is the function to minimize, where fun=self._target_function 
+        and returns x_new and x_error vectors. E.g., to use with scipy 
+        use ``root(fun, x0, args=(embedding_param, kweight_param, False)``. 
+        Defaults to :class:`risb.optimize.DIIS`.
 
-    error_root : optional, string
+    error_root : str, optional
         At each self-consistent cycle, whether the error is 
         'root' : f1 and f2 root functions
-        'recursion' : the difference between consecutive Lambda and R.
+        'recursion' : the difference between consecutive `Lambda` and `R`.
         Defaults to 'root'.
 
     """
@@ -96,33 +98,70 @@ class LatticeSolver:
                  gf_struct : GfStructType,
                  embedding : Any, 
                  kweight : Any,
-                 symmetries : list[Callable[[MFType], dict[MFType]]] | None = [],
+                 #symmetries : list[Callable[[MFType], dict[MFType]]] | None = [],
+                 symmetries = [],
                  force_real : bool = True,
                  R : dict[ArrayLike] | None = None,
                  Lambda : dict[ArrayLike] | None = None, 
                  optimize : Any = None,
                  error_root : str = 'root'):
         
-        self._h0_k = h0_k
-        self._gf_struct = gf_struct
-        self._block_names = [bl for bl,_ in self._gf_struct]
+        self.h0_k = h0_k
+        self.gf_struct = gf_struct
+        self.block_names = [bl for bl,_ in self.gf_struct]
         
-        self._embedding = embedding
-        self._kweight = kweight
+        self.embedding = embedding
+        self.kweight = kweight
         
-        self._R = deepcopy(R)
-        self._Lambda = deepcopy(Lambda)
-        if (self._R is None) or (self._Lambda is None):
-            [self._R, self._Lambda] = self.initialize_block_mf_matrices(self._gf_struct)
+        #: dict[numpy.ndarray] : Renormalization matrix of electrons (unitary matrix 
+        #: from c- to f-electrons at the mean-field level).
+        self.R = deepcopy(R)
+        
+        #: dict[numpy.ndarray] : Correlation potential matrix of the quasiparticles.
+        self.Lambda = deepcopy(Lambda)
+        
+        if (self.R is None) or (self.Lambda is None):
+            [self.R, self.Lambda] = self._initialize_block_mf_matrices(self.gf_struct)
  
-        self._symmetries = symmetries
-        self._force_real = force_real
+        self.symmetries = symmetries
+        self.force_real = force_real
+        self.optimize = optimize
+        self.error_root = error_root
+        
+        #: dict[numpy.ndarray] : Bath coupling of impurity.
+        self.Lambda_c = dict()
 
-        self._optimize = optimize
-        self._error_root = error_root
+        #: dict[numpy.ndarray] : Hybridization of impurity.
+        self.D = dict()
+
+        #: dict[numpy.ndarray] : Density matrix of quasiparticles.
+        self.rho_qp = dict()
+
+        #: dict[numpy.ndarray] : Density matrix of cluster.
+        self.Nc = dict()
+
+        #: dict[numpy.ndarray] : Density matrix of f-electrons in the impurity.
+        self.Nf = dict()
+
+        #: dict[numpy.ndarray] : Hybridization density matrix between the c- 
+        #: and f-electrons in the impurity.
+        self.Mcf = dict()
+
+        #: dict[numpy.ndarray] : k-space integration weights of the 
+        #: quasiparticles in each band.
+        self.wks = dict()
+        
+        #: dict[numpy.ndarray] : Band energy of quasiparticles.
+        self.energies_qp = dict()
+
+        #: dict[numpy.ndarray] : Bloch band vectors of quasiparticles.
+        self.bloch_vector_qp = dict()
+
+        #: dict[numpy.ndarray] : Lopsided dispersion of quasiparticles between clusters.
+        self.lopsided_dispersion_qp = dict()
 
     @staticmethod
-    def initialize_block_mf_matrices(gf_struct : GfStructType) -> tuple[GfStructType, GfStructType]:
+    def _initialize_block_mf_matrices(gf_struct : GfStructType) -> tuple[GfStructType, GfStructType]:
         R = dict()
         Lambda = dict()
         for bl, bsize in gf_struct:
@@ -131,27 +170,27 @@ class LatticeSolver:
             np.fill_diagonal(R[bl], 1)
         return (R, Lambda)
     
-    def flatten(self, 
+    def _flatten(self, 
                 Lambda : GfStructType, 
                 R : GfStructType) -> np.ndarray:
-        return flatten(Lambda, R, self._force_real)
+        return flatten(Lambda, R, self.force_real)
     
-    def unflatten(self, x : ArrayLike) -> tuple[MFType, MFType]:
-        return unflatten(x, self._gf_struct, self._force_real)
+    def _unflatten(self, x : ArrayLike) -> tuple[MFType, MFType]:
+        return unflatten(x, self.gf_struct, self.force_real)
     
-    def target_function(self, 
+    def _target_function(self, 
                         x : ArrayLike, 
                         embedding_param : dict[str, Any], 
                         kweight_param : dict[str, Any], 
                         return_new : bool = True) -> np.ndarray | tuple[np.ndarray, np.ndarray]:
         
-        self._Lambda, self._R = self.unflatten(x)
+        self.Lambda, self.R = self._unflatten(x)
         Lambda_new, R_new, f1, f2  = self.one_cycle(embedding_param, kweight_param)
-        x_new = self.flatten(Lambda_new, R_new)
+        x_new = self._flatten(Lambda_new, R_new)
         
-        if self._error_root == 'root':
-            x_error = self.flatten(f2, f1)
-        elif self._error_root == 'recursion':
+        if self.error_root == 'root':
+            x_error = self._flatten(f2, f1)
+        elif self.error_root == 'recursion':
             x_error = x - x_new
         else:
             raise ValueError('Unrecognized error functions for root !')
@@ -163,98 +202,80 @@ class LatticeSolver:
 
     def one_cycle(self, 
                   embedding_param : dict[str, Any] = dict(), 
-                  kweight_param : dict[str, Any] = dict()) \
-                    -> tuple[MFType, MFType, MFType, MFType]:
+                  kweight_param : dict[str, Any] = dict()):
+                    #-> tuple[MFType, MFType, MFType, MFType]:
         """
-        A single iteratino of the RISB self-consistent cycle.
+        A single iteration of the RISB self-consistent cycle.
 
         Parameters
         ----------
-
         embedding_param : dict, optional
             The kwarg arguments to pass to the embedding solver.
-
         kweight_param : dict, optional
             The kwarg arguments to pass to the kweight solver.
         
         Returns
         -------
-
-        Lambda : dict of array_like
+        Lambda : dict[numpy.ndarray]
             The new guess for the correlation potential matrix.
-
-        R : dict of array_like
+        R : dict[numpy.ndarray]
             The new guess for the renormalization matrix.
-
-        f1 : dict of array_like
+        f1 : dict[numpy.ndarray]
             The return of the fixed-point function that matches the 
             quasiparticle density matrices.
-
-        f2 : dict of array_like
+        f2 : dict[numpy.ndarray]
             The return of the fixed-point function that matches the 
             hybridzation density matrices.
         """
     
-        for function in self._symmetries:
-            self._R = function(self.R)
-            self._Lambda = function(self.Lambda)
+        for function in self.symmetries:
+            self.R = function(self.R)
+            self.Lambda = function(self.Lambda)
                 
-        self._Lambda_c = dict()
-        self._D = dict()
-        self._rho_qp = dict()
-        self._Nc = dict()
-        self._Nf = dict()
-        self._Mcf = dict()
-        self._wks = dict()
+        for bl in self.block_names:
+            self.energies_qp[bl], self.bloch_vector_qp[bl] = helpers.get_h_qp(self.R[bl], self.Lambda[bl], self.h0_k[bl])
         
-        self._energies_qp = dict()
-        self._bloch_vector_qp = dict()
-        self._kinetic_energy_qp = dict()
+        self.wks = self.kweight.update_weights(self.energies_qp, **kweight_param)
 
-        for bl in self._block_names:
-            self._energies_qp[bl], self._bloch_vector_qp[bl] = helpers.get_h_qp(self._R[bl], self._Lambda[bl], self._h0_k[bl])
+        for bl in self.block_names:
+            h0_R = helpers.get_h0_R(self.R[bl], self.h0_k[bl], self.bloch_vector_qp[bl])
+
+            self.rho_qp[bl] = helpers.get_pdensity(self.bloch_vector_qp[bl], self.wks[bl])
+            self.lopsided_dispersion_qp[bl] = helpers.get_ke(h0_R, self.bloch_vector_qp[bl], self.wks[bl])
         
-        self._wks = self._kweight.update_weights(self._energies_qp, **kweight_param)
-
-        for bl in self._block_names:
-            h0_R = helpers.get_h0_R(self._R[bl], self._h0_k[bl], self._bloch_vector_qp[bl])
-
-            self._rho_qp[bl] = helpers.get_pdensity(self._bloch_vector_qp[bl], self._wks[bl])
-            self._kinetic_energy_qp[bl] = helpers.get_ke(h0_R, self._bloch_vector_qp[bl], self._wks[bl])
+            self.D[bl] = helpers.get_d(self.rho_qp[bl], self.lopsided_dispersion_qp[bl])
+            if self.force_real:
+                self.D[bl] = self.D[bl].real
+            self.Lambda_c[bl] = helpers.get_lambda_c(self.rho_qp[bl], self.R[bl], self.Lambda[bl], self.D[bl])
         
-            self._D[bl] = helpers.get_d(self._rho_qp[bl], self._kinetic_energy_qp[bl])
-            if self._force_real:
-                self._D[bl] = self._D[bl].real
-            self._Lambda_c[bl] = helpers.get_lambda_c(self._rho_qp[bl], self._R[bl], self._Lambda[bl], self._D[bl])
-        
-        for function in self._symmetries:
-            self._D = function(self._D)
-            self._Lambda_c = function(self._Lambda_c)
+        for function in self.symmetries:
+            self.D = function(self.D)
+            self.Lambda_c = function(self.Lambda_c)
 
-        self._embedding.set_h_emb(self._Lambda_c, self._D)
-        self._embedding.solve(**embedding_param)
+        self.embedding.set_h_emb(self.Lambda_c, self.D)
+        self.embedding.solve(**embedding_param)
 
-        for bl in self._block_names:
-            self._Nf[bl] = self._embedding.get_nf(bl)
-            self._Mcf[bl] = self._embedding.get_mcf(bl)
+        for bl in self.block_names:
+            self.Nf[bl] = self.embedding.get_nf(bl)
+            self.Mcf[bl] = self.embedding.get_mcf(bl)
         
-        for function in self._symmetries:
-            self._Nf = function(self._Nf)
-            self._Mcf = function(self._Mcf)
+        for function in self.symmetries:
+            self.Nf = function(self.Nf)
+            self.Mcf = function(self.Mcf)
 
         f1 = dict()
         f2 = dict()
-        for bl in self._block_names:
-            f1[bl] = helpers.get_f1(self._Mcf[bl], self._rho_qp[bl], self._R[bl])
-            f2[bl] = helpers.get_f2(self._Nf[bl], self._rho_qp[bl])
+        for bl in self.block_names:
+            f1[bl] = helpers.get_f1(self.Mcf[bl], self.rho_qp[bl], self.R[bl])
+            f2[bl] = helpers.get_f2(self.Nf[bl], self.rho_qp[bl])
         
         Lambda = dict()
         R = dict()
-        for bl in self._block_names:
-            Lambda[bl] = helpers.get_lambda(self._R[bl], self._D[bl], self._Lambda_c[bl], self._Nf[bl])
-            R[bl] = helpers.get_r(self._Mcf[bl], self._Nf[bl])
+        for bl in self.block_names:
+            Lambda[bl] = helpers.get_lambda(self.R[bl], self.D[bl], self.Lambda_c[bl], self.Nf[bl])
+            R[bl] = helpers.get_r(self.Mcf[bl], self.Nf[bl])
             
-        for function in self._symmetries:
+        for function in self.symmetries:
             Lambda = function(Lambda)
             R = function(R)
 
@@ -267,96 +288,55 @@ class LatticeSolver:
               embedding_param : dict[str, Any] = dict(), 
               kweight_param : dict[str, Any] = dict()) -> None:
         """ 
-        Solve for the renormalization matrix ``R`` and correlation potential
-        matrix ``Lambda``.
+        Solve for the renormalization matrix `R` and correlation potential
+        matrix `Lambda`.
 
         Parameters
         ----------
-
-        one_shot : optional, bool
+        one_shot : bool, optional
             True if the calcualtion is just one shot and not self consistent. 
             Default is False.
-
-        tol : optional, float
-            Convergence tolerance to pass to ``optimize_root`` class.
-            Default is 1e-12.
-
-        optimize_param : optional, dict
-            Additional options to pass to ``optimize_root`.
-
-        embedding_param : optional, dict
-            Options to pass to ``embedding.solve``.
-
-        kweight_param : optional, dict
-            Options to pass to ``kweight.update_weight``. 
+        tol : float, optional
+            Convergence tolerance to pass to ``optimize_root.solve``.
+        optimize_param : dict, optional
+            kwarg options to pass to ``optimize_root.solve``.
+        embedding_param : dict, optional
+            kwarg options to pass to ``embedding.solve``.
+        kweight_param : dict, optional
+            kwarg options to pass to ``kweight.update_weight``. 
 
         Returns
         -------
-
-        Sets the self-consistent solutions self.Lambda and self.R.
-
+        Sets the self-consistent solutions `Lambda` and `R`.
         """
 
         if one_shot:
-            self._Lambda, self._R, _, _ = self.one_cycle(embedding_param, kweight_param)
+            self.Lambda, self.R, _, _ = self.one_cycle(embedding_param, kweight_param)
         
         else:
-            if self._optimize is None:
-                self._optimize = DIIS()
-            self._optimize.solve(fun=self.target_function, 
-                                        x0=self.flatten(self._Lambda, self._R), 
-                                        args=(embedding_param, kweight_param),
-                                        tol=tol,
-                                        options=optimize_param)
+            if self.optimize is None:
+                self.optimize = DIIS()
+            self.optimize.solve(fun=self._target_function, 
+                                x0=self._flatten(self.Lambda, self.R), 
+                                args=(embedding_param, kweight_param),
+                                tol=tol,
+                                options=optimize_param)
             #from scipy.optimize import root
-            #root_finder = root(fun=self.target_function, 
-            #                   x0=self.flatten(self._Lambda, self._R), 
+            #root_finder = root(fun=self._target_function, 
+            #                   x0=self._flatten(self.Lambda, self.R), 
             #                   args=(embedding_param, kweight_param, False), 
             #                   method='broyden1')
 
-    @property
-    def gf_struct(self) -> GfStructType:
-        return self._gf_struct
-    
-    @property
-    def Lambda(self) -> MFType:
-        return self._Lambda
-    
-    @Lambda.setter
-    def Lambda(self, value : MFType) -> None:
-        self._Lambda = value
-    
-    @property
-    def R(self) -> MFType:
-        return self._R
-    
-    @R.setter
-    def R(self, value : MFType) -> None:
-        self._R = value
-        
-    @property
-    def rho(self) -> MFType:
-        return self._Nc
-    
-    @property
-    def rho_f(self) -> MFType:
-        return self._Nf
-    
-    @property
-    def rho_qp(self) -> MFType:
-        return self._rho_qp
-    
-    @property
-    def bath_coupling(self) -> MFType:
-        return self._Lambda_c
-
-    @property
-    def hybrid_coupling(self) -> MFType:
-        return self._D
         
     @property
     def Z(self) -> MFType:
+        """
+        Returns
+        -------
+        Z : dict[numpy.ndarray]
+            Qausiparticle weight.
+        """
         Z = dict()
-        for bl in self._block_names:
-            Z[bl] = self._R[bl] @ self._R[bl].conj().T
+        for bl in self.block_names:
+            Z[bl] = self.R[bl] @ self.R[bl].conj().T
         return Z

@@ -75,8 +75,8 @@ def get_lambda_c(pdensity, R, Lambda, D):
         Quasiparticle density matrix obtained from the mean-field.
 
     R : numpy.ndarray
-        Unitary transformation (renormalization matrix) from quasiparticles to 
-        electrons.
+        Unitary transformation (renormalization matrix) from electrons to 
+        quasiparticles.
     
     Lambda : numpy.ndarray
         Correlation potential of quasiparticles.
