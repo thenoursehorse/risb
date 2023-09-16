@@ -10,23 +10,14 @@ from . import NewtonSolver
 class LinearMixing(NewtonSolver):
     '''
     Linear mixing a new vector with an old vector.
-
-    Parameters
-    ----------
-        
-    verbose : optional, bool
-        Whether to report information during optimization. Default False.
-
     '''
     def __init__(self, /,
-                  history_size : int = 0, 
                   **kwargs):
-        super().__init__(history_size=history_size, **kwargs)
+        super().__init__(history_size=0, **kwargs)
     
     def update_x(self, 
                  x : ArrayLike, 
                  g_x : ArrayLike, 
                  error : None = None, 
                  alpha : float = 1.0):
-        self.t += 1
         return x + alpha * (g_x - x)

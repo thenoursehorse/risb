@@ -24,37 +24,31 @@ class DIIS(NewtonSolver):
     '''
     Direct inversion in the iterative subspace to minimize a function.
     
-    Algorithm 2 (Anderson type) in 10.1051/m2an/2021069,  hal-02492983v5.
-    
     Parameters
     ----------
-        
-    history_size : optional, int
-        Maximum size of subspace. Default 5.
-
-    t_restart : optional, int
-        Fully reset subspace after this many iterations. Default infinity.
-
-    verbose : optional, bool
-        Whether to report information during optimization. Default False.
-
-    t_period : optional, int
+    n_period : int, optional
         Take a linear mixing step afer this many iterations. Default 
         round(history_size / 2).
-    
+
+    Notes
+    -----
+    Algorithm 2 (Anderson type) in `10.1051/m2an/2021069 <hal-02492983v5_>`__.
+
+    .. _hal-02492983v5: https://doi.org/10.1051/m2an/2021069
     '''
     def __init__(self, /, 
-                 history_size : int = 5, 
-                 t_period : int = 0, 
+                 n_period : int = 0, 
                  **kwargs) -> None:
-        super().__init__(history_size=history_size, **kwargs)
+        super().__init__(**kwargs)
         
-        if t_period == 0:
-            self.t_period = int(np.round(self.history_size/2.0))
+        if n_period == 0:
+            self.n_period = int(np.round(self.history_size/2.0))
         else:
-            self.t_period = t_period
+            self.n_period = n_period
 
-    def extrapolate(self) -> np.ndarray:
+        self.solve = super().solve
+
+    def _extrapolate(self) -> np.ndarray:
         """
         The DIIS extrapolation algorithm for the new guess for x.
         """
@@ -90,44 +84,17 @@ class DIIS(NewtonSolver):
                  g_x : list[ArrayLike], 
                  error : list[ArrayLike], 
                  alpha : float = 1.0) -> np.ndarray:
-        """
-        The new guess for x according to the DIIS extrapolation.
         
-        Parameters
-        ----------
-        
-        x : list of array_like
-            Every guess for x in the history.
-
-        g_x : list of array_like
-            The solution to the fixed-point function, g(x), that gives a new 
-            x.
-
-        error : list of array_like
-            The error function that is minimized. This is often g(x) - x.
-
-        alpha : float, optional
-            The step size for linear-mixing.
-
-        Returns
-        -------
-
-        x : ndarray
-            The new guess for x.
-
-        """
-        
-        if (self.t % self.t_restart) == 0:
+        if (self.n % self.n_restart) == 0:
             self.x = []
             self.g_x = []
             self.error = []
         
-        if ((self.t+1) % self.t_period == 0):
+        if ((self.n+1) % self.n_period == 0):
             # Do DIIS
-            x_opt = self.extrapolate()
+            x_opt = self._extrapolate()
         else:
             # Do linear mixing
             x_opt = x + alpha*(g_x-x)
 
-        self.t += 1
         return x_opt

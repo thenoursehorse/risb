@@ -85,14 +85,15 @@ def make_kmesh(n_kx = 6, d = 3):
 
     Parameters
     ----------
-
-    n_kx : optional, int
-        Linear dimension of k-mesh in each dimension. Default 6.
-
+    n_kx : int, optional
+        Linear dimension of k-mesh in each dimension.
+    d : int, optional
+        Number of dimensions, e.g., d = 2 is the square lattice.
     
-    d : optional, int
-        Number of dimensions, e.g., d = 2 is the square lattice. Default 3.
-    
+    Returns
+    -------
+    mesh : numpy.ndarray
+        The mesh in crystal coordinates, indexed as k, dim_1, dim_2, ..., dim_d
     """
     
     # Total number of k-points on the mesh
@@ -117,19 +118,19 @@ def make_h0_k(mesh, gf_struct, t = 1, a = 1):
 
     Parameters
     ----------
-
-    mesh : ndarray
+    mesh : numpy.ndarray
         The k-space mesh of the Bravais lattice.
-
     gf_struct : list of pairs [ (str,int), ... ]
         Structure of matrices. 
+    t : float, optional
+        Hopping amplitude.
+    a : float, optional
+        Lattice spacing.
 
-    t : optional, float
-        Hopping amplitude. Default 1.
-
-    a : optional, float
-        Lattice spacing. Default 1.
-
+    Returns
+    -------
+    h0_k : numpy.ndarray
+        Hopping matrix indexed as k, orbital_i, orbital_j.
     """
     n_k = mesh.shape[0]
 
@@ -167,13 +168,14 @@ def make_h_loc(V = 0.25, U = 5):
     
     Parameters
     ----------
-    
-    V : optional, float
+    V : float, optional
         Hopping between orbitals on each cluster.
-
-    U : optional, float
+    U : float, optional
         Local Coulomb repulsion on each site.
 
+    Returns
+    -------
+    h_loc : triqs.operators.Operator
     """
     
     h_loc = Operator()
@@ -371,20 +373,21 @@ The code to perform this is
 ```python
 def update_weights(energies, mu=0, beta=10):
     """
-    Return the integration weights at each k-point on the lattice.
+    Return the integration weights for each band at each 
+    k-point on the lattice.
 
     Parameters
     ----------
+    energies : numpy.ndarray
+        Energies at each k-point for each band n, indexed as k, n.
+    mu : float, optional
+        Chemical potential.
+    beta : float, optional
+        Inverse temperature.
 
-    energies : ndarray
-        Energies at each k-point for each band n, indexed as k,n.
-
-    mu : optional, float
-        Chemical potential. Default 0.
-
-    beta : optional, float
-        Inverse temperature. Default 0.
-
+    Returns
+    -------
+    weights : numpy.ndarray
     """
     n_k = energies.shape[0]
     return 1.0 / (np.exp(beta * (energies - mu)) + 1.0) / n_k

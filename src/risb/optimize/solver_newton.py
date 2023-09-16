@@ -17,11 +17,12 @@
 
 from copy import deepcopy
 import numpy as np
+from abc import ABC, abstractmethod
 from typing import Any, Callable
 from numpy.typing import ArrayLike
 
 # TODO fix up verbose messages
-class NewtonSolver:
+class NewtonSolver(ABC):
     """
     Base class for quasi-Newton methods to find the root of a function.
 
@@ -29,46 +30,42 @@ class NewtonSolver:
     ----------
     history_size : int, optional
         Maximum size of subspace.
-    t_restart : int, optional
+    n_restart : int, optional
         Fully reset subspace after this many iterations.
     verbose : bool, optional
         Whether to report information during optimization.
     
-    Attributes
-    ----------
-    x : numpy.ndarray
-        Solution to the root function.
-    g_x : numpy.ndarray
-        Result of fixed point function with `x` as the input.
-    error : numpy.ndarray
-        Error vector of `x`.
-    n : int
-        Number of iterations the solver took.
-    success : bool
-        Whether the solver converged to within tolerance.
-    norm : float
-        2-norm error of `error`.
-
     Notes
     -----
-    The method `self.update_x` must be defined in the child class, and it 
-    is called as self.update_x(x, g_x, error, options['alpha']).
+    The method `update_x` must be defined in the inherited class.
     """
     def __init__(self, 
                  history_size : int = 5, 
-                 t_restart : float = np.inf, 
+                 n_restart : float = np.inf, 
                  verbose : bool = False) -> None:
 
         self.history_size = history_size
-        self.t_restart = t_restart
+        self.n_restart = n_restart
         self.verbose = verbose
-        
-        self.x : list[ArrayLike] = []
-        self.g_x : list[ArrayLike] = [] 
-        self.error : list[ArrayLike] = []
-        
         self.initialized = False
-        self.t = 0
+
+        #: list[numpy.ndarray] : Solution to the root problem
+        self.x : list[ArrayLike] = []
+
+        #: list[numpy.ndarray] : Result of fixed point function with `x` as the input.
+        self.g_x : list[ArrayLike] = [] 
+
+        #: list[numpy.ndarray] : Error vector of `x`.
+        self.error : list[ArrayLike] = []
+
+        #: int : Number of iterations the solver took.
+        self.n : int = 0
+        
+        #: bool : Whether the solver converged to within tolerance.
+        self.success : bool = False
+        
+        # float : 2-norm of `error`.
+        self.norm : float = np.inf
 
     @staticmethod
     def _load_history(x : list[ArrayLike], 
@@ -98,6 +95,34 @@ class NewtonSolver:
         if max_size is not None:
             if len(vec) >= max_size:
                 vec.pop()
+    
+    @abstractmethod
+    def update_x(self, 
+                 x : list[ArrayLike], 
+                 g_x : list[ArrayLike], 
+                 error : list[ArrayLike], 
+                 alpha : float = 1.0) -> np.ndarray:
+        """
+        A single iteration for the new guess for `x`.
+        
+        Parameters
+        ----------
+        x : list[numpy.ndarray]
+            Every guess for x in the history.
+        g_x : list[numpy.ndarray]
+            Every solution in the history to the fixed-point function, 
+            g(`x`), that gives a new `x`.
+        error : list[numpy.ndarray]
+            Every error function in the history. This is often `error` = `g_x` - `x`.
+        alpha : float, optional
+            Step size for linear-mixing.
+
+        Returns
+        -------
+        x : numpy.ndarray
+            New guess for x.
+        """
+        pass
 
     def solve(self, 
               fun : Callable[..., ArrayLike],
