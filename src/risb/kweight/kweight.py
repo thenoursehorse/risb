@@ -32,23 +32,8 @@ class SmearingKWeight:
     n_target : float or None, optional
         Target lattice filling per unit cell. One of `mu` or `n_target` needs to be 
         provided.
-    method : {"fermi", "gaussian", "methfessel-paxton"}
+    method : str, {fermi, gaussian, methfessel-paxton}
         Smearing method.
-
-    Attributes
-    ----------
-    beta : float
-        Inverse temperature
-    mu : float
-        Chemical potential.
-    n_target : float
-        Target lattice filling per unit cell.
-    n_k : int
-        Number of k-points.
-    energies : dict[numpy.ndarray]
-        Energies in each band at each k-point.
-    weights : dict[numpy.ndarray]
-        Integration weights at each k-point in the same shape as energies.
     """
     
     def __init__(self, 
@@ -56,13 +41,24 @@ class SmearingKWeight:
                  mu: float | None = None, 
                  n_target: float | None = None, 
                  method : str = 'fermi') -> None:
+        
+        #: float : Inverse temperature
         self.beta = beta
+        
+        #: float : Chemical potential.
         self.mu = mu
+        
+        #: float : Target lattice filling per unit cell.
         self.n_target = n_target
 
-        #self.energies : dict[ArrayLike]
-        #self.weight : dict[ArrayLike]
-        #self.n_k : int
+        #: dict[numpy.ndarray] : Energies in each band at each k-point.
+        self.energies : dict[ArrayLike]
+        
+        #: dict[numpy.ndarray] : Integration weights at each k-point in the same shape as energies.
+        self.weight : dict[ArrayLike]
+        
+        #: int : Number of k-points.
+        self.n_k : int
         
         if method == 'fermi':
             self.smear_function = self._fermi
