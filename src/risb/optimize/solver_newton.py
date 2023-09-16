@@ -37,7 +37,7 @@ class NewtonSolver:
         Whether to report information during optimization. Default False.
 
     Note: The method self.update_x must be defined in the child class, and it 
-    is called as self.update_x(x, g_x, error, options['alpha']).
+    is called as ``self.update_x(x, g_x, error, options['alpha'])``.
 
     todo: fix up verbose messages
     '''
