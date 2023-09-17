@@ -104,4 +104,5 @@ test/python for examples.
 * Sort out basic_functions tests
 * Make h0_k all h0 hoppings, and work out h0_loc and add to h_int to make a 
 h_loc = h0_loc + h_int, and then h0_kin_k = h0_k - h_0_loc.
+* sort out projectors/multiple clusters
 * Use static type hints for functions (learning work in progress)

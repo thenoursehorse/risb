@@ -47,18 +47,18 @@ class LatticeSolver:
                  
     embedding : class
         The class that solves the embedding problem. It must already 
-        store the local Hamiltonian, h_loc, on a cluster, have a method 
+        store the local Hamiltonian, ``h_loc``, on a cluster, have a method 
         ``set_h_emb(Lambda_c, D)`` to setup the impurity problem, a method
         ``solve(**embedding_param)`` that solves the impurity problem, and 
         methods ``get_nf(block)`` and ``get_mcf(block)`` for the bath and 
         hybridization density matrices. 
-        See class :class:`risb.embedding.EmbeddingAtomDiag`.
+        See class :class:`.EmbeddingAtomDiag`.
         
     update_weights : callable
         The function that gives the integral weights at each k-point on the 
         lattice. It is called as ``update_weights(energies, **kweight_param)``, 
         where the energies are a dictionary with each key a list. 
-        See class :class:`risb.kweight.SmearingKWeight`.
+        See class :class:`.SmearingKWeight`.
 
     symmetries : list[callable], optional
         Symmetry functions acting on the mean-field matrices.
@@ -77,13 +77,13 @@ class LatticeSolver:
         Each key in dictionary must follow `gf_struct`. Defaults to the zero 
         matrix in each block.
 
-    optimize : class, optional
-        The class that drives the self-consistent procedure. It must have 
-        a method ``solve(fun, x0)``, where x0 is the initial guess vector, 
-        and fun is the function to minimize, where fun=self._target_function 
-        and returns x_new and x_error vectors. E.g., to use with scipy 
-        use ``root(fun, x0, args=(embedding_param, kweight_param, False)``. 
-        Defaults to :class:`risb.optimize.DIIS`.
+    root : callable, optional
+        The function that drives the self-consistent procedure. It is called
+        as ``root(fun, x0, args=, tol=, options=)``, where x0 is the initial 
+        guess vector, and fun is the function to minimize, 
+        where ``fun = self._target_function``. E.g., to use with `scipy` use 
+        ``root(fun, x0, args=(embedding_param, kweight_param, False)``. 
+        Defaults to ``solve`` method of :class:`.DIIS`.
 
     error_root : str, optional
         At each self-consistent cycle, whether the error is 
@@ -101,7 +101,7 @@ class LatticeSolver:
                  force_real : bool = True,
                  R : dict[ArrayLike] | None = None,
                  Lambda : dict[ArrayLike] | None = None, 
-                 optimize = None,
+                 root = None,
                  error_root : str = 'root'):
         
         self.h0_k = h0_k
@@ -109,7 +109,12 @@ class LatticeSolver:
         self.block_names = [bl for bl,_ in self.gf_struct]
         
         self.embedding = embedding
-        self.update_weights = update_weights
+        self._update_weights = update_weights
+            
+        self._root = root
+        if self._root is None:
+            self.optimize = DIIS()
+            self._root = self.optimize.solve
         
         #: dict[numpy.ndarray] : Renormalization matrix of electrons (unitary matrix 
         #: from c- to f-electrons at the mean-field level).
@@ -123,7 +128,6 @@ class LatticeSolver:
  
         self.symmetries = symmetries
         self.force_real = force_real
-        self.optimize = optimize
         self.error_root = error_root
         
         #: dict[numpy.ndarray] : Bath coupling of impurity.
@@ -157,6 +161,28 @@ class LatticeSolver:
 
         #: dict[numpy.ndarray] : Lopsided dispersion of quasiparticles between clusters.
         self.lopsided_dispersion_qp = dict()
+
+    def root(self, *args, **kwargs) -> np.ndarray:
+        """
+        The root function that drives the self-consistent procedure. It 
+        is called the same as `scipy.optimize.root`.
+
+        Returns
+        -------
+        numpy.ndarray
+        """
+        return self._root(*args, **kwargs)
+    
+    def update_weights(self, *args, **kwargs) -> dict[np.ndarray]:
+        """
+        The function that gives the k-space integration weights. It is 
+        called as ``update_weights(dict[numpy.ndarray, **params])``.
+
+        Returns
+        -------
+        numpy.ndarray
+        """
+        return self._update_weights(*args, **kwargs)
 
     @staticmethod
     def _initialize_block_mf_matrices(gf_struct : GfStructType) -> tuple[GfStructType, GfStructType]:
@@ -208,9 +234,9 @@ class LatticeSolver:
         Parameters
         ----------
         embedding_param : dict, optional
-            The kwarg arguments to pass to the embedding solver.
+            The kwarg arguments to pass to the :meth:`embedding.solve`.
         kweight_param : dict, optional
-            The kwarg arguments to pass to `update_weights` function.
+            The kwarg arguments to pass to :meth:`update_weights`.
         
         Returns
         -------
@@ -282,7 +308,7 @@ class LatticeSolver:
     def solve(self, 
               one_shot : bool = False, 
               tol : float = 1e-12, 
-              optimize_param : dict[str, Any] = {'maxiter': 1000, 'alpha': 1}, 
+              root_param : dict[str, Any] = {'maxiter': 1000, 'alpha': 1}, 
               embedding_param : dict[str, Any] = dict(), 
               kweight_param : dict[str, Any] = dict()) -> None:
         """ 
@@ -295,13 +321,13 @@ class LatticeSolver:
             True if the calcualtion is just one shot and not self consistent. 
             Default is False.
         tol : float, optional
-            Convergence tolerance to pass to ``optimize_root.solve``.
-        optimize_param : dict, optional
-            kwarg options to pass to ``optimize_root.solve``.
+            Convergence tolerance to pass to :meth:`root`.
+        root_param : dict, optional
+            kwarg options to pass to :meth:`root`.
         embedding_param : dict, optional
-            kwarg options to pass to ``embedding.solve``.
+            kwarg options to pass to :meth:`embedding.solve`.
         kweight_param : dict, optional
-            kwarg options to pass to `update_weights` function. 
+            kwarg options to pass to :meth:`update_weights`. 
 
         Returns
         -------
@@ -312,13 +338,11 @@ class LatticeSolver:
             self.Lambda, self.R, _, _ = self.one_cycle(embedding_param, kweight_param)
         
         else:
-            if self.optimize is None:
-                self.optimize = DIIS()
-            self.optimize.solve(fun=self._target_function, 
-                                x0=self._flatten(self.Lambda, self.R), 
-                                args=(embedding_param, kweight_param),
-                                tol=tol,
-                                options=optimize_param)
+            self.root(fun=self._target_function, 
+                      x0=self._flatten(self.Lambda, self.R), 
+                      args=(embedding_param, kweight_param),
+                      tol=tol,
+                      options=root_param)
             #from scipy.optimize import root
             #root_finder = root(fun=self._target_function, 
             #                   x0=self._flatten(self.Lambda, self.R), 
