@@ -61,7 +61,7 @@ class LatticeSolver:
         are a dictionary with each key a list. 
         See class :class:`risb.kweight.SmearingKWeight`.
 
-    symmeties : list[callable], optional
+    symmetries : list[callable], optional
         Symmetry functions acting on the mean-field matrices.
 
     force_real : bool, optional
@@ -96,10 +96,9 @@ class LatticeSolver:
     def __init__(self, 
                  h0_k : MFType,
                  gf_struct : GfStructType,
-                 embedding : Any, 
-                 kweight : Any,
-                 #symmetries : list[Callable[[MFType], dict[MFType]]] | None = [],
-                 symmetries = [],
+                 embedding, 
+                 kweight,
+                 symmetries : list[Callable[[MFType], dict[MFType]]] | None = [],
                  force_real : bool = True,
                  R : dict[ArrayLike] | None = None,
                  Lambda : dict[ArrayLike] | None = None, 
