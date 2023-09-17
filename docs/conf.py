@@ -22,7 +22,7 @@ extensions = [
     "sphinx.ext.autosummary",
     "sphinx_autodoc_typehints",
     "sphinx_copybutton",
-    "furo.sphinxext" # furo says only for their docs, but the toc left pane does not work as I like without this
+    #"furo.sphinxext" # furo says only for their docs, but the toc left pane does not work as I like without this
 ]
 
 # Don't show typehints/annotations
@@ -56,7 +56,7 @@ myst_enable_extensions = [
     "strikethrough",
     "substitution",
     "tasklist",
-    #"linkify", # always says this is not installed, when it is
+    "linkify",
 ]
 
 intersphinx_mapping = {

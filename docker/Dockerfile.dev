@@ -85,7 +85,8 @@ RUN pip install --upgrade pip \
 
 # For the docs because I can't get nox to work inside docker properly
 RUN pip install sphinx sphinx-autobuild \
-  myst_parser sphinx_autodoc_typehints sphinx_copybutton linkify \
+  myst_parser myst-parser[linkify] \
+  sphinx_autodoc_typehints sphinx_copybutton \
   furo
 
 # Install library
