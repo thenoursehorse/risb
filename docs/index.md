@@ -1,13 +1,14 @@
-# Home
+# Welcome
 
 :::{include} ../README.md
-:start-after: <!-- SPHINX-START -->
-:end-after: <!-- SPHINX-END -->
+:start-after: <!-- INDEX-START -->
+:end-before: <!-- INDEX-END -->
 :::
 
 ```{toctree}
 :hidden:
 
+install
 about
 tutorials/index
 ```

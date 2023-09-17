@@ -39,7 +39,7 @@ exclude_patterns = [
 ]
 
 html_theme = "furo"
-html_title = "risb" + version
+html_title = "risb " + version
 html_theme_options = {
     "source_repository": "https://github.com/thenoursehorse/risb/",
     "source_branch": "3.2.x",
@@ -77,4 +77,8 @@ nitpick_ignore = [
 
 always_document_param_types = True
 
-
+myst_substitutions = {
+    'RISB': r"{abbr}`RISB (rotationally invariant slave-bosons)`",
+    'DFT': r"{abbr}`DFT (density functional theory)`",
+    'DMFT': r"{abbr}`DMFT (dynamical mean-field theory)`",
+}

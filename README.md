@@ -1,13 +1,17 @@
 # risb - Rotationally invariant slave bosons
 
+<!-- INDEX-START -->
+
 Rotationally invariant slave-bosons (RISB) is a non-perturbative method to 
 approximately solve many-body fermionic problems. 
 
-Documentation at [https://thenoursehorse.github.io/risb](https://thenoursehorse.github.io/risb)
-
 Source at [https://github.com/thenoursehorse/risb](https://github.com/thenoursehorse/risb)
 
-<!-- SPHINX-START -->
+<!-- INDEX-END -->
+
+Documentation at [https://thenoursehorse.github.io/risb](https://thenoursehorse.github.io/risb)
+
+<!-- INSTALL-START -->
 
 ## Dependencies
 
@@ -59,8 +63,8 @@ python3 -m pip uninstall risb
 
 There is a Dockerfile and docker-compose.yml inside ./docker/. The Dockerfile will 
 pull the TRIQS [docker from the hub](https://hub.docker.com/r/flatironinstitute/triqs) 
-and install risb. Using the Docker image will be the same as the instructions 
-for TRIQS (e.g., Jupyter). To connect to the Jupyter notebook it is 
+and install risb. Using the Docker image will be the same as the instructions outlined 
+in TRIQS docker hub. To connect to the Jupyter notebook it is 
 
 ```shell
 localhost:8888/?token=put/token/here
@@ -85,6 +89,8 @@ Tests are run with
 ```shell
 python3 -m pytest -v
 ```
+
+<!-- INSTALL-END -->
 
 ## Examples
 

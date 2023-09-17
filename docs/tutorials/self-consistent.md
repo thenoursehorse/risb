@@ -1,12 +1,11 @@
-# {abbr}`RISB (rotationally invariant slave-bosons)` loop
+# {{RISB}} loop
 
 ## Introduction
 
 In this tutorial, you will construct the self-consistent loop in rotationally 
 invariant slave-bosons, and use it to solve the bilayer Hubbard model.
 
-We will try to reproduce the results of Sec. IIIB of 
-PRB **76**, 155102 (2007).
+We will try to reproduce the results of Sec. IIIB of Ref. [^Lechermann2007].
 
 The bilayer Hubbard model on the hypercubic lattice is given by
 
@@ -190,9 +189,8 @@ def make_h_loc(V = 0.25, U = 5):
 ## C: Setup mean-field matrices
 
 We now need to initialize the mean-field matrices used in 
-{abbr}`RISB (rotationally invariant slave-bosons)`. In 
-{abbr}`RISB (rotationally invariant slave-bosons)` the
-homogenous assumption is taken, so that the matrices are the same on every site.
+{{RISB}}. In {{RISB}} the homogenous assumption is taken, 
+so that the matrices are the same on every site.
 Below we describe what each mean-field matrix physically relates to within 
 the algorithm.
 
@@ -302,8 +300,8 @@ for bl, bl_size in gf_struct:
 ## D: The $k$-space integrator
 
 Next you will specify how k-space integrals are performed. 
-{abbr}`RISB (rotationally invariant slave-bosons)` requires 
-integrating many mean-field matrices. The way to do this that generalizes to 
+{{RISB}} requires integrating many mean-field matrices. 
+The way to do this that generalizes to 
 many kinds of $k$-space integration methods is to 
 find the weight of the integral at each $k$-point. This is, e.g., how 
 linear tetrahedron works and smearing methods work. As you will see below, 
@@ -450,17 +448,15 @@ $n = 1.88$ (Fig. 10)?
 ## Conclusion
 
 You have built the self-consistent loop for 
-{abbr}`RISB (rotationally invariant slave-bosons)` and solved a (not so simple) 
+{{RISB}} and solved a (not so simple) 
 interacting fermion problem. The code in `LatticeSolver` is not much more 
 complicated than what you have done. You should now easily be able to mofify, 
 implement, and contribute to any parts in the library. You also now understand 
 the basic ingredients needed for most self-consistent procedures in much 
-more sophisticated codes for {abbr}`DFT (density functional theory)` and 
-{abbr}`DMFT dynamical mean-field theory`.
+more sophisticated codes for {{DFT}} and {{DMFT}}.
 
 Below is some code that should be very easy to fill in. But you will understand 
-much more about {abbr}`RISB (rotationally invariant slave-bosons)` 
-if you try to piece everything together from the 
+much more about {{RISB}} if you try to piece everything together from the 
 self-consistent equations found in the literature found in 
 [About](../about)
 
@@ -552,3 +548,9 @@ Z = dict()
 for bl, bl_size in gf_struct:
     Z[bl] = R[bl] @ R[bl].conj().T
 ```
+
+
+[^Lechermann2007]: [F. Lechermann, A. Georges, G. Kotliar, and O. Parcollet, 
+*Rotationally invariant slave-boson formalism and momentum dependence of the 
+quasiparticle weight*, 
+Phys. Rev.B **76**, 155102 (2007)](https://doi.org/10.1103/PhysRevB.76.155102)
