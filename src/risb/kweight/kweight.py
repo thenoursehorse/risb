@@ -102,7 +102,7 @@ class SmearingKWeight:
             S += A_n(n) * H_n(x) * np.exp(-x**2)
         return S
     
-    def _update_n_k(self):
+    def _update_n_k(self) -> int:
         if isinstance(self.energies, dict):
             first_key = next(iter(self.energies))
             self.n_k = self.energies[first_key].shape[0]
