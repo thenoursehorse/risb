@@ -30,7 +30,7 @@ class tests(unittest.TestCase):
         S = LatticeSolver(h0_k=h0_k,
                           gf_struct=gf_struct,
                           embedding=embedding,
-                          kweight=kweight,
+                          update_weights=kweight.update_weights,
                           symmetries=[symmetrize_blocks])
         
         S.solve()

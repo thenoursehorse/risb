@@ -54,11 +54,10 @@ class LatticeSolver:
         hybridization density matrices. 
         See class :class:`risb.embedding.EmbeddingAtomDiag`.
         
-    kweight : class
-        The class that sets the integral weights at each k-point on the 
-        lattice. It must have a method 
-        ``update_weights(energies, **kweight_param)``, where the energies 
-        are a dictionary with each key a list. 
+    update_weights : callable
+        The function that gives the integral weights at each k-point on the 
+        lattice. It is called as ``update_weights(energies, **kweight_param)``, 
+        where the energies are a dictionary with each key a list. 
         See class :class:`risb.kweight.SmearingKWeight`.
 
     symmetries : list[callable], optional
@@ -97,12 +96,12 @@ class LatticeSolver:
                  h0_k : MFType,
                  gf_struct : GfStructType,
                  embedding, 
-                 kweight,
+                 update_weights,
                  symmetries : list[Callable[[MFType], dict[MFType]]] | None = [],
                  force_real : bool = True,
                  R : dict[ArrayLike] | None = None,
                  Lambda : dict[ArrayLike] | None = None, 
-                 optimize : Any = None,
+                 optimize = None,
                  error_root : str = 'root'):
         
         self.h0_k = h0_k
@@ -110,7 +109,7 @@ class LatticeSolver:
         self.block_names = [bl for bl,_ in self.gf_struct]
         
         self.embedding = embedding
-        self.kweight = kweight
+        self.update_weights = update_weights
         
         #: dict[numpy.ndarray] : Renormalization matrix of electrons (unitary matrix 
         #: from c- to f-electrons at the mean-field level).
@@ -211,7 +210,7 @@ class LatticeSolver:
         embedding_param : dict, optional
             The kwarg arguments to pass to the embedding solver.
         kweight_param : dict, optional
-            The kwarg arguments to pass to the kweight solver.
+            The kwarg arguments to pass to `update_weights` function.
         
         Returns
         -------
@@ -234,7 +233,7 @@ class LatticeSolver:
         for bl in self.block_names:
             self.energies_qp[bl], self.bloch_vector_qp[bl] = helpers.get_h_qp(self.R[bl], self.Lambda[bl], self.h0_k[bl])
         
-        self.wks = self.kweight.update_weights(self.energies_qp, **kweight_param)
+        self.wks = self.update_weights(self.energies_qp, **kweight_param)
 
         for bl in self.block_names:
             h0_R = helpers.get_h0_R(self.R[bl], self.h0_k[bl], self.bloch_vector_qp[bl])
@@ -302,7 +301,7 @@ class LatticeSolver:
         embedding_param : dict, optional
             kwarg options to pass to ``embedding.solve``.
         kweight_param : dict, optional
-            kwarg options to pass to ``kweight.update_weight``. 
+            kwarg options to pass to `update_weights` function. 
 
         Returns
         -------
