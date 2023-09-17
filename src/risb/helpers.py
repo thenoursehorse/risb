@@ -19,7 +19,7 @@ import numpy as np
 from scipy.linalg import sqrtm
 from scipy.linalg import inv
 #from scipy.linalg import pinv
-from scipy.special import binom
+#from scipy.special import binom
 
 ## Formula is (1-A)^{-1/2} = sum_r=0^{infty} (-1)^r * 1/2 choose r * A^r
 #def one_sqrtm_inv(A, tol=np.finfo(float).eps, N=10000):
