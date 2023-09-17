@@ -85,8 +85,8 @@ class LatticeSolver:
         ``root(fun, x0, args=(embedding_param, kweight_param, False)``. 
         Defaults to ``solve`` method of :class:`.DIIS`.
 
-    error_root : str, optional
-        At each self-consistent cycle, whether the error is 
+    error_fun : str, optional
+        At each self-consistent cycle, whether the returned error function is 
         'root' : f1 and f2 root functions
         'recursion' : the difference between consecutive `Lambda` and `R`.
         Defaults to 'root'.
@@ -102,7 +102,7 @@ class LatticeSolver:
                  R : dict[ArrayLike] | None = None,
                  Lambda : dict[ArrayLike] | None = None, 
                  root = None,
-                 error_root : str = 'root'):
+                 error_fun : str = 'root'):
         
         self.h0_k = h0_k
         self.gf_struct = gf_struct
@@ -128,7 +128,7 @@ class LatticeSolver:
  
         self.symmetries = symmetries
         self.force_real = force_real
-        self.error_root = error_root
+        self.error_fun = error_fun
         
         #: dict[numpy.ndarray] : Bath coupling of impurity.
         self.Lambda_c = dict()
@@ -212,9 +212,9 @@ class LatticeSolver:
         Lambda_new, R_new, f1, f2  = self.one_cycle(embedding_param, kweight_param)
         x_new = self._flatten(Lambda_new, R_new)
         
-        if self.error_root == 'root':
+        if self.error_fun == 'root':
             x_error = self._flatten(f2, f1)
-        elif self.error_root == 'recursion':
+        elif self.error_fun == 'recursion':
             x_error = x - x_new
         else:
             raise ValueError('Unrecognized error functions for root !')
