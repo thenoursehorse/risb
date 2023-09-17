@@ -40,7 +40,7 @@ from scipy.linalg import inv
 #    return one_sqrtm_inv(A=pdensity, tol=tol, N=N) @ one_sqrtm_inv(A=hdensity, tol=tol, N=N)
 
 def get_d(pdensity : np.ndarray, 
-          ke : np.ndarray):
+          ke : np.ndarray) -> np.ndarray:
     """
     Parameters
     ----------
@@ -67,7 +67,10 @@ def get_d(pdensity : np.ndarray,
     K_sq_inv = inv(K_sq)
     return K_sq_inv @ ke.T
 
-def get_lambda_c(pdensity, R, Lambda, D):
+def get_lambda_c(pdensity : np.ndarray, 
+                 R : np.ndarray, 
+                 Lambda: np.ndarray, 
+                 D: np.ndarray) -> np.ndarray:
     """
     Parameters
     ----------
@@ -101,7 +104,10 @@ def get_lambda_c(pdensity, R, Lambda, D):
     K_sq_inv = inv(K_sq)
     return -np.real( (R @ D).T @ K_sq_inv @ P ).T - Lambda
 
-def get_lambda(R, D, Lambda_c, Nf):
+def get_lambda(R : np.ndarray, 
+               D : np.ndarray, 
+               Lambda_c : np.ndarray, 
+               Nf : np.ndarray) -> np.ndarray:
     """
     Parameters
     ----------
@@ -137,7 +143,7 @@ def get_lambda(R, D, Lambda_c, Nf):
     return -np.real( (R @ D).T @ K_sq_inv @ P ).T - Lambda_c
     #return -np.real( (R @ D).T @ K_sq_inv @ P ) - Lambda_c 
 
-def get_r(Mcf, Nf):
+def get_r(Mcf : np.ndarray, Nf : np.ndarray) -> np.ndarray:
     """
     Parameters
     ----------
@@ -164,7 +170,7 @@ def get_r(Mcf, Nf):
     K_sq_inv = inv(K_sq)
     return (Mcf @ K_sq_inv).T
 
-def get_f1(Mcf, pdensity, R):
+def get_f1(Mcf : np.ndarray, pdensity : np.ndarray, R : np.ndarray) -> np.ndarray:
     """
     Parameters
     ----------
@@ -191,7 +197,7 @@ def get_f1(Mcf, pdensity, R):
     K_sq = sqrtm(K)
     return Mcf - R.T @ K_sq
 
-def get_f2(Nf, pdensity):
+def get_f2(Nf : np.ndarray, pdensity : np.ndarray) -> np.ndarray:
     """
     Parameters
     ----------
@@ -213,7 +219,10 @@ def get_f2(Nf, pdensity):
     """
     return Nf - pdensity.T
 
-def get_h_qp(R, Lambda, h0_kin_k, mu=0):
+def get_h_qp(R : np.ndarray, 
+             Lambda : np.ndarray, 
+             h0_kin_k : np.ndarray, 
+             mu : float = 0) -> tuple[ np.ndarray, np.ndarray ]:
     """
     Construct eigenvalues and eigenvectors of the quasiparticle Hamiltonian.
     
@@ -248,7 +257,7 @@ def get_h_qp(R, Lambda, h0_kin_k, mu=0):
     eig, vec = np.linalg.eigh(h_qp)
     return (eig, vec)
 
-def get_h0_R(R, h0_kin_k, vec):
+def get_h0_R(R : np.ndarray, h0_kin_k : np.ndarray, vec : np.ndarray) -> np.ndarray:
     """
     Parameters
     ----------
@@ -273,7 +282,7 @@ def get_h0_R(R, h0_kin_k, vec):
     return np.einsum('kac,cd,kdb->kab', h0_kin_k, R.conj().T, vec)
 
 #\sum_n \sum_k [A_k P_k]_{an} [D_k]_n  [P_k^+ B_k]_{nb}
-def get_pdensity(vec, wks, P=None):
+def get_pdensity(vec : np.ndarray, wks : np.ndarray, P : np.ndarray | None = None) -> np.ndarray:
     """
     Parameters
     ----------
@@ -307,7 +316,7 @@ def get_pdensity(vec, wks, P=None):
         middle = np.einsum('kan,kn,knb->kab', vec, wks, vec_dag)
         return np.real( np.sum(P @ middle @ P_dag, axis=0).T )
 
-def get_ke(h0_kin_R, vec, wks, P=None):
+def get_ke(h0_kin_R : np.ndarray, vec : np.ndarray, wks : np.ndarray, P : np.ndarray | None = None) -> np.ndarray:
     """
     Parameters
     ----------
