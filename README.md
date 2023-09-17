@@ -97,14 +97,6 @@ nox -s pytest -v
 See test_one_band_cubic.py and test_two_band_cubic_bilayer.py in 
 test/python for examples.
 
-## Embedding solvers
-
-* Sparse exact diagaonalization ([embedding_ed](https://github.com/thenoursehorse/embedding_ed))
-
-## k-space integrators
-
-* Linear tetrahedron ([k-int](https://github.com/thenoursehorse/kint))
-
 ## To do
 
 * Add EmbeddingAtomDiag tests
