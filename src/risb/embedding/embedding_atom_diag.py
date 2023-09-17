@@ -17,8 +17,14 @@
 
 import numpy as np
 from itertools import product
+from typing import TypeAlias, TypeVar
+from numpy.typing import ArrayLike
 from triqs.atom_diag import AtomDiag, act
 from triqs.operators import Operator, c, c_dag
+
+GfStructType : TypeAlias = list[tuple[str,int]]
+OpType = TypeVar('OpType')
+MFType : TypeAlias = dict[ArrayLike]
 
 class EmbeddingAtomDiag:
     """
@@ -37,7 +43,8 @@ class EmbeddingAtomDiag:
     """
 
     def __init__(self, 
-                 h_loc, gf_struct):
+                 h_loc : OpType, 
+                 gf_struct : GfStructType) -> None:
         
         #: triqs.operators.Operator : Local Hamiltonian.
         self.h_loc = h_loc
@@ -76,22 +83,22 @@ class EmbeddingAtomDiag:
 
 
     @staticmethod
-    def _bl_loc_to_bath(bl):
+    def _bl_loc_to_bath(bl : str) -> str:
         return 'bath_'+bl
     
     @staticmethod
-    def _bl_bath_to_loc(bl):
+    def _bl_bath_to_loc(bl : str) -> str:
         return bl.replace('bath_', '')
     
     @staticmethod
-    def _fops_from_gf_struct(gf_struct):
+    def _fops_from_gf_struct(gf_struct : GfStructType) -> list[tuple[str, int]]:
         return [(bl,i) for bl, bl_size in gf_struct for i in range(bl_size)]
     
     @staticmethod
-    def _dict_gf_struct(gf_struct):
+    def _dict_gf_struct(gf_struct : GfStructType) -> dict[str, int]:
         return {bl: bl_size for bl, bl_size in gf_struct}
     
-    def set_h_bath(self, Lambda_c):
+    def set_h_bath(self, Lambda_c : MFType) -> None:
         """
         Sets the bath terms in the impurity Hamiltonian.
         
@@ -106,7 +113,7 @@ class EmbeddingAtomDiag:
             for a,b in product(range(bl_bath_size), range(bl_bath_size)):
                 self.h_bath += Lambda_c[bl][a,b] * c(bl_bath,b) * c_dag(bl_bath,a)
 
-    def set_h_hybr(self, D):
+    def set_h_hybr(self, D : MFType) -> None:
         """
         Sets the hybridization terms in the impurity Hamiltonian.
         
@@ -123,7 +130,10 @@ class EmbeddingAtomDiag:
                 self.h_hybr += D[bl][a,alpha] * c_dag(bl,alpha) * c(bl_bath,a)
                 self.h_hybr += np.conj(D[bl][a,alpha]) * c_dag(bl_bath,a) * c(bl,alpha)
 
-    def set_h_emb(self, Lambda_c, D, mu=None):
+    def set_h_emb(self, 
+                  Lambda_c : MFType, 
+                  D : MFType, 
+                  mu : float | None = None) -> None:
         """
         Sets the terms in the impurity Hamiltonian to solve the embedding problem.
         
@@ -146,7 +156,7 @@ class EmbeddingAtomDiag:
                     self.h_emb -= mu * c_dag(bl,alpha) * c(bl,alpha)
 
     # TODO other restrictions, like none, for testing.
-    def solve(self, fixed='half'):
+    def solve(self, fixed : str = 'half') -> None:
         """
         Solve for the groundstate in the half-filled number sector of the 
         embedding problem.
@@ -167,7 +177,7 @@ class EmbeddingAtomDiag:
         else:
             raise ValueError('Unrecognized fixed particle number !')
         
-    def get_nf(self, bl):
+    def get_nf(self, bl : str) -> np.ndarray:
         """
         Parameters
         ----------
@@ -187,7 +197,7 @@ class EmbeddingAtomDiag:
             Nf[a,b] = self.overlap(Op, force_real=True)
         return Nf
     
-    def get_nc(self, bl):
+    def get_nc(self, bl : str) -> np.ndarray:
         """
         Parameters
         ----------
@@ -206,7 +216,7 @@ class EmbeddingAtomDiag:
             Nc[alpha,beta] = self.overlap(Op, force_real=True)
         return Nc
     
-    def get_mcf(self, bl):
+    def get_mcf(self, bl : str) -> np.ndarray:
         """
         Parameters
         ----------
@@ -227,7 +237,7 @@ class EmbeddingAtomDiag:
             Mcf[alpha,a] = self.overlap(Op, force_real=False)
         return Mcf
     
-    def overlap(self, Op, force_real=True):
+    def overlap(self, Op : OpType, force_real : bool = True) -> float | complex:
         """
         Calculate the expectation value of an operator against the ground state of 
         the embedding problem.
@@ -252,7 +262,7 @@ class EmbeddingAtomDiag:
             return res
         
     @property
-    def Nf(self):
+    def Nf(self) -> MFType:
         """
         dict[numpy.ndarray] : f-electron density matrix.
         """
@@ -262,7 +272,7 @@ class EmbeddingAtomDiag:
         return Nf
 
     @property
-    def Nc(self):
+    def Nc(self) -> MFType:
         """
         dict[numpy.ndarray] : c-electron density matrix.
         """
@@ -272,7 +282,7 @@ class EmbeddingAtomDiag:
         return Nc
     
     @property
-    def Mcf(self):
+    def Mcf(self) -> MFType:
         """
         dict[numpy.ndarray] : Density matrix of hybridization terms (c- and f-electrons).
         """
