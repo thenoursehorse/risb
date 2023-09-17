@@ -73,13 +73,13 @@ class EmbeddingAtomDiag:
         self.ad = None
 
         #: triqs.operators.Operator : Embedding Hamiltonian.
-        self.h_emb = None
+        self.h_emb : OpType = Operator()
         
         #: triqs.operators.Operator : Bath terms in `h_emb`.
-        self.h_bath = None
+        self.h_bath : OpType = Operator()
         
         #: triqs.operators.Operator : Hybridization terms in `h_emb`.
-        self.h_hybr = None
+        self.h_hybr : OpType = Operator()
 
 
     @staticmethod
@@ -107,7 +107,7 @@ class EmbeddingAtomDiag:
         Lambda_c : optional, dict of ndarray
             Bath coupling. Each key in dictionary must follow `gf_struct`.
         """
-        self.h_bath = Operator()
+        self.h_bath : OpType = Operator()
         for bl_bath, bl_bath_size in self.gf_struct_bath:
             bl = self._bl_bath_to_loc(bl_bath)
             for a,b in product(range(bl_bath_size), range(bl_bath_size)):
@@ -122,7 +122,7 @@ class EmbeddingAtomDiag:
         D : dict[numpy.ndarray]
             Hybridization coupling. Each key in dictionary must follow `gf_struct`.
         """
-        self.h_hybr = Operator()
+        self.h_hybr : OpType = Operator()
         for bl, loc_size in self.gf_struct:
             bl_bath = self._bl_loc_to_bath(bl)
             bath_size = self.gf_struct_bath_dict[bl_bath]
