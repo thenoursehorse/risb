@@ -39,7 +39,12 @@ exclude_patterns = [
 ]
 
 html_theme = "furo"
-#html_title = "risb"
+html_title = "risb" + version
+html_theme_options = {
+    "source_repository": "https://github.com/thenoursehorse/risb/",
+    "source_branch": "3.2.x",
+    "source_directory": "docs/",
+}
 
 myst_enable_extensions = [
     "colon_fence",

@@ -1,4 +1,4 @@
-# RISB loop
+# {abbr}`RISB (rotationally invariant slave-bosons)` loop
 
 ## Introduction
 
@@ -189,7 +189,9 @@ def make_h_loc(V = 0.25, U = 5):
 
 ## C: Setup mean-field matrices
 
-We now need to initialize the mean-field matrices used in RISB. In RISB the
+We now need to initialize the mean-field matrices used in 
+{abbr}`RISB (rotationally invariant slave-bosons)`. In 
+{abbr}`RISB (rotationally invariant slave-bosons)` the
 homogenous assumption is taken, so that the matrices are the same on every site.
 Below we describe what each mean-field matrix physically relates to within 
 the algorithm.
@@ -299,7 +301,8 @@ for bl, bl_size in gf_struct:
 
 ## D: The $k$-space integrator
 
-Next you will specify how k-space integrals are performed. RISB requires 
+Next you will specify how k-space integrals are performed. 
+{abbr}`RISB (rotationally invariant slave-bosons)` requires 
 integrating many mean-field matrices. The way to do this that generalizes to 
 many kinds of $k$-space integration methods is to 
 find the weight of the integral at each $k$-point. This is, e.g., how 
@@ -446,17 +449,20 @@ $n = 1.88$ (Fig. 10)?
 
 ## Conclusion
 
-You have built the self-consistent loop for RISB and solved a (not so simple) 
+You have built the self-consistent loop for 
+{abbr}`RISB (rotationally invariant slave-bosons)` and solved a (not so simple) 
 interacting fermion problem. The code in `LatticeSolver` is not much more 
 complicated than what you have done. You should now easily be able to mofify, 
 implement, and contribute to any parts in the library. You also now understand 
 the basic ingredients needed for most self-consistent procedures in much 
-more sophisticated codes for DFT and DMFT.
+more sophisticated codes for {abbr}`DFT (density functional theory)` and 
+{abbr}`DMFT dynamical mean-field theory`.
 
 Below is some code that should be very easy to fill in. But you will understand 
-much more about RISB if you try to piece everything together from the 
+much more about {abbr}`RISB (rotationally invariant slave-bosons)` 
+if you try to piece everything together from the 
 self-consistent equations found in the literature found in 
-[About]({% link about.md %})
+[About](../about)
 
 ### Skeleton code cheat sheet
 

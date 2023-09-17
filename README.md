@@ -18,34 +18,34 @@ and for the tests
 
 ## Installation
 
+(Optional) Create a 
+[virtual environment](https://packaging.python.org/en/latest/tutorials/installing-packages/#creating-virtual-environments).
+
 Clone source
 
-```
+```shell
 git clone https://github.com/thenoursehorse/risb
 cd risb
 ```
 
 ### With pipx
 
-```
+```shell
 pipx install .
 ```
 
 To develop code without reinstalling
 
-```
+```shell
 pipx install --editable .
 ```
 
 ### With pip
 
-(Optional) Create a 
-[virtual environment](https://packaging.python.org/en/latest/tutorials/installing-packages/#creating-virtual-environments).
-
 Install from local (-e allows to develop code without reinstalling, omit if
 not editing the source code)
 
-```
+```shell
 python3 -m pip install -e ./
 ```
 
@@ -62,14 +62,14 @@ pull the TRIQS [docker from the hub](https://hub.docker.com/r/flatironinstitute/
 and install risb. Using the Docker image will be the same as the instructions 
 for TRIQS (e.g., Jupyter). To connect to the Jupyter notebook it is 
 
-```
+```shell
 localhost:8888/?token=put/token/here
 ```
 
 You can find the token by attaching a shell to the container 
 and running
 
-```
+```shell
 jupyter server list
 ```
 
@@ -82,7 +82,7 @@ system.
 
 Tests are run with
 
-```
+```shell
 python3 -m pytest -v
 ```
 

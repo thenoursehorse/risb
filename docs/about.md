@@ -1,9 +1,5 @@
 # About
 
-:::{tip}
-Let's give readers a helpful hint!
-:::
-
 ## Authors
 
 Originally authored by 
@@ -12,23 +8,13 @@ H. L. Nourse (The University of Queensland)
 
 during PhD with advisors
 
-B. J. Powell (The University of Queensland), 
+[B. J. Powell](https://people.smp.uq.edu.au/BenPowell/) (The University of Queensland), 
 
-R. H. McKenzie (The University of Queensland)
+[R. H. McKenzie](https://condensedconcepts.blogspot.com/) (The University of Queensland)
 
 Maintained by
 
 [@thenoursehorse](https://github.com/thenoursehorse) H. L. Nourse (Okinawa Institute of Science and Technology)
-
-Contributors
-
-<ul class="list-style-none">
-{% for contributor in site.github.contributors %}
-  <li class="d-inline-block mr-1">
-     <a href="{{ contributor.html_url }}"><img src="{{ contributor.avatar_url }}" width="32" height="32" alt="{{ contributor.login }}"/></a>
-  </li>
-{% endfor %}
-</ul>
 
 ## Original theory
 
