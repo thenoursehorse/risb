@@ -18,6 +18,6 @@ class LinearMixing(NewtonSolver):
     def update_x(self, 
                  x : ArrayLike, 
                  g_x : ArrayLike, 
-                 error : None = None, 
-                 alpha : float = 1.0):
+                 error : ArrayLike | None = None, 
+                 alpha : float = 1.0) -> ArrayLike:
         return x + alpha * (g_x - x)
