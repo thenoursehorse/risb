@@ -102,7 +102,7 @@ class LatticeSolver:
                  R : dict[ArrayLike] | None = None,
                  Lambda : dict[ArrayLike] | None = None, 
                  root = None,
-                 error_fun : str = 'root'):
+                 error_fun : {'root', 'recursion'} = 'root'):
         
         self.h0_k = h0_k
         self.gf_struct = gf_struct
