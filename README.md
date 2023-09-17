@@ -86,12 +86,6 @@ Tests are run with
 python3 -m pytest -v
 ```
 
-or
-
-```
-nox -s pytest -v
-```
-
 ## Examples
 
 See test_one_band_cubic.py and test_two_band_cubic_bilayer.py in 
