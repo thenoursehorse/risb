@@ -104,7 +104,7 @@ class EmbeddingAtomDiag:
         
         Parameters
         ----------
-        Lambda_c : optional, dict of ndarray
+        Lambda_c : dict of ndarray, optional
             Bath coupling. Each key in dictionary must follow `gf_struct`.
         """
         self.h_bath : OpType = Operator()

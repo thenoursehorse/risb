@@ -8,9 +8,12 @@ RUN pip3 install sphinx sphinx-autobuild \
   furo
 
 # Build documentation
-#RUN sphinx-apidoc -o api/ --module-first --no-toc --force ../src/risb
+#RUN sphinx-apidoc
 #CMD nox -s docs -- --serve
 
 EXPOSE 8000
-#RUN sphinx-apidoc -o $BUILD/$APPNAME/docs/api --module-first --no-toc --force src/risb
-CMD sphinx-autobuild -b html --host 0.0.0.0 --port 8000 -n -T -b=html /etc/sphinx/src/ /etc/sphinx/build
+#RUN sphinx-apidoc -o $BUILD/$APPNAME/docs/api --module-first --no-toc --force --separate src/risb
+#CMD sphinx-autobuild -b html --host 0.0.0.0 --port 8000 -n -T -b=html /etc/sphinx/src/ /etc/sphinx/build
+
+# FIXME autodoc requires package installed, so to use this Dockerfile to generate the documentation we need
+# to use autodoc2 instead, which just parses the stuff. But I don't really like how autodoc2 looks.

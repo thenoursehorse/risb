@@ -101,6 +101,7 @@ def build_api_docs(session: nox.Session) -> None:
         "--module-first",
         "--no-toc",
         "--force",
+        "--separate",
         f"../src/{__project_slug}",
     )
 

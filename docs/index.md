@@ -19,6 +19,8 @@ tutorials/index
  
 api/risb
 ```
+%api/risb
+%apidocs/index
 
 ## Indices and tables
 

@@ -102,3 +102,5 @@ EXPOSE 8000
 ENV APPNAME=$APPNAME
 RUN sphinx-apidoc -o $BUILD/$APPNAME/docs/api --module-first --no-toc --force src/risb
 CMD sphinx-autobuild -b html --host 0.0.0.0 --port 8000 -n -T -b=html $BUILD/$APPNAME/docs $BUILD/$APPNAME/docs/_build
+
+# I wish autodoc2 made better API documementation !

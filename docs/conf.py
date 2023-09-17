@@ -12,20 +12,28 @@ except:
 
 extensions = [
     "myst_parser",
-    "sphinx.ext.autodoc",
     "sphinx.ext.extlinks",
     "sphinx.ext.intersphinx",
     "sphinx.ext.mathjax",
     "sphinx.ext.todo",
     "sphinx.ext.napoleon",
     "sphinx.ext.viewcode",
-    "sphinx.ext.autosummary",
     "sphinx_autodoc_typehints",
     "sphinx_copybutton",
-    #"furo.sphinxext" # furo says only for their docs, but the toc left pane does not work as I like without this
+    #"autodoc2",
+    "sphinx.ext.autodoc",
+    "sphinx.ext.autosummary",
 ]
 
-# Don't show typehints/annotations
+#autodoc2_packages = [
+#    "../src/risb",
+#]
+#
+#autodoc2_hidden_objects = [
+#    "private",
+#]
+
+## Don't show typehints/annotations
 autodoc_typehints = "none"
 
 source_suffix = [".rst", ".md"]
