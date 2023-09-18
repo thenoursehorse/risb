@@ -27,7 +27,7 @@ class DIIS(NewtonSolver):
     Parameters
     ----------
     n_period : int, optional
-        Take a linear mixing step afer this many iterations. Default 
+        Take a single linear mixing step afer this many iterations. Default 
         round(history_size / 2).
 
     Notes
@@ -49,11 +49,11 @@ class DIIS(NewtonSolver):
         self.solve = super().solve
 
     @staticmethod
-    def _extrapolate(x : list[ArrayLike], 
+    def extrapolate(x : list[ArrayLike], 
                      g_x : list[ArrayLike], 
                      error : list[ArrayLike]) -> np.ndarray:
         """
-        The DIIS extrapolation algorithm for the new guess for x.
+        The DIIS extrapolation algorithm for the new guess for :attr:`x`.
         """
         
         # Construct the B matrix
@@ -93,6 +93,6 @@ class DIIS(NewtonSolver):
             x_opt = x + alpha*(g_x-x)
         else:
             # Do DIIS
-            x_opt = self._extrapolate(self.x, self.g_x, self.error)
+            x_opt = self.extrapolate(self.x, self.g_x, self.error)
 
         return x_opt

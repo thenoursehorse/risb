@@ -28,11 +28,11 @@ class SmearingKWeight:
     beta : float
         Inverse temperature
     mu : float or None, optional
-        Chemical potential. One of `mu` or `n_target` needs to be provided.
+        Chemical potential. One of :attr:`mu` or :attr:`n_target` needs to be provided.
     n_target : float or None, optional
-        Target lattice filling per unit cell. One of `mu` or `n_target` needs to be 
-        provided.
-    method : str, {fermi, gaussian, methfessel-paxton}
+        Target lattice filling per unit cell. One of :attr:`mu` or :attr:`n_target` 
+        needs to be provided.
+    method : str, 'fermi' | 'gaussian' | 'methfessel-paxton'
         Smearing method.
     """
     
@@ -126,7 +126,8 @@ class SmearingKWeight:
         
         Returns
         -------
-        weights : dict[numpy.ndarray]
+        dict[numpy.ndarray]
+            Integration weights at each k-point in each band.
         """
         self.energies = energies
         self._update_n_k()

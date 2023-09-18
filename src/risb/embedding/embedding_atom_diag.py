@@ -28,7 +28,8 @@ MFType : TypeAlias = dict[ArrayLike]
 
 class EmbeddingAtomDiag:
     """
-    Impurity solver of embedding space using atom_diag from TRIQS."
+    Impurity solver of embedding space using :class:`triqs.atom_diag.AtomDiag` 
+    from TRIQS.
 
     Parameters
     ----------
@@ -66,19 +67,20 @@ class EmbeddingAtomDiag:
         self.gf_struct_bath_dict = self._dict_gf_struct(self.gf_struct_bath)
         self.gf_struct_emb_dict = self._dict_gf_struct(self.gf_struct_emb)
 
-        #: triqs.atom_diag vacuum : Ground state of the embedding problem.
+        #: triqs.atom_diag.AtomDiag vacuum : Ground state of the embedding problem.
         self.gs_vec = None
         
-        #: The TRIQS AtomDiag instance. See atom_diag in the TRIQS manual.
+        #: The TRIQS AtomDiag instance. See :class:`triqs.atom_diag.AtomDiag` in the TRIQS manual.
         self.ad = None
 
-        #: triqs.operators.Operator : Embedding Hamiltonian.
+        #: triqs.operators.Operator : Embedding Hamiltonian. It is the sum of
+        #: :attr:`h_loc`, :attr:`h_hybr`, and :attr:`h_bath`.
         self.h_emb : OpType = Operator()
         
-        #: triqs.operators.Operator : Bath terms in `h_emb`.
+        #: triqs.operators.Operator : Bath terms in :attr:`h_emb`.
         self.h_bath : OpType = Operator()
         
-        #: triqs.operators.Operator : Hybridization terms in `h_emb`.
+        #: triqs.operators.Operator : Hybridization terms in :attr:`h_emb`.
         self.h_hybr : OpType = Operator()
 
 
@@ -105,7 +107,7 @@ class EmbeddingAtomDiag:
         Parameters
         ----------
         Lambda_c : dict of ndarray, optional
-            Bath coupling. Each key in dictionary must follow `gf_struct`.
+            Bath coupling. Each key in dictionary must follow ``gf_struct``.
         """
         self.h_bath : OpType = Operator()
         for bl_bath, bl_bath_size in self.gf_struct_bath:
@@ -120,7 +122,7 @@ class EmbeddingAtomDiag:
         Parameters
         ----------
         D : dict[numpy.ndarray]
-            Hybridization coupling. Each key in dictionary must follow `gf_struct`.
+            Hybridization coupling. Each key in dictionary must follow ``gf_struct``.
         """
         self.h_hybr : OpType = Operator()
         for bl, loc_size in self.gf_struct:
@@ -140,9 +142,9 @@ class EmbeddingAtomDiag:
         Parameters
         ----------
         Lambda_c : dict[numpy.ndarray]
-            Bath coupling. Each key in dictionary must follow `gf_struct`.
+            Bath coupling. Each key in dictionary must follow ``gf_struct``.
         D : dict[numpy.ndarray]
-            Hybridization coupling. Each key in dictionary must follow `gf_struct`.
+            Hybridization coupling. Each key in dictionary must follow ``gf_struct``.
         """
         self.set_h_bath(Lambda_c)
         self.set_h_hybr(D)
@@ -164,8 +166,9 @@ class EmbeddingAtomDiag:
         Parameters
         ----------
         fixed : {'half'}
-            How the Hilbert space is restricted. For fixed = 'half' 
-            atom_diag will be passed n_min = n_max = half-filled.
+            How the Hilbert space is restricted. For ``fixed = 'half'`` 
+            :class:`triqs.atom_diag.AtomDiag` will be passed 
+            ``n_min = n_max = half-filled``.
         """
         if fixed == 'half':
             # FIXME for ghost does this need to be different?
@@ -182,12 +185,12 @@ class EmbeddingAtomDiag:
         Parameters
         ----------
         bl : str
-            Which block in `gf_struct` to return.
+            Which block in ``gf_struct`` to return.
 
         Returns
         -------
         numpy.ndarray
-            The f-electron density matrix from impurity.
+            The f-electron density matrix :attr:`Nf` from impurity.
         """
         bl_bath = self._bl_loc_to_bath(bl)
         bl_size = self.gf_struct_bath_dict[bl_bath]
@@ -202,12 +205,12 @@ class EmbeddingAtomDiag:
         Parameters
         ----------
         bl : str
-            Which block in `gf_struct` to return.
+            Which block in ``gf_struct`` to return.
         
         Returns
         -------
         numpy.ndarray
-            The c-electron density matrix from impurity.
+            The c-electron density matrix :attr:`Nc` from impurity.
         """
         bl_size = self.gf_struct_dict[bl]
         Nc = np.zeros([bl_size, bl_size])
@@ -221,12 +224,12 @@ class EmbeddingAtomDiag:
         Parameters
         ----------
         bl : str
-            Which block in `gf_struct` to return.
+            Which block in ``gf_struct`` to return.
 
         Returns
         -------
         numpy.ndarray
-            The c,f-electron hybridization density matrix from impurity.
+            The c,f-electron hybridization density matrix :attr:`Mcf` from impurity.
         """
         bl_bath = self._bl_loc_to_bath(bl)
         bath_size = self.gf_struct_bath_dict[bl_bath]

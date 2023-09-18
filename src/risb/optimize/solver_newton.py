@@ -49,13 +49,13 @@ class NewtonSolver(ABC):
         self.verbose = verbose
         self.initialized = False
 
-        #: list[numpy.ndarray] : Solution to the root problem
+        #: list[numpy.ndarray] : History of guesses to the root problem.
         self.x : list[ArrayLike] = []
 
-        #: list[numpy.ndarray] : Result of fixed point function with `x` as the input.
+        #: list[numpy.ndarray] : History of fixed point function with ``x`` as the input.
         self.g_x : list[ArrayLike] = [] 
 
-        #: list[numpy.ndarray] : Error vector of `x`.
+        #: list[numpy.ndarray] : History of error vector of ``x``.
         self.error : list[ArrayLike] = []
 
         #: int : Iteration counter for solver.
@@ -64,7 +64,7 @@ class NewtonSolver(ABC):
         #: bool : Whether the solver converged to within tolerance.
         self.success : bool = False
         
-        # float : 2-norm of `error`.
+        # float : 2-norm of :attr:`error`.
         self.norm : float = np.inf
 
     @staticmethod
@@ -103,7 +103,7 @@ class NewtonSolver(ABC):
                  error : list[ArrayLike], 
                  alpha : float = 1.0) -> np.ndarray:
         """
-        A single iteration for the new guess for `x`.
+        A single iteration for the new guess for :attr:`x`.
         
         Parameters
         ----------
@@ -111,7 +111,7 @@ class NewtonSolver(ABC):
             Every guess for x in the history.
         g_x : list[numpy.ndarray]
             Every solution in the history to the fixed-point function, 
-            g(x), that gives a new x.
+            ``g(x)``, that gives a new ``x``.
         error : list[numpy.ndarray]
             Every error function in the history. This is often ``error = g_x - x``.
         alpha : float, optional
@@ -133,21 +133,21 @@ class NewtonSolver(ABC):
               alpha : float = 1) -> ArrayLike:
         """
         Find the root of a function. It is called similarly to 
-        scipy.optimize.root
+        :func:scipy.optimize.root
 
         Parameters
         ----------
 
         fun : callable
             The function to find the root of. It must be callable as 
-            fun(x, *args).
+            ``fun(x, *args)``.
         x0 : numpy.ndarray
             Initial guess of the parameters. This does not neccessarily have to 
             be flattened, but it usually is.
         args : tuple, optional
-            Additional arguments to pass to `fun`.
+            Additional arguments to pass to ``fun``.
         tol : float, optional
-            The tolerance. When the 2-norm difference of the return of `fun` 
+            The tolerance. When the 2-norm difference of the return of ``fun`` 
             is less than this, the solver stops.
         maxiter : int, optional
             Maximum number of iterations.
@@ -157,7 +157,7 @@ class NewtonSolver(ABC):
         Returns
         -------
         numpy.ndarray
-            Root of `fun`.
+            Root of ``fun``.
         """
 
         self.success = False
