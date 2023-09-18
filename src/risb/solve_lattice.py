@@ -87,10 +87,13 @@ class LatticeSolver:
 
     error_fun : str, optional
         At each self-consistent cycle, whether the returned error function is 
-        'root' : f1 and f2 root functions
-        'recursion' : the difference between consecutive `Lambda` and `R`.
+            - 'root' : f1 and f2 root functions
+            - 'recursion' : the difference between consecutive `Lambda` and `R`.
         Defaults to 'root'.
 
+    return_x_new : bool, optional
+        Whether to return a new guess for x and the error at each iteration or 
+        only the error.
     """
     def __init__(self, 
                  h0_k : MFType,
@@ -102,7 +105,9 @@ class LatticeSolver:
                  R : dict[ArrayLike] | None = None,
                  Lambda : dict[ArrayLike] | None = None, 
                  root = None,
-                 error_fun : {'root', 'recursion'} = 'root'):
+                 error_fun : {'root', 'recursion'} = 'root',
+                 return_x_new : bool = True,
+                 ):
         
         self.h0_k = h0_k
         self.gf_struct = gf_struct
@@ -129,6 +134,7 @@ class LatticeSolver:
         self.symmetries = symmetries
         self.force_real = force_real
         self.error_fun = error_fun
+        self.return_x_new = return_x_new
         
         #: dict[numpy.ndarray] : Bath coupling of impurity.
         self.Lambda_c = dict()
@@ -206,7 +212,7 @@ class LatticeSolver:
                         x : ArrayLike, 
                         embedding_param : dict[str, Any], 
                         kweight_param : dict[str, Any], 
-                        return_new : bool = True) -> np.ndarray | tuple[np.ndarray, np.ndarray]:
+                        ) -> np.ndarray | tuple[np.ndarray, np.ndarray]:
         
         self.Lambda, self.R = self._unflatten(x)
         Lambda_new, R_new, f1, f2  = self.one_cycle(embedding_param, kweight_param)
@@ -219,7 +225,7 @@ class LatticeSolver:
         else:
             raise ValueError('Unrecognized error functions for root !')
         
-        if return_new:
+        if self.return_x_new:
             return x_new, x_error
         else:
             return x_error
@@ -308,9 +314,9 @@ class LatticeSolver:
     def solve(self, 
               one_shot : bool = False, 
               tol : float = 1e-12, 
-              root_param : dict[str, Any] = {'maxiter': 1000, 'alpha': 1}, 
               embedding_param : dict[str, Any] = dict(), 
-              kweight_param : dict[str, Any] = dict()) -> None:
+              kweight_param : dict[str, Any] = dict(),
+              **kwargs) -> Any:
         """ 
         Solve for the renormalization matrix `R` and correlation potential
         matrix `Lambda`.
@@ -320,35 +326,31 @@ class LatticeSolver:
         one_shot : bool, optional
             True if the calcualtion is just one shot and not self consistent. 
             Default is False.
-        tol : float, optional
-            Convergence tolerance to pass to :meth:`root`.
-        root_param : dict, optional
-            kwarg options to pass to :meth:`root`.
         embedding_param : dict, optional
             kwarg options to pass to :meth:`embedding.solve`.
         kweight_param : dict, optional
-            kwarg options to pass to :meth:`update_weights`. 
+            kwarg options to pass to :meth:`update_weights`.
+        **kwargs
+            kwarg options to pass to :meth:`root`.
 
         Returns
         -------
-        Sets the self-consistent solutions `Lambda` and `R`.
+        x
+            The flattened x vector of `Lambda` and `R`. If using 
+            `scipy.optimize.root` the `scipy.optimize.OptimizeResult` 
+            object will be returned.
+        Also sets the self-consistent solutions `Lambda` and `R`.
         """
 
         if one_shot:
             self.Lambda, self.R, _, _ = self.one_cycle(embedding_param, kweight_param)
         
         else:
-            self.root(fun=self._target_function, 
-                      x0=self._flatten(self.Lambda, self.R), 
-                      args=(embedding_param, kweight_param),
-                      tol=tol,
-                      options=root_param)
-            #from scipy.optimize import root
-            #root_finder = root(fun=self._target_function, 
-            #                   x0=self._flatten(self.Lambda, self.R), 
-            #                   args=(embedding_param, kweight_param, False), 
-            #                   method='broyden1')
-
+            x = self.root(fun=self._target_function, 
+                          x0=self._flatten(self.Lambda, self.R), 
+                          args=(embedding_param, kweight_param),
+                          **kwargs)
+        return x
         
     @property
     def Z(self) -> MFType:

@@ -129,7 +129,8 @@ class NewtonSolver(ABC):
               x0 : ArrayLike, 
               args : tuple[Any, ...] = (), 
               tol : float = 1e-12, 
-              options : dict[str, Any] = {'maxiter': 1000, 'alpha': 1}) -> ArrayLike:
+              maxiter : int = 1000,
+              alpha : float = 1) -> ArrayLike:
         """
         Find the root of a function. It is called similarly to 
         scipy.optimize.root
@@ -148,28 +149,23 @@ class NewtonSolver(ABC):
         tol : float, optional
             The tolerance. When the 2-norm difference of the return of `fun` 
             is less than this, the solver stops.
-        options : 'maxiter' and 'alpha'
-            Additional options.
-                - maxiter : int, Maximum number of iterations.
-                - alpha : float, Step size.
+        maxiter : int, optional
+            Maximum number of iterations.
+        alpha : float, optional
+            Step size for linear-mixing.
         
         Returns
         -------
         numpy.ndarray
             Root of `fun`.
-        
         """
-        if 'maxiter' not in options:
-            options['maxiter'] = 1000
-        if 'alpha' not in options:
-            options['alpha'] = 1
 
         self.success = False
         x = deepcopy(x0)
         if self.history_size > 0:
             self._insert_vector(self.x, x, self.history_size)
 
-        for self.n in range(options['maxiter']):
+        for self.n in range(maxiter):
         
             g_x, error = fun(x, *args)
             
@@ -184,7 +180,7 @@ class NewtonSolver(ABC):
                 self.success = True
                 break
 
-            x = self.update_x(x, g_x, error, options['alpha'])
+            x = self.update_x(x, g_x, error, alpha)
                             
             if (self.n % self.n_restart) == 0:
                 self.x = []
