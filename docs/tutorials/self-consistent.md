@@ -440,8 +440,8 @@ half-filling (Fig. 7)?
 1. What is the evolution of the electron filling in the 
 bonding/anti-bonding ($\pm$) basis?
 1. Implement a method to solve for the chemical potential $\mu$ at a fixed 
-electron density $n$ (you may find `brentq` or `bisect` from `scipy.optimize` 
-useful).
+electron density $n$ (you may find :py:func:`scipy.optimize.brentq` 
+or :py:func:`scipy.optimize.bisect` from :py:mod:`scipy.optimize` useful).
 1. What is the evolution of the quasiparticle weight at electron filling 
 $n = 1.88$ (Fig. 10)?
 
@@ -449,8 +449,8 @@ $n = 1.88$ (Fig. 10)?
 
 You have built the self-consistent loop for 
 {{RISB}} and solved a (not so simple) 
-interacting fermion problem. The code in `LatticeSolver` is not much more 
-complicated than what you have done. You should now easily be able to mofify, 
+interacting fermion problem. The code in :py:class:`risb.solve_lattice.LatticeSolver` 
+is not much more complicated than what you have done. You should now easily be able to mofify, 
 implement, and contribute to any parts in the library. You also now understand 
 the basic ingredients needed for most self-consistent procedures in much 
 more sophisticated codes for {{DFT}} and {{DMFT}}.

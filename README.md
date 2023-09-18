@@ -15,7 +15,7 @@ Documentation at [https://thenoursehorse.github.io/risb](https://thenoursehorse.
 
 ## Dependencies
 
-* [TRIQS](https://github.com/TRIQS/triqs) v3.2.x if using `EmbeddingAtomDiag`
+* [TRIQS](https://github.com/TRIQS/triqs) v3.2.x if using :class:`.EmbeddingAtomDiag`
 and for the tests
 * numpy
 * scipy
@@ -98,7 +98,7 @@ Install the prerequisites
 python3 -m pip install -e .[docs]
 ```
 
-Build the `API`
+Build the API
 
 ```shell
 sphinx-apidoc -o docs/api --module-first --no-toc --force --separate src/risb
