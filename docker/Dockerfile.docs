@@ -1,0 +1,19 @@
+FROM alpine:latest
+WORKDIR /etc/
+RUN mkdir -p /etc/sphinx/build
+
+RUN apk add --no-cache python3 py3-pip make
+RUN pip3 install sphinx sphinx-autobuild \
+  myst_parser sphinx_autodoc_typehints sphinx_copybutton linkify \
+  furo
+
+# Build documentation
+#RUN sphinx-apidoc
+#CMD nox -s docs -- --serve
+
+EXPOSE 8000
+#RUN sphinx-apidoc -o $BUILD/$APPNAME/docs/api --module-first --no-toc --force --separate src/risb
+#CMD sphinx-autobuild -b html --host 0.0.0.0 --port 8000 -n -T -b=html /etc/sphinx/src/ /etc/sphinx/build
+
+# FIXME autodoc requires package installed, so to use this Dockerfile to generate the documentation we need
+# to use autodoc2 instead, which just parses the stuff. But I don't really like how autodoc2 looks.

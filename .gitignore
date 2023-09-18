@@ -1,7 +1,20 @@
-compile_commands.json
-doc/cpp2rst_generated
-
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
 *$py.class
+
+*egg-info
+
+# From nox
+build
+_build
+.nox
+
+# From pytest
+.pytest_cache
+
+# From build
+src/risb/version.py
+
+# Potential auth keys
+.github.auth

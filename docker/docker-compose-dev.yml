@@ -1,0 +1,26 @@
+services:
+  risb:
+    image: risb-dev:3.2.x
+    container_name: risb
+    build:
+      context: ../
+      dockerfile: docker/Dockerfile.dev
+    ports:
+      - 8000:8000
+    volumes:
+      - "../:/src/risb:ro"
+    stdin_open: true # docker run -i
+    tty: true        # docker run -t
+
+  #sphinx:
+  #  image: risb-docs
+  #  container_name: risb-docs
+  #  build:
+  #    context: ../docs/
+  #    dockerfile: ../docker/Dockerfile.docs
+  #  ports:
+  #    - 8000:8000
+  #  volumes:
+  #    - "../docs/:/etc/sphinx/src:ro"
+      
+

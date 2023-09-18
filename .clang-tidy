@@ -1,2 +1,0 @@
-Checks: '-*,modernize-*,cppcoreguidelines-*,-modernize-use-trailing-return-type'
-HeaderFilterRegex: 'risb'

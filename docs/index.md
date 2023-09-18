@@ -1,9 +1,29 @@
----
-layout: default
-title: Home
----
+# Welcome
 
-Rotationally invariant slave-bosons (RISB) is a non-perturbative method to 
-approximately solve many-body fermionic problems. 
-This project is implemented using the  [TRIQS](https://triqs.github.io/) 
-library in order to handle second-quantized operators and Green's functions.
+:::{include} ../README.md
+:start-after: <!-- INDEX-START -->
+:end-before: <!-- INDEX-END -->
+:::
+
+```{toctree}
+:hidden:
+
+install
+about
+tutorials/index
+```
+
+```{toctree}
+:caption: API
+:hidden:
+ 
+api/risb
+```
+%api/risb
+%apidocs/index
+
+## Indices and tables
+
+- {ref}`genindex`
+- {ref}`modindex`
+- {ref}`search`
