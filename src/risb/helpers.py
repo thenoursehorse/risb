@@ -282,13 +282,13 @@ def get_h0_R(R : np.ndarray, h0_kin_k : np.ndarray, vec : np.ndarray) -> np.ndar
     return np.einsum('kac,cd,kdb->kab', h0_kin_k, R.conj().T, vec)
 
 #\sum_n \sum_k [A_k P_k]_{an} [D_k]_n  [P_k^+ B_k]_{nb}
-def get_pdensity(vec : np.ndarray, wks : np.ndarray, P : np.ndarray | None = None) -> np.ndarray:
+def get_pdensity(vec : np.ndarray, kweights : np.ndarray, P : np.ndarray | None = None) -> np.ndarray:
     """
     Parameters
     ----------
     vec : numpy.ndarray
         Eigenvectors of quasiparticle Hamiltonian.
-    wks : numpy.ndarray
+    kweights : numpy.ndarray
         Integration weights at each k-point for each band (eigenvector).
     P : numpy.ndarray, optional
         Projection matrix onto correlated subspace.
@@ -310,13 +310,13 @@ def get_pdensity(vec : np.ndarray, wks : np.ndarray, P : np.ndarray | None = Non
     """
     vec_dag = np.swapaxes(vec.conj(), -1, -2)
     if P is None:
-        return np.real( np.einsum('kan,kn,knb->ab', vec, wks, vec_dag).T )
+        return np.real( np.einsum('kan,kn,knb->ab', vec, kweights, vec_dag).T )
     else:
         P_dag = np.swapaxes(P.conj(), -2, 1)
-        middle = np.einsum('kan,kn,knb->kab', vec, wks, vec_dag)
+        middle = np.einsum('kan,kn,knb->kab', vec, kweights, vec_dag)
         return np.real( np.sum(P @ middle @ P_dag, axis=0).T )
 
-def get_ke(h0_kin_R : np.ndarray, vec : np.ndarray, wks : np.ndarray, P : np.ndarray | None = None) -> np.ndarray:
+def get_ke(h0_kin_R : np.ndarray, vec : np.ndarray, kweights : np.ndarray, P : np.ndarray | None = None) -> np.ndarray:
     """
     Parameters
     ----------
@@ -324,7 +324,7 @@ def get_ke(h0_kin_R : np.ndarray, vec : np.ndarray, wks : np.ndarray, P : np.nda
         Single-particle dispersion between local clusters.
     vec : numpy.ndarray
         Eigenvectors of quasiparticle Hamiltonian.
-    wks : numpy.ndarray
+    kweights : numpy.ndarray
         Integration weights at each k-point for each band (eigenvector).
     P : numpy.ndarray, optional
         Projection matrix onto correlated subspace.
@@ -343,8 +343,8 @@ def get_ke(h0_kin_R : np.ndarray, vec : np.ndarray, wks : np.ndarray, P : np.nda
     """
     vec_dag = np.swapaxes(vec.conj(), -1, -2)
     if P is None:
-        return np.einsum('kan,kn,knb->ab', h0_kin_R, wks, vec_dag)
+        return np.einsum('kan,kn,knb->ab', h0_kin_R, kweights, vec_dag)
     else:
         P_dag = np.swapaxes(P.conj(), -2, 1)
-        middle = np.einsum('kan,kn,knb->kab', h0_kin_R, wks, vec_dag)
+        middle = np.einsum('kan,kn,knb->kab', h0_kin_R, kweights, vec_dag)
         return np.sum(P @ middle @ P_dag, axis=0)
