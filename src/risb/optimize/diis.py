@@ -48,17 +48,20 @@ class DIIS(NewtonSolver):
 
         self.solve = super().solve
 
-    def _extrapolate(self) -> np.ndarray:
+    @staticmethod
+    def _extrapolate(x : list[ArrayLike], 
+                     g_x : list[ArrayLike], 
+                     error : list[ArrayLike]) -> np.ndarray:
         """
         The DIIS extrapolation algorithm for the new guess for x.
         """
         
         # Construct the B matrix
-        m = len(self.error)
+        m = len(error)
         B = np.empty(shape=(m,m))
         for i in range(m):
             for j in range(m):
-                B[i,j] = np.dot(self.error[i], self.error[j])
+                B[i,j] = np.dot(error[i], error[j])
 
         # Add the constraint lambda
         B = np.column_stack( ( B, -np.ones(B.shape[0]) ) )
@@ -72,9 +75,9 @@ class DIIS(NewtonSolver):
         c = np.dot(scipy.linalg.pinv(B), rhs)
         
         # Calculate optimal x(n)
-        x_opt = np.zeros(self.x[0].shape)
+        x_opt = np.zeros(x[0].shape)
         for i in range(m):
-            x_opt += c[i] * self.g_x[i]
+            x_opt += c[i] * g_x[i]
         return x_opt
 
     # x_i, error(x_i), g(x_i) where g(x_i) is the fixed-point function 
@@ -92,7 +95,7 @@ class DIIS(NewtonSolver):
         
         if ((self.n+1) % self.n_period == 0):
             # Do DIIS
-            x_opt = self._extrapolate()
+            x_opt = self._extrapolate(self.x, self.g_x, self.error)
         else:
             # Do linear mixing
             x_opt = x + alpha*(g_x-x)
