@@ -37,7 +37,7 @@ class LatticeSolver:
     ----------
     h0_k : dict[numpy.ndarray]
         Single-particle dispersion between local clusters. Each key 
-        in dictionary must follow `gf_struct`.
+        in dictionary must follow :attr:`gf_struct`.
 
     gf_struct : list of pairs [ (str,int), ...]
         Structure of the matrices. It must be a
@@ -79,21 +79,20 @@ class LatticeSolver:
 
     root : callable, optional
         The function that drives the self-consistent procedure. It is called
-        as ``root(fun, x0, args=, tol=, options=)``, where x0 is the initial 
-        guess vector, and fun is the function to minimize, 
-        where ``fun = self._target_function``. E.g., to use with `scipy` use 
-        ``root(fun, x0, args=(embedding_param, kweight_param, False)``. 
-        Defaults to ``solve`` method of :class:`.DIIS`.
+        as ``root(fun, x0, args=, tol=, options=)``, where ``x0`` is the initial 
+        guess vector, and ``fun`` is the function to minimize, 
+        where ``fun = self._target_function``.
+        Defaults to :meth:`.DIIS.solve` method of :class:`.DIIS`.
 
     error_fun : str, optional
         At each self-consistent cycle, whether the returned error function is 
             - 'root' : f1 and f2 root functions
-            - 'recursion' : the difference between consecutive `Lambda` and `R`.
+            - 'recursion' : the difference between consecutive :attr:`Lambda` and :attr:`R`.
         Defaults to 'root'.
 
     return_x_new : bool, optional
-        Whether to return a new guess for x and the error at each iteration or 
-        only the error.
+        Whether to return a new guess for ``x`` and the ``error`` at each iteration or 
+        only the ``error``. :func:`scipy.optimize.root` should only use the ``error``.
     """
     def __init__(self, 
                  h0_k : MFType,
@@ -157,7 +156,7 @@ class LatticeSolver:
 
         #: dict[numpy.ndarray] : k-space integration weights of the 
         #: quasiparticles in each band.
-        self.wks = dict()
+        self.kweights = dict()
         
         #: dict[numpy.ndarray] : Band energy of quasiparticles.
         self.energies_qp = dict()
@@ -171,7 +170,7 @@ class LatticeSolver:
     def root(self, *args, **kwargs) -> np.ndarray:
         """
         The root function that drives the self-consistent procedure. It 
-        is called the same as `scipy.optimize.root`.
+        is called the same as :func:`scipy.optimize.root`.
 
         Returns
         -------
@@ -182,7 +181,7 @@ class LatticeSolver:
     def update_weights(self, *args, **kwargs) -> dict[np.ndarray]:
         """
         The function that gives the k-space integration weights. It is 
-        called as ``update_weights(dict[numpy.ndarray, **params])``.
+        called as ``update_weights(dict[numpy.ndarray], **params)``.
 
         Returns
         -------
@@ -265,13 +264,13 @@ class LatticeSolver:
         for bl in self.block_names:
             self.energies_qp[bl], self.bloch_vector_qp[bl] = helpers.get_h_qp(self.R[bl], self.Lambda[bl], self.h0_k[bl])
         
-        self.wks = self.update_weights(self.energies_qp, **kweight_param)
+        self.kweights = self.update_weights(self.energies_qp, **kweight_param)
 
         for bl in self.block_names:
             h0_R = helpers.get_h0_R(self.R[bl], self.h0_k[bl], self.bloch_vector_qp[bl])
 
-            self.rho_qp[bl] = helpers.get_pdensity(self.bloch_vector_qp[bl], self.wks[bl])
-            self.lopsided_dispersion_qp[bl] = helpers.get_ke(h0_R, self.bloch_vector_qp[bl], self.wks[bl])
+            self.rho_qp[bl] = helpers.get_pdensity(self.bloch_vector_qp[bl], self.kweights[bl])
+            self.lopsided_dispersion_qp[bl] = helpers.get_ke(h0_R, self.bloch_vector_qp[bl], self.kweights[bl])
         
             self.D[bl] = helpers.get_d(self.rho_qp[bl], self.lopsided_dispersion_qp[bl])
             if self.force_real:
@@ -318,8 +317,8 @@ class LatticeSolver:
               kweight_param : dict[str, Any] = dict(),
               **kwargs) -> Any:
         """ 
-        Solve for the renormalization matrix `R` and correlation potential
-        matrix `Lambda`.
+        Solve for the renormalization matrix :attr:`R` and correlation potential
+        matrix :attr:`Lambda`.
 
         Parameters
         ----------
@@ -336,10 +335,10 @@ class LatticeSolver:
         Returns
         -------
         x
-            The flattened x vector of `Lambda` and `R`. If using 
-            `scipy.optimize.root` the `scipy.optimize.OptimizeResult` 
+            The flattened x vector of :attr:`Lambda` and :attr:`R`. If using 
+            :func:`scipy.optimize.root` the :class:`scipy.optimize.OptimizeResult` 
             object will be returned.
-        Also sets the self-consistent solutions `Lambda` and `R`.
+        Also sets the self-consistent solutions :attr:`Lambda` and :attr:`R`.
         """
 
         if one_shot:

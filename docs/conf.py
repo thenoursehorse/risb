@@ -18,7 +18,8 @@ extensions = [
     "sphinx.ext.todo",
     "sphinx.ext.napoleon",
     "sphinx.ext.viewcode",
-    "sphinx_autodoc_typehints",
+    # Type hinting just does not work nicely with such abstract objects
+    #"sphinx_autodoc_typehints",
     "sphinx_copybutton",
     #"autodoc2",
     "sphinx.ext.autodoc",
