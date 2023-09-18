@@ -90,6 +90,28 @@ Tests are run with
 python3 -m pytest -v
 ```
 
+## Documentation
+
+Install the prerequisites
+
+```shell
+python3 -m pip install -e .[docs]
+```
+
+Build the `API`
+
+```shell
+sphinx-apidoc -o docs/api --module-first --no-toc --force --separate src/risb
+```
+
+Serve
+
+```shell
+sphinx-autobuild -b html docs docs/_build
+```
+
+Access through a browser at `http://127.0.0.1:8000`.
+
 <!-- INSTALL-END -->
 
 ## Examples

@@ -38,10 +38,11 @@ version.fallback-version = "3.2.0"
 docs = [
   "furo",
   "myst_parser >=0.13",
+  "myst-parser[linkify]",
   "sphinx >=4.0",
+  "sphinx-autobuild",
   "sphinx-copybutton",
   "sphinx-autodoc-typehints",
-  "linkify",
 ]
 
 [tool.pytest.ini_options]

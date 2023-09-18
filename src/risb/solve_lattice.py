@@ -93,6 +93,7 @@ class LatticeSolver:
     return_x_new : bool, optional
         Whether to return a new guess for ``x`` and the ``error`` at each iteration or 
         only the ``error``. :func:`scipy.optimize.root` should only use the ``error``.
+
     """
     def __init__(self, 
                  h0_k : MFType,

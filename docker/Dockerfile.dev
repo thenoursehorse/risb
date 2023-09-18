@@ -83,17 +83,12 @@ RUN pip install -r $SRC/$APPNAME/requirements.txt
 RUN pip install --upgrade pip \
   && pip install pytest mypy nox
 
-# For the docs because I can't get nox to work inside docker properly
-RUN pip install sphinx sphinx-autobuild \
-  myst_parser myst-parser[linkify] \
-  sphinx_autodoc_typehints sphinx_copybutton \
-  furo
-
 # Install library
 WORKDIR $BUILD/$APPNAME
 COPY . $SRC/$APPNAME
-RUN cp -as $SRC/$APPNAME/* . 
+RUN cp -as $SRC/$APPNAME/* .
 RUN pip install -e .
+RUN pip install -e .[docs]
 
 # Build documentation
 #RUN nox -s buld_api_docs
@@ -101,6 +96,6 @@ RUN pip install -e .
 EXPOSE 8000
 ENV APPNAME=$APPNAME
 RUN sphinx-apidoc -o $BUILD/$APPNAME/docs/api --module-first --no-toc --force --separate src/risb
-CMD sphinx-autobuild -b html --host 0.0.0.0 --port 8000 -n -T -b=html $BUILD/$APPNAME/docs $BUILD/$APPNAME/docs/_build
+CMD sphinx-autobuild -b html --host 0.0.0.0 --port 8000 -n -T $BUILD/$APPNAME/docs $BUILD/$APPNAME/docs/_build
 
 # I wish autodoc2 made better API documementation !
