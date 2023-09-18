@@ -87,17 +87,12 @@ class DIIS(NewtonSolver):
                  g_x : list[ArrayLike], 
                  error : list[ArrayLike], 
                  alpha : float = 1.0) -> np.ndarray:
-        
-        if (self.n % self.n_restart) == 0:
-            self.x = []
-            self.g_x = []
-            self.error = []
-        
+                
         if ((self.n+1) % self.n_period == 0):
-            # Do DIIS
-            x_opt = self._extrapolate(self.x, self.g_x, self.error)
-        else:
             # Do linear mixing
             x_opt = x + alpha*(g_x-x)
+        else:
+            # Do DIIS
+            x_opt = self._extrapolate(self.x, self.g_x, self.error)
 
         return x_opt

@@ -37,10 +37,10 @@ class NewtonSolver(ABC):
     
     Notes
     -----
-    The method `update_x` must be defined in the inherited class.
+    :meth:`update_x` must be defined in the inherited class.
     """
     def __init__(self, 
-                 history_size : int = 5, 
+                 history_size : int = 6, 
                  n_restart : float = np.inf, 
                  verbose : bool = False) -> None:
 
@@ -58,7 +58,7 @@ class NewtonSolver(ABC):
         #: list[numpy.ndarray] : Error vector of `x`.
         self.error : list[ArrayLike] = []
 
-        #: int : Number of iterations the solver took.
+        #: int : Iteration counter for solver.
         self.n : int = 0
         
         #: bool : Whether the solver converged to within tolerance.
@@ -111,16 +111,16 @@ class NewtonSolver(ABC):
             Every guess for x in the history.
         g_x : list[numpy.ndarray]
             Every solution in the history to the fixed-point function, 
-            g(`x`), that gives a new `x`.
+            g(x), that gives a new x.
         error : list[numpy.ndarray]
-            Every error function in the history. This is often `error` = `g_x` - `x`.
+            Every error function in the history. This is often ``error = g_x - x``.
         alpha : float, optional
             Step size for linear-mixing.
 
         Returns
         -------
-        x : numpy.ndarray
-            New guess for x.
+        numpy.ndarray
+            New guess for x to add to history.
         """
         pass
 
@@ -148,7 +148,7 @@ class NewtonSolver(ABC):
         tol : float, optional
             The tolerance. When the 2-norm difference of the return of `fun` 
             is less than this, the solver stops.
-        options : {'maxiter', 'alpha'}
+        options : "maxiter" | "alpha"
             Additional options.
 
                 - maxiter : int, Maximum number of iterations.
@@ -156,7 +156,7 @@ class NewtonSolver(ABC):
         
         Returns
         -------
-        x : numpy.ndarray
+        numpy.ndarray
             Root of `fun`.
         
         """
@@ -171,11 +171,10 @@ class NewtonSolver(ABC):
             self._insert_vector(self.x, x, self.history_size)
 
         for self.n in range(options['maxiter']):
-
+        
             g_x, error = fun(x, *args)
             
             if self.history_size > 0:
-                self._insert_vector(self.x, x, self.history_size)
                 self._insert_vector(self.g_x, g_x, self.history_size)
                 self._insert_vector(self.error, error, self.history_size)
 
@@ -187,6 +186,14 @@ class NewtonSolver(ABC):
                 break
 
             x = self.update_x(x, g_x, error, options['alpha'])
+                            
+            if (self.n % self.n_restart) == 0:
+                self.x = []
+                self.g_x = []
+                self.error = []
+            
+            if self.history_size > 0: 
+                self._insert_vector(self.x, x, self.history_size)
                     
         if self.verbose:
             if self.success:
