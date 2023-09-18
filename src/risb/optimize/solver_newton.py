@@ -148,9 +148,8 @@ class NewtonSolver(ABC):
         tol : float, optional
             The tolerance. When the 2-norm difference of the return of `fun` 
             is less than this, the solver stops.
-        options : "maxiter" | "alpha"
+        options : 'maxiter' and 'alpha'
             Additional options.
-
                 - maxiter : int, Maximum number of iterations.
                 - alpha : float, Step size.
         
