@@ -1,0 +1,149 @@
+#!/usr/bin/env python
+
+import numpy as np
+from itertools import product
+import pytest
+from pytest import approx
+
+from common import build_cubic_h0_k, symmetrize_blocks
+from triqs.operators import Operator, c_dag, c, n
+from triqs.operators.util.hamiltonians import h_int_kanamori
+from triqs.operators.util.op_struct import set_operator_structure
+from risb import LatticeSolver
+from risb.kweight import SmearingKWeight
+from risb.embedding import EmbeddingAtomDiag
+
+def do_assert(subtests, mu, Lambda, Z, 
+              mu_expected, Lambda_expected, Z_expected):
+    with subtests.test(msg="mu"):
+        assert mu == approx(mu_expected, abs=1e-6)
+    with subtests.test(msg="Lambda"):
+        for bl in Lambda.keys():
+            assert Lambda[bl] == approx(Lambda_expected, abs=1e-6)
+    with subtests.test(msg="Z"):
+        for bl in Z.keys():
+            assert Z[bl] == approx(Z_expected, abs=1e-6)
+
+@pytest.fixture
+def one_band():
+    n_orb = 1
+    spatial_dim = 3
+    nkx = 10
+    beta = 40
+    U = 4
+    mu = U / 2 # half-filling
+    gf_struct = [ (bl, n_orb) for bl in ['up', 'dn'] ]
+    h0_k = build_cubic_h0_k(gf_struct=gf_struct, nkx=nkx, spatial_dim=spatial_dim)
+    h_loc = U * n('up',0) * n('dn',0)
+    embedding = EmbeddingAtomDiag(h_loc, gf_struct)
+    kweight = SmearingKWeight(beta=beta, mu=mu)
+    Lambda_expected = np.array([[2.0]])
+    Z_expected = np.array([[0.437828801025]])
+    return gf_struct, h0_k, embedding, kweight, mu, Lambda_expected, Z_expected
+
+@pytest.fixture
+def bilayer():
+    U = 4
+    V = 0.25
+    J = 0
+    mu = U / 2.0 # half-filling
+    n_orb = 2
+    spatial_dim = 3
+    nkx = 10
+    beta = 40
+    spin_names = ['up','dn']
+    gf_struct = set_operator_structure(spin_names, n_orb, off_diag=True)
+    h0_k = build_cubic_h0_k(gf_struct=gf_struct, nkx=nkx, spatial_dim=spatial_dim)
+    h_loc = Operator()
+    for o in range(n_orb):
+        h_loc += U * n("up",o) * n("dn",o)
+    for s in spin_names:
+        h_loc += V * ( c_dag(s,0)*c(s,1) + c_dag(s,1)*c(s,0) )
+    for s1,s2 in product(spin_names,spin_names):
+        h_loc += 0.5 * J * c_dag(s1,0) * c(s2,0) * c_dag(s2,1) * c(s1,1)
+    embedding = EmbeddingAtomDiag(h_loc, gf_struct)
+    kweight = SmearingKWeight(beta=beta, mu=mu)
+    Lambda_expected = np.array([[2.0, 0.114569681915],[0.114569681915, 2.0]])
+    Z_expected = np.array([[0.452846149446, 0],[0, 0.452846149446]])
+    return gf_struct, h0_k, embedding, kweight, mu, Lambda_expected, Z_expected
+
+@pytest.fixture
+def kanamori():
+    coeff = 0.2
+    U = 3
+    J = coeff * U
+    Up = U - 2*J
+    mu = 0.5*U + 0.5*Up + 0.5*(Up-J) # half-filling
+    #mu = -0.81 + (0.6899-1.1099*coeff)*U + (-0.02548+0.02709*coeff-0.1606*coeff**2)*U**2 # quarter-filling DMFT result
+    n_orb = 2
+    spatial_dim = 3
+    nkx = 10
+    beta = 40
+    spin_names = ['up','dn']
+    gf_struct = set_operator_structure(spin_names, n_orb, off_diag=True)
+    h0_k = build_cubic_h0_k(gf_struct=gf_struct, nkx=nkx, spatial_dim=spatial_dim)
+    h_loc = h_int_kanamori(spin_names=spin_names,
+                           n_orb=n_orb,
+                           U=np.array([[0, Up-J], [Up-J, 0]]),
+                           Uprime=np.array([[U, Up], [Up, U]]),
+                           J_hund=J,
+                           off_diag=True)
+    embedding = EmbeddingAtomDiag(h_loc, gf_struct)
+    kweight = SmearingKWeight(beta=beta, mu=mu)
+    Lambda_expected = np.array([[3.0, 0.0],[0.0, 3.0]])
+    Z_expected = np.array([[0.574940323948, 0.0],[0.0, 0.574940323948]])
+    return gf_struct, h0_k, embedding, kweight, mu, Lambda_expected, Z_expected
+ 
+@pytest.mark.parametrize('model', ['one_band', 'bilayer', 'kanamori'])
+def test_diis_symmetrize(subtests, request, model):
+    model = request.getfixturevalue(model)
+    gf_struct, h0_k, embedding, kweight, mu_expected, Lambda_expected, Z_expected = model
+    S = LatticeSolver(h0_k=h0_k,
+                      gf_struct=gf_struct,
+                      embedding=embedding,
+                      update_weights=kweight.update_weights,
+                      symmetries=[symmetrize_blocks])
+    for bl,_ in S.gf_struct:
+        np.fill_diagonal(S.Lambda[bl], mu_expected)
+    S.solve()
+    mu_calculated = kweight.mu
+    do_assert(subtests, mu_calculated, S.Lambda, S.Z, 
+              mu_expected, Lambda_expected, Z_expected)
+
+@pytest.mark.parametrize('model', ['one_band', 'bilayer', 'kanamori'])
+def test_diis_nosymmetrize(subtests, request, model):
+    model = request.getfixturevalue(model)
+    gf_struct, h0_k, embedding, kweight, mu_expected, Lambda_expected, Z_expected = model
+    S = LatticeSolver(h0_k=h0_k,
+                      gf_struct=gf_struct,
+                      embedding=embedding,
+                      update_weights=kweight.update_weights)
+    for bl,_ in S.gf_struct:
+        np.fill_diagonal(S.Lambda[bl], mu_expected)
+    S.solve() 
+    mu_calculated = kweight.mu
+    do_assert(subtests, mu_calculated, S.Lambda, S.Z, 
+              mu_expected, Lambda_expected, Z_expected)
+
+@pytest.mark.parametrize('model, root_method', [
+    ('one_band', 'hybr'),
+    ('bilayer', 'broyden1'),
+    ('kanamori', 'broyden1'), 
+])   
+def test_scipy_root(subtests, request, model, root_method):
+    model = request.getfixturevalue(model)
+    gf_struct, h0_k, embedding, kweight, mu_expected, Lambda_expected, Z_expected = model
+    from scipy.optimize import root as root_fun
+    S = LatticeSolver(h0_k=h0_k,
+                      gf_struct=gf_struct,
+                      embedding=embedding,
+                      update_weights=kweight.update_weights,
+                      symmetries=[symmetrize_blocks],
+                      root=root_fun,
+                      return_x_new = False)
+    for bl,_ in S.gf_struct:
+        np.fill_diagonal(S.Lambda[bl], mu_expected)
+    S.solve(method=root_method, tol=1e-12)
+    mu_calculated = kweight.mu
+    do_assert(subtests, mu_calculated, S.Lambda, S.Z, 
+              mu_expected, Lambda_expected, Z_expected)
