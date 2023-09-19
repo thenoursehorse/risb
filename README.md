@@ -15,10 +15,10 @@ Documentation at [https://thenoursehorse.github.io/risb](https://thenoursehorse.
 
 ## Dependencies
 
-* [TRIQS](https://github.com/TRIQS/triqs) v3.2.x if using `EmbeddingAtomDiag`
+* [TRIQS](https://triqs.github.io/) `v3.2.x` if using :class:`.EmbeddingAtomDiag`
 and for the tests
-* numpy
-* scipy
+* [numpy](https://numpy.org/)
+* [scipy](https://scipy.org/)
 
 ## Installation
 
@@ -32,7 +32,7 @@ git clone https://github.com/thenoursehorse/risb
 cd risb
 ```
 
-### With pipx
+### With [pipx](https://pypa.github.io/pipx/)
 
 ```shell
 pipx install .
@@ -61,10 +61,12 @@ python3 -m pip uninstall risb
 
 ### Docker
 
-There is a Dockerfile and docker-compose.yml inside ./docker/. The Dockerfile will 
-pull the TRIQS [docker from the hub](https://hub.docker.com/r/flatironinstitute/triqs) 
-and install risb. Using the Docker image will be the same as the instructions outlined 
-in TRIQS docker hub. To connect to the Jupyter notebook it is 
+There is a `Dockerfile` and `docker-compose.yml` inside the `docker` folder. 
+The `Dockerfile` will pull the 
+[TRIQS docker image](https://hub.docker.com/r/flatironinstitute/triqs) 
+from the hub and install risb. Using the image will be the same as outlined in
+the [install instructions](https://triqs.github.io/triqs/latest/install.html#docker).
+To connect to the [Jupyter](https://jupyter.org/) notebook it is 
 
 ```shell
 localhost:8888/?token=put/token/here
@@ -77,17 +79,17 @@ and running
 jupyter server list
 ```
 
-There is also a development Dockerfile.dev and the corresponding 
-docker-compose-dev.yml in order to have a container to develop code. It 
-installs TRIQS from source, and works on Apple M1/M2 (arm64), and any amd64 
-system.
+There is also a development `Dockerfile.dev` and the corresponding 
+`docker-compose-dev.yml` in order to have a container to develop code. It 
+installs [TRIQS](https://triqs.github.io/) from source, and works on 
+Apple M1/M2 (arm64, aarch64), and any amd64 system.
 
 ## Tests
 
 Tests are run with
 
 ```shell
-python3 -m pytest -v
+python3 -m pytest
 ```
 
 ## Documentation
@@ -98,7 +100,7 @@ Install the prerequisites
 python3 -m pip install -e .[docs]
 ```
 
-Build the `API`
+Build the API
 
 ```shell
 sphinx-apidoc -o docs/api --module-first --no-toc --force --separate src/risb
@@ -116,8 +118,8 @@ Access through a browser at `http://127.0.0.1:8000`.
 
 ## Examples
 
-See test_one_band_cubic.py and test_two_band_cubic_bilayer.py in 
-test/python for examples.
+See `test_one_band_cubic.py` and `test_two_band_cubic_bilayer.py` in 
+the `tests` folder for examples.
 
 ## To do
 
