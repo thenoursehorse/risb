@@ -18,12 +18,8 @@ def solve(spin_names, n_orb, h_loc, Lambda_c, D):
         Nf[bl] = embedding.get_nf(bl)
         Mcf[bl] = embedding.get_mcf(bl)
         Nc[bl] = embedding.get_nc(bl)
-    
     NOp = N_op(spin_names, n_orb, off_diag=True)
     S2Op = S2_op(spin_names, n_orb, off_diag=True)
-    N = embedding.overlap(NOp)
-    S2 = embedding.overlap(S2Op)
-
     return Nf, Mcf, Nc, embedding.gs_energy, embedding.overlap(NOp), embedding.overlap(S2Op)
 
 class tests(unittest.TestCase):
