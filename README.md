@@ -86,6 +86,12 @@ Apple M1/M2 (arm64, aarch64), and any amd64 system.
 
 ## Tests
 
+Install the prerequisites
+
+```shell
+python3 -m pip install -e .[test]
+```
+
 Tests are run with
 
 ```shell

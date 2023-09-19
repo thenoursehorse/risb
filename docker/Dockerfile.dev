@@ -81,13 +81,15 @@ FROM build_arm64
 COPY requirements.txt $SRC/$APPNAME/requirements.txt
 RUN pip install -r $SRC/$APPNAME/requirements.txt
 RUN pip install --upgrade pip \
-  && pip install pytest mypy nox
+  && pip install nox
+#mypy
 
 # Install library
 WORKDIR $BUILD/$APPNAME
 COPY . $SRC/$APPNAME
 RUN cp -as $SRC/$APPNAME/* .
 RUN pip install -e .
+RUN pip install -e .[test]
 RUN pip install -e .[docs]
 
 # Build documentation
