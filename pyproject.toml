@@ -4,7 +4,7 @@ dynamic = ["version"]
 description = "Rotationally invariant slave boson mean-field theory."
 readme = "README.md"
 requires-python = ">=3.10"
-license = {file = "LICENSE.txt"}
+license = {file = "LICENSE"}
 keywords = ["quantum", "mean field", 'correlated electrons', 'quantum embedding', 'risb', 'slave bosons']
 authors = [
   {name = "H. L. Nourse"}

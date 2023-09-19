@@ -313,7 +313,6 @@ class LatticeSolver:
     
     def solve(self, 
               one_shot : bool = False, 
-              tol : float = 1e-12, 
               embedding_param : dict[str, Any] = dict(), 
               kweight_param : dict[str, Any] = dict(),
               **kwargs) -> Any:
