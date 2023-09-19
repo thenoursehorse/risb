@@ -106,7 +106,7 @@ Build the API
 sphinx-apidoc -o docs/api --module-first --no-toc --force --separate src/risb
 ```
 
-Serve
+Build the documentation and set up a local server
 
 ```shell
 sphinx-autobuild -b html docs docs/_build
