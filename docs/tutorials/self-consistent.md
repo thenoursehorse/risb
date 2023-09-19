@@ -246,7 +246,7 @@ for bl, bl_size in gf_struct:
 ### Helper functions
 
 As an aside, let me describe how to obtain the above mean-field matrices, which 
-has to be done at eacheiteration of the self-consistent process. There are 
+has to be done at each iteration of the self-consistent process. There are 
 helper functions that do this for you. They simply take in numpy arrays 
 and either use `numpy.einsum` or multiply arrays together. Below, the 
 definition of `bloch_qp` and `kweights` will be described later.
@@ -307,7 +307,7 @@ find the weight of the integral at each $k$-point. This is, e.g., how
 linear tetrahedron works and smearing methods work. As you will see below, 
 because the reference energy for the integration are the eigenenergies of 
 $\hat{H}^{\mathrm{qp}}$, the weight at each $k$-point has to be updated at 
-each iteration of the self-consistency method. Not to worry though, 
+each iteration of the self-consistency process. Not to worry though, 
 in practice this can be very fast. Below we will describe the general theory 
 for taking these integrals in multi-orbital cases. 
 
