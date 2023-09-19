@@ -44,10 +44,22 @@ docs = [
   "sphinx-copybutton",
   "sphinx-autodoc-typehints",
 ]
+test = [
+  "pytest >=7.0",
+  "pytest-subtests>=0.11",
+]
 
 [tool.pytest.ini_options]
+minversion = "7.0"
+addopts = ["-ra", "--showlocals", "--strict-markers", "--strict-config"]
+xfail_strict = true
 filterwarnings = [
-    "ignore:invalid escape sequence:DeprecationWarning"
+    "ignore:invalid escape sequence:DeprecationWarning",
+    "error",
+]
+log_cli_level = "info"
+testpaths = [
+  "tests",
 ]
 
 [tool.mypy]

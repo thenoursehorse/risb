@@ -86,6 +86,12 @@ Apple M1/M2 (arm64, aarch64), and any amd64 system.
 
 ## Tests
 
+Install the prerequisites
+
+```shell
+python3 -m pip install -e .[test]
+```
+
 Tests are run with
 
 ```shell
@@ -106,7 +112,7 @@ Build the API
 sphinx-apidoc -o docs/api --module-first --no-toc --force --separate src/risb
 ```
 
-Serve
+Build the documentation and set up a local server
 
 ```shell
 sphinx-autobuild -b html docs docs/_build
@@ -118,12 +124,11 @@ Access through a browser at `http://127.0.0.1:8000`.
 
 ## Examples
 
-See `test_one_band_cubic.py` and `test_two_band_cubic_bilayer.py` in 
-the `tests` folder for examples.
+Work in progress. For now, see `test_latticesolver.py` in the `tests` 
+folder for now.
 
 ## To do
 
-* Add EmbeddingAtomDiag tests
 * Add kweights tests
 * Sort out basic_functions tests
 * Make h0_k all h0 hoppings, and work out h0_loc and add to h_int to make a 
