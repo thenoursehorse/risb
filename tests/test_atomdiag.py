@@ -1,46 +1,33 @@
 import numpy as np
 from itertools import product
+import pytest
 from pytest import approx
 
 from risb.embedding import EmbeddingAtomDiag
 from triqs.operators import Operator, n, c_dag, c
 from triqs.operators.util.observables import S2_op, N_op
 
-def solve(spin_names, n_orb, h_loc, Lambda_c, D):
-    gf_struct = [ (bl, n_orb) for bl in ['up', 'dn'] ]
-    embedding = EmbeddingAtomDiag(h_loc, gf_struct)
-    embedding.set_h_emb(Lambda_c, D)
-    embedding.solve()
-    Nf = dict()
-    Mcf = dict()
-    Nc = dict()
-    for bl, bl_size in gf_struct:
-        Nf[bl] = embedding.get_nf(bl)
-        Mcf[bl] = embedding.get_mcf(bl)
-        Nc[bl] = embedding.get_nc(bl)
-    NOp = N_op(spin_names, n_orb, off_diag=True)
-    S2Op = S2_op(spin_names, n_orb, off_diag=True)
-    return Nf, Mcf, Nc, embedding.gs_energy, embedding.overlap(NOp), embedding.overlap(S2Op)
-
 def do_assert(subtests, Nf, Mcf, Nc, gs_energy, N, S2, 
               Nf_expected, Mcf_expected, Nc_expected, gs_energy_expected, N_expected, S2_expected):
+    abs = 1e-12
     with subtests.test(msg="Nf"):
         for bl in Nf.keys():
-            assert Nf[bl] == approx(Nf_expected, abs=1e-12)
+            assert Nf[bl] == approx(Nf_expected, abs=abs)
     with subtests.test(msg="Mcf"):
         for bl in Mcf.keys():
-            assert Mcf[bl] == approx(Mcf_expected, abs=1e-12)
+            assert Mcf[bl] == approx(Mcf_expected, abs=abs)
     with subtests.test(msg="Nc"):
         for bl in Nc.keys():
-            assert Nc[bl] == approx(Nc_expected, abs=1e-12)
+            assert Nc[bl] == approx(Nc_expected, abs=abs)
     with subtests.test(msg="gs_energy"):
-        assert gs_energy == approx(gs_energy_expected, abs=1e-12)
+        assert gs_energy == approx(gs_energy_expected, abs=abs)
     with subtests.test(msg="N"):
-        assert N == approx(N_expected, abs=1e-12)
+        assert N == approx(N_expected, abs=abs)
     with subtests.test(ms="S2"):
-        assert S2 == approx(S2_expected, abs=1e-12)
+        assert S2 == approx(S2_expected, abs=abs)
 
-def test_one_band(subtests):
+@pytest.fixture
+def one_band():
     U = 1
     mu = U / 2.0 # half-filling
     n_orb = 1
@@ -51,18 +38,20 @@ def test_one_band(subtests):
     for bl in spin_names:
         Lambda_c[bl] = np.array([ [ -mu ] ])
         D[bl] = np.array([ [ -0.3333 ] ])
-    Nf, Mcf, Nc, gs_energy, N, S2 = solve(spin_names, n_orb, h_loc, Lambda_c, D)
-                
+    return spin_names, n_orb, Lambda_c, D, h_loc
+
+@pytest.fixture
+def one_band_expected():
     Nf_expected = np.array([[0.5]])
     Mcf_expected = np.array([[0.4681588161332029]])
     Nc_expected = np.array([[0.5]])
     gs_energy_expected = -0.9619378905494498
     N_expected = 1.0
     S2_expected = 0.5066828353209953
-    do_assert(subtests, Nf, Mcf, Nc, gs_energy, N, S2, 
-              Nf_expected, Mcf_expected, Nc_expected, gs_energy_expected, N_expected, S2_expected)
+    return Nf_expected, Mcf_expected, Nc_expected, gs_energy_expected, N_expected, S2_expected
 
-def test_bilayer(subtests):
+@pytest.fixture
+def bilayer():
     U = 1
     V = 0.25
     J = 0
@@ -83,8 +72,10 @@ def test_bilayer(subtests):
                                   [-0.00460398, -mu         ] ])
         D[bl] = np.array([ [ -2.59694448e-01, 0               ],
                            [ 0              , -2.59694448e-01 ] ])
-    Nf, Mcf, Nc, gs_energy, N, S2 = solve(spin_names, n_orb, h_loc, Lambda_c, D)
-        
+    return spin_names, n_orb, Lambda_c, D, h_loc
+
+@pytest.fixture
+def bilayer_expected():
     Nf_expected = np.array([ [ 0.5                , -0.1999913941210893 ],
                              [ -0.1999913941210893, 0.5                 ] ])
     Mcf_expected = np.array([ [ 0.42326519677453511, 0                   ],
@@ -94,10 +85,10 @@ def test_bilayer(subtests):
     gs_energy_expected = -1.7429249197415944
     N_expected = 2.0
     S2_expected = 0.8247577338845973
-    do_assert(subtests, Nf, Mcf, Nc, gs_energy, N, S2, 
-              Nf_expected, Mcf_expected, Nc_expected, gs_energy_expected, N_expected, S2_expected)
+    return Nf_expected, Mcf_expected, Nc_expected, gs_energy_expected, N_expected, S2_expected
 
-def test_dh_trimer(subtests):
+@pytest.fixture
+def dh_trimer():
     # At two-thirds filling
     U = 1
     tk = 1
@@ -124,7 +115,10 @@ def test_dh_trimer(subtests):
         D[bl] = np.array([ [ -0.26504931,  0.        ,  0.        ],
                            [ 0.        , -0.39631238,  0.         ],
                            [ 0.        ,  0.        , -0.39631238 ] ])
-    Nf, Mcf, Nc, gs_energy, N, S2 = solve(spin_names, n_orb, h_loc, Lambda_c, D)
+    return spin_names, n_orb, Lambda_c, D, h_loc
+
+@pytest.fixture
+def dh_trimer_expected():
     Nf_expected = np.array([ [ 0.9932309740187902, 0.                , 0.                 ],
                              [ 0.                , 0.5033842231804342, 0.                 ],
                              [ 0.                , 0.                , 0.5033842231804342 ] ])
@@ -137,5 +131,34 @@ def test_dh_trimer(subtests):
     gs_energy_expected = -9.555511743344764
     N_expected = 3.99999884075932
     S2_expected = 0.9171025003755656
+    return Nf_expected, Mcf_expected, Nc_expected, gs_energy_expected, N_expected, S2_expected
+
+
+@pytest.mark.parametrize('model, model_expected', [
+    ('one_band', 'one_band_expected'),
+    ('bilayer', 'bilayer_expected'),
+    ('dh_trimer', 'dh_trimer_expected'),
+])
+def test_solve(subtests, request, model, model_expected):
+    model = request.getfixturevalue(model)
+    model_expected = request.getfixturevalue(model_expected)
+    spin_names, n_orb, Lambda_c, D, h_loc = model
+    Nf_expected, Mcf_expected, Nc_expected, gs_energy_expected, N_expected, S2_expected = model_expected
+    gf_struct = [ (bl, n_orb) for bl in spin_names ]
+    embedding = EmbeddingAtomDiag(h_loc, gf_struct)
+    embedding.set_h_emb(Lambda_c, D)
+    embedding.solve()
+    Nf = dict()
+    Mcf = dict()
+    Nc = dict()
+    for bl, bl_size in gf_struct:
+        Nf[bl] = embedding.get_nf(bl)
+        Mcf[bl] = embedding.get_mcf(bl)
+        Nc[bl] = embedding.get_nc(bl)
+    gs_energy = embedding.gs_energy
+    NOp = N_op(spin_names, n_orb, off_diag=True)
+    S2Op = S2_op(spin_names, n_orb, off_diag=True)
+    N = embedding.overlap(NOp)
+    S2 = embedding.overlap(S2Op)
     do_assert(subtests, Nf, Mcf, Nc, gs_energy, N, S2, 
               Nf_expected, Mcf_expected, Nc_expected, gs_energy_expected, N_expected, S2_expected)
