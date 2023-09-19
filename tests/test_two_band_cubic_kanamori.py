@@ -26,6 +26,21 @@ elif filling == 'quarter':
     #mu = -0.81 + (0.6899-1.1099*coeff)*U + (-0.02548+0.02709*coeff-0.1606*coeff**2)*U**2
     mu = None
     n_target = 1
+    
+n_orb = 2
+spatial_dim = 3
+nkx = 10
+beta = 40
+spin_names = ['up','dn']
+gf_struct = set_operator_structure(spin_names, n_orb, off_diag=True)
+h0_k = build_cubic_h0_k(gf_struct=gf_struct, nkx=nkx, spatial_dim=spatial_dim)
+h_loc = h_int_kanamori(spin_names=spin_names,
+                       n_orb=n_orb,
+                       U=np.array([[0, Up-J], [Up-J, 0]]),
+                       Uprime=np.array([[U, Up], [Up, U]]),
+                       J_hund=J,
+                       off_diag=True)
+    
         
 mu_expected = mu
 Lambda_expected = np.array([[3.0, 0.0],[0.0, 3.0]])
@@ -48,32 +63,15 @@ def hubb_kanamori(U, Up, J, spin_names=['up','dn']):
     h_loc += J * c_dag(s_up,1) * c_dag(s_dn,1) * c(s_dn,0) * c(s_up,0)
     return h_loc
 
-def setup_problem():
-    n_orb = 2
-    spatial_dim = 3
-    nkx = 10
-    beta = 40
-                
-    spin_names = ['up','dn']
-    gf_struct = set_operator_structure(spin_names, n_orb, off_diag=True)
-         
-    h0_k = build_cubic_h0_k(gf_struct=gf_struct, nkx=nkx, spatial_dim=spatial_dim)
- 
-    h_loc = h_int_kanamori(spin_names=spin_names,
-                           n_orb=n_orb,
-                           U=np.array([[0, Up-J], [Up-J, 0]]),
-                           Uprime=np.array([[U, Up], [Up, U]]),
-                           J_hund=J,
-                           off_diag=True)
-    
+def setup_problem(): 
     embedding = EmbeddingAtomDiag(h_loc, gf_struct)
     kweight = SmearingKWeight(beta=beta, mu=mu, n_target=n_target)
-    return gf_struct, h0_k, embedding, kweight        
+    return embedding, kweight        
 
 class tests(unittest.TestCase):
  
     def test_diis_symmetrize(self):
-        gf_struct, h0_k, embedding, kweight = setup_problem()
+        embedding, kweight = setup_problem()
         S = LatticeSolver(h0_k=h0_k,
                           gf_struct=gf_struct,
                           embedding=embedding,
@@ -91,7 +89,7 @@ class tests(unittest.TestCase):
             np.testing.assert_allclose(Z_expected, S.Z[bl], rtol=0, atol=1e-6)
     
     def test_diis_nosymmetrize(self):
-        gf_struct, h0_k, embedding, kweight = setup_problem()
+        embedding, kweight = setup_problem()
         S = LatticeSolver(h0_k=h0_k,
                           gf_struct=gf_struct,
                           embedding=embedding,
@@ -108,7 +106,7 @@ class tests(unittest.TestCase):
             np.testing.assert_allclose(Z_expected, S.Z[bl], rtol=0, atol=1e-6)
     
     def test_scipy_root(self):
-        gf_struct, h0_k, embedding, kweight = setup_problem()
+        embedding, kweight = setup_problem()
         from scipy.optimize import root as root_fun
         S = LatticeSolver(h0_k=h0_k,
                           gf_struct=gf_struct,
@@ -121,13 +119,13 @@ class tests(unittest.TestCase):
         if mu is not None:
             for bl,_ in S.gf_struct:
                 np.fill_diagonal(S.Lambda[bl], mu)
-        S.solve(method='broyden1')
+        S.solve(method='broyden1', tol=1e-12)
 
         mu_calculated = kweight.mu
-        np.testing.assert_allclose(mu_calculated, mu_expected, rtol=0, atol=5e-5)
+        np.testing.assert_allclose(mu_calculated, mu_expected, rtol=0, atol=1e-6)
         for bl, bl_size in gf_struct:
-            np.testing.assert_allclose(Lambda_expected, S.Lambda[bl], rtol=0, atol=5e-5)
-            np.testing.assert_allclose(Z_expected, S.Z[bl], rtol=0, atol=5e-5)
+            np.testing.assert_allclose(Lambda_expected, S.Lambda[bl], rtol=0, atol=1e-6)
+            np.testing.assert_allclose(Z_expected, S.Z[bl], rtol=0, atol=1e-6)
 
 if __name__ == '__main__':
     unittest.main()

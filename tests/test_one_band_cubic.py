@@ -8,28 +8,29 @@ from risb import LatticeSolver
 from risb.kweight import SmearingKWeight
 from risb.embedding import EmbeddingAtomDiag
         
-mu_expected = 2
+n_orb = 1
+spatial_dim = 3
+nkx = 10
+beta = 40
+U = 4
+mu = U / 2
+gf_struct = [ (bl, n_orb) for bl in ['up', 'dn'] ]
+h0_k = build_cubic_h0_k(gf_struct=gf_struct, nkx=nkx, spatial_dim=spatial_dim)
+h_loc = U * n('up',0) * n('dn',0)
+
+mu_expected = U / 2.0
 Lambda_expected = np.array([[2.0]])
 Z_expected = np.array([[0.437828801025]])
 
 def setup_problem():
-    n_orb = 1
-    spatial_dim = 3
-    nkx = 10
-    beta = 40
-    gf_struct = [ (bl, n_orb) for bl in ['up', 'dn'] ]
-    h0_k = build_cubic_h0_k(gf_struct=gf_struct, nkx=nkx, spatial_dim=spatial_dim)
-    U = 4
-    h_loc = U * n('up',0) * n('dn',0)
-    mu = U / 2
     embedding = EmbeddingAtomDiag(h_loc, gf_struct)
     kweight = SmearingKWeight(beta=beta, mu=mu)
-    return gf_struct, h0_k, embedding, kweight        
+    return embedding, kweight        
 
 class tests(unittest.TestCase):
  
     def test_diis_symmetrize(self):
-        gf_struct, h0_k, embedding, kweight = setup_problem()
+        embedding, kweight = setup_problem()
         S = LatticeSolver(h0_k=h0_k,
                           gf_struct=gf_struct,
                           embedding=embedding,
@@ -44,7 +45,7 @@ class tests(unittest.TestCase):
             np.testing.assert_allclose(Z_expected, S.Z[bl], rtol=0, atol=1e-6)
 
     def test_diis_nosymmetrize(self):
-        gf_struct, h0_k, embedding, kweight = setup_problem()
+        embedding, kweight = setup_problem()
         S = LatticeSolver(h0_k=h0_k,
                           gf_struct=gf_struct,
                           embedding=embedding,
@@ -58,7 +59,7 @@ class tests(unittest.TestCase):
             np.testing.assert_allclose(Z_expected, S.Z[bl], rtol=0, atol=1e-6)
     
     def test_scipy_root(self):
-        gf_struct, h0_k, embedding, kweight = setup_problem()
+        embedding, kweight = setup_problem()
         from scipy.optimize import root as root_fun
         S = LatticeSolver(h0_k=h0_k,
                           gf_struct=gf_struct,
@@ -67,7 +68,9 @@ class tests(unittest.TestCase):
                           symmetries=[symmetrize_blocks],
                           root=root_fun,
                           return_x_new = False)
-        S.solve()
+        for bl,_ in S.gf_struct:
+            np.fill_diagonal(S.Lambda[bl], mu)
+        S.solve(tol=1e-12)
  
         mu_calculated = kweight.mu
         np.testing.assert_allclose(mu_calculated, mu_expected, rtol=0, atol=1e-6)

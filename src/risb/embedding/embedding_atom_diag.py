@@ -68,7 +68,7 @@ class EmbeddingAtomDiag:
         self.gf_struct_emb_dict = self._dict_gf_struct(self.gf_struct_emb)
 
         #: triqs.atom_diag.AtomDiag vacuum : Ground state of the embedding problem.
-        self.gs_vec = None
+        self.gs_vector = None
         
         #: The TRIQS AtomDiag instance. See :class:`triqs.atom_diag.AtomDiag` in the TRIQS manual.
         self.ad = None
@@ -174,8 +174,8 @@ class EmbeddingAtomDiag:
             # FIXME for ghost does this need to be different?
             M = int(len(self.fops_emb) / 2)
             self.ad = AtomDiag(self.h_emb, self.fops_emb, n_min=M, n_max=M)
-            self.gs_vec = self.ad.vacuum_state
-            self.gs_vec[0] = 1
+            self.gs_vector = self.ad.vacuum_state
+            self.gs_vector[0] = 1
 
         else:
             raise ValueError('Unrecognized fixed particle number !')
@@ -258,7 +258,7 @@ class EmbeddingAtomDiag:
         triqs.operators.Operator
             Expectation value.
         """
-        res = self.gs_vec @ act(Op, self.gs_vec, self.ad)
+        res = self.gs_vector @ act(Op, self.gs_vector, self.ad)
         if force_real:
             return res.real
         else:
@@ -293,3 +293,10 @@ class EmbeddingAtomDiag:
         for bl, bl_size in self.gf_struct:
             Mcf[bl] = self.get_mcf(bl)
         return Mcf
+    
+    @property
+    def gs_energy(self) -> float:
+        """
+        float : Ground state energy of impurity problem.
+        """
+        return self.ad.gs_energy
