@@ -15,14 +15,15 @@ from risb.embedding import EmbeddingAtomDiag
 
 def do_assert(subtests, mu, Lambda, Z, 
               mu_expected, Lambda_expected, Z_expected):
+    abs = 1e-6
     with subtests.test(msg="mu"):
-        assert mu == approx(mu_expected, abs=1e-6)
+        assert mu == approx(mu_expected, abs=abs)
     with subtests.test(msg="Lambda"):
         for bl in Lambda.keys():
-            assert Lambda[bl] == approx(Lambda_expected, abs=1e-6)
+            assert Lambda[bl] == approx(Lambda_expected, abs=abs)
     with subtests.test(msg="Z"):
         for bl in Z.keys():
-            assert Z[bl] == approx(Z_expected, abs=1e-6)
+            assert Z[bl] == approx(Z_expected, abs=abs)
 
 @pytest.fixture
 def one_band():
