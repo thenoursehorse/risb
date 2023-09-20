@@ -11,6 +11,22 @@ Source at [https://github.com/thenoursehorse/risb](https://github.com/thenourseh
 
 Documentation at [https://thenoursehorse.github.io/risb](https://thenoursehorse.github.io/risb)
 
+<!-- CITATION-START -->
+
+## Citation
+
+We kindly request that you cite the following paper if your project uses our code:
+
+[H. L. Nourse, Ross H. McKenzie, and B. J. Powell Phys. Rev. B **103**, L081114 (2021)](https://doi.org/10.1103/PhysRevB.103.L081114)
+
+You may also wish to cite the following papers:
+
+[H. L. Nourse, Ross H. McKenzie, and B. J. Powell Phys. Rev. B **104**, 075104 (2021)](https://doi.org/10.1103/PhysRevB.104.075104)
+
+[H. L. Nourse, Ross H. McKenzie, and B. J. Powell Phys. Rev. B **105**, 205119 (2022)](https://doi.org/10.1103/PhysRevB.105.205119)
+
+<!-- CITATION-END -->
+
 <!-- INSTALL-START -->
 
 ## Dependencies
