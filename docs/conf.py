@@ -3,7 +3,7 @@ from __future__ import annotations
 import importlib.metadata
 
 project = "risb"
-copyright = "2023 H. L. Nourse"
+copyright = "2016-2023 H. L. Nourse and B. J. Powell"
 author = "H. L. Nourse"
 try:
     version = release = importlib.metadata.version("risb")
@@ -34,7 +34,7 @@ extensions = [
 #    "private",
 #]
 
-## Don't show typehints/annotations
+# Don't show typehints/annotations
 autodoc_typehints = "none"
 
 source_suffix = [".rst", ".md"]
