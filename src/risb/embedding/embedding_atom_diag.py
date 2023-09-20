@@ -168,6 +168,7 @@ class EmbeddingAtomDiag:
         M = int(len(self.fops_emb) / 2)
         print(self.h_emb)
         self.ad = AtomDiag(self.h_emb, self.fops_emb, n_min=M, n_max=M)
+        #for term in self.h_emb:
         #self.ad = AtomDiagComplex(self.h_emb, self.fops_emb, n_min=M, n_max=M)
         self.gs_vector = self.ad.vacuum_state
         self.gs_vector[0] = 1
