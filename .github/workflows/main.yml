@@ -3,10 +3,10 @@ name: CI
 on:
   pull_request:
     branches:
-      - unstable
+      - dummy
   push:
     branches:
-      - unstable
+      - dummy
 
 jobs:
     tests:
