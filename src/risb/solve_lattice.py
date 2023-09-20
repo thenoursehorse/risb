@@ -129,7 +129,7 @@ class LatticeSolver:
         self.Lambda = deepcopy(Lambda)
         
         if (self.R is None) or (self.Lambda is None):
-            [self.R, self.Lambda] = self._initialize_block_mf_matrices(self.gf_struct)
+            [self.R, self.Lambda] = self._initialize_block_mf_matrices(self.gf_struct, force_real)
  
         self.symmetries = symmetries
         self.force_real = force_real
@@ -191,11 +191,15 @@ class LatticeSolver:
         return self._update_weights(*args, **kwargs)
 
     @staticmethod
-    def _initialize_block_mf_matrices(gf_struct : GfStructType) -> tuple[GfStructType, GfStructType]:
+    def _initialize_block_mf_matrices(gf_struct : GfStructType,
+                                      is_real : bool) -> tuple[GfStructType, GfStructType]:
         R = dict()
         Lambda = dict()
         for bl, bsize in gf_struct:
-            R[bl] = np.zeros((bsize,bsize))
+            if is_real:
+                R[bl] = np.zeros((bsize,bsize))
+            else:
+                R[bl] = np.zeros((bsize,bsize), dtype=complex)
             Lambda[bl] = np.zeros((bsize,bsize))
             np.fill_diagonal(R[bl], 1)
         return (R, Lambda)
