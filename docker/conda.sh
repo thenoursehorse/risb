@@ -13,4 +13,5 @@ source $HOME/.bashrc
 # Will only work for intel/amd because conda-forge has no aarch64 for TRIQS
 conda install -c conda-forge triqs
 python3 -m pip install -e .
+python3 -m pip install -e .[test]
 python3 -m pip install -e .[docs]

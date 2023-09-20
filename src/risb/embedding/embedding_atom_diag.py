@@ -157,29 +157,19 @@ class EmbeddingAtomDiag:
                 for alpha in range(bl_size):
                     self.h_emb -= mu * c_dag(bl,alpha) * c(bl,alpha)
 
-    # TODO other restrictions, like none, for testing.
-    def solve(self, fixed : str = 'half') -> None:
+    # TODO other restrictions, like none, for testing
+    # but it has been tested against sparse embedding and is the same answer
+    # TODO what about superconductivity, ghosts?:w
+    def solve(self) -> None:
         """
         Solve for the groundstate in the half-filled number sector of the 
         embedding problem.
-
-        Parameters
-        ----------
-        fixed : {'half'}
-            How the Hilbert space is restricted. For ``fixed = 'half'`` 
-            :class:`triqs.atom_diag.AtomDiag` will be passed 
-            ``n_min = n_max = half-filled``.
         """
-        if fixed == 'half':
-            # FIXME for ghost does this need to be different?
-            M = int(len(self.fops_emb) / 2)
-            self.ad = AtomDiag(self.h_emb, self.fops_emb, n_min=M, n_max=M)
-            self.gs_vector = self.ad.vacuum_state
-            self.gs_vector[0] = 1
+        M = int(len(self.fops_emb) / 2)
+        self.ad = AtomDiag(self.h_emb, self.fops_emb, n_min=M, n_max=M)
+        self.gs_vector = self.ad.vacuum_state
+        self.gs_vector[0] = 1
 
-        else:
-            raise ValueError('Unrecognized fixed particle number !')
-        
     def get_nf(self, bl : str) -> np.ndarray:
         """
         Parameters

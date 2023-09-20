@@ -348,3 +348,11 @@ def get_ke(h0_kin_R : np.ndarray, vec : np.ndarray, kweights : np.ndarray, P : n
         P_dag = np.swapaxes(P.conj(), -2, 1)
         middle = np.einsum('kan,kn,knb->kab', h0_kin_R, kweights, vec_dag)
         return np.sum(P @ middle @ P_dag, axis=0)
+    
+def block_to_full(A : np.ndarray):
+    if len(A.shape) != 5:
+        raise ValueError(f'A.shape = {A.shape} must be 5 !')
+    na = A.shape[1]
+    if na != A.shape[2]:
+        raise ValueError(f'Dimensions of blocks must be the same, but got {na} and {A.shape[2]} !')
+    return np.block( [ [A[:,i,j] for j in range(na)] for i in range(na) ] )

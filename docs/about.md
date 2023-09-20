@@ -12,7 +12,7 @@ H. L. Nourse
 
 with advisors
 
-[B. J. Powell](https://people.smp.uq.edu.au/BenPowell/) (The University of Queensland), 
+[B. J. Powell](https://people.smp.uq.edu.au/BenPowell/) (The University of Queensland)
 
 [R. H. McKenzie](https://condensedconcepts.blogspot.com/) (The University of Queensland)
 
@@ -21,17 +21,11 @@ for the PhD thesis
 [*Strongly correlated electrons on the decorated honeycomb lattice studied with 
 rotationally invariant slave-boson mean-field theory* (2020)](https://doi.org/10.14264/uql.2020.169)
 
-## Citation
-
+:::{include} ../README.md
+:start-after: <!-- CITATION-START -->
+:end-before: <!-- CITATION-END -->
+:::
 % :download:`BibTeX file of citations <risb.bib>`
-
-If you use or find this work useful please consider citing the following papers:
-
-[H. L. Nourse, Ross H. McKenzie, and B. J. Powell Phys. Rev. B **103**, L081114 (2021)](https://doi.org/10.1103/PhysRevB.103.L081114)
-
-[H. L. Nourse, Ross H. McKenzie, and B. J. Powell Phys. Rev. B **104**, 075104 (2021)](https://doi.org/10.1103/PhysRevB.104.075104)
-
-[H. L. Nourse, Ross H. McKenzie, and B. J. Powell Phys. Rev. B **105**, 205119 (2022)](https://doi.org/10.1103/PhysRevB.105.205119)
 
 ## Original theory
 
