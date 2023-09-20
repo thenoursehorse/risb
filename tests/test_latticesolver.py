@@ -13,9 +13,11 @@ from risb import LatticeSolver
 from risb.kweight import SmearingKWeight
 from risb.embedding import EmbeddingAtomDiag
 
+# FIXME add one_shot test
+
 def do_assert(subtests, mu, Lambda, Z, 
               mu_expected, Lambda_expected, Z_expected):
-    abs = 1e-6
+    abs = 1e-10
     with subtests.test(msg="mu"):
         assert mu == approx(mu_expected, abs=abs)
     with subtests.test(msg="Lambda"):
