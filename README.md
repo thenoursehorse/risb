@@ -11,6 +11,8 @@ Source at [https://github.com/thenoursehorse/risb](https://github.com/thenourseh
 
 Documentation at [https://thenoursehorse.github.io/risb](https://thenoursehorse.github.io/risb)
 
+Copyright (C) 2016-2023 H. L. Nourse and B. J. Powell, 2016-2022 R. H. McKenzie
+
 <!-- CITATION-START -->
 
 ## Citation
@@ -26,6 +28,8 @@ You may also wish to cite the following papers:
 [H. L. Nourse, Ross H. McKenzie, and B. J. Powell Phys. Rev. B **105**, 205119 (2022)](https://doi.org/10.1103/PhysRevB.105.205119)
 
 <!-- CITATION-END -->
+
+Lastly, the appropriate original theory outlined in the [documentation](https://thenoursehorse.github.io/risb/about.html#original-theory) must be cited.
 
 <!-- INSTALL-START -->
 

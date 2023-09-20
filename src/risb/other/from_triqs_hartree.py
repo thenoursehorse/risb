@@ -55,12 +55,12 @@ def update_mu(n_target, energies, beta, n_k, smear_function):
 
 def flatten(Lambda, R, is_real):
     x = []
-    x.append([mat.flatten().real for mat in Lambda.values()])
+    x = np.append(x, [mat.flatten().real for mat in Lambda.values()])
     if is_real:
-        x.append([mat.flatten().real for mat in R.values()])
+        x = np.append(x, [mat.flatten().real for mat in R.values()])
     else:
-        x.append([mat.flatten().view(float) for mat in R.values()])
-    return np.array(x).flatten()
+        x = np.append(x, [mat.flatten().view(float) for mat in R.values()])
+    return x
     
 def unflatten(x, gf_struct, is_real):
     Lambda = dict()
@@ -74,6 +74,6 @@ def unflatten(x, gf_struct, is_real):
             R[bl] = x[list(range(offset, offset + bl_size**2))].reshape(bl_size, bl_size)
             offset += bl_size**2
         else:
-            R[bl] = x[list(range(offset, offset + bl_size**2))].view(complex).reshape(bl_size, bl_size)
+            R[bl] = x[list(range(offset, offset + 2*bl_size**2))].view(complex).reshape(bl_size, bl_size)
             offset += 2*bl_size**2
     return Lambda, R
