@@ -29,16 +29,17 @@ rotationally invariant slave-boson mean-field theory* (2020)](https://doi.org/10
 
 ## Original theory
 
-Slave-bosons as introduced by Kotliar and Ruckenstein[^Kotliar86] was 
+Slave-bosons as introduced by Kotliar and Ruckenstein[^Kotliar1986] was 
 extended to the {{RISB}} formalism by Lechermann, 
 et al.[^Lechermann2007]. The implementation in this project uses the 
 embedding construction as introduced by 
-Lanatà, et al.[^Lanata2015] [^Lanata2017]. 
+Lanatà, et al.[^Lanata2015] [^Lanata2017]. The above papers should also be 
+appropriately cited.
 
 ## Embedding solvers
 
 % Fix class links
-1. `EmbeddingAtomDiag` uses [TRIQS](https://triqs.github.io/)[^Parcolett2015].
+1. `EmbeddingAtomDiag` uses the [TRIQS](https://triqs.github.io/)[^Parcolett2015] library.
 
 %1. `EmbeddingED` uses [TRIQS](https://triqs.github.io/)[^Parcolett2015] and 
 %[arpack-ng](https://github.com/opencollab/arpack-ng) with the
@@ -50,7 +51,7 @@ Lanatà, et al.[^Lanata2015] [^Lanata2017].
 
 
 
-[^Kotliar86]: [G. Kotliar and A. E. Ruckenstein, 
+[^Kotliar1986]: [G. Kotliar and A. E. Ruckenstein, 
 *New Functional Integral Approach to Strongly Correlated Fermi Systems: 
 The Gutzwiller Approximation as a Saddle Point*, 
 Phys. Rev. Lett. **57**, 1362 (1986)](https://doi.org/10.1103/PhysRevLett.57.1362)

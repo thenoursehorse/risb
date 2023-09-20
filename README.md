@@ -27,9 +27,9 @@ You may also wish to cite the following papers:
 
 [H. L. Nourse, Ross H. McKenzie, and B. J. Powell Phys. Rev. B **105**, 205119 (2022)](https://doi.org/10.1103/PhysRevB.105.205119)
 
-Lastly, the appropriate original theory outlined in the [documentation](https://thenoursehorse.github.io/risb/about.html#original-theory) must be cited.
-
 <!-- CITATION-END -->
+
+Lastly, the appropriate original theory outlined in the [documentation](https://thenoursehorse.github.io/risb/about.html#original-theory) must be cited.
 
 <!-- INSTALL-START -->
 
