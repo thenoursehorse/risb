@@ -19,7 +19,7 @@ import numpy as np
 from itertools import product
 from typing import TypeAlias, TypeVar
 from numpy.typing import ArrayLike
-from triqs.atom_diag import AtomDiag, AtomDiagComplex, act
+from triqs.atom_diag import AtomDiag, act
 from triqs.operators import Operator, c, c_dag
 
 GfStructType : TypeAlias = list[tuple[str,int]]
@@ -166,10 +166,16 @@ class EmbeddingAtomDiag:
         embedding problem.
         """
         M = int(len(self.fops_emb) / 2)
-        print(self.h_emb)
-        self.ad = AtomDiag(self.h_emb, self.fops_emb, n_min=M, n_max=M)
-        #for term in self.h_emb:
-        #self.ad = AtomDiagComplex(self.h_emb, self.fops_emb, n_min=M, n_max=M)
+        is_real = True
+        for term in self.h_emb:
+            # term is an array holding info of term as monomial, last index is its value
+            if np.iscomplex(term[-1]):
+                is_real = False
+                break
+        if is_real:
+            self.ad = AtomDiag(self.h_emb.real, self.fops_emb, n_min=M, n_max=M)
+        else:
+            self.ad = AtomDiag(self.h_emb, self.fops_emb, n_min=M, n_max=M)
         self.gs_vector = self.ad.vacuum_state
         self.gs_vector[0] = 1
 
