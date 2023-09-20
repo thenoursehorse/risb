@@ -83,10 +83,10 @@ S2Op = S2_op(spin_names, n_orb, off_diag=True)
 S2 = embedding.overlap(S2Op)
 
 # Print out some interesting observables
-with np.printoptions(precision=2):
+with np.printoptions(formatter={'float': '{: 0.4f}'.format}):
     for bl, Z in S.Z.items():
-        print(f"Quasiaprticle weight Z[{bl}] = {Z}")
+        print(f"Quasiaprticle weight Z[{bl}] = \n{Z}")
     for bl, Lambda in S.Lambda.items():
-        print(f"Correlation potential Lambda[{bl}] = {Lambda}")
-    print(f"Number of partices per cluster N = {N}")
-    print(f"Effective spin of a cluster S = {0.5 * np.sqrt(4 * (S2 + 1)) - 1}")
+        print(f"Correlation potential Lambda[{bl}] = \n{Lambda}")
+    print(f"Number of partices per cluster N = \n{N:0.4f}")
+    print(f"Effective spin of a cluster S = \n{(0.5 * np.sqrt(4 * (S2 + 1)) - 1):0.4f}")
