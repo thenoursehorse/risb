@@ -33,11 +33,13 @@ for bl, _ in gf_struct:
 # Hubbard interactions    
 U = 4 # Hubbard
 V = 0.25 # Bilayer hopping
-h_loc = Operator()
+h_int = Operator()
 for o in range(n_orb):
-    h_loc += U * n("up",o) * n("dn",o)
+    h_int += U * n("up",o) * n("dn",o)
+h0_loc = Operator()
 for s in spin_names:
-    h_loc += V * ( c_dag(s,0)*c(s,1) + c_dag(s,1)*c(s,0) )
+    h0_loc += V * ( c_dag(s,0)*c(s,1) + c_dag(s,1)*c(s,0) )
+h_loc = h0_loc + h_int
 
 # Set up class to work out k-space integration weights
 beta = 40 # inverse temperature

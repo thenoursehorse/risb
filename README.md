@@ -124,8 +124,7 @@ Access through a browser at `http://127.0.0.1:8000`.
 
 ## Examples
 
-Work in progress. For now, see `test_latticesolver.py` in the `tests` 
-folder for now.
+See the `examples` folder.
 
 ## To do
 
