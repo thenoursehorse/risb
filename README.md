@@ -21,22 +21,19 @@ We kindly request that you cite the following paper if your project uses our cod
 
 [H. L. Nourse, Ross H. McKenzie, and B. J. Powell Phys. Rev. B **103**, L081114 (2021)](https://doi.org/10.1103/PhysRevB.103.L081114)
 
-You may also wish to cite the following papers:
+The [TRIQS](https://triqs.github.io/triqs) library should also be cited if any of their library is used:
 
-[H. L. Nourse, Ross H. McKenzie, and B. J. Powell Phys. Rev. B **104**, 075104 (2021)](https://doi.org/10.1103/PhysRevB.104.075104)
-
-[H. L. Nourse, Ross H. McKenzie, and B. J. Powell Phys. Rev. B **105**, 205119 (2022)](https://doi.org/10.1103/PhysRevB.105.205119)
+[O. Parcollet, M. Ferrero, T. Ayral, H. Hafermann, I. Krivenko, L. Messio, and P. Seth, Comp. Phys. Comm. 196, 398-415 (2015)](https://doi.org/10.1016/j.cpc.2015.04.023)
 
 <!-- CITATION-END -->
 
-Lastly, the appropriate original theory outlined in the [documentation](https://thenoursehorse.github.io/risb/about.html#original-theory) must be cited.
+Lastly, the appropriate original theory outlined in the [documentation](https://thenoursehorse.github.io/risb/about.html#original-theory) should be cited.
 
 <!-- INSTALL-START -->
 
 ## Dependencies
 
-* [TRIQS](https://triqs.github.io/) `v3.2.x` if using :class:`.EmbeddingAtomDiag`
-and for the tests
+* [TRIQS](https://triqs.github.io/) `v3.2.x` if using :class:`EmbeddingAtomDiag`
 * [numpy](https://numpy.org/)
 * [scipy](https://scipy.org/)
 
@@ -105,6 +102,8 @@ installs [TRIQS](https://triqs.github.io/) from source, and works on
 Apple M1/M2 (arm64, aarch64), and any amd64 system.
 
 ## Tests
+
+The tests require a working [TRIQS](https://triqs.github.io/) installation.
 
 Install the prerequisites
 
