@@ -1,4 +1,4 @@
-# Copyright (c) 2016 H. L. Nourse
+# Copyright (c) 2016-2023 H. L. Nourse
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -15,6 +15,7 @@
 #
 # Authors: H. L. Nourse
 
+from copy import deepcopy
 import numpy as np
 from scipy.linalg import sqrtm
 from scipy.linalg import inv
@@ -396,10 +397,8 @@ def get_h0_kin_k_mat(h0_k : np.ndarray, P : np.ndarray) -> np.ndarray:
     ----------
     h0_k : numpy.ndarray
         Single-particle dispersion.
-    
     P : numpy.ndarray
         The projector onto a local cluster within the supercell.
-
     Returns
     -------
     numpy.ndarray
@@ -409,13 +408,35 @@ def get_h0_kin_k_mat(h0_k : np.ndarray, P : np.ndarray) -> np.ndarray:
     h0_loc_mat = get_h0_loc_mat(h0_k, P)
     return h0_k - P.conj().T @ h0_loc_mat @ P
 
-def get_h0_kin_k(h0_k, projectors, gf_struct_mapping=None):
-    if gf_struct_mapping is None:
-        gf_struct_mapping = {bl:bl for bl in h0_k.keys()}
+def get_h0_kin_k(h0_k : dict[np.ndarray], 
+                 projectors : list[dict[np.ndarray]], 
+                 gf_struct_mapping : list[dict[str,str]] | None = None) -> dict[np.ndarray]:
+    """
+    Parameters
+    ----------
+    h0_k : dict[numpy.ndarray]
+        Single-particle dispersion in each block.
+    projectors : list[dict[numpy.ndarray]]
+        The projectors onto each subspace of a local cluster within 
+        the supercell organized into single-particle symmetry blocks.
+    gf_struct_mapping : list[dict[str, str]] | None, optional
+        The mapping from the symmetry blocks in the subspace to the 
+        symmetry blocks of h0_k. Default assumes the keys in `projectors`
+        are the same as the keys in `h0_k`.
 
-    h0_kin_k = {bl:np.zeros(shape=h.shape, dtype=h.dtype) for bl, h in h0_k.items()}
-    for P in projectors:
+    Returns
+    -------
+    dict[numpy.ndarray]
+        The single-particle hopping with only the kinetic contribution, 
+        without the single-particle terms from the clusters defined by 
+        the projectors.
+    """
+    n_clusters = len(projectors)
+    if gf_struct_mapping is None:
+        gf_struct_mapping = [{bl:bl for bl in h0_k.keys()} for i in range(n_clusters)]
+    h0_kin_k = deepcopy(h0_k)
+    for i, P in enumerate(projectors):
         for bl_sub in P.keys():
-            bl = gf_struct_mapping[bl_sub]
-            h0_kin_k[bl] += get_h0_kin_k_mat(h0_k[bl], P[bl])
+            bl = gf_struct_mapping[i][bl_sub]
+            h0_kin_k[bl] = get_h0_kin_k_mat(h0_kin_k[bl], P[bl_sub])
     return h0_kin_k

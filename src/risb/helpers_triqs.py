@@ -17,10 +17,10 @@
 # Authors: H. L. Nourse
 
 import numpy as np
-from triqs.operators import Operator, c, c_dag, dagger
+from triqs.operators import Operator, c, c_dag
 from risb.helpers import get_h0_loc_mat
 
-def get_C_Op(gf_struct, dagger=False):
+def get_C_Op(gf_struct : list[tuple[str,int]], dagger : bool = False) -> dict[list[Operator]]:
     """
     Parameters
     ----------
@@ -46,42 +46,107 @@ def get_C_Op(gf_struct, dagger=False):
             C_Op[bl] = [c(bl, o) for o in range(bl_size)]
     return C_Op
 
-def mat_to_Op(mat, C_Op):
-    C_dag_Op = dict()
-    for bl in C_Op:
-        C_dag_Op[bl] = [dagger(Op) for Op in C_Op[bl]]
+def mat_to_Op(mat : dict[np.ndarray], gf_struct : list[tuple[str,int]]) -> dict[Operator]:
+    """
+    Parameters
+    ----------
+    mat : dict[numpy.ndarray]
+        Single-particle matrix, where each key is a different block.
+    gf_struct : list of pairs [ (str,int), ...]
+        Structure of the matrices. It must be a
+        list of pairs, each containing the name of the
+        matrix block as a string and the size of that block.
+        For example: ``[ ('up', 3), ('down', 3) ]``.
+
+    Returns
+    -------
+    dict[triqs.operators.Operator]
+        The single-particle matrix as a quadratic TRIQS operator.
+    """
+    C_dag_Op = get_C_Op(gf_struct=gf_struct, dagger=True)
+    C_Op = get_C_Op(gf_struct=gf_struct, dagger=False)
     Op = dict()
     for bl in mat:
         Op[bl] = C_dag_Op[bl] @ mat[bl] @ C_Op[bl]
     return Op
 
-def get_h0_loc_blocks(h0_k, P, gf_struct=None, force_real=True):
+def get_h0_loc_blocks(h0_k : dict[np.ndarray], 
+                      P : dict[np.ndarray], 
+                      gf_struct : list[tuple[str,int]] | None = None, 
+                      gf_struct_mapping : dict[str,str] | None = None, 
+                      force_real: bool = True) -> dict[Operator]:
     """
+    Parameters
+    ----------
+    h0_k : dict[numpy.ndarray]
+        Single-particle dispersion in each block.
+    P : dict[numpy.ndarray]
+        The projector onto a local cluster within the supercell.
+    gf_struct : list of pairs [ (str,int), ...] | None, optional
+        Structure of the matrices. It must be a
+        list of pairs, each containing the name of the
+        matrix block as a string and the size of that block.
+        For example: ``[ ('up', 3), ('down', 3) ]``. Default is 
+        structure worked out from the projector P.
+    gf_struct_mapping : dict[str, str] | None, optional
+        The mapping from the symmetry blocks in the subspace of P to the 
+        symmetry blocks of h0_k. Default assumes the keys in `P`
+        are the same as the keys in `h0_k`.
+    force_real : bool
+        Whether to make the resulting matrix real or not.
+
+    Returns
+    -------
+    dict[triqs.operators.Operator]
+        For each single-particle symmetry block the non-interacting 
+        terms in the cluster defined by the projector `P`.
     """
     if gf_struct is None:
         gf_struct = [(k, v.shape[-2]) for k, v in P.items()]
-
-    C_Op = get_C_Op(gf_struct=gf_struct)
-    C_dag_Op = get_C_Op(gf_struct=gf_struct, dagger=True)
+    if gf_struct_mapping is None:
+        gf_struct_mapping = {bl:bl for bl in h0_k.keys()}
     
-    # FIXME if h0_k and P do not have the same blocks,
-    # need mapping from P blocks to h0_k blocks
     h0_loc_mat = dict()
     for bl_sub in P.keys(): # sub = subspace of full space defined by h0_k
-        bl = bl_sub # FIXME correct mapping
+        bl = gf_struct_mapping[bl_sub]
         if force_real:
             h0_loc_mat[bl_sub] = get_h0_loc_mat(h0_k[bl], P[bl_sub]).real
         else:
             h0_loc_mat[bl_sub] = get_h0_loc_mat(h0_k[bl], P[bl_sub])
 
-    h0_loc = dict()
-    for bl_sub in h0_loc_mat.keys():    
-        h0_loc[bl_sub] = C_dag_Op[bl_sub] @ h0_loc_mat[bl_sub] @ C_Op[bl_sub]
+    return mat_to_Op(mat=h0_loc_mat, gf_struct=gf_struct)
 
-    return h0_loc
+def get_h0_loc(h0_k : dict[np.ndarray], 
+               P : dict[np.ndarray], 
+               gf_struct : list[tuple[str,int]] | None = None, 
+               gf_struct_mapping : dict[str,str] | None = None, 
+               force_real : bool = True) -> Operator:
+    """
+    Parameters
+    ----------
+    h0_k : dict[numpy.ndarray]
+        Single-particle dispersion in each block.
+    P : dict[numpy.ndarray]
+        The projector onto a local cluster within the supercell.
+    gf_struct : list of pairs [ (str,int), ...] | None, optional
+        Structure of the matrices. It must be a
+        list of pairs, each containing the name of the
+        matrix block as a string and the size of that block.
+        For example: ``[ ('up', 3), ('down', 3) ]``. Default is 
+        structure worked out from the projector P.
+    gf_struct_mapping : dict[str, str] | None, optional
+        The mapping from the symmetry blocks in the subspace of P to the 
+        symmetry blocks of h0_k. Default assumes the keys in `P`
+        are the same as the keys in `h0_k`.
+    force_real : bool
+        Whether to make the resulting matrix real or not.
 
-def get_h0_loc(h0_k, P, gf_struct=None, force_real=True):
-    h0_loc_blocks = get_h0_loc_blocks(h0_k=h0_k, P=P, gf_struct=gf_struct, force_real=force_real)
+    Returns
+    -------
+    triqs.operators.Operator
+        Non-interacting terms in the cluster defined by the projector `P`.
+    """
+    h0_loc_blocks = get_h0_loc_blocks(h0_k=h0_k, P=P, gf_struct=gf_struct, gf_struct_mapping=gf_struct_mapping, force_real=force_real)
     h0_loc = Operator()
     for Op in h0_loc_blocks.values():
         h0_loc += Op
