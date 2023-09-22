@@ -348,11 +348,74 @@ def get_ke(h0_kin_R : np.ndarray, vec : np.ndarray, kweights : np.ndarray, P : n
         P_dag = np.swapaxes(P.conj(), -2, 1)
         middle = np.einsum('kan,kn,knb->kab', h0_kin_R, kweights, vec_dag)
         return np.sum(P @ middle @ P_dag, axis=0)
-    
-def block_to_full(A : np.ndarray):
-    if len(A.shape) != 5:
-        raise ValueError(f'A.shape = {A.shape} must be 5 !')
-    na = A.shape[1]
-    if na != A.shape[2]:
-        raise ValueError(f'Dimensions of blocks must be the same, but got {na} and {A.shape[2]} !')
+
+# FIXME this does not have to be a numpy array, it could
+# be a ragged list of lists if each block has a different size
+# So should not use shape
+def block_to_full(A : np.ndarray) -> np.ndarray:
+    """
+    Parameters
+    ----------
+    A : numpy.ndarray
+        A block matrix indexed as ``A[...,block1,block2,orb1,orb2]``
+
+    Returns
+    -------
+    numpy.ndarray
+        Matrix `A` of shape ``A[...,block * orb, block * orb]
+    """
+    if len(A.shape) < 4:
+        raise ValueError(f'A.shape = {A.shape} must have at least ...,block,block,orb,orb structure !')
+    na = A.shape[-4]
+    nb = A.shape[-3]
+    if na != nb:
+        raise ValueError(f'Should be same number of blocks in i and j dimesnions, but got {na} and {nb} !')
     return np.block( [ [A[:,i,j] for j in range(na)] for i in range(na) ] )
+
+def get_h0_loc_mat(h0_k : np.ndarray, P : np.ndarray) -> np.ndarray:
+    """
+    Parameters
+    ----------
+    h0_k : numpy.ndarray
+        Single-particle dispersion.
+    P : numpy.ndarray
+        The projector onto a local cluster within the supercell.
+
+    Returns
+    -------
+    numpy.ndarray
+        The matrix of single-particle hopping/energies on a cluster defined by 
+        the projector.
+    """
+    n_k = h0_k.shape[0]
+    return np.sum(P @ h0_k @ P.conj().T, axis=0) / float(n_k)
+
+def get_h0_kin_k_mat(h0_k : np.ndarray, P : np.ndarray) -> np.ndarray:
+    """
+    Parameters
+    ----------
+    h0_k : numpy.ndarray
+        Single-particle dispersion.
+    
+    P : numpy.ndarray
+        The projector onto a local cluster within the supercell.
+
+    Returns
+    -------
+    numpy.ndarray
+        The single-particle hopping without the contribution from the cluster 
+        defined by the projector.
+    """
+    h0_loc_mat = get_h0_loc_mat(h0_k, P)
+    return h0_k - P.conj().T @ h0_loc_mat @ P
+
+def get_h0_kin_k(h0_k, projectors, gf_struct_mapping=None):
+    if gf_struct_mapping is None:
+        gf_struct_mapping = {bl:bl for bl in h0_k.keys()}
+
+    h0_kin_k = {bl:np.zeros(shape=h.shape, dtype=h.dtype) for bl, h in h0_k.items()}
+    for P in projectors:
+        for bl_sub in P.keys():
+            bl = gf_struct_mapping[bl_sub]
+            h0_kin_k[bl] += get_h0_kin_k_mat(h0_k[bl], P[bl])
+    return h0_kin_k
