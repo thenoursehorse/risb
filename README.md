@@ -156,3 +156,4 @@ h_loc = h0_loc + h_int, and then h0_kin_k = h0_k - h_0_loc
 from h0_k and projectors. But this might be annoying because then
 embedding class needs to construct h0_loc as an operator from a matrix. But this 
 is probably a good thing.
+* Add verbose output to LatticeSolver

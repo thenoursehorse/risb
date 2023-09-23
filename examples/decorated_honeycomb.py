@@ -93,8 +93,13 @@ gf_struct = [set_operator_structure(spin_names, n_orb, off_diag=True) for _ in r
 
 # Setup non-interacting Hamiltonian matrix on the lattice
 tg = 0.5
-nkx = 6
+nkx = 120
 h0_k = get_h0_k(tg=tg, nkx=nkx, spin_names=spin_names)
+
+# Set up class to work out k-space integration weights
+beta = 100 # inverse temperature
+n_target = 8 # 2/3rds filling
+kweight = SmearingKWeight(beta=beta, n_target=n_target)
 
 # Make projectors onto each trimer cluster
 projectors = [dict(), dict()]
@@ -109,33 +114,42 @@ h0_kin_k = get_h0_kin_k(h0_k, projectors)
 h0_loc = [get_h0_loc(h0_k=h0_k, P=P) for P in projectors]
 
 # Get the local interaction operator terms
-U = 0
+U = 5.5
 h_int = [get_hubb_N(spin_names=spin_names, U=U) for _ in range(n_clusters)]
 
 # Define the local Hamiltonian
 h_loc = [h0_loc[i] + h_int[i] for i in range(n_clusters)]
 
-# Set up class to work out k-space integration weights
-beta = 40 # inverse temperature
-n_target = 8 # 2/3rds filling
-kweight = SmearingKWeight(beta=beta, n_target=n_target)
-
 # Set up embedding solvers 
 embedding = [EmbeddingAtomDiag(h_loc[i], gf_struct[i]) for i in range(n_clusters)]
 
 # Setup RISB solver class  
-#S = LatticeSolver(h0_k=h0_k,
-#                  gf_struct=gf_struct,
-#                  embedding=embedding,
-#                  update_weights=kweight.update_weights)
+S = LatticeSolver(h0_k=h0_kin_k,
+                  gf_struct=gf_struct,
+                  embedding=embedding,
+                  update_weights=kweight.update_weights,
+                  projectors=projectors)
+                  #force_real=False)
 
 # Solve
-#S.solve(tol=1e-6)
+S.solve(tol=1e-6)
  
 # Average number of particles on a cluster
-#NOp = N_op(spin_names, n_orb, off_diag=True)
-#N = [e.overlap(NOp) for e in embedding]
+NOp = N_op(spin_names, n_orb, off_diag=True)
+N = [e.overlap(NOp) for e in embedding]
 
 # Effective total spin of a cluster
-#S2Op = S2_op(spin_names, n_orb, off_diag=True)
-#S2 = [e.overlap(S2Op) for e in embedding]
+S2Op = S2_op(spin_names, n_orb, off_diag=True)
+S2 = [e.overlap(S2Op) for e in embedding]
+
+# Print out some interesting observables
+with np.printoptions(formatter={'float': '{: 0.4f}'.format}):
+    for i in range(S.n_clusters):
+        print(f"Cluster {i}:")
+        for bl, Z in S.Z[i].items():
+            print(f"Quasiaprticle weight Z[{bl}] = \n{Z}")
+        for bl, Lambda in S.Lambda[i].items():
+            print(f"Correlation potential Lambda[{bl}] = \n{Lambda}")
+        print(f"Number of partices on cluster N = \n{N[i]:0.4f}")
+        print(f"Effective spin of cluster S = \n{(0.5 * np.sqrt(4 * (S2[i] + 1)) - 1):0.4f}")
+        print()

@@ -241,6 +241,12 @@ class LatticeSolver:
         Lambda_new, R_new, f1, f2  = self.one_cycle(embedding_param, kweight_param)
         x_new = self._flatten(Lambda_new, R_new)
         
+        # For testing stuff
+        #for i in range(self.n_clusters):
+        #    print("R", R_new[i])
+        #    print("Lambda", Lambda_new[i])
+        #print()
+        
         if self.error_fun == 'root':
             x_error = self._flatten(f2, f1)
         elif self.error_fun == 'recursion':
@@ -294,8 +300,8 @@ class LatticeSolver:
         for i in range(self.n_clusters):
             for bl, _ in self.gf_struct[i]:
                 bl_full = self.gf_struct_mapping[i][bl]
-                R_full[bl_full] += self.projectors[i][bl] @ self.R[i][bl] @ self.projectors[i][bl].conj().T
-                Lambda_full[bl_full] += self.projectors[i][bl] @ self.Lambda[i][bl] @ self.projectors[i][bl].conj().T
+                R_full[bl_full] += self.projectors[i][bl].conj().T @ self.R[i][bl] @ self.projectors[i][bl]
+                Lambda_full[bl_full] += self.projectors[i][bl].conj().T @ self.Lambda[i][bl] @ self.projectors[i][bl]
 
         h0_R = dict()   
         for bl in self.h0_k.keys():
@@ -320,7 +326,6 @@ class LatticeSolver:
             self.Lambda_c = function(self.Lambda_c)
 
         for i in range(self.n_clusters):
-            print(self.Lambda_c[i], self.D[i])
             self.embedding[i].set_h_emb(self.Lambda_c[i], self.D[i])
             self.embedding[i].solve(**embedding_param[i])
             for bl, _ in self.gf_struct[i]:
@@ -347,7 +352,10 @@ class LatticeSolver:
         for i in range(self.n_clusters):
             for bl, _ in self.gf_struct[i]:
                 Lambda[i][bl] = helpers.get_lambda(self.R[i][bl], self.D[i][bl], self.Lambda_c[i][bl], self.rho_f[i][bl])
-                R[i][bl] = helpers.get_r(self.rho_cf[i][bl], self.rho_f[i][bl])
+                if self.force_real:
+                    R[i][bl] = helpers.get_r(self.rho_cf[i][bl], self.rho_f[i][bl]).real
+                else:
+                    R[i][bl] = helpers.get_r(self.rho_cf[i][bl], self.rho_f[i][bl])
             
         for function in self.symmetries:
             Lambda = function(Lambda)
