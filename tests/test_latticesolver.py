@@ -17,15 +17,18 @@ from risb.embedding import EmbeddingAtomDiag
 
 def do_assert(subtests, mu, Lambda, Z, 
               mu_expected, Lambda_expected, Z_expected):
+    n_clusters = len(Lambda)
     abs = 1e-10
     with subtests.test(msg="mu"):
         assert mu == approx(mu_expected, abs=abs)
     with subtests.test(msg="Lambda"):
-        for bl in Lambda.keys():
-            assert Lambda[bl] == approx(Lambda_expected, abs=abs)
+        for i in range(n_clusters):
+            for bl in Lambda[i].keys():
+                assert Lambda[i][bl] == approx(Lambda_expected, abs=abs)
     with subtests.test(msg="Z"):
-        for bl in Z.keys():
-            assert Z[bl] == approx(Z_expected, abs=abs)
+        for i in range(n_clusters):
+            for bl in Z[i].keys():
+                assert Z[i][bl] == approx(Z_expected, abs=abs)
 
 @pytest.fixture
 def one_band():
@@ -102,12 +105,13 @@ def test_diis_symmetrize(subtests, request, model):
     model = request.getfixturevalue(model)
     gf_struct, h0_k, embedding, kweight, mu_expected, Lambda_expected, Z_expected = model
     S = LatticeSolver(h0_k=h0_k,
-                      gf_struct=gf_struct,
-                      embedding=embedding,
+                      gf_struct=[gf_struct],
+                      embedding=[embedding],
                       update_weights=kweight.update_weights,
                       symmetries=[symmetrize_blocks])
-    for bl,_ in S.gf_struct:
-        np.fill_diagonal(S.Lambda[bl], mu_expected)
+    for i in range(S.n_clusters):
+        for bl, _ in S.gf_struct[i]:
+            np.fill_diagonal(S.Lambda[i][bl], mu_expected)
     S.solve()
     mu_calculated = kweight.mu
     do_assert(subtests, mu_calculated, S.Lambda, S.Z, 
@@ -118,11 +122,12 @@ def test_diis_nosymmetrize(subtests, request, model):
     model = request.getfixturevalue(model)
     gf_struct, h0_k, embedding, kweight, mu_expected, Lambda_expected, Z_expected = model
     S = LatticeSolver(h0_k=h0_k,
-                      gf_struct=gf_struct,
-                      embedding=embedding,
+                      gf_struct=[gf_struct],
+                      embedding=[embedding],
                       update_weights=kweight.update_weights)
-    for bl,_ in S.gf_struct:
-        np.fill_diagonal(S.Lambda[bl], mu_expected)
+    for i in range(S.n_clusters):
+        for bl, _ in S.gf_struct[i]:
+            np.fill_diagonal(S.Lambda[i][bl], mu_expected)
     S.solve() 
     mu_calculated = kweight.mu
     do_assert(subtests, mu_calculated, S.Lambda, S.Z, 
@@ -138,14 +143,15 @@ def test_scipy_root(subtests, request, model, root_method):
     gf_struct, h0_k, embedding, kweight, mu_expected, Lambda_expected, Z_expected = model
     from scipy.optimize import root as root_fun
     S = LatticeSolver(h0_k=h0_k,
-                      gf_struct=gf_struct,
-                      embedding=embedding,
+                      gf_struct=[gf_struct],
+                      embedding=[embedding],
                       update_weights=kweight.update_weights,
                       symmetries=[symmetrize_blocks],
                       root=root_fun,
                       return_x_new = False)
-    for bl,_ in S.gf_struct:
-        np.fill_diagonal(S.Lambda[bl], mu_expected)
+    for i in range(S.n_clusters):
+        for bl, _ in S.gf_struct[i]:
+            np.fill_diagonal(S.Lambda[i][bl], mu_expected)
     S.solve(method=root_method, tol=1e-12)
     mu_calculated = kweight.mu
     do_assert(subtests, mu_calculated, S.Lambda, S.Z, 

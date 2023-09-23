@@ -54,26 +54,33 @@ def update_mu(n_target, energies, beta, n_k, smear_function):
     return brentq(target_function, e_min, e_max)
 
 def flatten(Lambda, R, is_real):
+    if len(R) != len(Lambda):
+        raise ValueError(f'len(R) = {len(R)} and len(Lambda) = {len(Lambda)} must have the same number of clusters !')
+    n_clusters = len(Lambda)
     x = []
-    x = np.append(x, [mat.flatten().real for mat in Lambda.values()])
-    if is_real:
-        x = np.append(x, [mat.flatten().real for mat in R.values()])
-    else:
-        x = np.append(x, [mat.flatten().view(float) for mat in R.values()])
+    for i in range(n_clusters):
+        x = np.append(x, [mat.flatten().real for mat in Lambda[i].values()])
+        if is_real:
+            x = np.append(x, [mat.flatten().real for mat in R[i].values()])
+        else:
+            x = np.append(x, [mat.flatten().view(float) for mat in R[i].values()])
     return x
     
 def unflatten(x, gf_struct, is_real):
-    Lambda = dict()
-    R = dict()
+    n_clusters = len(gf_struct)
+    Lambda = [dict() for i in range(n_clusters)]
+    R = [dict() for i in range(n_clusters)]
     offset = 0
-    for bl, bl_size in gf_struct:
-        Lambda[bl] = x[list(range(offset, offset + bl_size**2))].reshape(bl_size, bl_size)
-        offset += bl_size**2
-    for bl, bl_size in gf_struct:
-        if is_real:
-            R[bl] = x[list(range(offset, offset + bl_size**2))].reshape(bl_size, bl_size)
+    for i in range(n_clusters):
+        for bl, bl_size in gf_struct[i]:
+            Lambda[i][bl] = x[list(range(offset, offset + bl_size**2))].reshape(bl_size, bl_size)
             offset += bl_size**2
-        else:
-            R[bl] = x[list(range(offset, offset + 2*bl_size**2))].view(complex).reshape(bl_size, bl_size)
-            offset += 2*bl_size**2
+        for bl, bl_size in gf_struct[i]:
+            if is_real:
+                R[i][bl] = x[list(range(offset, offset + bl_size**2))].reshape(bl_size, bl_size)
+                offset += bl_size**2
+            else:
+                R[i][bl] = x[list(range(offset, offset + 2*bl_size**2))].view(complex).reshape(bl_size, bl_size)
+                offset += 2*bl_size**2
+    # FIXME check offest = len(x)
     return Lambda, R

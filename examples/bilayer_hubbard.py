@@ -49,20 +49,24 @@ kweight = SmearingKWeight(beta=beta, n_target=n_target)
 
 # (Optional) set up function to symmetrize mean-field matrices
 #def symmetries(A):
-#    A_sym = 0
-#    for bl in A:
-#        A_sym += A[bl] / len(A)
-#    for bl in A:
-#        A[bl] = A_sym
+#    n_clusters = len(A)
+#    A_sym = [0 for i in range(n_clusters)]
+#    for i in range(n_clusters):
+#        for bl in A[i]:
+#            A_sym[i] += A[i][bl] / len(A[i])
+#        for bl in A[i]:
+#            A[i][bl] = A_sym[i]
 #    return A
 
 # Set up class to solve embedding problem
 embedding = EmbeddingAtomDiag(h_loc, gf_struct)
 
 # Setup RISB solver class  
+# gf_struct and embedding must be for each cluster. In this case
+# there is only one cluster, so a list with one cluster is passed.
 S = LatticeSolver(h0_k=h0_k,
-                  gf_struct=gf_struct,
-                  embedding=embedding,
+                  gf_struct=[gf_struct],
+                  embedding=[embedding],
                   update_weights=kweight.update_weights)
                   #symmetries=[symmetries])
 
@@ -84,9 +88,10 @@ S2 = embedding.overlap(S2Op)
 
 # Print out some interesting observables
 with np.printoptions(formatter={'float': '{: 0.4f}'.format}):
-    for bl, Z in S.Z.items():
-        print(f"Quasiaprticle weight Z[{bl}] = \n{Z}")
-    for bl, Lambda in S.Lambda.items():
-        print(f"Correlation potential Lambda[{bl}] = \n{Lambda}")
-    print(f"Number of partices per cluster N = \n{N:0.4f}")
-    print(f"Effective spin of a cluster S = \n{(0.5 * np.sqrt(4 * (S2 + 1)) - 1):0.4f}")
+    for i in range(S.n_clusters):
+        for bl, Z in S.Z[i].items():
+            print(f"Quasiaprticle weight Z[{bl}] = \n{Z}")
+        for bl, Lambda in S.Lambda[i].items():
+            print(f"Correlation potential Lambda[{bl}] = \n{Lambda}")
+        print(f"Number of partices per cluster N = \n{N:0.4f}")
+        print(f"Effective spin of a cluster S = \n{(0.5 * np.sqrt(4 * (S2 + 1)) - 1):0.4f}")
