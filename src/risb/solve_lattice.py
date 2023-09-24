@@ -95,7 +95,7 @@ class LatticeSolver:
                  projectors = None,
                  gf_struct_mapping : list[dict[str,str]] | None = None,
                  symmetries : list[Callable[[MFType], dict[MFType]]] | None = [],
-                 force_real : bool = True,
+                 force_real : bool = False,
                  error_fun : {'root', 'recursion'} = 'root',
                  return_x_new : bool = True,
                  ):
@@ -144,7 +144,7 @@ class LatticeSolver:
         
         #: list[dict[numpy.ndarray]] : Correlation potential matrix of the quasiparticles 
         #: for each cluster.
-        self.Lambda = self._initialize_block_mf_matrix(self.gf_struct, True)
+        self.Lambda = self._initialize_block_mf_matrix(self.gf_struct, force_real)
     
         if gf_struct_mapping is None:
             self.gf_struct_mapping = [{bl:bl for bl in h0_k.keys()} for i in range(self.n_clusters)]
@@ -224,9 +224,9 @@ class LatticeSolver:
         return mat
     
     def _flatten(self, 
-                Lambda : MFType, 
-                R : MFType) -> np.ndarray:
-        return flatten(Lambda, R, self.force_real)
+                mat1 : MFType, 
+                mat2 : MFType) -> np.ndarray:
+        return flatten(mat1, mat2, self.force_real)
     
     def _unflatten(self, x : ArrayLike) -> tuple[MFType, MFType]:
         return unflatten(x, self.gf_struct, self.force_real)
@@ -254,10 +254,20 @@ class LatticeSolver:
         else:
             raise ValueError('Unrecognized error functions for root !')
         
+        # For testing
+        #print("x_new len =", len(x_new))
+        #print("x_error len =", len(x_error))
+        
         if self.return_x_new:
             return x_new, x_error
         else:
             return x_error
+        
+    def _make_hermitian(self, A):
+        for i in range(self.n_clusters):
+           for bl, _ in self.gf_struct[i]:
+                A[i][bl] = 0.5 * (A[i][bl] + A[i][bl].conj().T)
+        return A
 
     def one_cycle(self, 
                   embedding_param : list[dict[str, Any]] | None = None, 
@@ -289,12 +299,16 @@ class LatticeSolver:
 
         if embedding_param is None:
             embedding_param = [dict() for i in range(self.n_clusters)]
+        
+        # Force them to be Hermitian?
+        #self.R = self._make_hermitian(self.R)
+        self.Lambda = self._make_hermitian(self.Lambda)
  
         for function in self.symmetries:
             self.R = function(self.R)
             self.Lambda = function(self.Lambda)
         
-        # Make R, Lambda full from all the little R and Lambda
+        # Make R, Lambda in supercell basis from basis of the clusters
         R_full = {bl:0 for bl in self.h0_k.keys()}
         Lambda_full = {bl:0 for bl in self.h0_k.keys()}
         for i in range(self.n_clusters):
@@ -302,8 +316,12 @@ class LatticeSolver:
                 bl_full = self.gf_struct_mapping[i][bl]
                 R_full[bl_full] += self.projectors[i][bl].conj().T @ self.R[i][bl] @ self.projectors[i][bl]
                 Lambda_full[bl_full] += self.projectors[i][bl].conj().T @ self.Lambda[i][bl] @ self.projectors[i][bl]
+        
+        # Force them to be Hermitian?
+        for bl in Lambda_full.keys():
+            Lambda_full[bl] = 0.5 * (Lambda_full[bl] + Lambda_full[bl].conj().T)
 
-        h0_R = dict()   
+        h0_R = dict()
         for bl in self.h0_k.keys():
             self.energies_qp[bl], self.bloch_vector_qp[bl] = helpers.get_h_qp(R_full[bl], Lambda_full[bl], self.h0_k[bl])
             h0_R[bl] = helpers.get_h0_R(R_full[bl], self.h0_k[bl], self.bloch_vector_qp[bl])
@@ -316,10 +334,26 @@ class LatticeSolver:
                 self.rho_qp[i][bl] = helpers.get_pdensity(self.bloch_vector_qp[bl_full], self.kweights[bl_full], self.projectors[i][bl])
                 self.lopsided_ke_qp[i][bl] = helpers.get_ke(h0_R[bl_full], self.bloch_vector_qp[bl_full], self.kweights[bl_full], self.projectors[i][bl])
         
-                self.D[i][bl] = helpers.get_d(self.rho_qp[i][bl], self.lopsided_ke_qp[i][bl])
+        # Force them to be Hermitian?
+        self.rho_qp = self._make_hermitian(self.rho_qp)
+        #self.lopsided_ke_qp = self._make_hermitia(self.lopsided_ke_qp)
+        
+        for function in self.symmetries:
+            self.rho_qp = function(self.rho_qp)
+            self.lopsided_ke_qp = function(self.lopsided_ke_qp)
+        
+        for i in range(self.n_clusters):
+            for bl, _ in self.gf_struct[i]:
                 if self.force_real:
-                    self.D[i][bl] = self.D[i][bl].real
-                self.Lambda_c[i][bl] = helpers.get_lambda_c(self.rho_qp[i][bl], self.R[i][bl], self.Lambda[i][bl], self.D[i][bl])
+                    self.D[i][bl] = helpers.get_d(self.rho_qp[i][bl], self.lopsided_ke_qp[i][bl]).real
+                    self.Lambda_c[i][bl] = helpers.get_lambda_c(self.rho_qp[i][bl], self.R[i][bl], self.Lambda[i][bl], self.D[i][bl]).real
+                else:
+                    self.D[i][bl] = helpers.get_d(self.rho_qp[i][bl], self.lopsided_ke_qp[i][bl])
+                    self.Lambda_c[i][bl] = helpers.get_lambda_c(self.rho_qp[i][bl], self.R[i][bl], self.Lambda[i][bl], self.D[i][bl])
+                    
+        # Force them to be Hermitian?
+        #self.D = self._make_hermitian(self.D)
+        self.Lambda_c = self._make_hermitian(self.Lambda_c)
         
         for function in self.symmetries:
             self.D = function(self.D)
@@ -330,10 +364,11 @@ class LatticeSolver:
             self.embedding[i].solve(**embedding_param[i])
             for bl, _ in self.gf_struct[i]:
                 self.rho_f[i][bl] = self.embedding[i].get_nf(bl)
-                if self.force_real:
-                    self.rho_cf[i][bl] = self.embedding[i].get_mcf(bl).real
-                else:
-                    self.rho_cf[i][bl] = self.embedding[i].get_mcf(bl)
+                self.rho_cf[i][bl] = self.embedding[i].get_mcf(bl)
+        
+        # Force them to be Hermitian?
+        #self.rho_f = self._make_hermitian(self.rho_f)
+        #self.rho_cf = self._make_hermitian(self.rho_cf)
         
         for function in self.symmetries:
             self.rho_f = function(self.rho_f)
@@ -341,7 +376,6 @@ class LatticeSolver:
 
         f1 = [dict() for i in range(self.n_clusters)]
         f2 = [dict() for i in range(self.n_clusters)]
-
         for i in range(self.n_clusters):
             for bl, _ in self.gf_struct[i]:
                 f1[i][bl] = helpers.get_f1(self.rho_cf[i][bl], self.rho_qp[i][bl], self.R[i][bl])
@@ -352,10 +386,11 @@ class LatticeSolver:
         for i in range(self.n_clusters):
             for bl, _ in self.gf_struct[i]:
                 Lambda[i][bl] = helpers.get_lambda(self.R[i][bl], self.D[i][bl], self.Lambda_c[i][bl], self.rho_f[i][bl])
-                if self.force_real:
-                    R[i][bl] = helpers.get_r(self.rho_cf[i][bl], self.rho_f[i][bl]).real
-                else:
-                    R[i][bl] = helpers.get_r(self.rho_cf[i][bl], self.rho_f[i][bl])
+                R[i][bl] = helpers.get_r(self.rho_cf[i][bl], self.rho_f[i][bl])
+        
+        # Force them to be Hermitian?
+        self.Lambda = self._make_hermitian(self.Lambda)
+        #self.R = self._make_hermitian(self.R)
             
         for function in self.symmetries:
             Lambda = function(Lambda)
@@ -398,6 +433,7 @@ class LatticeSolver:
 
         if one_shot:
             self.Lambda, self.R, _, _ = self.one_cycle(embedding_param, kweight_param)
+            x = self._flatten(self.Lambda, self.R)
         
         else:
             x = self.root(fun=self._target_function, 

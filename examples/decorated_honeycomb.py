@@ -93,11 +93,11 @@ gf_struct = [set_operator_structure(spin_names, n_orb, off_diag=True) for _ in r
 
 # Setup non-interacting Hamiltonian matrix on the lattice
 tg = 0.5
-nkx = 120
+nkx = 60
 h0_k = get_h0_k(tg=tg, nkx=nkx, spin_names=spin_names)
 
 # Set up class to work out k-space integration weights
-beta = 100 # inverse temperature
+beta = 40 # inverse temperature
 n_target = 8 # 2/3rds filling
 kweight = SmearingKWeight(beta=beta, n_target=n_target)
 
@@ -114,7 +114,8 @@ h0_kin_k = get_h0_kin_k(h0_k, projectors)
 h0_loc = [get_h0_loc(h0_k=h0_k, P=P) for P in projectors]
 
 # Get the local interaction operator terms
-U = 5.5
+#U = 5
+U = 0
 h_int = [get_hubb_N(spin_names=spin_names, U=U) for _ in range(n_clusters)]
 
 # Define the local Hamiltonian
@@ -122,17 +123,30 @@ h_loc = [h0_loc[i] + h_int[i] for i in range(n_clusters)]
 
 # Set up embedding solvers 
 embedding = [EmbeddingAtomDiag(h_loc[i], gf_struct[i]) for i in range(n_clusters)]
+    
+from scipy.optimize import root as root_fun
 
 # Setup RISB solver class  
 S = LatticeSolver(h0_k=h0_kin_k,
                   gf_struct=gf_struct,
                   embedding=embedding,
                   update_weights=kweight.update_weights,
-                  projectors=projectors)
-                  #force_real=False)
+                  root=root_fun,
+                  projectors=projectors,
+                  #force_real=False,
+                  return_x_new = False,
+)
 
 # Solve
-S.solve(tol=1e-6)
+#S.solve(tol=1e-6, method='linearmixing')
+
+#S.solve(tol=1e-6)
+
+x = S.solve(one_shot=True)
+x = S.solve(one_shot=True)
+x = S.solve(one_shot=True)
+x = S.solve(one_shot=True)
+x = S.solve(one_shot=True)
  
 # Average number of particles on a cluster
 NOp = N_op(spin_names, n_orb, off_diag=True)

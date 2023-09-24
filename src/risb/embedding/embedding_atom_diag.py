@@ -191,10 +191,10 @@ class EmbeddingAtomDiag:
         """
         bl_bath = self._bl_loc_to_bath(bl)
         bl_size = self.gf_struct_bath_dict[bl_bath]
-        Nf = np.zeros([bl_size, bl_size])
+        Nf = np.zeros([bl_size, bl_size], dtype=complex)
         for a, b in product(range(bl_size), range(bl_size)):
             Op = c(bl_bath, b) * c_dag(bl_bath, a)
-            Nf[a,b] = self.overlap(Op, force_real=True)
+            Nf[a,b] = self.overlap(Op, force_real=False)
         return Nf
     
     def get_nc(self, bl : str) -> np.ndarray:
@@ -210,10 +210,10 @@ class EmbeddingAtomDiag:
             The c-electron density matrix :attr:`Nc` from impurity.
         """
         bl_size = self.gf_struct_dict[bl]
-        Nc = np.zeros([bl_size, bl_size])
+        Nc = np.zeros([bl_size, bl_size], dtype=complex)
         for alpha, beta in product(range(bl_size), range(bl_size)):
             Op = c_dag(bl, alpha) * c(bl, beta)
-            Nc[alpha,beta] = self.overlap(Op, force_real=True)
+            Nc[alpha,beta] = self.overlap(Op, force_real=False)
         return Nc
     
     def get_mcf(self, bl : str) -> np.ndarray:

@@ -103,7 +103,9 @@ def get_lambda_c(pdensity : np.ndarray,
     K = pdensity - pdensity @ pdensity
     K_sq = sqrtm(K)
     K_sq_inv = inv(K_sq)
-    return -np.real( (R @ D).T @ K_sq_inv @ P ).T - Lambda
+    #return -np.real( (R @ D).T @ K_sq_inv @ P ).T - Lambda
+    lhs = ((R @ D).T @ K_sq_inv @ P ).T
+    return - Lambda - 0.5 * (lhs + lhs.conj())
 
 def get_lambda(R : np.ndarray, 
                D : np.ndarray, 
@@ -139,10 +141,9 @@ def get_lambda(R : np.ndarray,
     K = Nf - Nf @ Nf
     K_sq = sqrtm(K)
     K_sq_inv = inv(K_sq)
-    # FIXME check if .T or not. It won't ever matter because we always make
-    # c and f particles the same basis, but in principle it should be correct
-    return -np.real( (R @ D).T @ K_sq_inv @ P ).T - Lambda_c
-    #return -np.real( (R @ D).T @ K_sq_inv @ P ) - Lambda_c 
+    #return -np.real( (R @ D).T @ K_sq_inv @ P ).T - Lambda_c
+    lhs = ( (R @ D).T @ K_sq_inv @ P ).T
+    return - Lambda_c - 0.5 * (lhs + lhs.conj())
 
 def get_r(Mcf : np.ndarray, Nf : np.ndarray) -> np.ndarray:
     """
@@ -311,11 +312,11 @@ def get_pdensity(vec : np.ndarray, kweights : np.ndarray, P : np.ndarray | None 
     """
     vec_dag = np.swapaxes(vec.conj(), -1, -2)
     if P is None:
-        return np.real( np.einsum('kan,kn,knb->ab', vec, kweights, vec_dag).T )
+        return np.einsum('kan,kn,knb->ab', vec, kweights, vec_dag).T
     else:
         P_dag = np.swapaxes(P.conj(), -2, 1)
         middle = np.einsum('kan,kn,knb->kab', vec, kweights, vec_dag)
-        return np.real( np.sum(P @ middle @ P_dag, axis=0).T )
+        return np.sum(P @ middle @ P_dag, axis=0).T
 
 def get_ke(h0_kin_R : np.ndarray, vec : np.ndarray, kweights : np.ndarray, P : np.ndarray | None = None) -> np.ndarray:
     """
