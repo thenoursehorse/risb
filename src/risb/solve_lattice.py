@@ -342,7 +342,7 @@ class LatticeSolver:
         
         for function in self.symmetries:
             self.rho_qp = function(self.rho_qp)
-            #self.lopsided_ke_qp = function(self.lopsided_ke_qp)
+            self.lopsided_ke_qp = function(self.lopsided_ke_qp)
             #self.ke_qp = function(self.ke_qp)
         
         for i in range(self.n_clusters):
@@ -383,6 +383,10 @@ class LatticeSolver:
             for bl, _ in self.gf_struct[i]:
                 f1[i][bl] = helpers.get_f1(self.rho_cf[i][bl], self.rho_qp[i][bl], self.R[i][bl])
                 f2[i][bl] = helpers.get_f2(self.rho_f[i][bl], self.rho_qp[i][bl])
+        
+        for function in self.symmetries:
+            f1 = function(f1)
+            f2 = function(f2)
         
         for i in range(self.n_clusters):
             for bl, _ in self.gf_struct[i]:

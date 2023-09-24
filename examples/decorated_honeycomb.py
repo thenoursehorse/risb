@@ -126,10 +126,17 @@ h_int = [get_hubb_N(spin_names=spin_names, U=U) for _ in range(n_clusters)]
 h_loc = [h0_loc[i] + h_int[i] for i in range(n_clusters)]
 
 # Set up embedding solvers 
-#embedding = [EmbeddingAtomDiag(h_loc[i], gf_struct[i]) for i in range(n_clusters)]
-embedding = [EmbeddingAtomDiag(h_loc[0], gf_struct[0])]
-embedding.append( EmbeddingDummy(embedding[0]) )
-    
+embedding = [EmbeddingAtomDiag(h_loc[i], gf_struct[i]) for i in range(n_clusters)]
+#embedding = [EmbeddingAtomDiag(h_loc[0], gf_struct[0])]
+#embedding.append( EmbeddingDummy(embedding[0]) )
+
+def make_clusters_equal(A):
+    n_clusters = len(A)
+    for i in range(n_clusters):
+        for bl in A[i]:
+            A[i][bl] = A[0]['up']
+    return A
+
 #from scipy.optimize import root as root_fun
 
 # Setup RISB solver class  
@@ -138,6 +145,7 @@ S = LatticeSolver(h0_k=h0_kin_k,
                   embedding=embedding,
                   update_weights=kweight.update_weights,
                   projectors=projectors,
+                  #symmetries=[make_clusters_equal],
                   force_real=True,
                   #
                   #root=root_fun,
@@ -148,11 +156,11 @@ S = LatticeSolver(h0_k=h0_kin_k,
 #S.solve(tol=1e-6)
 #S.solve(tol=1e-6, method='linearmixing')
 
-#x = S.solve(one_shot=True)
-#x = S.solve(one_shot=True)
 x = S.solve(one_shot=True)
-#x = S.solve(one_shot=True)
-#x = S.solve(one_shot=True)
+x = S.solve(one_shot=True)
+x = S.solve(one_shot=True)
+x = S.solve(one_shot=True)
+x = S.solve(one_shot=True)
  
 # Average number of particles on a cluster
 NOp = N_op(spin_names, n_orb, off_diag=True)
