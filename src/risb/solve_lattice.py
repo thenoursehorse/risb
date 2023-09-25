@@ -182,6 +182,12 @@ class LatticeSolver:
         #: list[dict[numpy.ndarray]] : Hybridization density matrix between the c- 
         #: and f-electrons in the impurity for each cluster.
         self.rho_cf = [dict() for i in range(self.n_clusters)]
+        
+        #: list[dict[numpy.ndarray]] : The first root function of the self-consistent loop.
+        self.f1 = [dict() for i in range(self.n_clusters)]
+
+        #: list[dict[numpy.ndarray]] : The second root function of th self-consistent loop.
+        self.f2 = [dict() for i in range(self.n_clusters)]
 
         #: dict[numpy.ndarray] : k-space integration weights of the 
         #: quasiparticles in each band.
@@ -250,11 +256,11 @@ class LatticeSolver:
                         ) -> np.ndarray | tuple[np.ndarray, np.ndarray]:
         
         self.Lambda, self.R = unflatten(x, self.gf_struct, self.force_real)
-        self.Lambda, self.R, f1, f2  = self.one_cycle(embedding_param, kweight_param)
+        self.Lambda, self.R, self.f1, self.f2  = self.one_cycle(embedding_param, kweight_param)
         x_new = deepcopy(flatten(self.Lambda, self.R, self.force_real))
         
         if self.error_fun == 'root':
-            x_error = flatten(f2, f1, self.force_real)
+            x_error = flatten(self.f2, self.f1, self.force_real)
         elif self.error_fun == 'recursion':
             x_error = x - x_new
         else:
@@ -377,16 +383,14 @@ class LatticeSolver:
             self.rho_f = function(self.rho_f)
             self.rho_cf = function(self.rho_cf)
 
-        f1 = [dict() for i in range(self.n_clusters)]
-        f2 = [dict() for i in range(self.n_clusters)]
         for i in range(self.n_clusters):
             for bl, _ in self.gf_struct[i]:
-                f1[i][bl] = helpers.get_f1(self.rho_cf[i][bl], self.rho_qp[i][bl], self.R[i][bl])
-                f2[i][bl] = helpers.get_f2(self.rho_f[i][bl], self.rho_qp[i][bl])
+                self.f1[i][bl] = helpers.get_f1(self.rho_cf[i][bl], self.rho_qp[i][bl], self.R[i][bl])
+                self.f2[i][bl] = helpers.get_f2(self.rho_f[i][bl], self.rho_qp[i][bl])
         
         for function in self.symmetries:
-            f1 = function(f1)
-            f2 = function(f2)
+            self.f1 = function(self.f1)
+            self.f2 = function(self.f2)
         
         for i in range(self.n_clusters):
             for bl, _ in self.gf_struct[i]:
@@ -411,7 +415,7 @@ class LatticeSolver:
 
         self.iteration += 1
 
-        return self.Lambda, self.R, f1, f2
+        return self.Lambda, self.R, self.f1, self.f2
     
     def solve(self, 
               one_shot : bool = False, 
