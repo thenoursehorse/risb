@@ -64,12 +64,16 @@ def flatten(mat1, mat2, is_real):
     x = []
     for i in range(n_clusters):
         if is_real:
-            x = np.append(x, [mat.flatten().real for mat in mat1[i].values()])
-            x = np.append(x, [mat.flatten().real for mat in mat2[i].values()])
+            for mat in mat1[i].values():
+                x += list(mat.flatten().real)
+            for mat in mat2[i].values():
+                x += list(mat.flatten().real)
         else:
-            x = np.append(x, [mat.flatten().view(float) for mat in mat1[i].values()])
-            x = np.append(x, [mat.flatten().view(float) for mat in mat2[i].values()])
-    return x
+            for mat in mat1[i].values():
+                x += list(mat.flatten().view(float))
+            for mat in mat2[i].values():
+                x += list(mat.flatten().view(float))
+    return np.array(x)
     
 def unflatten(x, gf_struct, is_real):
     n_clusters = len(gf_struct)
