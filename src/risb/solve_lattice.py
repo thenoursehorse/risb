@@ -42,7 +42,7 @@ class LatticeSolver:
         Structure of the matrices. For each cluster, it must be a
         list of pairs, each containing the name of the
         matrix block as a string and the size of that block.
-        For example for a single cluster: ``[ ('up', 3), ('down', 3) ].
+        For example for a single cluster: ``[ ('up', 3), ('down', 3) ]``.
     embedding : list[class]
         The class that solves the embedding problem for each cluster. It must 
         already store the local Hamiltonian ``h_loc`` on a cluster, have a method 
