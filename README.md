@@ -21,22 +21,19 @@ We kindly request that you cite the following paper if your project uses our cod
 
 [H. L. Nourse, Ross H. McKenzie, and B. J. Powell Phys. Rev. B **103**, L081114 (2021)](https://doi.org/10.1103/PhysRevB.103.L081114)
 
-You may also wish to cite the following papers:
+The [TRIQS](https://triqs.github.io/triqs) library should also be cited if any of their library is used:
 
-[H. L. Nourse, Ross H. McKenzie, and B. J. Powell Phys. Rev. B **104**, 075104 (2021)](https://doi.org/10.1103/PhysRevB.104.075104)
-
-[H. L. Nourse, Ross H. McKenzie, and B. J. Powell Phys. Rev. B **105**, 205119 (2022)](https://doi.org/10.1103/PhysRevB.105.205119)
+[O. Parcollet, M. Ferrero, T. Ayral, H. Hafermann, I. Krivenko, L. Messio, and P. Seth, Comp. Phys. Comm. 196, 398-415 (2015)](https://doi.org/10.1016/j.cpc.2015.04.023)
 
 <!-- CITATION-END -->
 
-Lastly, the appropriate original theory outlined in the [documentation](https://thenoursehorse.github.io/risb/about.html#original-theory) must be cited.
+Lastly, the appropriate original theory outlined in the [documentation](https://thenoursehorse.github.io/risb/about.html#original-theory) should be cited.
 
 <!-- INSTALL-START -->
 
 ## Dependencies
 
-* [TRIQS](https://triqs.github.io/) `v3.2.x` if using :class:`.EmbeddingAtomDiag`
-and for the tests
+* [TRIQS](https://triqs.github.io/) `v3.2.x` if using :class:`EmbeddingAtomDiag`
 * [numpy](https://numpy.org/)
 * [scipy](https://scipy.org/)
 
@@ -106,6 +103,8 @@ Apple M1/M2 (arm64, aarch64), and any amd64 system.
 
 ## Tests
 
+The tests require a working [TRIQS](https://triqs.github.io/) installation.
+
 Install the prerequisites
 
 ```shell
@@ -148,10 +147,13 @@ See the `examples` folder.
 
 ## To do
 
-* Add kweights tests
-* Sort out basic_functions tests
+* Add kweights tests and DIIS tests
 * Make h0_k all h0 hoppings, and work out h0_loc and add to h_int to make a 
 h_loc = h0_loc + h_int, and then h0_kin_k = h0_k - h_0_loc
-* sort out projectors/multiple clusters
 * as always, very sensitive to initial R, Lambda guess, make more robust
-* Use static type hints for functions (learning work in progress)
+* Get static type hints working for mypy
+* Maybe change embedding.solve to now also take h0_loc. h0_loc could be worked out
+from h0_k and projectors. But this might be annoying because then
+embedding class needs to construct h0_loc as an operator from a matrix. But this 
+is probably a good thing.
+* Add verbose output to LatticeSolver

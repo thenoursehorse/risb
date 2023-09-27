@@ -53,27 +53,48 @@ def update_mu(n_target, energies, beta, n_k, smear_function):
         return n - n_target
     return brentq(target_function, e_min, e_max)
 
-def flatten(Lambda, R, is_real):
+
+# Eh is this really from triqs hartree-fock? This is the same way I always flattened 
+# I just took the .view(float) stuff for complex
+# Copyright (c) 2023 H. L. Nourse
+def flatten(mat1, mat2, is_real):
+    if len(mat1) != len(mat2):
+        raise ValueError(f'len(mat1) = {len(mat1)} and len(mat2) = {len(mat2)} must have the same number of clusters !')
+    n_clusters = len(mat1)
     x = []
-    x = np.append(x, [mat.flatten().real for mat in Lambda.values()])
-    if is_real:
-        x = np.append(x, [mat.flatten().real for mat in R.values()])
-    else:
-        x = np.append(x, [mat.flatten().view(float) for mat in R.values()])
-    return x
+    for i in range(n_clusters):
+        if is_real:
+            for mat in mat1[i].values():
+                x += list(mat.flatten().real)
+            for mat in mat2[i].values():
+                x += list(mat.flatten().real)
+        else:
+            for mat in mat1[i].values():
+                x += list(mat.flatten().view(float))
+            for mat in mat2[i].values():
+                x += list(mat.flatten().view(float))
+    return np.array(x)
     
 def unflatten(x, gf_struct, is_real):
-    Lambda = dict()
-    R = dict()
+    n_clusters = len(gf_struct)
+    mat1 = [dict() for i in range(n_clusters)]
+    mat2 = [dict() for i in range(n_clusters)]
     offset = 0
-    for bl, bl_size in gf_struct:
-        Lambda[bl] = x[list(range(offset, offset + bl_size**2))].reshape(bl_size, bl_size)
-        offset += bl_size**2
-    for bl, bl_size in gf_struct:
-        if is_real:
-            R[bl] = x[list(range(offset, offset + bl_size**2))].reshape(bl_size, bl_size)
-            offset += bl_size**2
-        else:
-            R[bl] = x[list(range(offset, offset + 2*bl_size**2))].view(complex).reshape(bl_size, bl_size)
-            offset += 2*bl_size**2
-    return Lambda, R
+    for i in range(n_clusters):
+        for bl, bl_size in gf_struct[i]:
+            if is_real:
+                mat1[i][bl] = x[list(range(offset, offset + bl_size**2))].reshape(bl_size, bl_size)
+                offset += bl_size**2
+            else:
+                mat1[i][bl] = x[list(range(offset, offset + 2*bl_size**2))].view(complex).reshape(bl_size, bl_size)
+                offset += 2*bl_size**2
+        
+        for bl, bl_size in gf_struct[i]:
+            if is_real:
+                mat2[i][bl] = x[list(range(offset, offset + bl_size**2))].reshape(bl_size, bl_size)
+                offset += bl_size**2
+            else:
+                mat2[i][bl] = x[list(range(offset, offset + 2*bl_size**2))].view(complex).reshape(bl_size, bl_size)
+                offset += 2*bl_size**2
+    # FIXME check offest = len(x)
+    return mat1, mat2

@@ -21,15 +21,16 @@ between clusters (sites) on the lattice is given by
 $$
 \hat{H}_0^{\mathrm{kin}} = - \frac{1}{d} 
 \sum_{\langle i j \rangle} \sum_{\sigma} \sum_{\alpha=1,2} 
-( t_{\alpha} \hat{d}_{i \alpha \sigma}^{\dagger} \hat{d}_{j \alpha \sigma}
+( t_{\alpha} \hat{c}_{i \alpha \sigma}^{\dagger} \hat{c}_{j \alpha \sigma}
 + \mathrm{H.c.} ),
 $$
 
 where $d$ is the number of spatial dimensions ($d=3$ on the cubic 
 lattice), $\sigma$ is a spin label, $\alpha$ is an orbital label, 
 $\langle i j \rangle$ indicates nearest-neighbor bonds, 
-${\mathrm{H.c.}}$ is Hermitian conjugate, and $t_{\alpha}$ is the 
-probability amplitude to move an electron between nearest neighbor sites.
+${\mathrm{H.c.}}$ is Hermitian conjugate, $t_{\alpha}$ is the 
+probability amplitude to move an electron between nearest neighbor sites, and 
+$\hat{c}^{(\dagger)}_{i\alpha\sigma}$ is an annihilation (creation) operator.
 
 For degenerate orbitals on the cubic lattice, the dispersion for each 
 orbital is given by
@@ -46,13 +47,14 @@ The local part of the Hamiltonian is given by
 
 $$
 \hat{H}_i^{\mathrm{loc}} = 
-V \sum_{\sigma} (\hat{d}_{i 1 \sigma}^{\dagger} \hat{d}_{i 2 \sigma} 
+V \sum_{\sigma} (\hat{c}_{i 1 \sigma}^{\dagger} \hat{c}_{i 2 \sigma} 
 + \mathrm{H.c.})
 + U \sum_{\alpha} \hat{n}_{i \alpha \uparrow} \hat{n}_{i \alpha \downarrow},
 $$
 
-where $V$ is the interlayer hopping between the orbitals, and $U$ is 
-the local Coulomb repulsion.
+where $V$ is the interlayer hopping between the orbitals, $U$ is 
+the local Coulomb repulsion, and 
+$\hat{n}_{i\alpha\sigma} \equiv \hat{c}^{\dagger}_{i\alpha\sigma} \hat{c}_{i\alpha\sigma}$.
 
 ## A: Construct $\hat{H}_0^{\mathrm{kin}}$
 

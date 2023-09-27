@@ -20,7 +20,8 @@ from itertools import product
 from typing import TypeAlias, TypeVar
 from numpy.typing import ArrayLike
 from triqs.atom_diag import AtomDiag, act
-from triqs.operators import Operator, c, c_dag
+from triqs.operators import Operator, c, c_dag, dagger
+from risb.helpers_triqs import get_C_Op
 
 GfStructType : TypeAlias = list[tuple[str,int]]
 OpType = TypeVar('OpType')
@@ -82,7 +83,15 @@ class EmbeddingAtomDiag:
         
         #: triqs.operators.Operator : Hybridization terms in :attr:`h_emb`.
         self.h_hybr : OpType = Operator()
+        
+        #: dict[numpy.ndarray] : f-electron density matrix.
+        self.Nf = dict()
 
+        #: dict[numpy.ndarray] : c-electron density matrix.
+        self.Nc = dict()
+        
+        #: dict[numpy.ndarray] : Density matrix of hybridization terms (c- and f-electrons).
+        self.Mcf = dict()
 
     @staticmethod
     def _bl_loc_to_bath(bl : str) -> str:
@@ -109,11 +118,12 @@ class EmbeddingAtomDiag:
         Lambda_c : dict of ndarray, optional
             Bath coupling. Each key in dictionary must follow ``gf_struct``.
         """
+        C_Op = get_C_Op(self.gf_struct_bath, dagger=False)
+        C_dag_Op = get_C_Op(self.gf_struct_bath, dagger=True)
         self.h_bath : OpType = Operator()
         for bl_bath, bl_bath_size in self.gf_struct_bath:
             bl = self._bl_bath_to_loc(bl_bath)
-            for a,b in product(range(bl_bath_size), range(bl_bath_size)):
-                self.h_bath += Lambda_c[bl][a,b] * c(bl_bath,b) * c_dag(bl_bath,a)
+            self.h_bath += C_Op[bl_bath] @ Lambda_c[bl] @ C_dag_Op[bl_bath]
 
     def set_h_hybr(self, D : MFType) -> None:
         """
@@ -124,14 +134,14 @@ class EmbeddingAtomDiag:
         D : dict[numpy.ndarray]
             Hybridization coupling. Each key in dictionary must follow ``gf_struct``.
         """
+        C_Op = get_C_Op(self.gf_struct_bath, dagger=False)
+        C_dag_Op = get_C_Op(self.gf_struct, dagger=True)
         self.h_hybr : OpType = Operator()
         for bl, loc_size in self.gf_struct:
             bl_bath = self._bl_loc_to_bath(bl)
-            bath_size = self.gf_struct_bath_dict[bl_bath]
-            for a, alpha in product(range(bath_size), range(loc_size)):
-                self.h_hybr += D[bl][a,alpha] * c_dag(bl,alpha) * c(bl_bath,a)
-                self.h_hybr += np.conj(D[bl][a,alpha]) * c_dag(bl_bath,a) * c(bl,alpha)
-
+            tmp = C_dag_Op[bl] @ D[bl] @ C_Op[bl_bath]
+            self.h_hybr += tmp + dagger(tmp)
+        
     def set_h_emb(self, 
                   Lambda_c : MFType, 
                   D : MFType, 
@@ -151,7 +161,8 @@ class EmbeddingAtomDiag:
         
         # For operators equal is copy, not a view
         self.h_emb = self.h_loc + self.h_bath + self.h_hybr
-        
+
+        # NOTE h_bath must have + mu*np.eye()*f_a*f_a^dag to remove mu's contribution
         if mu is not None:
             for bl, bl_size in self.gf_struct:
                 for alpha in range(bl_size):
@@ -159,23 +170,18 @@ class EmbeddingAtomDiag:
 
     # TODO other restrictions, like none, for testing
     # but it has been tested against sparse embedding and is the same answer
-    # TODO what about superconductivity, ghosts?:w
+    # TODO what about superconductivity, ghosts?
     def solve(self) -> None:
         """
         Solve for the groundstate in the half-filled number sector of the 
         embedding problem.
         """
         M = int(len(self.fops_emb) / 2)
-        is_real = True
-        for term in self.h_emb:
-            # term is an array holding info of term as monomial, last index is its value
-            if np.iscomplex(term[-1]):
-                is_real = False
-                break
-        if is_real:
-            self.ad = AtomDiag(self.h_emb.real, self.fops_emb, n_min=M, n_max=M)
-        else:
+        # term is an array holding info of term as monomial, last index is its value
+        if any(np.iscomplex(term[-1]) for term in self.h_emb):
             self.ad = AtomDiag(self.h_emb, self.fops_emb, n_min=M, n_max=M)
+        else:
+            self.ad = AtomDiag(self.h_emb.real, self.fops_emb, n_min=M, n_max=M)
         self.gs_vector = self.ad.vacuum_state
         self.gs_vector[0] = 1
 
@@ -193,11 +199,11 @@ class EmbeddingAtomDiag:
         """
         bl_bath = self._bl_loc_to_bath(bl)
         bl_size = self.gf_struct_bath_dict[bl_bath]
-        Nf = np.zeros([bl_size, bl_size])
+        self.Nf[bl] = np.zeros([bl_size, bl_size], dtype=complex)
         for a, b in product(range(bl_size), range(bl_size)):
             Op = c(bl_bath, b) * c_dag(bl_bath, a)
-            Nf[a,b] = self.overlap(Op, force_real=True)
-        return Nf
+            self.Nf[bl][a,b] = self.overlap(Op, force_real=False)
+        return self.Nf[bl]
     
     def get_nc(self, bl : str) -> np.ndarray:
         """
@@ -212,11 +218,11 @@ class EmbeddingAtomDiag:
             The c-electron density matrix :attr:`Nc` from impurity.
         """
         bl_size = self.gf_struct_dict[bl]
-        Nc = np.zeros([bl_size, bl_size])
+        self.Nc[bl] = np.zeros([bl_size, bl_size], dtype=complex)
         for alpha, beta in product(range(bl_size), range(bl_size)):
             Op = c_dag(bl, alpha) * c(bl, beta)
-            Nc[alpha,beta] = self.overlap(Op, force_real=True)
-        return Nc
+            self.Nc[bl][alpha,beta] = self.overlap(Op, force_real=False)
+        return self.Nc[bl]
     
     def get_mcf(self, bl : str) -> np.ndarray:
         """
@@ -233,11 +239,11 @@ class EmbeddingAtomDiag:
         bl_bath = self._bl_loc_to_bath(bl)
         bath_size = self.gf_struct_bath_dict[bl_bath]
         loc_size = self.gf_struct_dict[bl]
-        Mcf = np.zeros([loc_size, bath_size], dtype=complex)
+        self.Mcf[bl] = np.zeros([loc_size, bath_size], dtype=complex)
         for alpha, a in product(range(loc_size), range(bath_size)):
             Op = c_dag(bl, alpha) * c(bl_bath, a)
-            Mcf[alpha,a] = self.overlap(Op, force_real=False)
-        return Mcf
+            self.Mcf[bl][alpha,a] = self.overlap(Op, force_real=False)
+        return self.Mcf[bl]
     
     def overlap(self, Op : OpType, force_real : bool = True) -> float | complex:
         """
@@ -248,7 +254,6 @@ class EmbeddingAtomDiag:
         ----------
         Op : triqs.operators.Operator
             Operator to take expectation of.
-
         force_real : bool, optional
             Whether the result should be real or complex.
 
@@ -262,37 +267,7 @@ class EmbeddingAtomDiag:
             return res.real
         else:
             return res
-        
-    @property
-    def Nf(self) -> MFType:
-        """
-        dict[numpy.ndarray] : f-electron density matrix.
-        """
-        Nf = dict()
-        for bl, bl_size in self.gf_struct:
-            Nf[bl] = self.get_nf(bl)
-        return Nf
-
-    @property
-    def Nc(self) -> MFType:
-        """
-        dict[numpy.ndarray] : c-electron density matrix.
-        """
-        Nc = dict()
-        for bl, bl_size in self.gf_struct:
-            Nc[bl] = self.get_nc(bl)
-        return Nc
-    
-    @property
-    def Mcf(self) -> MFType:
-        """
-        dict[numpy.ndarray] : Density matrix of hybridization terms (c- and f-electrons).
-        """
-        Mcf = dict()
-        for bl, bl_size in self.gf_struct:
-            Mcf[bl] = self.get_mcf(bl)
-        return Mcf
-    
+            
     @property
     def gs_energy(self) -> float:
         """

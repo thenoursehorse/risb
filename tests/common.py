@@ -2,12 +2,14 @@ import numpy as np
 from triqs.gf import *
 from triqs.lattice.tight_binding import *
 
-def symmetrize_blocks(A):
-    A_sym = 0
-    for bl in A:
-        A_sym += A[bl] / len(A)
-    for bl in A:
-        A[bl] = A_sym
+def symmetrize_blocks(A : list[dict[np.ndarray]]):
+    n_clusters = len(A)
+    A_sym = [0 for i in range(n_clusters)]
+    for i in range(n_clusters):
+        for bl in A[i]:
+            A_sym[i] += A[i][bl] / len(A[i])
+        for bl in A[i]:
+            A[i][bl] = A_sym[i]
     return A
 
 def build_cubic_h0_k(gf_struct=[('up',1),('dn',1)], nkx=6, spatial_dim=2, t=1):
