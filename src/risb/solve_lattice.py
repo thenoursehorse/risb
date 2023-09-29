@@ -389,6 +389,7 @@ class LatticeSolver:
             self.Lambda = function(self.Lambda)
         
         # Make R, Lambda in supercell basis from basis of the clusters
+        # FIXME check if projectors get broadcast correctly if they are a diff proj at each k
         R_full = {bl:0 for bl in self.h0_k.keys()}
         Lambda_full = {bl:0 for bl in self.h0_k.keys()}
         for i in range(self.n_clusters):
@@ -417,10 +418,10 @@ class LatticeSolver:
         # nothing compared to solving the embedding problem so this is likely fine
         # Enforce matrix structure from symmetries
         self.rho_qp, _ = self._unflatten_mat( self._flatten_mat( self.rho_qp, is_coeff_real=True ), is_coeff_real=True )
-
+        #self.lopsided_ke_qp, _ = self._unflatten_mat( self._flatten_mat( self.lopsided_ke_qp, is_coeff_real=False ), is_coeff_real=False )
         for function in self.symmetries:
             self.rho_qp = function(self.rho_qp)
-            self.lopsided_ke_qp = function(self.lopsided_ke_qp)
+            #self.lopsided_ke_qp = function(self.lopsided_ke_qp) # FIXME can I do it to ke as well? It should have same symm as D
             #self.ke_qp = function(self.ke_qp)
         
         for i in range(self.n_clusters):
@@ -437,7 +438,6 @@ class LatticeSolver:
         # Enforce matrix structure from symmetries
         self.Lambda_c, _ = self._unflatten_mat( self._flatten_mat( self.Lambda_c, is_coeff_real=True ), is_coeff_real=True )
         self.D, _ = self._unflatten_mat( self._flatten_mat( self.D, is_coeff_real=False ), is_coeff_real=False )
-        
         for function in self.symmetries:
             self.Lambda_c = function(self.Lambda_c)
             self.D = function(self.D)
@@ -449,6 +449,9 @@ class LatticeSolver:
                 self.rho_f[i][bl] = self.embedding[i].get_nf(bl)
                 self.rho_cf[i][bl] = self.embedding[i].get_mcf(bl)
         
+        ## Enforce matrix structure from symmetries
+        self.rho_f, _ = self._unflatten_mat( self._flatten_mat( self.rho_f, is_coeff_real=True ), is_coeff_real=True )
+        self.rho_cf, _ = self._unflatten_mat( self._flatten_mat( self.rho_cf, is_coeff_real=False ), is_coeff_real=False )
         for function in self.symmetries:
             self.rho_f = function(self.rho_f)
             self.rho_cf = function(self.rho_cf)
@@ -458,6 +461,9 @@ class LatticeSolver:
                 self.f1[i][bl] = helpers.get_f1(self.rho_cf[i][bl], self.rho_qp[i][bl], self.R[i][bl])
                 self.f2[i][bl] = helpers.get_f2(self.rho_f[i][bl], self.rho_qp[i][bl])
         
+        # Enforce matrix structure from symmetries
+        self.f2, _ = self._unflatten_mat( self._flatten_mat( self.f2, is_coeff_real=True ), is_coeff_real=True )
+        self.f1, _ = self._unflatten_mat( self._flatten_mat( self.f1, is_coeff_real=False ), is_coeff_real=False )
         for function in self.symmetries:
             self.f1 = function(self.f1)
             self.f2 = function(self.f2)
@@ -471,6 +477,9 @@ class LatticeSolver:
                     self.Lambda[i][bl] = helpers.get_lambda(self.R[i][bl], self.D[i][bl], self.Lambda_c[i][bl], self.rho_f[i][bl])
                     self.R[i][bl] = helpers.get_r(self.rho_cf[i][bl], self.rho_f[i][bl])
         
+        # Enforce matrix structure from symmetries
+        self.Lambda, _ = self._unflatten_mat( self._flatten_mat( self.Lambda, is_coeff_real=True ), is_coeff_real=True )
+        self.R, _ = self._unflatten_mat( self._flatten_mat( self.R, is_coeff_real=False ), is_coeff_real=False )
         for function in self.symmetries:
             self.Lambda = function(self.Lambda)
             self.R = function(self.R)
