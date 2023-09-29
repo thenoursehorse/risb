@@ -257,7 +257,7 @@ class LatticeSolver:
 
         # Normalize
         for i in range(len(H_rs)):
-            H_rs[i] = H_rs[i] / np.sqrt( np.trace(H_rs[i].conj().T @ H_rs[i]) )
+            H_rs[i] = H_rs[i] / np.sqrt( np.einsum( 'ij,ji->', H_rs[i].conj().T, H_rs[i] ) )
         return H_rs
     
     @staticmethod
@@ -286,7 +286,11 @@ class LatticeSolver:
                     # space it is the inner product <basis_vec, vec> = coeff
                     # if the basis_vec is orthonormal. For matrices the inner 
                     # product is <A, B> = Tr(A^+, B).
-                    coeff = np.trace(h.conj().T @  A[i][bl])
+                    # Note that einsum is order mag faster than tr(a,b) and 
+                    # stores no intermediate array
+                    # Could also vectorize both matrices as flatten('F') to 
+                    # column-major order and then take normal inner product
+                    coeff = np.einsum('ij,ji->', h.conj().T, A[i][bl])
                     x.append( coeff.real )
                     if (not is_coeff_real) and (not self.force_real):
                         x.append( coeff.imag )
