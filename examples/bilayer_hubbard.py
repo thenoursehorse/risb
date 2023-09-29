@@ -65,8 +65,8 @@ embedding = EmbeddingAtomDiag(h_loc, gf_struct)
 # gf_struct and embedding must be for each cluster. In this case
 # there is only one cluster, so a list with one cluster is passed.
 S = LatticeSolver(h0_k=h0_k,
-                  gf_struct=[gf_struct],
-                  embedding=[embedding],
+                  gf_struct=gf_struct,
+                  embedding=embedding,
                   update_weights=kweight.update_weights)
                   #symmetries=[symmetries])
 
