@@ -38,11 +38,13 @@ def one_band():
     beta = 40
     U = 4
     mu = U / 2 # half-filling
+    n_target = 1
     gf_struct = [ (bl, n_orb) for bl in ['up', 'dn'] ]
     h0_k = build_cubic_h0_k(gf_struct=gf_struct, nkx=nkx, spatial_dim=spatial_dim)
     h_loc = U * n('up',0) * n('dn',0)
     embedding = EmbeddingAtomDiag(h_loc, gf_struct)
-    kweight = SmearingKWeight(beta=beta, mu=mu)
+    #kweight = SmearingKWeight(beta=beta, mu=mu)
+    kweight = SmearingKWeight(beta=beta, n_target=n_target)
     Lambda_expected = np.array([[2.0]])
     Z_expected = np.array([[0.437828801025]])
     return gf_struct, h0_k, embedding, kweight, mu, Lambda_expected, Z_expected
@@ -53,6 +55,7 @@ def bilayer():
     V = 0.25
     J = 0
     mu = U / 2.0 # half-filling
+    n_target = 2
     n_orb = 2
     spatial_dim = 3
     nkx = 10
@@ -68,7 +71,8 @@ def bilayer():
     for s1,s2 in product(spin_names,spin_names):
         h_loc += 0.5 * J * c_dag(s1,0) * c(s2,0) * c_dag(s2,1) * c(s1,1)
     embedding = EmbeddingAtomDiag(h_loc, gf_struct)
-    kweight = SmearingKWeight(beta=beta, mu=mu)
+    #kweight = SmearingKWeight(beta=beta, mu=mu)
+    kweight = SmearingKWeight(beta=beta, n_target=n_target)
     Lambda_expected = np.array([[2.0, 0.114569681915],[0.114569681915, 2.0]])
     Z_expected = np.array([[0.452846149446, 0],[0, 0.452846149446]])
     return gf_struct, h0_k, embedding, kweight, mu, Lambda_expected, Z_expected
@@ -80,6 +84,7 @@ def kanamori():
     J = coeff * U
     Up = U - 2*J
     mu = 0.5*U + 0.5*Up + 0.5*(Up-J) # half-filling
+    n_target = 2
     #mu = -0.81 + (0.6899-1.1099*coeff)*U + (-0.02548+0.02709*coeff-0.1606*coeff**2)*U**2 # quarter-filling DMFT result
     n_orb = 2
     spatial_dim = 3
@@ -96,6 +101,7 @@ def kanamori():
                            off_diag=True)
     embedding = EmbeddingAtomDiag(h_loc, gf_struct)
     kweight = SmearingKWeight(beta=beta, mu=mu)
+    kweight = SmearingKWeight(beta=beta, n_target=n_target)
     Lambda_expected = np.array([[3.0, 0.0],[0.0, 3.0]])
     Z_expected = np.array([[0.574940323948, 0.0],[0.0, 0.574940323948]])
     return gf_struct, h0_k, embedding, kweight, mu, Lambda_expected, Z_expected
@@ -134,9 +140,9 @@ def test_diis_nosymmetrize(subtests, request, model):
               mu_expected, Lambda_expected, Z_expected)
 
 @pytest.mark.parametrize('model, root_method', [
-    ('one_band', 'hybr'),
-    ('bilayer', 'broyden1'),
-    ('kanamori', 'broyden1'), 
+    ('one_band', 'krylov'),
+    ('bilayer', 'krylov'),
+    ('kanamori', 'krylov'), 
 ])   
 def test_scipy_root(subtests, request, model, root_method):
     model = request.getfixturevalue(model)
