@@ -79,12 +79,12 @@ S = LatticeSolver(h0_k=h0_k,
 S.solve(tol=1e-6)
  
 # Average number of particles on a cluster
-NOp = N_op(spin_names, n_orb, off_diag=True)
-N = embedding.overlap(NOp)
+total_number_Op = N_op(spin_names, n_orb, off_diag=True)
+total_number = embedding.overlap(total_number_Op)
 
 # Effective total spin of a cluster
-S2Op = S2_op(spin_names, n_orb, off_diag=True)
-S2 = embedding.overlap(S2Op)
+total_spin_Op = S2_op(spin_names, n_orb, off_diag=True)
+total_spin = embedding.overlap(total_spin_Op)
 
 # Print out some interesting observables
 with np.printoptions(formatter={'float': '{: 0.4f}'.format}):
@@ -93,5 +93,5 @@ with np.printoptions(formatter={'float': '{: 0.4f}'.format}):
             print(f"Quasiaprticle weight Z[{bl}] = \n{Z}")
         for bl, Lambda in S.Lambda[i].items():
             print(f"Correlation potential Lambda[{bl}] = \n{Lambda}")
-        print(f"Number of partices per cluster N = \n{N:0.4f}")
-        print(f"Effective spin of a cluster S = \n{(0.5 * np.sqrt(4 * (S2 + 1)) - 1):0.4f}")
+        print(f"Number of partices per cluster N = \n{total_number:0.4f}")
+        print(f"Effective spin of a cluster S = \n{ -0.5 + 0.5 * np.sqrt( 1 + 4*total_spin) : 4f}")

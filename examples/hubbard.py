@@ -66,10 +66,10 @@ S = LatticeSolver(h0_k=h0_k,
 )
 
 # Some observables
-number_Op = N_op(spin_names, n_orb, off_diag=True)
+total_number_Op = N_op(spin_names, n_orb, off_diag=True)
 total_spin_Op = S2_op(spin_names, n_orb, off_diag=True)
 Z = []
-number = [] # Avg particle number per site
+total_number = [] # Avg particle number per site
 total_spin = [] # Total spin per site
 
 U_arr = np.arange(0, 10+0.1, 0.5)
@@ -81,7 +81,7 @@ for U in U_arr:
     # Solve
     S.solve(tol=1e-6)
  
-    number.append( embedding.overlap(number_Op) )
+    total_number.append( embedding.overlap(total_number_Op) )
     total_spin.append( embedding.overlap(total_spin_Op) )
     Z.append(S.Z[0]['up'][0,0])
 

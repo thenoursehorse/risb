@@ -17,11 +17,11 @@
 
 import numpy as np
 from copy import deepcopy
+from itertools import product
 from numpy.typing import ArrayLike
 from typing import Any, Callable, TypeAlias
 from risb import helpers
 from risb.optimize import DIIS
-from .other.from_triqs_hartree import flatten, unflatten
 
 GfStructType : TypeAlias = list[tuple[str,int]]
 MFType : TypeAlias = dict[ArrayLike]
@@ -68,8 +68,6 @@ class LatticeSolver:
         The mapping from the symmetry blocks of each cluster in `embedding` 
         to the symmetry blocks of `h0_k`. Default assumes the keys in 
         all clusters are the same as the keys in `h0_k`.
-    force_real : bool
-        Mapipng from 
     symmetries : list[callable], optional
         Symmetry functions acting on the mean-field matrices. The argument of 
         the function must take a list of all clusters. 
@@ -135,19 +133,7 @@ class LatticeSolver:
             self.projectors = [ {bl:np.eye(bl_size) for bl, bl_size in self.gf_struct[i]} for i in range(self.n_clusters)]
         else:
             self.projectors = projectors
-                    
-        #: list[dict[numpy.ndarray]] : Renormalization matrix
-        #: from c- to f-electrons at the mean-field level for each cluster.
-        self.R = self._initialize_block_mf_matrix(self.gf_struct, force_real)
-        
-        for i in range(self.n_clusters):
-            for bl_sub, _ in self.gf_struct[i]:
-                np.fill_diagonal(self.R[i][bl_sub], 1)
-        
-        #: list[dict[numpy.ndarray]] : Correlation potential matrix of the quasiparticles 
-        #: for each cluster.
-        self.Lambda = self._initialize_block_mf_matrix(self.gf_struct, force_real)
-    
+                        
         if gf_struct_mapping is None:
             self.gf_struct_mapping = [{bl:bl for bl in h0_k.keys()} for i in range(self.n_clusters)]
         else:
@@ -157,6 +143,21 @@ class LatticeSolver:
         self.force_real = force_real
         self.error_fun = error_fun
         self.return_x_new = return_x_new
+
+        # The Hermitian basis in each block of a cluster
+        self._H_basis = [{bl:self._hermitian_basis(bl_size, self.force_real) for bl, bl_size in self.gf_struct[i]} for i in range(self.n_clusters)]
+        
+        #: list[dict[numpy.ndarray]] : Renormalization matrix
+        #: from c- to f-electrons at the mean-field level for each cluster.
+        self.R = self._initialize_block_mf_matrix(self.gf_struct, self.force_real)
+        
+        for i in range(self.n_clusters):
+            for bl_sub, _ in self.gf_struct[i]:
+                np.fill_diagonal(self.R[i][bl_sub], 1)
+        
+        #: list[dict[numpy.ndarray]] : Correlation potential matrix of the quasiparticles 
+        #: for each cluster.
+        self.Lambda = self._initialize_block_mf_matrix(self.gf_struct, self.force_real)
         
         #: list[dict[numpy.ndarray]] : Bath coupling of impurity for each cluster.
         self.Lambda_c = [dict() for i in range(self.n_clusters)]
@@ -220,7 +221,51 @@ class LatticeSolver:
         numpy.ndarray
         """
         return self._update_weights(*args, **kwargs)
+    
+    @staticmethod
+    def _hermitian_basis(N : int, is_real : bool = False):
+        """
+        Parameters
+        ----------
+        N : int
+            The dimension of the Hermitian matrics
+        is_real : bool
+            If True spans only symmetric matrices.
 
+        Returns
+        -------
+        list[numpy.ndarray]
+            A list of matrices that define an orthonormal basis tat spans all
+            Hermitian matrices of dimension `N`.
+        """
+        if is_real:
+            n_basis = int(N + N*(N-1)/2)
+            H_rs = [np.zeros([N,N]) for _ in range(n_basis)]
+        else:
+            n_basis = int(N + N*(N-1)/2 + N*(N-1)/2)
+            H_rs = [np.zeros([N,N], dtype=complex) for _ in range(n_basis)]
+
+        # Construct orthogonal basis
+        i = 0
+        for r, s in product(range(N), range(N)):
+            if r == s:
+                H_rs[i][r, r] = 1
+                i = i + 1
+            elif r < s:
+                H_rs[i][r, s] = 1
+                H_rs[i][s, r] = 1
+                i = i + 1
+            elif r > s:
+                if not is_real:
+                    H_rs[i][r, s] = 1j
+                    H_rs[i][s, r] = -1j
+                    i = i + 1
+
+        # Normalize
+        for i in range(len(H_rs)):
+            H_rs[i] = H_rs[i] / np.sqrt( np.trace(H_rs[i].conj().T @ H_rs[i]) )
+        return H_rs
+    
     @staticmethod
     def _initialize_block_mf_matrix(gf_struct : GfStructType,
                                     is_real : bool) -> MFType:
@@ -233,8 +278,46 @@ class LatticeSolver:
                 else:
                     mat[i][bl] = np.zeros((bsize,bsize), dtype=complex)
         return mat
-    
+
+    def _flatten_mat(self, 
+                     A : MFType, 
+                     is_coeff_real : bool):
+        if len(A) != len(self._H_basis):
+            raise ValueError(f'len(A) = {len(A)} and len(H_basis) = {len(self._H_basis)} must have the same number of clusters !')
+        x = []
+        for i in range(self.n_clusters):
+            for bl, bl_size in self.gf_struct[i]:
+                for h in self._H_basis[i][bl]:
+                    # To extract a coefficient of a basis that spans a vector 
+                    # space it is the inner product <basis_vec, vec> = coeff
+                    # if the basis_vec is orthonormal. For matrices the inner 
+                    # product is <A, B> = Tr(A^+, B).
+                    coeff = np.trace(h.conj().T @  A[i][bl])
+                    x.append( coeff.real )
+                    if (not is_coeff_real) and (not self.force_real):
+                        x.append( coeff.imag )
+        return x
+
+    def _unflatten_mat(self,
+                       x : ArrayLike, 
+                       is_coeff_real : bool, 
+                       offset : int = 0) -> tuple[MFType, int]:
+        mat = self._initialize_block_mf_matrix(self.gf_struct, self.force_real)
+        for i in range(self.n_clusters):
+            for bl, bl_size in self.gf_struct[i]:
+                for h in self._H_basis[i][bl]:
+                    # x stores the coefficients of the basis of Hermitian 
+                    # matrices defined in self._H_basis.
+                    if is_coeff_real or self.force_real:
+                        mat[i][bl] += x[offset] * h
+                        offset = offset + 1
+                    else:
+                        mat[i][bl] += (x[offset] + 1j*x[offset+1]) * h
+                        offset = offset + 2
+        return mat, offset
+
     @staticmethod
+    # Not really used
     def _make_hermitian(A):
         if isinstance(A, list):
             for i in range(len(A)):
@@ -255,12 +338,13 @@ class LatticeSolver:
                         kweight_param : dict[str, Any], 
                         ) -> np.ndarray | tuple[np.ndarray, np.ndarray]:
         
-        self.Lambda, self.R = unflatten(x, self.gf_struct, self.force_real)
+        self.Lambda, offset = self._unflatten_mat(x, is_coeff_real=True)
+        self.R, _ = self._unflatten_mat(x, is_coeff_real=False, offset=offset)
         self.Lambda, self.R, self.f1, self.f2  = self.one_cycle(embedding_param, kweight_param)
-        x_new = deepcopy(flatten(self.Lambda, self.R, self.force_real))
+        x_new = np.array( self._flatten_mat(self.Lambda, is_coeff_real=True) + self._flatten_mat(self.R, is_coeff_real=False) )
         
         if self.error_fun == 'root':
-            x_error = flatten(self.f2, self.f1, self.force_real)
+            x_error = np.array( self._flatten_mat(self.f2, is_coeff_real=True) + self._flatten_mat(self.f1, is_coeff_real=False) )
         elif self.error_fun == 'recursion':
             x_error = x - x_new
         else:
@@ -302,18 +386,9 @@ class LatticeSolver:
         if embedding_param is None:
             embedding_param = [dict() for i in range(self.n_clusters)]
  
-        # Force to be Hermitian?
-        self.Lambda = self._make_hermitian(self.Lambda)
-        
         for function in self.symmetries:
             self.R = function(self.R)
             self.Lambda = function(self.Lambda)
-        
-        # For testing
-        #print("iteration", self.iteration, "start")
-        #print("R", self.R[0]['up'])
-        #print("Lambda", self.Lambda[0]['up'])
-        #print()
         
         # Make R, Lambda in supercell basis from basis of the clusters
         R_full = {bl:0 for bl in self.h0_k.keys()}
@@ -323,9 +398,6 @@ class LatticeSolver:
                 bl_full = self.gf_struct_mapping[i][bl]
                 R_full[bl_full] += self.projectors[i][bl].conj().T @ self.R[i][bl] @ self.projectors[i][bl]
                 Lambda_full[bl_full] += self.projectors[i][bl].conj().T @ self.Lambda[i][bl] @ self.projectors[i][bl]
-        
-        # Force to be Hermitian?
-        Lambda_full = self._make_hermitian(Lambda_full)
         
         h0_R = dict()
         #R_h0_R = dict()
@@ -343,9 +415,11 @@ class LatticeSolver:
                 self.lopsided_ke_qp[i][bl] = helpers.get_ke(h0_R[bl_full], self.bloch_vector_qp[bl_full], self.kweights[bl_full], self.projectors[i][bl])
                 #self.ke_qp[i][bl] = helpers.get_ke(R_h0_R[bl_full], self.bloch_vector_qp[bl_full], self.kweights[bl_full], self.projectors[i][bl])
         
-        # Force to be Hermitian?
-        self.rho_qp = self._make_hermitian(self.rho_qp)
-        
+        # FIXME More expensive to do this than just storing and working with the coefficients, but 
+        # nothing compared to solving the embedding problem so this is likely fine
+        # Enforce matrix structure from symmetries
+        self.rho_qp, _ = self._unflatten_mat( self._flatten_mat( self.rho_qp, is_coeff_real=True ), is_coeff_real=True )
+
         for function in self.symmetries:
             self.rho_qp = function(self.rho_qp)
             self.lopsided_ke_qp = function(self.lopsided_ke_qp)
@@ -362,12 +436,13 @@ class LatticeSolver:
                     #self.D[i][bl] = helpers.get_d2(self.rho_qp[i][bl], self.ke_qp[i][bl], self.R[i][bl])
                     self.Lambda_c[i][bl] = helpers.get_lambda_c(self.rho_qp[i][bl], self.R[i][bl], self.Lambda[i][bl], self.D[i][bl])
                     
-        # Force to be Hermitian?
-        self.Lambda_c = self._make_hermitian(self.Lambda_c)
+        # Enforce matrix structure from symmetries
+        self.Lambda_c, _ = self._unflatten_mat( self._flatten_mat( self.Lambda_c, is_coeff_real=True ), is_coeff_real=True )
+        self.D, _ = self._unflatten_mat( self._flatten_mat( self.D, is_coeff_real=False ), is_coeff_real=False )
         
         for function in self.symmetries:
-            self.D = function(self.D)
             self.Lambda_c = function(self.Lambda_c)
+            self.D = function(self.D)
 
         for i in range(self.n_clusters):
             self.embedding[i].set_h_emb(self.Lambda_c[i], self.D[i])
@@ -375,9 +450,6 @@ class LatticeSolver:
             for bl, _ in self.gf_struct[i]:
                 self.rho_f[i][bl] = self.embedding[i].get_nf(bl)
                 self.rho_cf[i][bl] = self.embedding[i].get_mcf(bl)
-        
-        # Force to be Hermitian?
-        self.rho_f = self._make_hermitian(self.rho_f)
         
         for function in self.symmetries:
             self.rho_f = function(self.rho_f)
@@ -401,17 +473,9 @@ class LatticeSolver:
                     self.Lambda[i][bl] = helpers.get_lambda(self.R[i][bl], self.D[i][bl], self.Lambda_c[i][bl], self.rho_f[i][bl])
                     self.R[i][bl] = helpers.get_r(self.rho_cf[i][bl], self.rho_f[i][bl])
         
-        # Force to be Hermitian?
-        self.Lambda = self._make_hermitian(self.Lambda)
-            
         for function in self.symmetries:
             self.Lambda = function(self.Lambda)
             self.R = function(self.R)
-
-        #print("iteration", self.iteration, "end")
-        #print("R", self.R[0]['up'])
-        #print("Lambda", self.Lambda[0]['up'])
-        #print()
 
         self.iteration += 1
 
@@ -452,11 +516,12 @@ class LatticeSolver:
 
         if one_shot:
             self.Lambda, self.R, _, _ = self.one_cycle(embedding_param, kweight_param)
-            x = flatten(self.Lambda, self.R, self.force_real)
+            x = np.array( self._flatten_mat(self.Lambda, is_coeff_real=True) + self._flatten_mat(self.R, is_coeff_real=False) )
         
         else:
+            x0 = np.array( self._flatten_mat(self.Lambda, is_coeff_real=True) + self._flatten_mat(self.R, is_coeff_real=False) )
             x = self.root(fun=self._target_function, 
-                          x0=flatten(self.Lambda, self.R, self.force_real), 
+                          x0=x0,
                           args=(embedding_param, kweight_param),
                           **kwargs)
         return x

@@ -81,7 +81,7 @@ FROM build_arm64
 COPY requirements.txt $SRC/$APPNAME/requirements.txt
 RUN pip install -r $SRC/$APPNAME/requirements.txt
 RUN pip install --upgrade pip \
-  && pip install nox
+  && pip install nox matplotlib
 #mypy
 
 # Install library
