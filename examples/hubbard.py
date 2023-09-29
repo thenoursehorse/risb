@@ -58,8 +58,8 @@ embedding = EmbeddingAtomDiag(h_loc, gf_struct)
 
 # Setup RISB solver class  
 S = LatticeSolver(h0_k=h0_k,
-                  gf_struct=[gf_struct],
-                  embedding=[embedding],
+                  gf_struct=gf_struct,
+                  embedding=embedding,
                   update_weights=kweight.update_weights,
                   symmetries=[symmetries],
                   force_real=True

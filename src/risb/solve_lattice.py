@@ -102,17 +102,11 @@ class LatticeSolver:
 
         self.h0_k = h0_k
         
-        # FIXME I need a better way to do this
-        # check for gf_struct
-        # Maybe check each element is a tuple
-        is_list = True
-        for struct in gf_struct:
-            if not isinstance(struct, list):
-                is_list = False
-        if is_list:
-            self.gf_struct = gf_struct
-        else:
+        # FIXME is this the best way to make sure gf_struct is a list of gf_struct?
+        if isinstance(gf_struct[0][0], str) or isinstance(gf_struct[0][0], int):
             self.gf_struct = [gf_struct]
+        else:
+            self.gf_struct = gf_struct
         
         #: int : Number of correlated clusters per supercell on the lattice.
         self.n_clusters = len(self.gf_struct)
