@@ -58,7 +58,7 @@ class LatticeSolver:
         See class :class:`.SmearingKWeight`.
     root : callable, optional
         The function that drives the self-consistent procedure. It is called
-        as ``root(fun, x0, args=, tol=, options=)``, where ``x0`` is the initial 
+        as ``root(fun, x0, args=, tol=, **kwargs)``, where ``x0`` is the initial 
         guess vector, and ``fun`` is the function to minimize, 
         where ``fun = self._target_function``.
         Defaults to :meth:`.DIIS.solve` method of :class:`.DIIS`.
