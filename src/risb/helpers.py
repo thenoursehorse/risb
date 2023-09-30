@@ -181,7 +181,7 @@ def get_r(Mcf : np.ndarray, Nf : np.ndarray) -> np.ndarray:
     Notes
     -----
     Derived from Eq. 38 in `10.1103/PhysRevX.5.011008 <PRX011008_>`__ by 
-    replacing the quasiparticle density matrix sith the f-electron density matrix 
+    replacing the quasiparticle density matrix with the f-electron density matrix 
     using Eq. 39.
 
     .. _PRX011008: https://doi.org/10.1103/PhysRevX.5.011008
@@ -432,12 +432,12 @@ def block_to_full(A : np.ndarray) -> np.ndarray:
     Parameters
     ----------
     A : numpy.ndarray
-        A block matrix indexed as ``A[...,block1,block2,orb1,orb2]``
+        A block matrix indexed as ``A[...,block1,block2,orb1,orb2]``.
 
     Returns
     -------
     numpy.ndarray
-        Matrix `A` of shape ``A[...,block * orb, block * orb]
+        Matrix `A` of shape ``A[...,block * orb, block * orb]``.
     """
     if len(A.shape) < 4:
         raise ValueError(f'A.shape = {A.shape} must have at least ...,block,block,orb,orb structure !')
