@@ -3,7 +3,9 @@
 ## Introduction
 
 In this tutorial, you will construct the self-consistent loop in rotationally 
-invariant slave-bosons, and use it to solve the bilayer Hubbard model.
+invariant slave-bosons, and use it to solve the bilayer Hubbard model. This 
+will allow you to easily expand upon the algorithms that we provide so that 
+you can tailor-make {{RISB}} for your own research problems.
 
 We will try to reproduce the results of Sec. IIIB of Ref. [^Lechermann2007].
 
@@ -144,7 +146,7 @@ def make_h0_k(mesh, gf_struct, t = 1, a = 1):
     return h0_k
 ```
 
-Note that the structure of the matrices is given in the same way as TRIQS 
+Note that the structure of the matrices is given in the same way as {{TRIQS}} 
 Green's functions as
 
 ```python
@@ -157,8 +159,7 @@ Next, construct the local Hamiltonian on each cluster (site) $i$. It has to
 include all of the many-body interactions on each cluster as well as the 
 non-interacting quadratic terms that describe orbital energies and
 hopping between orbitals on site $i$. For more details refer to the 
-[TRIQS](https://triqs.github.io/) documentation on constructing 
-second-quantized operators.
+{{TRIQS}} documentation on constructing second-quantized operators.
 
 ```python
 from triqs.operators import *
@@ -400,7 +401,7 @@ def update_weights(energies, mu=0, beta=10):
 
 Now we have to solve the impurity problem defined by the embedding Hamiltonian 
 $\hat{H}^{\mathrm{emb}}$. There is a simple, but relatively slow, 
-implementation that only uses [TRIQS](https://triqs.github.io/).
+implementation that only uses {{TRIQS}}.
 
 ```python
 from risb.embedding import EmbeddingAtomDiag
@@ -452,10 +453,12 @@ $n = 1.88$ (Fig. 10)?
 You have built the self-consistent loop for 
 {{RISB}} and solved a (not so simple) 
 interacting fermion problem. The code in :py:class:`risb.solve_lattice.LatticeSolver` 
-is not much more complicated than what you have done. You should now easily be able to mofify, 
-implement, and contribute to any parts in the library. You also now understand 
-the basic ingredients needed for most self-consistent procedures in much 
-more sophisticated codes for {{DFT}} and {{DMFT}}.
+is not much more complicated than what you have done. You should now easily be 
+able to mofify, implement, and contribute to any parts in the library. 
+You also now understand the basic ingredients needed for most self-consistent 
+procedures in much more sophisticated codes for {{DFT}} and {{DMFT}}. 
+Hopefully, you can easily build upon this simple example to do much more 
+complicated things.
 
 Below is some code that should be very easy to fill in. But you will understand 
 much more about {{RISB}} if you try to piece everything together from the 

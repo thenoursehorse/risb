@@ -147,7 +147,9 @@ See the `examples` folder.
 
 ## To do
 
-* Add kweights tests, DIIS tests, multiple cluster tests, complex SOC tests
+* Add kweights tests, DIIS tests, multiple cluster tests, complex SOC tests, 
+all helpers functions (make random inputs and store, because current tests
+have too much structure.)
 * Make h0_k all h0 hoppings, and work out h0_loc and add to h_int to make a 
 h_loc = h0_loc + h_int, and then h0_kin_k = h0_k - h_0_loc
 * as always, very sensitive to initial R, Lambda guess, make more robust
