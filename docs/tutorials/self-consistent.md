@@ -58,6 +58,11 @@ where $V$ is the interlayer hopping between the orbitals, $U$ is
 the local Coulomb repulsion, and 
 $\hat{n}_{i\alpha\sigma} \equiv \hat{c}^{\dagger}_{i\alpha\sigma} \hat{c}_{i\alpha\sigma}$.
 
+:::{tip}
+In `examples/bilayer_hubbard.py` we provide an example using the 
+`LatticeSolver` class that you can compare your answers to.
+:::
+
 ## A: Construct $\hat{H}_0^{\mathrm{kin}}$
 
 First, construct the dispersion between clusters on the lattice. It should 
