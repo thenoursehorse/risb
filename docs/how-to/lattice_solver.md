@@ -224,6 +224,12 @@ S = LatticeSolver(...
 S.solve(tol = , method = 'broyden1,hybr,krylov,etc', otherkwargs = )
 ```
 
+:::{warning}
+In our experience scipy's `root` functions do not work as well as either 
+standard linear mixing or {{DIIS}} (which seems to work very well for 
+{{RISB}}).
+:::
+
 ## Real or complex?
 
 In general the matrices in {{RISB}} should be complex. If you choose a basis 
