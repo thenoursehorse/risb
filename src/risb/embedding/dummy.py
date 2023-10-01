@@ -42,32 +42,32 @@ class EmbeddingDummy:
     def solve(self, *args, **kwargs):
         pass
 
-    def get_nf(self, bl : str) -> np.ndarray:
-        if bl not in self.embedding.Nf[bl]:
-            nf = self.embedding.get_Nf(bl)
+    def get_rho_f(self, bl : str) -> np.ndarray:
+        if bl not in self.embedding.rho_f:
+            rho_f = self.embedding.get_rho_f(bl)
         else:
-            nf = self.embedding.Nf[bl]
+            rho_f = self.embedding.rho_f[bl]
         for func in self.rotations:
-            nf = func(nf)
-        return nf
+            rho_f = func(rho_f)
+        return rho_f
     
-    def get_nc(self, bl : str) -> np.ndarray:
-        if bl not in self.embedding.Nc[bl]:
-            nc = self.embedding.get_Nc(bl)
+    def get_rho_c(self, bl : str) -> np.ndarray:
+        if bl not in self.embedding.rho_c:
+            rho_c = self.embedding.get_rho_c(bl)
         else:
-            nc = self.embedding.Nc[bl]
+            rho_c = self.embedding.rho_c[bl]
         for func in self.rotations:
-            nc = func(nc)
-        return nc
+            rho_c = func(rho_c)
+        return rho_c
     
-    def get_mcf(self, bl : str) -> np.ndarray:
-        if bl not in self.embedding.Mcf[bl]:
-            mcf = self.embedding.get_Mcf(bl)
+    def get_ro_cf(self, bl : str) -> np.ndarray:
+        if bl not in self.embedding.rho_cf:
+            rho_cf = self.embedding.get_rho_cf(bl)
         else:
-            mcf = self.embedding.Mcf[bl]
+            rho_cf = self.embedding.rho_cf[bl]
         for func in self.rotations:
-            mcf = func(mcf)
-        return mcf
+            rho_cf = func(rho_cf)
+        return rho_cf
     
     # FIXME rotate Op correctly, is this even correctly possible?
     def overlap(self, Op, force_real : bool = True) -> float | complex:

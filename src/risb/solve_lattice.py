@@ -48,7 +48,7 @@ class LatticeSolver:
         already store the local Hamiltonian ``h_loc`` on a cluster, have a method 
         ``set_h_emb(Lambda_c, D)`` to setup the impurity problem, a method
         ``solve(**embedding_param)`` that solves the impurity problem, and 
-        methods ``get_nf(block)`` and ``get_mcf(block)`` for the bath and 
+        methods ``get_rho_f(block)`` and ``get_rho_cf(block)`` for the bath and 
         hybridization density matrices. 
         See class :class:`.EmbeddingAtomDiag`.
     update_weights : callable
@@ -421,10 +421,10 @@ class LatticeSolver:
             for bl, _ in self.gf_struct[i]:
                 bl_full = self.gf_struct_mapping[i][bl]
                 if self.projectors is not None:
-                    self.rho_qp[i][bl] = helpers.get_pdensity(self.bloch_vector_qp[bl_full], self.kweights[bl_full], self.projectors[i][bl])
+                    self.rho_qp[i][bl] = helpers.get_rho_qp(self.bloch_vector_qp[bl_full], self.kweights[bl_full], self.projectors[i][bl])
                     self.lopsided_ke_qp[i][bl] = helpers.get_ke(h0_R[bl_full], self.bloch_vector_qp[bl_full], self.kweights[bl_full], self.projectors[i][bl])
                 else:
-                    self.rho_qp[i][bl] = helpers.get_pdensity(self.bloch_vector_qp[bl_full], self.kweights[bl_full])
+                    self.rho_qp[i][bl] = helpers.get_rho_qp(self.bloch_vector_qp[bl_full], self.kweights[bl_full])
                     self.lopsided_ke_qp[i][bl] = helpers.get_ke(h0_R[bl_full], self.bloch_vector_qp[bl_full], self.kweights[bl_full])
                 #self.ke_qp[i][bl] = helpers.get_ke(R_h0_R[bl_full], self.bloch_vector_qp[bl_full], self.kweights[bl_full], self.projectors[i][bl])
         
@@ -460,8 +460,8 @@ class LatticeSolver:
             self.embedding[i].set_h_emb(self.Lambda_c[i], self.D[i])
             self.embedding[i].solve(**embedding_param[i])
             for bl, _ in self.gf_struct[i]:
-                self.rho_f[i][bl] = self.embedding[i].get_nf(bl)
-                self.rho_cf[i][bl] = self.embedding[i].get_mcf(bl)
+                self.rho_f[i][bl] = self.embedding[i].get_rho_f(bl)
+                self.rho_cf[i][bl] = self.embedding[i].get_rho_cf(bl)
         
         ## Enforce matrix structure from symmetries
         self.rho_f, _ = self._unflatten_mat( self._flatten_mat( self.rho_f, is_coeff_real=True ), is_coeff_real=True )

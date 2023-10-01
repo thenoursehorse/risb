@@ -46,21 +46,21 @@ def test_get_ke():
                              [ 0                   , -0.36035732126514364 ] ])
     assert ke == approx(ke_expected, abs=abs)
     
-def test_get_pdensity():
+def test_get_rho_qp():
     with h5py.File(helpers_filename, "r") as f:
         vec = f['vec'][:]
         wks = f['wks'][:]
-    pdensity = helpers.get_pdensity(vec, wks)
-    pdensity_expected = np.array([ [ 0.30667105643085796, 0                   ],
-                                   [ 0                  , 0.30667105643085796 ] ])
-    assert pdensity == approx(pdensity_expected, abs=abs)
+    rho_qp = helpers.get_rho_qp(vec, wks)
+    rho_qp_expected = np.array([ [ 0.30667105643085796, 0                   ],
+                                 [ 0                  , 0.30667105643085796 ] ])
+    assert rho_qp == approx(rho_qp_expected, abs=abs)
 
 def test_get_d():
-    pdensity = np.array([ [ 0.19618454, 0.         ],
-                          [ 0.        , 0.19618454 ] ])
+    rho_qp = np.array([ [ 0.19618454, 0.         ],
+                        [ 0.        , 0.19618454 ] ])
     ke = np.array([ [ -0.13447044,  0.        ],
                     [ 0.        , -0.13447044 ] ])
-    D = helpers.get_d(pdensity, ke)
+    D = helpers.get_d(rho_qp, ke)
     D_expected = np.array([ [ -0.33862284815908383,  0.                  ],
                             [ 0.                  , -0.33862284815908383 ] ])
     assert D == approx(D_expected, abs=abs)
@@ -70,11 +70,11 @@ def test_get_lambda_c():
                         [ 0. , 0.5 ] ])
     R = np.array([ [ 1., 0. ],
                    [ 0., 1. ] ])
-    pdensity = np.array([ [ 0.19618454, 0.         ],
-                          [ 0.        , 0.19618454 ] ])
+    rho_qp = np.array([ [ 0.19618454, 0.         ],
+                        [ 0.        , 0.19618454 ] ])
     D = np.array([ [ -0.33862285,  0.         ],
                    [  0.        , -0.33862285 ] ])
-    Lambda_c = helpers.get_lambda_c(pdensity, R, Lambda, D)
+    Lambda_c = helpers.get_lambda_c(rho_qp, R, Lambda, D)
     Lambda_c_expected = np.array([ [ 0.018138135818154377, 0.                   ],
                                    [ 0.                  , 0.018138135818154377 ] ])
     assert Lambda_c == approx(Lambda_c_expected, abs=abs)
@@ -82,19 +82,19 @@ def test_get_lambda_c():
 def test_get_lambda():
     #R = np.zeros(shape=(2,2))
     #np.fill_diagonal(R, 1.0)
-    #Lambda = helpers.get_lambda(R, D, Lambda_c, Nf) 
+    #Lambda = helpers.get_lambda(R, D, Lambda_c, rho_f) 
     pass
 
 def test_get_R():
-    #R = helpers.get_r(Mcf, Nf)
+    #R = helpers.get_r(rho_cf, rho_f)
     pass
 
 def test_get_f1():
     #R = np.zeros(shape=(2,2))
     #np.fill_diagonal(R, 1.0)
-    #f1 = helpers.get_f1(Mcf, pdensity, R)
+    #f1 = helpers.get_f1(rho_cf, rho_qp, R)
     pass
 
 def test_get_f2():
-    #f2 = helpers.get_f2(Nf, pdensity)
+    #f2 = helpers.get_f2(rho_f, rho_qp)
     pass

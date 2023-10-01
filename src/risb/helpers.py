@@ -41,12 +41,12 @@ import warnings
 #def get_K_sq_inv(pdensity, hdensity, tol=np.finfo(float).eps, N=10000):
 #    return one_sqrtm_inv(A=pdensity, tol=tol, N=N) @ one_sqrtm_inv(A=hdensity, tol=tol, N=N)
 
-def get_d(pdensity : np.ndarray, 
+def get_d(rho_qp : np.ndarray, 
           ke : np.ndarray) -> np.ndarray:
     """
     Parameters
     ----------
-    pdensity : numpy.ndarray
+    rho_qp : numpy.ndarray
         Quasiparticle density matrix obtained from the mean-field.
     ke : numpy.ndarray
         Lopsided quasiparticle kinetic energy.
@@ -62,16 +62,16 @@ def get_d(pdensity : np.ndarray,
 
     .. _PRX011008: https://doi.org/10.1103/PhysRevX.5.011008
     """
-    K = pdensity - pdensity @ pdensity
+    K = rho_qp - rho_qp @ rho_qp
     return inv(sqrtm(K)) @ ke.T
 
-def get_d2(pdensity : np.ndarray, 
+def get_d2(rho_qp : np.ndarray, 
            ke : np.ndarray,
            R : np.ndarray) -> np.ndarray:
     """
     Parameters
     ----------
-    pdensity : numpy.ndarray
+    rho_qp : numpy.ndarray
         Quasiparticle density matrix obtained from the mean-field.
     ke : numpy.ndarray
         Lopsided quasiparticle kinetic energy.
@@ -89,17 +89,17 @@ def get_d2(pdensity : np.ndarray,
 
     .. _PRX011008: https://doi.org/10.1103/PhysRevX.5.011008
     """
-    K = pdensity - pdensity @ pdensity
+    K = rho_qp - rho_qp @ rho_qp
     return inv(sqrtm(K)) @ (inv(R) @ ke).T
 
-def get_lambda_c(pdensity : np.ndarray, 
+def get_lambda_c(rho_qp : np.ndarray, 
                  R : np.ndarray, 
                  Lambda: np.ndarray, 
                  D: np.ndarray) -> np.ndarray:
     """
     Parameters
     ----------
-    pdensity : numpy.ndarray
+    rho_qp : numpy.ndarray
         Quasiparticle density matrix obtained from the mean-field.
     R : numpy.ndarray
         Renormalization matrix from electrons to quasiparticles.
@@ -119,8 +119,8 @@ def get_lambda_c(pdensity : np.ndarray,
 
     .. _PRX011008: https://doi.org/10.1103/PhysRevX.5.011008
     """
-    P = np.eye(pdensity.shape[0]) - 2.0*pdensity
-    K = pdensity - pdensity @ pdensity
+    P = np.eye(rho_qp.shape[0]) - 2.0 * rho_qp
+    K = rho_qp - rho_qp @ rho_qp
     K_sq = sqrtm(K)
     K_sq_inv = inv(K_sq)
     return -np.real( (R @ D).T @ K_sq_inv @ P ).T - Lambda
@@ -130,7 +130,7 @@ def get_lambda_c(pdensity : np.ndarray,
 def get_lambda(R : np.ndarray, 
                D : np.ndarray, 
                Lambda_c : np.ndarray, 
-               Nf : np.ndarray) -> np.ndarray:
+               rho_f : np.ndarray) -> np.ndarray:
     """
     Parameters
     ----------
@@ -140,7 +140,7 @@ def get_lambda(R : np.ndarray,
         Hybridization coupling.
     Lambda_c : numpy.ndarray
         Bath coupling.
-    Nf : numpy.ndarray
+    rho_f : numpy.ndarray
         f-electron density matrix from impurity.
 
     Returns
@@ -150,27 +150,28 @@ def get_lambda(R : np.ndarray,
     
     Notes
     -----
-    Derived from Eq. 36 in `10.1103/PhysRevX.5.011008 <PRX011008_>`__ by replacing 
-    the quasipartice density matrix with the f-electron density matrix using 
-    Eq. 39.
+    Derived from Eq. 36 in `10.1103/PhysRevX.5.011008 <PRX011008_>`__ by 
+    replacing the quasipartice density matrix with the f-electron density 
+    matrix using Eq. 39.
 
     .. _PRX011008: https://doi.org/10.1103/PhysRevX.5.011008
     """
-    P = np.eye(Nf.shape[0]) - 2.0*Nf
-    K = Nf - Nf @ Nf
+    P = np.eye(rho_f.shape[0]) - 2.0 * rho_f
+    K = rho_f - rho_f @ rho_f
     K_sq = sqrtm(K)
     K_sq_inv = inv(K_sq)
     return -np.real( (R @ D).T @ K_sq_inv @ P ).T - Lambda_c
     #lhs = ( (R @ D).T @ K_sq_inv @ P ).T
     #return - Lambda_c - 0.5 * (lhs + lhs.conj())
 
-def get_r(Mcf : np.ndarray, Nf : np.ndarray) -> np.ndarray:
+def get_r(rho_cf : np.ndarray, 
+          rho_f : np.ndarray) -> np.ndarray:
     """
     Parameters
     ----------
-    Mcf : numpy.ndarray
+    rho_cf : numpy.ndarray
         c,f-electron hybridization density matrix from impurity.
-    Nf : numpy.ndarray
+    rho_f : numpy.ndarray
         f-electron density matrix from impurity.
 
     Returns
@@ -181,23 +182,25 @@ def get_r(Mcf : np.ndarray, Nf : np.ndarray) -> np.ndarray:
     Notes
     -----
     Derived from Eq. 38 in `10.1103/PhysRevX.5.011008 <PRX011008_>`__ by 
-    replacing the quasiparticle density matrix with the f-electron density matrix 
-    using Eq. 39.
+    replacing the quasiparticle density matrix with the f-electron density 
+    matrix using Eq. 39.
 
     .. _PRX011008: https://doi.org/10.1103/PhysRevX.5.011008
     """
-    K = Nf - Nf @ Nf
+    K = rho_f - rho_f @ rho_f
     K_sq = sqrtm(K)
     K_sq_inv = inv(K_sq)
-    return (Mcf @ K_sq_inv).T
+    return (rho_cf @ K_sq_inv).T
 
-def get_f1(Mcf : np.ndarray, pdensity : np.ndarray, R : np.ndarray) -> np.ndarray:
+def get_f1(rho_cf : np.ndarray, 
+           rho_qp : np.ndarray, 
+           R : np.ndarray) -> np.ndarray:
     """
     Parameters
     ----------
-    Mcf : numpy.ndarray
+    rho_cf : numpy.ndarray
         c,f-electron hybridization density matrix from impurity.
-    pdensity : numpy.ndarray
+    rho_qp : numpy.ndarray
         Quasiparticle density matrix obtained from the mean-field.
     R : numpy.ndarray
         Renormalization matrix from electrons to quasiparticles.
@@ -213,17 +216,18 @@ def get_f1(Mcf : np.ndarray, pdensity : np.ndarray, R : np.ndarray) -> np.ndarra
 
     .. _PRX011008: https://doi.org/10.1103/PhysRevX.5.011008
     """
-    K = pdensity - pdensity @ pdensity
+    K = rho_qp - rho_qp @ rho_qp
     K_sq = sqrtm(K)
-    return Mcf - R.T @ K_sq
+    return rho_cf - R.T @ K_sq
 
-def get_f2(Nf : np.ndarray, pdensity : np.ndarray) -> np.ndarray:
+def get_f2(rho_f : np.ndarray, 
+           rho_qp : np.ndarray) -> np.ndarray:
     """
     Parameters
     ----------
-    Nf : numpy.ndarray
+    rho_f : numpy.ndarray
         f-electron density matrix from impurity.
-    pdensity : numpy.ndarray
+    rho_qp : numpy.ndarray
         Quasiparticle density matrix obtained from the mean-field.
 
     Returns
@@ -237,7 +241,7 @@ def get_f2(Nf : np.ndarray, pdensity : np.ndarray) -> np.ndarray:
 
     .. _PRX011008: https://doi.org/10.1103/PhysRevX.5.011008
     """
-    return Nf - pdensity.T
+    return rho_f - rho_qp.T
 
 def get_h_qp(R : np.ndarray, 
              Lambda : np.ndarray, 
@@ -253,7 +257,8 @@ def get_h_qp(R : np.ndarray,
     Lambda : numpy.ndarray
         Correlation potential of quasiparticles.
     h0_kin_k : numpy.ndarray
-        Single-particle dispersion between local clusters. Indexed as k, orb_i, orb_j.
+        Single-particle dispersion between local clusters. Indexed as 
+        k, orb_i, orb_j.
     mu : float, optional
         Chemical potential.
 
@@ -278,16 +283,20 @@ def get_h_qp(R : np.ndarray,
     eig, vec = np.linalg.eigh(h_qp)
     return (eig, vec)
 
-def get_h0_R(R : np.ndarray, h0_kin_k : np.ndarray, vec : np.ndarray) -> np.ndarray:
+def get_h0_R(R : np.ndarray, 
+             h0_kin_k : np.ndarray, 
+             vec : np.ndarray) -> np.ndarray:
     """
     Parameters
     ----------
     R : numpy.ndarray
         Rormalization matrix from electrons to quasiparticles.
     h0_kin_k : numpy.ndarray
-        Single-particle dispersion between local clusters. Indexed as k, orb_i, orb_j.
+        Single-particle dispersion between local clusters. Indexed as 
+        k, orb_i, orb_j.
     vec : numpy.ndarray
-        Eigenvectors of quasiparticle Hamiltonian. Indexed as k, each column an eigenvector.
+        Eigenvectors of quasiparticle Hamiltonian. Indexed as k, each column 
+        an eigenvector.
 
     Returns
     -------
@@ -301,26 +310,33 @@ def get_h0_R(R : np.ndarray, h0_kin_k : np.ndarray, vec : np.ndarray) -> np.ndar
     """
     return np.einsum('kac,cd,kdb->kab', h0_kin_k, R.conj().T, vec)
 
-def get_R_h0_R(R : np.ndarray, h0_kin_k : np.ndarray, vec : np.ndarray) -> np.ndarray:
+def get_R_h0_R(R : np.ndarray, 
+               h0_kin_k : np.ndarray, 
+               vec : np.ndarray) -> np.ndarray:
     """
     Parameters
     ----------
     R : numpy.ndarray
         Renormalization matrix from quasiparticles to electrons.
     h0_kin_k : numpy.ndarray
-        Single-particle dispersion between local clusters. Indexed as k, orb_i, orb_j.
+        Single-particle dispersion between local clusters. Indexed as 
+        k, orb_i, orb_j.
     vec : numpy.ndarray
-        Eigenvectors of quasiparticle Hamiltonian. Indexed as k, each column an eigenvector.
+        Eigenvectors of quasiparticle Hamiltonian. Indexed as k, each column 
+        an eigenvector.
 
     Returns
     -------
     R_h0_kin_R : numpy.ndarray
-        Matrix representation of kinetic part of quasiparticle Hamiltonian ``H^qp``.
+        Matrix representation of kinetic part of quasiparticle 
+        Hamiltonian ``H^qp``.
     """
     return np.einsum('pa,kac,cd,kdb->kpb', R, h0_kin_k, R.conj().T, vec)
 
 #\sum_n \sum_k [A_k P_k]_{an} [D_k]_n  [P_k^+ B_k]_{nb}
-def get_pdensity(vec : np.ndarray, kweights : np.ndarray, P : np.ndarray | None = None) -> np.ndarray:
+def get_rho_qp(vec : np.ndarray, 
+               kweights : np.ndarray, 
+               P : np.ndarray | None = None) -> np.ndarray:
     """
     Parameters
     ----------
@@ -333,13 +349,13 @@ def get_pdensity(vec : np.ndarray, kweights : np.ndarray, P : np.ndarray | None 
 
     Returns
     -------
-    pdensity : numpy.ndarray
+    rho_qp : numpy.ndarray
         Quasiparticle density matrix from mean-field.
     
     Notes
     -----
-    Eqs. 32 and 34 in `10.1103/PhysRevX.5.011008 <PRX011008_>`__, but not in the 
-    natural-basis gauge. See Eq. 112 in the supplemental of 
+    Eqs. 32 and 34 in `10.1103/PhysRevX.5.011008 <PRX011008_>`__, but not in 
+    the natural-basis gauge. See Eq. 112 in the supplemental of 
     `10.1103/PhysRevLett.118.126401 <PRL126401_>`__.
 
     .. _PRX011008: https://doi.org/10.1103/PhysRevX.5.011008
@@ -354,7 +370,10 @@ def get_pdensity(vec : np.ndarray, kweights : np.ndarray, P : np.ndarray | None 
         middle = np.einsum('kan,kn,knb->kab', vec, kweights, vec_dag)
         return np.sum(P @ middle @ P_dag, axis=0).T
 
-def get_ke(h0_kin_R : np.ndarray, vec : np.ndarray, kweights : np.ndarray, P : np.ndarray | None = None) -> np.ndarray:
+def get_ke(h0_kin_R : np.ndarray, 
+           vec : np.ndarray, 
+           kweights : np.ndarray, 
+           P : np.ndarray | None = None) -> np.ndarray:
     """
     Parameters
     ----------
@@ -447,7 +466,8 @@ def block_to_full(A : np.ndarray) -> np.ndarray:
         raise ValueError(f'Should be same number of blocks in i and j dimesnions, but got {na} and {nb} !')
     return np.block( [ [A[...,i,j,:,:] for j in range(na)] for i in range(na) ] )
 
-def get_h0_loc_mat(h0_k : np.ndarray, P : np.ndarray) -> np.ndarray:
+def get_h0_loc_mat(h0_k : np.ndarray, 
+                   P : np.ndarray) -> np.ndarray:
     """
     Parameters
     ----------
@@ -465,7 +485,8 @@ def get_h0_loc_mat(h0_k : np.ndarray, P : np.ndarray) -> np.ndarray:
     n_k = h0_k.shape[0]
     return np.sum(P @ h0_k @ P.conj().T, axis=0) / float(n_k)
 
-def get_h0_kin_k_mat(h0_k : np.ndarray, P : np.ndarray) -> np.ndarray:
+def get_h0_kin_k_mat(h0_k : np.ndarray, 
+                     P : np.ndarray) -> np.ndarray:
     """
     Parameters
     ----------
