@@ -28,7 +28,7 @@ class EmbeddingDummy:
     Parameters
     ----------
     embedding : class
-        The embedding solving class to reference.
+        The embedding solver class to reference.
     rotations : list[callable], optional
         A list of rotation functions to apply to matrices.
     """
@@ -43,22 +43,32 @@ class EmbeddingDummy:
         pass
 
     def get_nf(self, bl : str) -> np.ndarray:
-        nf = self.embedding.Nf[bl]
+        if bl not in self.embedding.Nf[bl]:
+            nf = self.embedding.get_Nf(bl)
+        else:
+            nf = self.embedding.Nf[bl]
         for func in self.rotations:
             nf = func(nf)
         return nf
     
     def get_nc(self, bl : str) -> np.ndarray:
-        nc = self.embedding.Nc[bl]
+        if bl not in self.embedding.Nc[bl]:
+            nc = self.embedding.get_Nc(bl)
+        else:
+            nc = self.embedding.Nc[bl]
         for func in self.rotations:
             nc = func(nc)
         return nc
     
     def get_mcf(self, bl : str) -> np.ndarray:
-        mcf = self.embedding.Mcf[bl]
+        if bl not in self.embedding.Mcf[bl]:
+            mcf = self.embedding.get_Mcf(bl)
+        else:
+            mcf = self.embedding.Mcf[bl]
         for func in self.rotations:
             mcf = func(mcf)
         return mcf
     
+    # FIXME rotate Op correctly, is this even correctly possible?
     def overlap(self, Op, force_real : bool = True) -> float | complex:
         return self.embedding.overlap(Op, force_real)

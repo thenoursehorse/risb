@@ -185,7 +185,7 @@ S = LatticeSolver(...
 )
 ```
 
-`root` is called exactly the same what :py:func:`scipy.optimize.root` 
+`root` is called exactly the same as what :py:func:`scipy.optimize.root` 
 requires. It must be a callable function that takes as input 
 `root(S._target_function, x0, args=, **kwargs)`. Here `S._target_function` 
 by default returns a `tuple[ndarray,ndarray]` of a flattened ndarray `x_new` 

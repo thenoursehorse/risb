@@ -4,8 +4,8 @@ The main reason the `Embedding` classes are separated is because the embedding
 Hamiltonian is computationally the most expensive part of the {{RISB}} 
 algorithm, and quickly becomes the computational bottleneck because of the 
 exponential scaling of the Hilbert space. Other parts of our implementation 
-are certainly not the most efficient, but it is irrelevant because solving the 
-embedding Hamiltonian is the most important part to optimize.
+are certainly not the most efficient, but it solving the embedding Hamiltonian 
+is the most important part to optimize.
 
 ## Fast track of theory
 
@@ -24,13 +24,14 @@ The embedding Hamiltonian in correlated subspace $\mathcal{C}_i$ is given by
 
 $$
 \hat{H}^{\mathrm{emb}}_i = \hat{H}^{\mathrm{loc}}_i
-+ \sum_{\alpha a} \left( [\mathcal{D}_i]_{a\alpha} 
++ \sum^{M_i}_{\alpha} \sum^{M_i}_{a} \left( [\mathcal{D}_i]_{a\alpha} 
 \hat{c}^{\dagger}_{i\alpha} \hat{f}^{}_{ia} + \mathrm{H.c.} \right)
-+ \sum_{ab} [\lambda^c_i]_{ab} \hat{f}^{}_{ib} \hat{f}^{\dagger}_{ia},
++ \sum^{M_i}_{a} \sum^{M_i}_{b} [\lambda^c_i]_{ab} 
+\hat{f}^{}_{ib} \hat{f}^{\dagger}_{ia},
 $$
 
 where $\hat{c}_{i\alpha}$ is an impurity (physical electron) degree of freedom 
-and $\hat{f}_{ia}$ is a bath (quasiparticle) degree of freedom and 
+and $\hat{f}_{ia}$ is a bath (quasiparticle) degree of freedom, and 
 $\mathrm{H.c.}$ is the Hermitian compliment. The Hilbert 
 space of the bath is a copy of the physical space defined by the physical 
 electron, and so the bath is the same size as the impurity. The local 
@@ -42,16 +43,18 @@ $\mathbf{\lambda}^c_i$ are obtained from the mean-field equations in the
 In the normal phase (non-superconducting) {{RISB}} requires solving the ground 
 state of the $M_i$ particle sector at each iteration of the self-consistent 
 loop. Here $M_i$ is the number of degrees of freedom in the impurity 
-(sites, orbitals, and spin in the correlated subspace $\mathcal{C}_i$). This 
+(sites, orbitals, and spin in the correlated subspace $\mathcal{C}_i$). Since 
+the bath is a copy of the physical space, this particle sector  
 corresponds to half-filling of the embedding Hamiltonian. Clearly, 
 compared to {{DMFT}}, this is a much simpler and smaller impurity problem to 
 solve, and is the biggest advantage of {{RISB}}.
 
 ## Exact diagonalization
 
-The simplest way to solve $\hat{H}^{\mathrm{emb}}$ is to blindly use 
+The simplest way to solve $\hat{H}^{\mathrm{emb}}$ is to use 
 exact diagonalization in the half-filled particle sector. This is what 
-`EmbeddingAtomDiag` does. 
+`EmbeddingAtomDiag` does, and orbital sizes up to $M_i = 5$ are possible, but 
+very slow. 
 One can also construct a specialized sparse exact diagonalization solver that 
 takes into account the specific symmetries that the embedding Hamiltonian is 
 allowed to have. Succinctly, only symmetry allowed $\hat{c}$ and $\hat{f}$ 
@@ -61,9 +64,9 @@ the `EmbeddingEd` solver (currently private, but will be public soon).
 
 ## Density matrix renormalization group (DMRG)
 
-Another method we have employed in the past is to use DMRG implemented 
-through [ITensor](https://itensor.org/). There is nothing wrong with this 
-approach, but our implementation is currently very out of date. Given that 
+Another method we have employed in the past is to use DMRG, which we 
+implemented using [ITensor](https://itensor.org/). There is nothing wrong with 
+this approach, but our implementation is currently very out of date. Given that 
 ITensor is even easier to use now with many more helper functions, a DMRG 
 solver for the embedding Hamiltonion should be very easy to code.
 

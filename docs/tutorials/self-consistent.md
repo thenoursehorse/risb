@@ -1,4 +1,4 @@
-# {{RISB}} loop
+# Constructing the {{RISB}} self-consistent loop
 
 ## Introduction
 

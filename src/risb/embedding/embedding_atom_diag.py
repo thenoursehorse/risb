@@ -51,11 +51,17 @@ class EmbeddingAtomDiag:
         #: triqs.operators.Operator : Local Hamiltonian.
         self.h_loc = h_loc
 
+        #: dict[tuple[str,int]] : Block matrix structure of c-electrons.
         self.gf_struct = gf_struct
 
         # Set structure of bath and embedding space
-        # FIXME if doing ghost bath and loc are not the same size    
+        # FIXME if doing ghost bath and loc are not the same size
+
+        #: dict[tuple[str,int]] : Block matrix structure of f-electrons.
         self.gf_struct_bath = [(self._bl_loc_to_bath(bl), bl_size) for bl, bl_size in self.gf_struct]
+
+        #: dict[tuple[str,int]] : Block matrix structure entire embedding 
+        #: space.
         self.gf_struct_emb = self.gf_struct + self.gf_struct_bath
 
         # Set of fundamental operators

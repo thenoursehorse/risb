@@ -1,12 +1,10 @@
 
 # Explanations
 
-```{toctree}
-:hidden:
+Some theory and justification for design choices.
 
+```{toctree}
 embedding
 projectors
 modular_everything
 ```
-
-Some theory and justification for design choices.

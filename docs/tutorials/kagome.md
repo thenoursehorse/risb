@@ -1,5 +1,9 @@
 # Hubbard model on kagome lattice
 
+:::{admonition} TODO
+Single-site case. Three-site cluster case.
+:::
+
 The tight-binding model on the kagome lattice can be written as 
 
 $$

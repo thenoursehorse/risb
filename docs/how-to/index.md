@@ -1,11 +1,10 @@
 # How-to guides
 
-```{toctree}
-:hidden:
+Some how-to guides.
 
-lattice_solver
+```{toctree}
+quadratic_terms
 embedding
+lattice_solver
 projectors
 ```
-
-Some how-to guides.
