@@ -159,3 +159,4 @@ from h0_k and projectors. But this might be annoying because then
 embedding class needs to construct h0_loc as an operator from a matrix. But this 
 is probably a good thing.
 * Add verbose output to LatticeSolver
+* Helper functions for calculating free/total energy
