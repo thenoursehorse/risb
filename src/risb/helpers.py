@@ -283,9 +283,9 @@ def get_h_qp(R : np.ndarray,
     eig, vec = np.linalg.eigh(h_qp)
     return (eig, vec)
 
-def get_h0_R(R : np.ndarray, 
-             h0_kin_k : np.ndarray, 
-             vec : np.ndarray) -> np.ndarray:
+def get_h0_kin_k_R(R : np.ndarray, 
+                   h0_kin_k : np.ndarray, 
+                   vec : np.ndarray) -> np.ndarray:
     """
     Parameters
     ----------
@@ -300,7 +300,7 @@ def get_h0_R(R : np.ndarray,
 
     Returns
     -------
-    h0_kin_R : numpy.ndarray
+    h0_kin_k_R : numpy.ndarray
         Matrix representation of lopsided quasiparticle Hamiltonian. 
 
     Notes
@@ -310,9 +310,9 @@ def get_h0_R(R : np.ndarray,
     """
     return np.einsum('kac,cd,kdb->kab', h0_kin_k, R.conj().T, vec)
 
-def get_R_h0_R(R : np.ndarray, 
-               h0_kin_k : np.ndarray, 
-               vec : np.ndarray) -> np.ndarray:
+def get_R_h0_kin_k_R(R : np.ndarray, 
+                     h0_kin_k : np.ndarray, 
+                     vec : np.ndarray) -> np.ndarray:
     """
     Parameters
     ----------
@@ -327,7 +327,7 @@ def get_R_h0_R(R : np.ndarray,
 
     Returns
     -------
-    R_h0_kin_R : numpy.ndarray
+    R_h0_kin_k_R : numpy.ndarray
         Matrix representation of kinetic part of quasiparticle 
         Hamiltonian ``H^qp``.
     """
@@ -370,14 +370,14 @@ def get_rho_qp(vec : np.ndarray,
         middle = np.einsum('kan,kn,knb->kab', vec, kweights, vec_dag)
         return np.sum(P @ middle @ P_dag, axis=0).T
 
-def get_ke(h0_kin_R : np.ndarray, 
+def get_ke(h0_kin_k_R : np.ndarray, 
            vec : np.ndarray, 
            kweights : np.ndarray, 
            P : np.ndarray | None = None) -> np.ndarray:
     """
     Parameters
     ----------
-    h0_kin_R : numpy.ndarray
+    h0_kin_k_R : numpy.ndarray
         Single-particle dispersion between local clusters with `R` matrix 
         multiplied on the right.
     vec : numpy.ndarray
@@ -401,20 +401,20 @@ def get_ke(h0_kin_R : np.ndarray,
     """
     vec_dag = np.swapaxes(vec.conj(), -1, -2)
     if P is None:
-        return np.einsum('kan,kn,knb->ab', h0_kin_R, kweights, vec_dag)
+        return np.einsum('kan,kn,knb->ab', h0_kin_k_R, kweights, vec_dag)
     else:
         P_dag = np.swapaxes(P.conj(), -2, -1)
-        middle = np.einsum('kan,kn,knb->kab', h0_kin_R, kweights, vec_dag)
+        middle = np.einsum('kan,kn,knb->kab', h0_kin_k_R, kweights, vec_dag)
         return np.sum(P @ middle @ P_dag, axis=0)
 
-def get_ke2(R_h0_kin_R : np.ndarray, 
+def get_ke2(R_h0_kin_k_R : np.ndarray, 
             vec : np.ndarray, 
             kweights : np.ndarray, 
             P : np.ndarray | None = None) -> np.ndarray:
     """
     Parameters
     ----------
-    R_h0_kin_R : numpy.ndarray
+    R_h0_kin_k_R : numpy.ndarray
         Kinetic part of quasiparticle Hamiltonain.
     vec : numpy.ndarray
         Eigenvectors of quasiparticle Hamiltonian.
@@ -437,10 +437,10 @@ def get_ke2(R_h0_kin_R : np.ndarray,
     """
     vec_dag = np.swapaxes(vec.conj(), -1, -2)
     if P is None:
-        return np.einsum('kan,kn,knb->ab', R_h0_kin_R, kweights, vec_dag)
+        return np.einsum('kan,kn,knb->ab', R_h0_kin_k_R, kweights, vec_dag)
     else:
         P_dag = np.swapaxes(P.conj(), -2, -1)
-        middle = np.einsum('kan,kn,knb->kab', R_h0_kin_R, kweights, vec_dag)
+        middle = np.einsum('kan,kn,knb->kab', R_h0_kin_k_R, kweights, vec_dag)
         return np.sum(P @ middle @ P_dag, axis=0)
 
 # FIXME this does not have to be a numpy array, it could
@@ -467,13 +467,13 @@ def block_to_full(A : np.ndarray) -> np.ndarray:
     return np.block( [ [A[...,i,j,:,:] for j in range(na)] for i in range(na) ] )
 
 def get_h0_loc_mat(h0_k : np.ndarray, 
-                   P : np.ndarray) -> np.ndarray:
+                   P : np.ndarray | None = None) -> np.ndarray:
     """
     Parameters
     ----------
     h0_k : numpy.ndarray
         Single-particle dispersion.
-    P : numpy.ndarray
+    P : numpy.ndarray | None, optional
         The projector onto a local cluster within the supercell.
 
     Returns
@@ -483,7 +483,10 @@ def get_h0_loc_mat(h0_k : np.ndarray,
         the projector.
     """
     n_k = h0_k.shape[0]
-    return np.sum(P @ h0_k @ P.conj().T, axis=0) / float(n_k)
+    if P is None:
+        return np.sum(h0_k, axis=0) / float(n_k)
+    else:
+        return np.sum(P @ h0_k @ P.conj().T, axis=0) / float(n_k)
 
 def get_h0_kin_k_mat(h0_k : np.ndarray, 
                      P : np.ndarray) -> np.ndarray:
@@ -504,14 +507,14 @@ def get_h0_kin_k_mat(h0_k : np.ndarray,
     return h0_k - P.conj().T @ h0_loc_mat @ P
 
 def get_h0_kin_k(h0_k : dict[np.ndarray], 
-                 projectors : list[dict[np.ndarray]], 
+                 projectors : list[dict[np.ndarray]] | None = None, 
                  gf_struct_mapping : list[dict[str,str]] | None = None) -> dict[np.ndarray]:
     """
     Parameters
     ----------
     h0_k : dict[numpy.ndarray]
         Single-particle dispersion in each block.
-    projectors : list[dict[numpy.ndarray]]
+    projectors : list[dict[numpy.ndarray]] | None, optional
         The projectors onto each subspace of a local cluster within 
         the supercell organized into single-particle symmetry blocks.
     gf_struct_mapping : list[dict[str, str]] | None, optional
@@ -526,15 +529,21 @@ def get_h0_kin_k(h0_k : dict[np.ndarray],
         without the single-particle terms from the clusters defined by 
         the projectors.
     """
-    n_clusters = len(projectors)
-    if gf_struct_mapping is None:
-        gf_struct_mapping = [{bl:bl for bl in h0_k.keys()} for i in range(n_clusters)]
     h0_kin_k = deepcopy(h0_k)
-    for i, P in enumerate(projectors):
-        for bl in P.keys():
-            bl_full = gf_struct_mapping[i][bl]
-            h0_loc_mat = get_h0_loc_mat(h0_k[bl_full], P[bl])
-            h0_kin_k[bl_full] -= P[bl].conj().T @ h0_loc_mat @ P[bl]
-            #h0_kin_k[bl_full] = get_h0_kin_k_mat(h0_kin_k[bl_full], P[bl])
+    
+    if projectors is not None:
+        n_clusters = len(projectors)
+        if gf_struct_mapping is None:
+            gf_struct_mapping = [{bl:bl for bl in h0_k.keys()} for i in range(n_clusters)]
+        for i, P in enumerate(projectors):
+            for bl in P.keys():
+                bl_full = gf_struct_mapping[i][bl]
+                h0_loc_mat = get_h0_loc_mat(h0_k[bl_full], P[bl])
+                h0_kin_k[bl_full] -= P[bl].conj().T @ h0_loc_mat @ P[bl]
+                #h0_kin_k[bl_full] = get_h0_kin_k_mat(h0_kin_k[bl_full], P[bl])
+    else:
+        for bl in h0_k.keys():
+            h0_kin_k[bl] -= get_h0_loc_mat(h0_k[bl])
+
     return h0_kin_k
     

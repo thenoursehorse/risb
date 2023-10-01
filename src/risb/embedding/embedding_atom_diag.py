@@ -34,8 +34,8 @@ class EmbeddingAtomDiag:
 
     Parameters
     ----------
-    h_loc : triqs.operators.Operator
-        Local Hamiltonian including interactions and quadratic terms.
+    h_int : triqs.operators.Operator
+        Interaction Hamiltonian in the embedding space.
     gf_struct : list of pairs [ (str,int), ...]
         Structure of the matrices. It must be a
         list of pairs, each containing the name of the
@@ -45,11 +45,11 @@ class EmbeddingAtomDiag:
     """
 
     def __init__(self, 
-                 h_loc : OpType, 
+                 h_int : OpType, 
                  gf_struct : GfStructType) -> None:
         
-        #: triqs.operators.Operator : Local Hamiltonian.
-        self.h_loc = h_loc
+        #: triqs.operators.Operator : Interaction Hamiltonian.
+        self.h_int = h_int
 
         #: dict[tuple[str,int]] : Block matrix structure of c-electrons.
         self.gf_struct = gf_struct
@@ -83,8 +83,12 @@ class EmbeddingAtomDiag:
         self.ad = None
 
         #: triqs.operators.Operator : Embedding Hamiltonian. It is the sum of
-        #: :attr:`h_loc`, :attr:`h_hybr`, and :attr:`h_bath`.
+        #: :attr:`h0_loc`, :attr:`h_int`, :attr:`h_hybr`, and :attr:`h_bath`.
         self.h_emb : OpType = Operator()
+
+        #: triqs.operators.Operator : Single-particle quadratic couplings of 
+        #: c-electron terms in ::attr:`h_emb`.
+        self.h0_loc : OpType = Operator()
         
         #: triqs.operators.Operator : Bath terms in :attr:`h_emb`.
         self.h_bath : OpType = Operator()
@@ -117,6 +121,23 @@ class EmbeddingAtomDiag:
     @staticmethod
     def _dict_gf_struct(gf_struct : GfStructType) -> dict[str, int]:
         return {bl: bl_size for bl, bl_size in gf_struct}
+    
+    def set_h0_loc(self, h0_loc_mat : MFType) -> None:
+        """
+        Sets the single-particle quadratic couplings of the c-electrons in the 
+        embedding Hamiltonian.
+        
+        Parameters
+        ----------
+        h0_loc_mat : dict of ndarray, optional
+            Quadratic terms as a matrix. Each key in dictionary must follow 
+            :attr:`gf_struct`.
+        """
+        C_Op = get_C_Op(self.gf_struct, dagger=False)
+        C_dag_Op = get_C_Op(self.gf_struct, dagger=True)
+        self.h0_loc : OpType = Operator()
+        for bl, bl_size in self.gf_struct:
+            self.h0_loc += C_dag_Op[bl] @ h0_loc_mat[bl] @ C_Op[bl]
     
     def set_h_bath(self, Lambda_c : MFType) -> None:
         """
@@ -156,6 +177,7 @@ class EmbeddingAtomDiag:
     def set_h_emb(self, 
                   Lambda_c : MFType, 
                   D : MFType, 
+                  h0_loc_mat : MFType | None = None,
                   mu : float | None = None) -> None:
         """
         Sets the terms in the impurity Hamiltonian to solve the embedding 
@@ -169,12 +191,17 @@ class EmbeddingAtomDiag:
         D : dict[numpy.ndarray]
             Hybridization coupling. Each key in dictionary must follow 
             :attr:`gf_struct`.
+        h0_loc_mat : dict[numpy.ndarray], optional
+            Single-particle quadratic couplings of the c-electrons. Each key 
+            in dictionary must follow :attr:`gf_struct`.
         """
+        if h0_loc_mat is not None:
+            self.set_h0_loc(h0_loc_mat)
         self.set_h_bath(Lambda_c)
         self.set_h_hybr(D)
-        
+
         # For operators equal is copy, not a view
-        self.h_emb = self.h_loc + self.h_bath + self.h_hybr
+        self.h_emb = self.h0_loc + self.h_int + self.h_bath + self.h_hybr
 
         # NOTE h_bath must have + mu*np.eye()*f_a*f_a^dag to remove mu's 
         # contribution

@@ -26,22 +26,22 @@ def test_get_h_qp(subtests):
     with subtests.test(msg="eigenvectors"):
         assert vec == approx(vec_expected, abs=abs)
 
-def test_get_h0_R():
+def test_get_h0_kin_k_R():
     R = np.zeros(shape=(2,2))
     np.fill_diagonal(R, 1)
     with h5py.File(helpers_filename, "r") as f:
         h0_k = f['h0_k'][:]
         vec = f['vec'][:]
-        h0_R_expected = f['h0_R'][:]    
-    h0_R = helpers.get_h0_R(R, h0_k, vec)
-    assert h0_R == approx(h0_R_expected, abs=abs)
+        h0_k_R_expected = f['h0_R'][:]    
+    h0_k_R = helpers.get_h0_kin_k_R(R, h0_k, vec)
+    assert h0_k_R == approx(h0_k_R_expected, abs=abs)
     
 def test_get_ke():
     with h5py.File(helpers_filename, "r") as f:
-        h0_R = f['h0_R'][:]
+        h0_k_R = f['h0_R'][:]
         vec = f['vec'][:]
         wks = f['wks'][:]    
-    ke = helpers.get_ke(h0_R, vec, wks)    
+    ke = helpers.get_ke(h0_k_R, vec, wks)    
     ke_expected = np.array([ [ -0.36035732126514364, 0                    ],
                              [ 0                   , -0.36035732126514364 ] ])
     assert ke == approx(ke_expected, abs=abs)

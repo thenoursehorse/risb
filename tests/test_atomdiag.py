@@ -32,13 +32,15 @@ def one_band():
     mu = U / 2.0 # half-filling
     n_orb = 1
     spin_names = ['up', 'dn']
-    h_loc = U * n('up', 0) * n('dn', 0)
+    h_int = U * n('up', 0) * n('dn', 0)
     Lambda_c = dict()
     D = dict()
+    h0_loc_mat = dict()
     for bl in spin_names:
         Lambda_c[bl] = np.array([ [ -mu ] ])
         D[bl] = np.array([ [ -0.3333 ] ])
-    return spin_names, n_orb, Lambda_c, D, h_loc
+        h0_loc_mat[bl] = np.array([ [ 0 ] ])
+    return spin_names, n_orb, Lambda_c, D, h0_loc_mat, h_int
 
 @pytest.fixture
 def one_band_expected():
@@ -58,21 +60,22 @@ def bilayer():
     mu = U / 2.0 # half-filling
     n_orb = 2
     spin_names = ['up','dn']
-    h_loc = Operator()
+    h_int = Operator()
     for o in range(n_orb):
-        h_loc += U * n("up",o) * n("dn",o)
-    for s in spin_names:
-        h_loc += V * ( c_dag(s,0)*c(s,1) + c_dag(s,1)*c(s,0) )
+        h_int += U * n("up",o) * n("dn",o)
     for s1,s2 in product(spin_names,spin_names):
-        h_loc += 0.5 * J * c_dag(s1,0) * c(s2,0) * c_dag(s2,1) * c(s1,1)
+        h_int += 0.5 * J * c_dag(s1,0) * c(s2,0) * c_dag(s2,1) * c(s1,1)
     Lambda_c = dict()
     D = dict()
+    h0_loc_mat = dict()
     for bl in spin_names:
         Lambda_c[bl] = np.array([ [ -mu        , -0.00460398 ],
                                   [-0.00460398, -mu         ] ])
         D[bl] = np.array([ [ -2.59694448e-01, 0               ],
                            [ 0              , -2.59694448e-01 ] ])
-    return spin_names, n_orb, Lambda_c, D, h_loc
+        h0_loc_mat[bl] = np.array([ [ 0, V ],
+                                    [ V, 0 ] ] )
+    return spin_names, n_orb, Lambda_c, D, h0_loc_mat, h_int
 
 @pytest.fixture
 def bilayer_expected():
@@ -95,19 +98,20 @@ def dh_trimer():
     n_orb = 3
     spin_names = ['up','dn']
     def hubb_N(tk, U, n_orb, spin_names):
-        phi = 2.0 * np.pi / n_orb
-        h_loc = Operator()
         # hopping
-        for a,m,mm,s in product(range(n_orb),range(n_orb),range(n_orb), spin_names):
-            h_loc += (-tk / n_orb) * c_dag(s,m) * c(s,mm) * np.exp(-1j * phi * a * m) * np.exp(1j * phi * np.mod(a+1,n_orb) * mm)
-            h_loc += (-tk / n_orb) * c_dag(s,m) * c(s,mm) * np.exp(-1j * phi * np.mod(a+1,n_orb) * m) * np.exp(1j * phi * a * mm)
+        #phi = 2.0 * np.pi / n_orb
+        #for a,m,mm,s in product(range(n_orb),range(n_orb),range(n_orb), spin_names):
+        #    h0_loc += (-tk / n_orb) * c_dag(s,m) * c(s,mm) * np.exp(-1j * phi * a * m) * np.exp(1j * phi * np.mod(a+1,n_orb) * mm)
+        #    h0_loc += (-tk / n_orb) * c_dag(s,m) * c(s,mm) * np.exp(-1j * phi * np.mod(a+1,n_orb) * m) * np.exp(1j * phi * a * mm)
         # hubbard U
+        h_int = Operator()
         for m,mm,mmm in product(range(n_orb),range(n_orb),range(n_orb)):
-            h_loc += (U / n_orb) * c_dag("up",m) * c("up",mm) * c_dag("dn",mmm) * c("dn",np.mod(m+mmm-mm,n_orb))
-        return h_loc.real
-    h_loc = hubb_N(tk, U, n_orb, spin_names)
+            h_int += (U / n_orb) * c_dag("up",m) * c("up",mm) * c_dag("dn",mmm) * c("dn",np.mod(m+mmm-mm,n_orb))
+        return h_int.real
+    h_int = hubb_N(tk, U, n_orb, spin_names)
     Lambda_c = dict()
     D = dict()
+    h0_loc_mat = {bl: np.zeros([n_orb, n_orb]) for bl in spin_names}
     for bl in spin_names:
         Lambda_c[bl] = np.array([ [ -1.91730088, -0.        , -0.         ],
                                   [ -0.        , -1.69005946, -0.         ],
@@ -115,7 +119,10 @@ def dh_trimer():
         D[bl] = np.array([ [ -0.26504931,  0.        ,  0.        ],
                            [ 0.        , -0.39631238,  0.         ],
                            [ 0.        ,  0.        , -0.39631238 ] ])
-    return spin_names, n_orb, Lambda_c, D, h_loc
+        h0_loc_mat[bl][0,0] = -2 * tk
+        h0_loc_mat[bl][1,1] = tk
+        h0_loc_mat[bl][2,2] = tk
+    return spin_names, n_orb, Lambda_c, D, h0_loc_mat, h_int
 
 @pytest.fixture
 def dh_trimer_expected():
@@ -142,11 +149,11 @@ def dh_trimer_expected():
 def test_solve(subtests, request, model, model_expected):
     model = request.getfixturevalue(model)
     model_expected = request.getfixturevalue(model_expected)
-    spin_names, n_orb, Lambda_c, D, h_loc = model
+    spin_names, n_orb, Lambda_c, D, h0_loc_mat, h_int = model
     rho_f_expected, rho_cf_expected, rho_c_expected, gs_energy_expected, N_expected, S2_expected = model_expected
     gf_struct = [ (bl, n_orb) for bl in spin_names ]
-    embedding = EmbeddingAtomDiag(h_loc, gf_struct)
-    embedding.set_h_emb(Lambda_c, D)
+    embedding = EmbeddingAtomDiag(h_int, gf_struct)
+    embedding.set_h_emb(Lambda_c, D, h0_loc_mat)
     embedding.solve()
     rho_f = dict()
     rho_cf = dict()

@@ -17,11 +17,13 @@ gf_struct = set_operator_structure(spin_names, n_orb, off_diag=True)
 # Non-interacting cubic dispersion on lattice, built using TRIQS
 nkx = 10 # nkx**3 total number of k-points
 t = - 1.0 / 3.0 # hopping amplitude
+V = 0.25 # Bilayer hopping between orbitals on same site
 units = np.eye(3) # lattice vectors, a1, a2, a3 on a cube
 hoppings = {}
 for i in range(3):
     hoppings[ tuple((units[:,i]).astype(int)) ] = np.eye(n_orb) * t
     hoppings[ tuple((-units[:,i]).astype(int)) ] = np.eye(n_orb) * t
+    hoppings[ tuple([0,0,0]) ] = np.array([ [0, V], [V, 0] ])
 tbl = TBLattice(units=units, hoppings=hoppings, orbital_positions=[(0,0,0)]*n_orb)
 bl = BravaisLattice(units=units)
 bz = BrillouinZone(bl)
@@ -32,14 +34,9 @@ for bl, _ in gf_struct:
 
 # Hubbard interactions    
 U = 4 # Hubbard
-V = 0.25 # Bilayer hopping
 h_int = Operator()
 for o in range(n_orb):
     h_int += U * n("up",o) * n("dn",o)
-h0_loc = Operator()
-for s in spin_names:
-    h0_loc += V * ( c_dag(s,0)*c(s,1) + c_dag(s,1)*c(s,0) )
-h_loc = h0_loc + h_int
 
 # Set up class to work out k-space integration weights
 beta = 40 # inverse temperature
@@ -59,7 +56,7 @@ kweight = SmearingKWeight(beta=beta, n_target=n_target)
 #    return A
 
 # Set up class to solve embedding problem
-embedding = EmbeddingAtomDiag(h_loc, gf_struct)
+embedding = EmbeddingAtomDiag(h_int, gf_struct)
 
 # Setup RISB solver class  
 # gf_struct and embedding must be for each cluster. In this case

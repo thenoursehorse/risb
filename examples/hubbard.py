@@ -39,7 +39,7 @@ for bl, _ in gf_struct:
     h0_k[bl] = tbl.fourier(mk).data
 
 # Hubbard interaction
-h_loc = hubbard(U=0, n_orb=n_orb)
+h_int = hubbard(U=0, n_orb=n_orb)
 
 # Set up class to work out k-space integration weights
 beta = 40 # inverse temperature
@@ -54,7 +54,7 @@ def symmetries(A):
     return A
 
 # Set up class to solve embedding problem
-embedding = EmbeddingAtomDiag(h_loc, gf_struct)
+embedding = EmbeddingAtomDiag(h_int, gf_struct)
 
 # Setup RISB solver class  
 S = LatticeSolver(h0_k=h0_k,
@@ -76,7 +76,7 @@ U_arr = np.arange(0, 10+0.1, 0.5)
 for U in U_arr:
     # Update U # FIXME in the future this should be done with a set function
     # so it works with C++ better 
-    embedding.h_loc = hubbard(U=U, n_orb=n_orb)
+    embedding.h_int = hubbard(U=U, n_orb=n_orb)
     
     # Solve
     S.solve(tol=1e-6)

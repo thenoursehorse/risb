@@ -16,7 +16,6 @@
 # Authors: H. L. Nourse
 
 import numpy as np
-from copy import deepcopy
 from itertools import product
 from numpy.typing import ArrayLike
 from typing import Any, Callable, TypeAlias
@@ -45,11 +44,11 @@ class LatticeSolver:
         For example for a single cluster: ``[ ('up', 3), ('down', 3) ]``.
     embedding : list[class]
         The class that solves the embedding problem for each cluster. It must 
-        already store the local Hamiltonian ``h_loc`` on a cluster, have a method 
-        ``set_h_emb(Lambda_c, D)`` to setup the impurity problem, a method
-        ``solve(**embedding_param)`` that solves the impurity problem, and 
-        methods ``get_rho_f(block)`` and ``get_rho_cf(block)`` for the bath and 
-        hybridization density matrices. 
+        already store the interactiong Hamiltonian ``h_int`` on a cluster, 
+        have a method ``set_h_emb(h0_loc_mat, Lambda_c, D)`` to setup the 
+        impurity problem, a method ``solve(**embedding_param)`` that solves 
+        the impurity problem, and methods ``get_rho_f(block)`` and 
+        ``get_rho_cf(block)`` for the bath and hybridization density matrices. 
         See class :class:`.EmbeddingAtomDiag`.
     update_weights : callable
         The function that gives the integral weights at each k-point on the 
@@ -97,7 +96,8 @@ class LatticeSolver:
                  error_fun : {'root', 'recursion'} = 'root',
                  return_x_new : bool = True,
                  ):
-                
+
+        #: dict[numpy.ndarray] : Non-interacting Hamiltonian in k-space.
         self.h0_k = h0_k
         
         # FIXME is this the best way to make sure gf_struct is a list of gf_struct?
@@ -142,6 +142,14 @@ class LatticeSolver:
         # The Hermitian basis in each block of a cluster
         # TODO make H_basis an input
         self._H_basis = [{bl:self._hermitian_basis(bl_size, self.force_real) for bl, bl_size in self.gf_struct[i]} for i in range(self.n_clusters)]
+
+        #: dict[numpy.ndarray] : :attr:`h0_k` with the local couplings from 
+        #; each correlated subspace removed.
+        self.h0_kin_k = helpers.get_h0_kin_k(h0_k, projectors, gf_struct_mapping)
+
+        #: list[dict(numpy.ndarray)] : Matrices of non-interacting local hopping 
+        #: terms and energies in :attr:`h0_k`.
+        self.h0_loc_mat = self._get_h0_loc_mat()
         
         #: list[dict[numpy.ndarray]] : Renormalization matrix
         #: from c- to f-electrons at the mean-field level for each cluster.
@@ -334,6 +342,23 @@ class LatticeSolver:
             raise ValueError('A is not a list[dict[ndarray]], dict[ndarray], or ndarray !')
         return A
     
+    def _get_h0_loc_mat(self) -> MFType:
+        h0_loc_mat = self._initialize_block_mf_matrix(self.gf_struct, self.force_real)
+        
+        for i in range(self.n_clusters):
+            for bl, bl_size in self.gf_struct[i]:
+                bl_full = self.gf_struct_mapping[i][bl]
+                if self.projectors is not None:
+                    h0_loc_mat[i][bl] = helpers.get_h0_loc_mat(self.h0_k[bl_full], self.projectors[i][bl] )
+                else:
+                    h0_loc_mat[i][bl] = helpers.get_h0_loc_mat(self.h0_k[bl_full])
+
+        h0_loc_mat, _ = self._unflatten_mat( self._flatten_mat( h0_loc_mat, is_coeff_real=True ), is_coeff_real=True )
+        for function in self.symmetries:
+            h0_loc_mat = function(h0_loc_mat)
+
+        return h0_loc_mat
+        
     def _target_function(self, 
                         x : ArrayLike, 
                         embedding_param : list[dict[str, Any]], 
@@ -394,26 +419,26 @@ class LatticeSolver:
         
         # Make R, Lambda in supercell basis from basis of the clusters
         # FIXME check if projectors get broadcast correctly if they are a diff proj at each k
-        R_full = {bl:0 for bl in self.h0_k.keys()}
-        Lambda_full = {bl:0 for bl in self.h0_k.keys()}
+        self.R_full = {bl:0 for bl in self.h0_kin_k.keys()}
+        self.Lambda_full = {bl:0 for bl in self.h0_kin_k.keys()}
         if self.projectors is not None:
             for i in range(self.n_clusters):
                 for bl, _ in self.gf_struct[i]:
                     bl_full = self.gf_struct_mapping[i][bl]
-                    R_full[bl_full] += self.projectors[i][bl].conj().T @ self.R[i][bl] @ self.projectors[i][bl]
-                    Lambda_full[bl_full] += self.projectors[i][bl].conj().T @ self.Lambda[i][bl] @ self.projectors[i][bl]
+                    self.R_full[bl_full] += self.projectors[i][bl].conj().T @ self.R[i][bl] @ self.projectors[i][bl]
+                    self.Lambda_full[bl_full] += self.projectors[i][bl].conj().T @ self.Lambda[i][bl] @ self.projectors[i][bl]
         else:
             for bl, _ in self.gf_struct[0]:
                 bl_full = self.gf_struct_mapping[0][bl]
-                R_full[bl_full] += self.R[0][bl]
-                Lambda_full[bl_full] += self.Lambda[0][bl]
+                self.R_full[bl_full] += self.R[0][bl]
+                self.Lambda_full[bl_full] += self.Lambda[0][bl]
         
-        h0_R = dict()
-        #R_h0_R = dict()
-        for bl in self.h0_k.keys():
-            self.energies_qp[bl], self.bloch_vector_qp[bl] = helpers.get_h_qp(R_full[bl], Lambda_full[bl], self.h0_k[bl])
-            h0_R[bl] = helpers.get_h0_R(R_full[bl], self.h0_k[bl], self.bloch_vector_qp[bl])
-            #R_h0_R[bl] = helpers.get_R_h0_R(R_full[bl], self.h0_k[bl], self.bloch_vector_qp[bl])
+        h0_k_R = dict()
+        #R_h0_k_R = dict()
+        for bl in self.h0_kin_k.keys():
+            self.energies_qp[bl], self.bloch_vector_qp[bl] = helpers.get_h_qp(self.R_full[bl], self.Lambda_full[bl], self.h0_kin_k[bl])
+            h0_k_R[bl] = helpers.get_h0_kin_k_R(self.R_full[bl], self.h0_kin_k[bl], self.bloch_vector_qp[bl])
+            #R_h0_k_R[bl] = helpers.get_R_h0_kin_kR(R_full[bl], self.h0_kin_k[bl], self.bloch_vector_qp[bl])
         
         self.kweights = self.update_weights(self.energies_qp, **kweight_param)
 
@@ -422,11 +447,11 @@ class LatticeSolver:
                 bl_full = self.gf_struct_mapping[i][bl]
                 if self.projectors is not None:
                     self.rho_qp[i][bl] = helpers.get_rho_qp(self.bloch_vector_qp[bl_full], self.kweights[bl_full], self.projectors[i][bl])
-                    self.lopsided_ke_qp[i][bl] = helpers.get_ke(h0_R[bl_full], self.bloch_vector_qp[bl_full], self.kweights[bl_full], self.projectors[i][bl])
+                    self.lopsided_ke_qp[i][bl] = helpers.get_ke(h0_k_R[bl_full], self.bloch_vector_qp[bl_full], self.kweights[bl_full], self.projectors[i][bl])
                 else:
                     self.rho_qp[i][bl] = helpers.get_rho_qp(self.bloch_vector_qp[bl_full], self.kweights[bl_full])
-                    self.lopsided_ke_qp[i][bl] = helpers.get_ke(h0_R[bl_full], self.bloch_vector_qp[bl_full], self.kweights[bl_full])
-                #self.ke_qp[i][bl] = helpers.get_ke(R_h0_R[bl_full], self.bloch_vector_qp[bl_full], self.kweights[bl_full], self.projectors[i][bl])
+                    self.lopsided_ke_qp[i][bl] = helpers.get_ke(h0_k_R[bl_full], self.bloch_vector_qp[bl_full], self.kweights[bl_full])
+                #self.ke_qp[i][bl] = helpers.get_ke(R_h0_k_R[bl_full], self.bloch_vector_qp[bl_full], self.kweights[bl_full], self.projectors[i][bl])
         
         # FIXME More expensive to do this than just storing and working with the coefficients, but 
         # nothing compared to solving the embedding problem so this is likely fine
@@ -457,7 +482,7 @@ class LatticeSolver:
             self.D = function(self.D)
 
         for i in range(self.n_clusters):
-            self.embedding[i].set_h_emb(self.Lambda_c[i], self.D[i])
+            self.embedding[i].set_h_emb(self.Lambda_c[i], self.D[i], self.h0_loc_mat[i])
             self.embedding[i].solve(**embedding_param[i])
             for bl, _ in self.gf_struct[i]:
                 self.rho_f[i][bl] = self.embedding[i].get_rho_f(bl)
