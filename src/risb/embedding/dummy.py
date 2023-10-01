@@ -60,7 +60,7 @@ class EmbeddingDummy:
             rho_c = func(rho_c)
         return rho_c
     
-    def get_ro_cf(self, bl : str) -> np.ndarray:
+    def get_rho_cf(self, bl : str) -> np.ndarray:
         if bl not in self.embedding.rho_cf:
             rho_cf = self.embedding.get_rho_cf(bl)
         else:
