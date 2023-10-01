@@ -34,8 +34,8 @@ class EmbeddingAtomDiag:
 
     Parameters
     ----------
-    h_loc : triqs.operators.Operator
-        Local Hamiltonian including interactions and quadratic terms.
+    h_int : triqs.operators.Operator
+        Interaction Hamiltonian in the embedding space.
     gf_struct : list of pairs [ (str,int), ...]
         Structure of the matrices. It must be a
         list of pairs, each containing the name of the
@@ -45,17 +45,23 @@ class EmbeddingAtomDiag:
     """
 
     def __init__(self, 
-                 h_loc : OpType, 
+                 h_int : OpType, 
                  gf_struct : GfStructType) -> None:
         
-        #: triqs.operators.Operator : Local Hamiltonian.
-        self.h_loc = h_loc
+        #: triqs.operators.Operator : Interaction Hamiltonian.
+        self.h_int = h_int
 
+        #: dict[tuple[str,int]] : Block matrix structure of c-electrons.
         self.gf_struct = gf_struct
 
         # Set structure of bath and embedding space
-        # FIXME if doing ghost bath and loc are not the same size    
+        # FIXME if doing ghost bath and loc are not the same size
+
+        #: dict[tuple[str,int]] : Block matrix structure of f-electrons.
         self.gf_struct_bath = [(self._bl_loc_to_bath(bl), bl_size) for bl, bl_size in self.gf_struct]
+
+        #: dict[tuple[str,int]] : Block matrix structure entire embedding 
+        #: space.
         self.gf_struct_emb = self.gf_struct + self.gf_struct_bath
 
         # Set of fundamental operators
@@ -68,15 +74,21 @@ class EmbeddingAtomDiag:
         self.gf_struct_bath_dict = self._dict_gf_struct(self.gf_struct_bath)
         self.gf_struct_emb_dict = self._dict_gf_struct(self.gf_struct_emb)
 
-        #: triqs.atom_diag.AtomDiag vacuum : Ground state of the embedding problem.
+        #: triqs.atom_diag.AtomDiag vacuum : Ground state of the embedding 
+        #: problem.
         self.gs_vector = None
         
-        #: The TRIQS AtomDiag instance. See :class:`triqs.atom_diag.AtomDiag` in the TRIQS manual.
+        #: The TRIQS AtomDiag instance. See :class:`triqs.atom_diag.AtomDiag` 
+        #: in the TRIQS manual.
         self.ad = None
 
         #: triqs.operators.Operator : Embedding Hamiltonian. It is the sum of
-        #: :attr:`h_loc`, :attr:`h_hybr`, and :attr:`h_bath`.
+        #: :attr:`h0_loc`, :attr:`h_int`, :attr:`h_hybr`, and :attr:`h_bath`.
         self.h_emb : OpType = Operator()
+
+        #: triqs.operators.Operator : Single-particle quadratic couplings of 
+        #: c-electron terms in ::attr:`h_emb`.
+        self.h0_loc : OpType = Operator()
         
         #: triqs.operators.Operator : Bath terms in :attr:`h_emb`.
         self.h_bath : OpType = Operator()
@@ -85,13 +97,14 @@ class EmbeddingAtomDiag:
         self.h_hybr : OpType = Operator()
         
         #: dict[numpy.ndarray] : f-electron density matrix.
-        self.Nf = dict()
+        self.rho_f = dict()
 
         #: dict[numpy.ndarray] : c-electron density matrix.
-        self.Nc = dict()
+        self.rho_c = dict()
         
-        #: dict[numpy.ndarray] : Density matrix of hybridization terms (c- and f-electrons).
-        self.Mcf = dict()
+        #: dict[numpy.ndarray] : Density matrix of hybridization terms 
+        #: (c- and f-electrons).
+        self.rho_cf = dict()
 
     @staticmethod
     def _bl_loc_to_bath(bl : str) -> str:
@@ -109,6 +122,23 @@ class EmbeddingAtomDiag:
     def _dict_gf_struct(gf_struct : GfStructType) -> dict[str, int]:
         return {bl: bl_size for bl, bl_size in gf_struct}
     
+    def set_h0_loc(self, h0_loc_mat : MFType) -> None:
+        """
+        Sets the single-particle quadratic couplings of the c-electrons in the 
+        embedding Hamiltonian.
+        
+        Parameters
+        ----------
+        h0_loc_mat : dict of ndarray, optional
+            Quadratic terms as a matrix. Each key in dictionary must follow 
+            :attr:`gf_struct`.
+        """
+        C_Op = get_C_Op(self.gf_struct, dagger=False)
+        C_dag_Op = get_C_Op(self.gf_struct, dagger=True)
+        self.h0_loc : OpType = Operator()
+        for bl, bl_size in self.gf_struct:
+            self.h0_loc += C_dag_Op[bl] @ h0_loc_mat[bl] @ C_Op[bl]
+    
     def set_h_bath(self, Lambda_c : MFType) -> None:
         """
         Sets the bath terms in the impurity Hamiltonian.
@@ -116,7 +146,8 @@ class EmbeddingAtomDiag:
         Parameters
         ----------
         Lambda_c : dict of ndarray, optional
-            Bath coupling. Each key in dictionary must follow ``gf_struct``.
+            Bath coupling. Each key in dictionary must follow 
+            :attr:`gf_struct`.
         """
         C_Op = get_C_Op(self.gf_struct_bath, dagger=False)
         C_dag_Op = get_C_Op(self.gf_struct_bath, dagger=True)
@@ -132,7 +163,8 @@ class EmbeddingAtomDiag:
         Parameters
         ----------
         D : dict[numpy.ndarray]
-            Hybridization coupling. Each key in dictionary must follow ``gf_struct``.
+            Hybridization coupling. Each key in dictionary must follow 
+            :attr:`gf_struct`.
         """
         C_Op = get_C_Op(self.gf_struct_bath, dagger=False)
         C_dag_Op = get_C_Op(self.gf_struct, dagger=True)
@@ -145,24 +177,34 @@ class EmbeddingAtomDiag:
     def set_h_emb(self, 
                   Lambda_c : MFType, 
                   D : MFType, 
+                  h0_loc_mat : MFType | None = None,
                   mu : float | None = None) -> None:
         """
-        Sets the terms in the impurity Hamiltonian to solve the embedding problem.
+        Sets the terms in the impurity Hamiltonian to solve the embedding 
+        problem.
         
         Parameters
         ----------
         Lambda_c : dict[numpy.ndarray]
-            Bath coupling. Each key in dictionary must follow ``gf_struct``.
+            Bath coupling. Each key in dictionary must follow 
+            :attr:`gf_struct`.
         D : dict[numpy.ndarray]
-            Hybridization coupling. Each key in dictionary must follow ``gf_struct``.
+            Hybridization coupling. Each key in dictionary must follow 
+            :attr:`gf_struct`.
+        h0_loc_mat : dict[numpy.ndarray], optional
+            Single-particle quadratic couplings of the c-electrons. Each key 
+            in dictionary must follow :attr:`gf_struct`.
         """
+        if h0_loc_mat is not None:
+            self.set_h0_loc(h0_loc_mat)
         self.set_h_bath(Lambda_c)
         self.set_h_hybr(D)
-        
-        # For operators equal is copy, not a view
-        self.h_emb = self.h_loc + self.h_bath + self.h_hybr
 
-        # NOTE h_bath must have + mu*np.eye()*f_a*f_a^dag to remove mu's contribution
+        # For operators equal is copy, not a view
+        self.h_emb = self.h0_loc + self.h_int + self.h_bath + self.h_hybr
+
+        # NOTE h_bath must have + mu*np.eye()*f_a*f_a^dag to remove mu's 
+        # contribution
         if mu is not None:
             for bl, bl_size in self.gf_struct:
                 for alpha in range(bl_size):
@@ -185,70 +227,71 @@ class EmbeddingAtomDiag:
         self.gs_vector = self.ad.vacuum_state
         self.gs_vector[0] = 1
 
-    def get_nf(self, bl : str) -> np.ndarray:
+    def get_rho_f(self, bl : str) -> np.ndarray:
         """
         Parameters
         ----------
         bl : str
-            Which block in ``gf_struct`` to return.
+            Which block in :attr:`gf_struct` to return.
 
         Returns
         -------
         numpy.ndarray
-            The f-electron density matrix :attr:`Nf` from impurity.
+            The f-electron density matrix :attr:`rho_f` from impurity.
         """
         bl_bath = self._bl_loc_to_bath(bl)
         bl_size = self.gf_struct_bath_dict[bl_bath]
-        self.Nf[bl] = np.zeros([bl_size, bl_size], dtype=complex)
+        self.rho_f[bl] = np.zeros([bl_size, bl_size], dtype=complex)
         for a, b in product(range(bl_size), range(bl_size)):
             Op = c(bl_bath, b) * c_dag(bl_bath, a)
-            self.Nf[bl][a,b] = self.overlap(Op, force_real=False)
-        return self.Nf[bl]
+            self.rho_f[bl][a,b] = self.overlap(Op, force_real=False)
+        return self.rho_f[bl]
     
-    def get_nc(self, bl : str) -> np.ndarray:
+    def get_rho_c(self, bl : str) -> np.ndarray:
         """
         Parameters
         ----------
         bl : str
-            Which block in ``gf_struct`` to return.
+            Which block in :attr:`gf_struct` to return.
         
         Returns
         -------
         numpy.ndarray
-            The c-electron density matrix :attr:`Nc` from impurity.
+            The c-electron density matrix :attr:`rho_c` from impurity.
         """
         bl_size = self.gf_struct_dict[bl]
-        self.Nc[bl] = np.zeros([bl_size, bl_size], dtype=complex)
+        self.rho_c[bl] = np.zeros([bl_size, bl_size], dtype=complex)
         for alpha, beta in product(range(bl_size), range(bl_size)):
             Op = c_dag(bl, alpha) * c(bl, beta)
-            self.Nc[bl][alpha,beta] = self.overlap(Op, force_real=False)
-        return self.Nc[bl]
+            self.rho_c[bl][alpha,beta] = self.overlap(Op, force_real=False)
+        return self.rho_c[bl]
     
-    def get_mcf(self, bl : str) -> np.ndarray:
+    def get_rho_cf(self, bl : str) -> np.ndarray:
         """
         Parameters
         ----------
         bl : str
-            Which block in ``gf_struct`` to return.
+            Which block in :attr:`gf_struct` to return.
 
         Returns
         -------
         numpy.ndarray
-            The c,f-electron hybridization density matrix :attr:`Mcf` from impurity.
+            The c,f-electron hybridization density matrix :attr:`rho_cf` from 
+            impurity.
         """
         bl_bath = self._bl_loc_to_bath(bl)
         bath_size = self.gf_struct_bath_dict[bl_bath]
         loc_size = self.gf_struct_dict[bl]
-        self.Mcf[bl] = np.zeros([loc_size, bath_size], dtype=complex)
+        self.rho_cf[bl] = np.zeros([loc_size, bath_size], dtype=complex)
         for alpha, a in product(range(loc_size), range(bath_size)):
             Op = c_dag(bl, alpha) * c(bl_bath, a)
-            self.Mcf[bl][alpha,a] = self.overlap(Op, force_real=False)
-        return self.Mcf[bl]
+            self.rho_cf[bl][alpha,a] = self.overlap(Op, force_real=False)
+        return self.rho_cf[bl]
     
     def overlap(self, Op : OpType, force_real : bool = True) -> float | complex:
         """
-        Calculate the expectation value of an operator against the ground state of 
-        the embedding problem.
+        Calculate the expectation value of an operator against the ground 
+        state of the embedding problem.
 
         Parameters
         ----------

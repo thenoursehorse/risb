@@ -1,9 +1,8 @@
 # Tutorials
 
-```{toctree}
-:hidden:
+Some tutorials.
 
+```{toctree}
+kagome
 self-consistent
 ```
-
-Some tutorials.

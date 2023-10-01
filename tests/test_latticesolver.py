@@ -41,8 +41,8 @@ def one_band():
     n_target = 1
     gf_struct = [ (bl, n_orb) for bl in ['up', 'dn'] ]
     h0_k = build_cubic_h0_k(gf_struct=gf_struct, nkx=nkx, spatial_dim=spatial_dim)
-    h_loc = U * n('up',0) * n('dn',0)
-    embedding = EmbeddingAtomDiag(h_loc, gf_struct)
+    h_int = U * n('up',0) * n('dn',0)
+    embedding = EmbeddingAtomDiag(h_int, gf_struct)
     #kweight = SmearingKWeight(beta=beta, mu=mu)
     kweight = SmearingKWeight(beta=beta, n_target=n_target)
     Lambda_expected = np.array([[2.0]])
@@ -53,7 +53,6 @@ def one_band():
 def bilayer():
     U = 4
     V = 0.25
-    J = 0
     mu = U / 2.0 # half-filling
     n_target = 2
     n_orb = 2
@@ -63,14 +62,13 @@ def bilayer():
     spin_names = ['up','dn']
     gf_struct = set_operator_structure(spin_names, n_orb, off_diag=True)
     h0_k = build_cubic_h0_k(gf_struct=gf_struct, nkx=nkx, spatial_dim=spatial_dim)
-    h_loc = Operator()
+    for bl in h0_k.keys():
+        h0_k[bl][:,0,1] += V
+        h0_k[bl][:,1,0] += V
+    h_int = Operator()
     for o in range(n_orb):
-        h_loc += U * n("up",o) * n("dn",o)
-    for s in spin_names:
-        h_loc += V * ( c_dag(s,0)*c(s,1) + c_dag(s,1)*c(s,0) )
-    for s1,s2 in product(spin_names,spin_names):
-        h_loc += 0.5 * J * c_dag(s1,0) * c(s2,0) * c_dag(s2,1) * c(s1,1)
-    embedding = EmbeddingAtomDiag(h_loc, gf_struct)
+        h_int += U * n("up",o) * n("dn",o)
+    embedding = EmbeddingAtomDiag(h_int, gf_struct)
     #kweight = SmearingKWeight(beta=beta, mu=mu)
     kweight = SmearingKWeight(beta=beta, n_target=n_target)
     Lambda_expected = np.array([[2.0, 0.114569681915],[0.114569681915, 2.0]])
@@ -93,13 +91,13 @@ def kanamori():
     spin_names = ['up','dn']
     gf_struct = set_operator_structure(spin_names, n_orb, off_diag=True)
     h0_k = build_cubic_h0_k(gf_struct=gf_struct, nkx=nkx, spatial_dim=spatial_dim)
-    h_loc = h_int_kanamori(spin_names=spin_names,
+    h_int = h_int_kanamori(spin_names=spin_names,
                            n_orb=n_orb,
                            U=np.array([[0, Up-J], [Up-J, 0]]),
                            Uprime=np.array([[U, Up], [Up, U]]),
                            J_hund=J,
                            off_diag=True)
-    embedding = EmbeddingAtomDiag(h_loc, gf_struct)
+    embedding = EmbeddingAtomDiag(h_int, gf_struct)
     kweight = SmearingKWeight(beta=beta, mu=mu)
     kweight = SmearingKWeight(beta=beta, n_target=n_target)
     Lambda_expected = np.array([[3.0, 0.0],[0.0, 3.0]])

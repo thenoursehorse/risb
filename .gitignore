@@ -18,3 +18,5 @@ src/risb/version.py
 
 # Potential auth keys
 .github.auth
+
+.vscode

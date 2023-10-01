@@ -92,4 +92,6 @@ myst_substitutions = {
     'RISB': r"{abbr}`RISB (rotationally invariant slave-bosons)`",
     'DFT': r"{abbr}`DFT (density functional theory)`",
     'DMFT': r"{abbr}`DMFT (dynamical mean-field theory)`",
+    'TRIQS': r"[TRIQS](https://triqs.github.io/)",
+    'DIIS': r"{abbr}`DIIS (direct inversion in the iterative subspace)`",
 }

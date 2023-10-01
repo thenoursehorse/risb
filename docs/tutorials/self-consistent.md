@@ -1,9 +1,11 @@
-# {{RISB}} loop
+# Constructing the {{RISB}} self-consistent loop
 
 ## Introduction
 
 In this tutorial, you will construct the self-consistent loop in rotationally 
-invariant slave-bosons, and use it to solve the bilayer Hubbard model.
+invariant slave-bosons, and use it to solve the bilayer Hubbard model. This 
+will allow you to easily expand upon the algorithms that we provide so that 
+you can tailor-make {{RISB}} for your own research problems.
 
 We will try to reproduce the results of Sec. IIIB of Ref. [^Lechermann2007].
 
@@ -55,6 +57,11 @@ $$
 where $V$ is the interlayer hopping between the orbitals, $U$ is 
 the local Coulomb repulsion, and 
 $\hat{n}_{i\alpha\sigma} \equiv \hat{c}^{\dagger}_{i\alpha\sigma} \hat{c}_{i\alpha\sigma}$.
+
+:::{tip}
+In `examples/bilayer_hubbard.py` we provide an example using the 
+`LatticeSolver` class that you can compare your answers to.
+:::
 
 ## A: Construct $\hat{H}_0^{\mathrm{kin}}$
 
@@ -112,7 +119,7 @@ def make_kmesh(n_kx = 6, d = 3):
 Now construct $\hat{H}_0^{\mathrm{kin}}$ on this mesh.
 
 ```python
-def make_h0_k(mesh, gf_struct, t = 1, a = 1):
+def make_h0_kin_k(mesh, gf_struct, t = 1, a = 1):
     """
     Return dispersion of degenerate orbitals on a hypercubic lattice as a 
     dictionary, where each key is the spin.
@@ -130,21 +137,21 @@ def make_h0_k(mesh, gf_struct, t = 1, a = 1):
 
     Returns
     -------
-    h0_k : numpy.ndarray
+    h0_kin_k : numpy.ndarray
         Hopping matrix indexed as k, orbital_i, orbital_j.
     """
     n_k = mesh.shape[0]
 
-    h0_k = dict()
+    h0_kin_k = dict()
     for bl, n_orb in gf_struct:
         di = np.diag_indices(n_orb)
-        h0_k[bl] = np.zeros([n_k, n_orb, n_orb])
-        h0_k[bl][:,di[0],di[1]] = -2.0 * t * np.sum(np.cos(2.0 * a * np.pi * mesh), axis=1)[:, None]
+        h0_kin_k[bl] = np.zeros([n_k, n_orb, n_orb])
+        h0_kin_k[bl][:,di[0],di[1]] = -2.0 * t * np.sum(np.cos(2.0 * a * np.pi * mesh), axis=1)[:, None]
 
-    return h0_k
+    return h0_kin_k
 ```
 
-Note that the structure of the matrices is given in the same way as TRIQS 
+Note that the structure of the matrices is given in the same way as {{TRIQS}} 
 Green's functions as
 
 ```python
@@ -157,8 +164,7 @@ Next, construct the local Hamiltonian on each cluster (site) $i$. It has to
 include all of the many-body interactions on each cluster as well as the 
 non-interacting quadratic terms that describe orbital energies and
 hopping between orbitals on site $i$. For more details refer to the 
-[TRIQS](https://triqs.github.io/) documentation on constructing 
-second-quantized operators.
+{{TRIQS}} documentation on constructing second-quantized operators.
 
 ```python
 from triqs.operators import *
@@ -199,7 +205,7 @@ the algorithm.
 The mean-field matrices that characterize the quasiparticle Hamiltonian 
 $\hat{H}^{\mathrm{qp}}$ are the renormalization matrix $\mathcal{R}$ and
 the correlation matrix $\lambda$. The single-particle quasiparticle density 
-matrix of $\hat{H}^{\mathrm{qp}}$ is $\Delta^p$ and the lopsided 
+matrix of $\hat{H}^{\mathrm{qp}}$ is $\Delta^{\mathrm{qp}}$ and the lopsided 
 quasiparticle kinetic energy is $\mathcal{K}$.
 
 The non-interacting quadratic parts of the embedding Hamiltonian 
@@ -208,10 +214,11 @@ $\mathcal{D}$, and the matrix that describes the couplings in the bath
 $\lambda^c$.
 
 The single-particle density matrices of $\hat{H}^{\mathrm{emb}}$ are the 
-density matrix of the f-electrons (the bath, these are quasiparticles) $N^f$, 
+density matrix of the f-electrons (the bath, these are quasiparticles) 
+$\Delta^f$, 
 the density matrix of the c-electrons (the impurity, these are physical 
 electrons), and the off-diagonal density matrix between the c- and f- 
-electrons (the impurity and the bath) $M^{cf}$.
+electrons (the impurity and the bath) $\Delta^{cf}$.
 
 ```python 
 # H^qp parameters R and Lambda
@@ -236,16 +243,16 @@ for bl, bl_size in gf_struct:
     Lambda_c[bl] = np.zeros((bl_size, bl_size))
     
 # H^emb single-particle density matrices
-Nf = dict()
-Mcf = dict()
-Nc = dict()
+rho_f = dict()
+rho_cf = dict()
+rho_c = dict()
 for bl, bl_size in gf_struct:
-    Nf[bl] = np.zeros((bl_size, bl_size))
-    Mcf[bl] = np.zeros((bl_size, bl_size))
-    Nc[bl] = np.zeros((bl_size, bl_size))   
+    rho_f[bl] = np.zeros((bl_size, bl_size))
+    rho_cf[bl] = np.zeros((bl_size, bl_size))
+    rho_c[bl] = np.zeros((bl_size, bl_size))   
 ```
 
-### Helper functions
+## Helper functions
 
 As an aside, let me describe how to obtain the above mean-field matrices, which 
 has to be done at each iteration of the self-consistent process. There are 
@@ -261,12 +268,12 @@ from risb import helpers
 
 # H^qp single-particle density
 for bl, bl_size in gf_struct:
-    rho_qp[bl] = helpers.get_pdensity(bloch_qp[bl], kweights[bl])
+    rho_qp[bl] = helpers.get_rho_qp(bloch_qp[bl], kweights[bl])
 
 # H^qp (lopsided) quasiparticle kinetic energy
 for bl, bl_size in gf_struct:
-    h0_R = helpers.get_h0_R(R[bl], h0_k[bl], bloch_qp[bl])
-    kinetic_energy_qp[bl] = helpers.get_ke(h0_R, bloch_qp[bl], kweights[bl])
+    h0_k_R = helpers.get_h0_k_R(R[bl], h0_kin_k[bl], bloch_qp[bl])
+    lopsided_kinetic_energy_qp[bl] = helpers.get_ke(h0_k_R, bloch_qp[bl], kweights[bl])
 
 # H^emb hybridization
 for bl, bl_size in gf_struct:
@@ -285,8 +292,8 @@ The helper functions to do this are
 
 ```python
 for bl, bl_size in gf_struct:
-    Lambda[bl] = helpers.get_lambda(R[bl], D[bl], Lambda_c[bl], Nf[bl])
-    R[bl] = helpers.get_r(Mcf[bl], Nf[bl])
+    Lambda[bl] = helpers.get_lambda(R[bl], D[bl], Lambda_c[bl], rho_f[bl])
+    R[bl] = helpers.get_r(rho_cf[bl], rho_f[bl])
 ```
 
 The second is as a root problem, adjusting $\mathcal{R}$ and $\lambda$ to
@@ -295,8 +302,8 @@ density matrices from $\hat{H}^{\mathrm{emb}}$.
 
 ```python
 for bl, bl_size in gf_struct:
-    f1 = helpers.get_f1(Mcf[bl], pdensity[bl], R[bl])
-    f2 = helpers.get_f2(Nf[bl], rho_qp[bl])
+    f1 = helpers.get_f1(rho_cf[bl], rho_qp[bl], R[bl])
+    f2 = helpers.get_f2(rho_f[bl], rho_qp[bl])
 ```
 
 ## D: The $k$-space integrator
@@ -360,7 +367,7 @@ from risb import helpers
 energies_qp = dict()
 bloch_qp = dict()
 for bl, bl_size in gf_struct
-energies_qp[bl], bloch_qp[bl] = helpers.get_h_qp(R[bl], Lambda[bl], h0_k[bl])
+energies_qp[bl], bloch_qp[bl] = helpers.get_h_qp(R[bl], Lambda[bl], h0_kin_k[bl])
 ```
 
 The simplest definition for the integration weight is to just calculate the 
@@ -400,7 +407,7 @@ def update_weights(energies, mu=0, beta=10):
 
 Now we have to solve the impurity problem defined by the embedding Hamiltonian 
 $\hat{H}^{\mathrm{emb}}$. There is a simple, but relatively slow, 
-implementation that only uses [TRIQS](https://triqs.github.io/).
+implementation that only uses {{TRIQS}}.
 
 ```python
 from risb.embedding import EmbeddingAtomDiag
@@ -425,9 +432,9 @@ The methods to calculate the single-particle density matrices are
 
 ```python
 for bl, bl_size in gf_struct:
-    Nf[bl] = embedding.get_nf(bl)
-    Mcf[bl] = embedding.get_mcf(bl)
-    Nc[bl] = embedding.get_nc(bl)
+    rho_f[bl] = embedding.get_rho_f(bl)
+    rho_cf[bl] = embedding.get_rho_cf(bl)
+    rho_c[bl] = embedding.get_rho_c(bl)
 ```
 
 ## Exercises
@@ -452,14 +459,16 @@ $n = 1.88$ (Fig. 10)?
 You have built the self-consistent loop for 
 {{RISB}} and solved a (not so simple) 
 interacting fermion problem. The code in :py:class:`risb.solve_lattice.LatticeSolver` 
-is not much more complicated than what you have done. You should now easily be able to mofify, 
-implement, and contribute to any parts in the library. You also now understand 
-the basic ingredients needed for most self-consistent procedures in much 
-more sophisticated codes for {{DFT}} and {{DMFT}}.
+is not much more complicated than what you have done. You should now easily be 
+able to mofify, implement, and contribute to any parts in the library. 
+You also now understand the basic ingredients needed for most self-consistent 
+procedures in much more sophisticated codes for {{DFT}} and {{DMFT}}. 
+Hopefully, you can easily build upon this simple example to do much more 
+complicated things.
 
 Below is some code that should be very easy to fill in. But you will understand 
 much more about {{RISB}} if you try to piece everything together from the 
-self-consistent equations found in the literature found in 
+self-consistent equations in the literature found in 
 [About](../about)
 
 ### Skeleton code cheat sheet
@@ -480,7 +489,7 @@ block_names = ['up','dn']
 gf_struct = [(bl, n_orb) for bl in block_names]
 
 # Implement A
-h0_k = 
+h0_kin_k = 
 
 # Implement B
 h_loc = 
@@ -505,7 +514,7 @@ for cycle in range(n_cycles):
 
     # H^qp and integration weights
     for bl, bl_size in gf_struct:
-        eig_qp[bl], vec_qp[bl] = helpers.get_h_qp(R[bl], Lambda[bl], h0_k[bl])
+        eig_qp[bl], vec_qp[bl] = helpers.get_h_qp(R[bl], Lambda[bl], h0_kin_k[bl])
 
     # k-space integration weights
     for bl, bl_size in gf_struct:
@@ -513,14 +522,14 @@ for cycle in range(n_cycles):
 
     # H^qp density matrices
     for bl, bl_size in gf_struct:
-        pdensity[bl] = helpers.get_pdensity(vec_qp[bl], wks[bl])
-        h0_R[bl] = helpers.get_h0_R(R[bl], h0_k[bl], vec_qp[bl])
-        kinetic_energy_bl[bl] = helpers.get_ke(h0_R[bl], vec_qp[bl], kweights[bl])
+        rho_qp[bl] = helpers.get_rho_qp(vec_qp[bl], wks[bl])
+        h0_k_R[bl] = helpers.get_h0_k_R(R[bl], h0_kin_k[bl], vec_qp[bl])
+        kinetic_energy_bl[bl] = helpers.get_ke(h0_k_R[bl], vec_qp[bl], kweights[bl])
 
     # H^emb parameters
     for bl, bl_size in gf_struct:
-        D[bl] = helpers.get_d(pdensity[bl], kinetic_energy_bl[bl])
-        Lambda_c[bl] = helpers.get_lambda_c(pdensity[bl], R[bl], Lambda[bl], D[bl])
+        D[bl] = helpers.get_d(rho_qp[bl], kinetic_energy_bl[bl])
+        Lambda_c[bl] = helpers.get_lambda_c(rho_qp[bl], R[bl], Lambda[bl], D[bl])
 
     # Solve H^emb
     embedding.set_h_emb(h_loc, Lambda_c, D)
@@ -528,14 +537,14 @@ for cycle in range(n_cycles):
 
     # H^emb density matrices
     for bl, bl_size in gf_struct:
-        Nf[bl] = embedding.get_nf(bl)
-        Mcf[bl] = embedding.get_mcf(bl)
-        Nc[bl] = embedding.get_nc(bl)
+        rho_f[bl] = embedding.get_rho_f(bl)
+        rho_cf[bl] = embedding.get_rho_cf(bl)
+        rho_c[bl] = embedding.get_rho_c(bl)
 
     # New guess for H^qp parameters
     for bl, bl_size in gf_struct:
-        Lambda[bl] = sc.get_lambda(R[bl], D[bl], Lambda_c[bl], Nf[bl])
-        R[bl] = sc.get_r(Mcf[bl], Nf[bl])
+        Lambda[bl] = sc.get_lambda(R[bl], D[bl], Lambda_c[bl], rho_f[bl])
+        R[bl] = sc.get_r(rho_cf[bl], rho_f[bl])
 
     # Check how close the guess was
     for bl, bl_size in gf_struct:

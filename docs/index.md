@@ -10,17 +10,17 @@
 
 install
 about
+how-to/index
 tutorials/index
+explanations/index
 ```
 
 ```{toctree}
-:caption: API
+:caption: Reference
 :hidden:
  
 api/risb
 ```
-%api/risb
-%apidocs/index
 
 ## Indices and tables
 
