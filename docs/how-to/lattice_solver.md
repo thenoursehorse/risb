@@ -4,26 +4,23 @@ If you want to solve a strongly correlated model on a lattice you can use :py:cl
 
 ## Simple setup
 
-First define a non-interacting dispersion matrix that describes electron 
-hopping between sites or clusters on the lattice, with some defined block 
-structure. E.g., if spin is a good quantum number and there are $N$ orbitals 
-per unit cell
+First define a non-interacting coupling matrix that describes electron 
+hopping between sites and orbitals and orbital energies, with some defined 
+block structure. E.g., if spin is a good quantum number and there are 
+$N$ orbitals per unit cell
 
 ```python
 h0_k = {'up' : k by N by N ndarray, 'dn' : k by N by N ndarray}
 ```
 
-:::{important}
+:::{tip}
 :class: dropdown
-`h0_k` must not contain any local hopping terms that are in the subspace 
-$\mathcal{C}_i$. These terms must be included in `h_loc` along with the 
-interactions.
-:::
-
-:::{admonition} Developer note
-:class: dropdown
-Should we remove the above requirement and calculate `h0_loc` within the class 
-from h0_k?
+`h0_k` can contain any local hopping terms `h0_loc` that are in the subspace 
+$\mathcal{C}_i$. In {{RISB}} these terms are included in the embedding 
+Hamiltonian and are typically separated out from `h0_k`. `LatticeSolver` works 
+these terms out automatically. But they can be included in 
+the interactions `h_int` by hand if you want. It makes no difference to 
+the solver.
 :::
 
 Next define a class that determines the integration weight at each $k$ point 
@@ -46,12 +43,12 @@ orbitals in that block as `n_orb`.
 gf_struct = [(bl, n_orb), ...]
 ```
 
-Following the block structure of `gf_struct`, construct the local Hamiltonian 
-in the correlated subspace $\mathcal{C}_i$ which includes the quadratic terms 
-in a cluster as well as the interactions
+Following the block structure of `gf_struct`, construct the interacting 
+Hamiltonian in the correlated subspace $\mathcal{C}_i$. This can include 
+the quadratic terms in a cluster if you want.
 
 ```python
-h_loc = h0_loc + h_int
+h_int = ...
 ```
 
 :::{tip}
@@ -65,7 +62,7 @@ Next define the class that solves in the correlated subspace $\mathcal{C}_i$
 the impurity problem for {{RISB}}.
 
 ```python
-embedding = EmbeddingClass(h_loc, gf_struct)
+embedding = EmbeddingClass(h_int, gf_struct)
 ```
 
 Finally, set up the solver class and solve

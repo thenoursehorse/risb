@@ -114,7 +114,7 @@ def make_kmesh(n_kx = 6, d = 3):
 Now construct $\hat{H}_0^{\mathrm{kin}}$ on this mesh.
 
 ```python
-def make_h0_k(mesh, gf_struct, t = 1, a = 1):
+def make_h0_kin_k(mesh, gf_struct, t = 1, a = 1):
     """
     Return dispersion of degenerate orbitals on a hypercubic lattice as a 
     dictionary, where each key is the spin.
@@ -132,18 +132,18 @@ def make_h0_k(mesh, gf_struct, t = 1, a = 1):
 
     Returns
     -------
-    h0_k : numpy.ndarray
+    h0_kin_k : numpy.ndarray
         Hopping matrix indexed as k, orbital_i, orbital_j.
     """
     n_k = mesh.shape[0]
 
-    h0_k = dict()
+    h0_kin_k = dict()
     for bl, n_orb in gf_struct:
         di = np.diag_indices(n_orb)
-        h0_k[bl] = np.zeros([n_k, n_orb, n_orb])
-        h0_k[bl][:,di[0],di[1]] = -2.0 * t * np.sum(np.cos(2.0 * a * np.pi * mesh), axis=1)[:, None]
+        h0_kin_k[bl] = np.zeros([n_k, n_orb, n_orb])
+        h0_kin_k[bl][:,di[0],di[1]] = -2.0 * t * np.sum(np.cos(2.0 * a * np.pi * mesh), axis=1)[:, None]
 
-    return h0_k
+    return h0_kin_k
 ```
 
 Note that the structure of the matrices is given in the same way as {{TRIQS}} 
@@ -267,8 +267,8 @@ for bl, bl_size in gf_struct:
 
 # H^qp (lopsided) quasiparticle kinetic energy
 for bl, bl_size in gf_struct:
-    h0_R = helpers.get_h0_R(R[bl], h0_k[bl], bloch_qp[bl])
-    lopsided_kinetic_energy_qp[bl] = helpers.get_ke(h0_R, bloch_qp[bl], kweights[bl])
+    h0_k_R = helpers.get_h0_k_R(R[bl], h0_kin_k[bl], bloch_qp[bl])
+    lopsided_kinetic_energy_qp[bl] = helpers.get_ke(h0_k_R, bloch_qp[bl], kweights[bl])
 
 # H^emb hybridization
 for bl, bl_size in gf_struct:
@@ -362,7 +362,7 @@ from risb import helpers
 energies_qp = dict()
 bloch_qp = dict()
 for bl, bl_size in gf_struct
-energies_qp[bl], bloch_qp[bl] = helpers.get_h_qp(R[bl], Lambda[bl], h0_k[bl])
+energies_qp[bl], bloch_qp[bl] = helpers.get_h_qp(R[bl], Lambda[bl], h0_kin_k[bl])
 ```
 
 The simplest definition for the integration weight is to just calculate the 
@@ -484,7 +484,7 @@ block_names = ['up','dn']
 gf_struct = [(bl, n_orb) for bl in block_names]
 
 # Implement A
-h0_k = 
+h0_kin_k = 
 
 # Implement B
 h_loc = 
@@ -509,7 +509,7 @@ for cycle in range(n_cycles):
 
     # H^qp and integration weights
     for bl, bl_size in gf_struct:
-        eig_qp[bl], vec_qp[bl] = helpers.get_h_qp(R[bl], Lambda[bl], h0_k[bl])
+        eig_qp[bl], vec_qp[bl] = helpers.get_h_qp(R[bl], Lambda[bl], h0_kin_k[bl])
 
     # k-space integration weights
     for bl, bl_size in gf_struct:
@@ -518,8 +518,8 @@ for cycle in range(n_cycles):
     # H^qp density matrices
     for bl, bl_size in gf_struct:
         rho_qp[bl] = helpers.get_rho_qp(vec_qp[bl], wks[bl])
-        h0_R[bl] = helpers.get_h0_R(R[bl], h0_k[bl], vec_qp[bl])
-        kinetic_energy_bl[bl] = helpers.get_ke(h0_R[bl], vec_qp[bl], kweights[bl])
+        h0_k_R[bl] = helpers.get_h0_k_R(R[bl], h0_kin_k[bl], vec_qp[bl])
+        kinetic_energy_bl[bl] = helpers.get_ke(h0_k_R[bl], vec_qp[bl], kweights[bl])
 
     # H^emb parameters
     for bl, bl_size in gf_struct:

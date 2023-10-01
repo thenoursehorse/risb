@@ -22,8 +22,9 @@ gf_struct = [ ('up_eg', 2),  ('dn_eg', 2)]
 ```
 
 Next a local Hamiltonian has to be constructed. This must 
-be a {{TRIQS}} operator, and it must include the local quadratic terms 
-in $\mathcal{C}_i$ as well as the interaction terms. For example, 
+be a {{TRIQS}} operator that includes the interaction terms. It can include 
+the local quadratic terms in $\mathcal{C}_i$, but these can also be set 
+later on. It does not make any difference for the solvers. For example, 
 a two-orbital Hubbard model with hopping between the orbitals can be 
 constructed as
 
@@ -36,12 +37,10 @@ h_int = Operator()
 for o in range(n_orb):
     h_int += U * n('up', o) * n('dn', o)
 
-V = 0.25
-h0_loc = Operator()
-for s in ['up', 'dn']:
-    h0_loc += V * ( c_dag(s, 0) * c(s, 1) + c_dag(s, 1) * c(s, 0) )
-
-h_loc = h0_loc + h_int
+# Optional local terms
+#V = 0.25
+#for s in ['up', 'dn']:
+#    h_int += V * ( c_dag(s, 0) * c(s, 1) + c_dag(s, 1) * c(s, 0) )
 ```
 
 ### Constructor
@@ -50,11 +49,11 @@ The solver is instantiated as
 
 ```python
 from risb.embedding import EmbeddingAtomDiag
-embedding = EmbeddingAtomDiag(h_loc, gf_struct)
+embedding = EmbeddingAtomDiag(h_int, gf_struct)
 ```
 
-The local Hamiltonian is stored in `embedding.h_loc` and the block matrix 
-structure is stored in `embedding.gf_struct`.
+The interaction Hamiltonian is stored in `embedding.h_int` and the block 
+matrix structure is stored in `embedding.gf_struct`.
 
 ### Setting `h_emb`
 
@@ -68,7 +67,18 @@ where `Lambda_c` and `D` are block matrices that describe the impurity problem.
 :py:meth:`EmbeddingAtomDiag.set_h_emb` is internally called from within 
 the self-consistent loop in the {{RISB}} `Solver` classes. The hybridzation 
 term from `D` is stored as `embedding.h_hybr` and the bath hopping from 
-`Lambda_c` stored as `embedding.h_bath`.
+`Lambda_c` stored as `embedding.h_bath` as {{TRIQS}} operators.
+
+If the non-interacting quadratic couplings are not included in `h_int`, then 
+they must be passed as 
+
+```python
+embedding.set_h_emb(Lambda_c, D, h0_loc_mat)
+```
+
+where `h0_loc_mat` is a matrix that describes the couplings, with the same 
+block matrix structure `Lambda_c` and `D`. This is stored in 
+`embedding.h0_loc` as a {{TRIQS}} operator.
 
 ### Solving
 
@@ -163,9 +173,8 @@ def rotate_spin(A):
     B['dn'] = A['up']
     return B
 
-embedding = EmbeddingDummy(...,
-                           rotations = [rotate_spin],
-)
+embedding = EmbeddingDummy(embedding = ...,
+                           rotations = [rotate_spin])
 ```
 
 :::{note}

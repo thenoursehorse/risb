@@ -57,10 +57,10 @@ are equivalent. Next define an embedding solver for each inequivalent cluster
 ```python
 from ... import EmbeddingClass
 
-# Define h_loc for each cluster as a list
+# Define h_int for each cluster as a list
 ...
 
-embedding = [EmbeddingClass(h_loc[i], gf_struct[i]) for i in range(n_clusters)]
+embedding = [EmbeddingClass(h_int[i], gf_struct[i]) for i in range(n_clusters)]
 ```
 
 The solvers are initialized as

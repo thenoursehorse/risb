@@ -99,12 +99,13 @@ Any implementation can be used with our code provided it has the following
 class methods. A method to set the embedding Hamiltonian called as
 
 ```python
-self.set_h_emb(Lambda_c, D)
+self.set_h_emb(Lambda_c, D, h0_loc_mat)
 ```
 
-where `Lambda_c` and `D` are block matrices with the structure dict[ndarray]. 
-The dictionary has keys that define each block matricx stored as a 
-`numpy` array.
+where `Lambda_c`, `D`, and `h0_loc_mat` are block matrices with the structure 
+dict[ndarray]. The dictionary has keys that define each block matricx stored as a 
+`numpy` array. `h0_loc_mat` is a matrix that defines the non-interacting 
+terms in $\hat{H}^{\mathrm{loc}}$.
 
 A method to solve the Hamiltonian for the ground-state in the half-filled 
 particle sector called as 
