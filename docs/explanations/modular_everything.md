@@ -5,7 +5,7 @@ functions being separated and passed to the {{RISB}} `Solver` is because these
 are the parts of the algorithm that afford the most meaningful changes. The 
 parts that make up the self-consistent loop are also easily accessed through 
 the `helper` functions. In the [{{RISB}} loop](../tutorials/self-consistent.md) 
-tutorial the self-consistent cycle is even made bare, and a user can easily 
+tutorial the self-consistent cycle is explained, and a user can easily 
 write their own class and implementation. This is also largely the reason for 
 using python for most aspects of the implementation, even though Fortran or 
 C++ would be faster. Older versions of this code were written entirely in C++.

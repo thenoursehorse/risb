@@ -30,7 +30,7 @@ on the lattice, e.g., `class:SmearingKWeight`.
 kweight = KWeightClass(...)
 ```
 
-It must have a member function `update_weights` that is called as 
+It must have a member function `update_weights()` that is called as 
 `update_weights(energies, **kwargs)` where `energies` are a `dict[ndarray]` 
 that are the eigenenergies of `h0_k` in each block (e.g., `'up'` and `'dn'` 
 spin blocks).
@@ -54,8 +54,8 @@ h_int = ...
 :::{tip}
 :class: dropdown
 The {{TRIQS}} library makes it very simple to define 
-`h_loc` as second-quantized operators. All of the `Embedding` classes we 
-provide assume that `h_loc` is a {{TRIQS}} operator.
+`h_int` as second-quantized operators. All of the `Embedding` classes we 
+provide assume that `h_int` is a {{TRIQS}} operator.
 :::
 
 Next define the class that solves in the correlated subspace $\mathcal{C}_i$ 
@@ -71,7 +71,7 @@ Finally, set up the solver class and solve
 S = LatticeSolver(h0_k = h0_k,
                   gf_struct = gf_struct,
                   embedding = embedding,
-                  update_weights = kweight.update_weights
+                  update_weights = kweight.update_weights,
 )
 S.solve(tol = ...)
 ```
@@ -104,10 +104,10 @@ subspace $\mathcal{C}_i$ as a list
 projectors = [projector_1, projector_2, ...]
 ```
 
-Depending on how the problem is set up, you might also need to construct a 
-mapping from the block structure defined in each `gf_struct[i]` to the larger 
-block structure space of `h0_k` as a list. Each `gf_struct_mapping_i` is a 
-dictionary of `str`
+(Optional) Depending on how the problem is set up, you might also need to 
+construct a mapping from the block structure defined in each `gf_struct[i]` 
+to the larger block structure space of `h0_k` as a list. Each 
+`gf_struct_mapping_i` is a dictionary of `str` $\rightarrow$ `str`
 
 ```python
 gf_struct_mapping_1 = {'bl_in_gf_struct_1' : 'bl_in_h0_k', ...}
@@ -162,7 +162,7 @@ S = LatticeSolver(...
 
 and are called in the sequence they are given in the list.
 
-:::{admonition} Thanks
+:::{admonition} Thanks <3
 This way to do symmetries is unashamedly taken from 
 [TRIQS/hartree_fock](https://triqs.github.io/hartree_fock). There are other 
 ways to enforce symmetries on the matrices that we also implement at the 
@@ -227,7 +227,7 @@ S.solve(tol = , method = 'broyden1,hybr,krylov,etc', otherkwargs = )
 :::{warning}
 In our experience scipy's `root` functions do not work as well as either 
 standard linear mixing or {{DIIS}} (which seems to work very well for 
-{{RISB}}).
+{{RISB}}, and is the default method).
 :::
 
 ## Real or complex?

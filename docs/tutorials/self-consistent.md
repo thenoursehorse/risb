@@ -1,6 +1,5 @@
 # Constructing the {{RISB}} self-consistent loop
 
-## Introduction
 
 In this tutorial, you will construct the self-consistent loop in rotationally 
 invariant slave-bosons, and use it to solve the bilayer Hubbard model. This 
@@ -8,6 +7,13 @@ will allow you to easily expand upon the algorithms that we provide so that
 you can tailor-make {{RISB}} for your own research problems.
 
 We will try to reproduce the results of Sec. IIIB of Ref. [^Lechermann2007].
+
+## Example model: bilayer Hubbard
+
+:::{tip}
+In `examples/bilayer_hubbard.py` we provide an example using the 
+`LatticeSolver` class that you can compare your answers to.
+:::
 
 The bilayer Hubbard model on the hypercubic lattice is given by
 
@@ -58,12 +64,19 @@ where $V$ is the interlayer hopping between the orbitals, $U$ is
 the local Coulomb repulsion, and 
 $\hat{n}_{i\alpha\sigma} \equiv \hat{c}^{\dagger}_{i\alpha\sigma} \hat{c}_{i\alpha\sigma}$.
 
-:::{tip}
-In `examples/bilayer_hubbard.py` we provide an example using the 
-`LatticeSolver` class that you can compare your answers to.
+:::{important}
+In {{RISB}} the non-interacting quadratic terms within a cluster $i$ have 
+to be separated from the non-interacting quadratic terms coupling between 
+clusters. That is why the above is split into $\hat{H}^{\mathrm{kin}}_0$ 
+and $\hat{H}^{\mathrm{loc}}_i$.
 :::
 
 ## A: Construct $\hat{H}_0^{\mathrm{kin}}$
+
+:::{seealso}
+[Constructing tight-binding models](../how-to/quadratic_terms.md) for 
+some methods.
+:::
 
 First, construct the dispersion between clusters on the lattice. It should 
 not include the non-interacting quadratic terms within a cluster. 
@@ -75,7 +88,8 @@ will be $\mathcal{N} \times n_{\mathrm{orb}} \times n_{\mathrm{orb}}$, where
 $\mathcal{N}$ is the number of unit cells (sites in this case) on the 
 lattice and $n_{\mathrm{orb}}$ is the number of orbitals in each unit cell. 
 If the Hamiltonian was not block diagonal in spin, we would instead construct a 
-single $\mathcal{N} \times 2M \times 2M$ array.
+single $\mathcal{N} \times 2 n_{\mathrm{orb}} \times 2 n_{\mathrm{orb}}$ 
+array. You can block diagonalize however is appropriate for your problem.
 
 The easiest way to create this is as an array using `numpy`. We will 
 intentionally do this in a computationally slow way. The intention here is to 
@@ -101,7 +115,7 @@ def make_kmesh(n_kx = 6, d = 3):
     Returns
     -------
     mesh : numpy.ndarray
-        The mesh in crystal coordinates, indexed as k, dim_1, dim_2, ..., dim_d
+        The mesh in fractional coordinates, indexed as k, dim_1, dim_2, ..., dim_d
     """
     
     # Total number of k-points on the mesh
@@ -109,9 +123,9 @@ def make_kmesh(n_kx = 6, d = 3):
 
     mesh = np.empty(shape=(n_k, d))
     coords = [range(n_kx) for _ in range(d)]
-    for idx,coord in enumerate(product(*coords)):
+    for idx, coord in enumerate(product(*coords)):
         for i in range(len(coord)):
-            mesh[idx,i] = coord[i]/float(n_kx) + 0.5/float(n_kx)
+            mesh[idx,i] = coord[i] / float(n_kx) + 0.5 / float(n_kx)
     
     return mesh
 ```
@@ -163,13 +177,13 @@ gf_struct = [ ("up", 2), ("dn", 2) ],
 Next, construct the local Hamiltonian on each cluster (site) $i$. It has to 
 include all of the many-body interactions on each cluster as well as the 
 non-interacting quadratic terms that describe orbital energies and
-hopping between orbitals on site $i$. For more details refer to the 
-{{TRIQS}} documentation on constructing second-quantized operators.
+hopping between orbitals on site $i$. In this case, we use the 
+second-quantized operators that the {{TRIQS}} library provides.
 
 ```python
 from triqs.operators import *
 
-def make_h_loc(V = 0.25, U = 5):
+def make_h_loc(V = 0.25, U = 4):
     """
     Return the local terms of the bilayer Hubbad model as a TRIQS operator.
     
@@ -206,7 +220,7 @@ The mean-field matrices that characterize the quasiparticle Hamiltonian
 $\hat{H}^{\mathrm{qp}}$ are the renormalization matrix $\mathcal{R}$ and
 the correlation matrix $\lambda$. The single-particle quasiparticle density 
 matrix of $\hat{H}^{\mathrm{qp}}$ is $\Delta^{\mathrm{qp}}$ and the lopsided 
-quasiparticle kinetic energy is $\mathcal{K}$.
+quasiparticle kinetic energy is $E^{c,\mathrm{qp}}$.
 
 The non-interacting quadratic parts of the embedding Hamiltonian 
 $\hat{H}^{\mathrm{emb}}$ are described by the hybridization matrix 
@@ -215,10 +229,11 @@ $\lambda^c$.
 
 The single-particle density matrices of $\hat{H}^{\mathrm{emb}}$ are the 
 density matrix of the f-electrons (the bath, these are quasiparticles) 
-$\Delta^f$, 
+$\Delta^{f}$, 
 the density matrix of the c-electrons (the impurity, these are physical 
-electrons), and the off-diagonal density matrix between the c- and f- 
-electrons (the impurity and the bath) $\Delta^{cf}$.
+electrons) $\Delta^{c}$, 
+and the off-diagonal density matrix between the c- and f- electrons 
+(the impurity and the bath) $\Delta^{cf}$.
 
 ```python 
 # H^qp parameters R and Lambda
@@ -257,8 +272,8 @@ for bl, bl_size in gf_struct:
 As an aside, let me describe how to obtain the above mean-field matrices, which 
 has to be done at each iteration of the self-consistent process. There are 
 helper functions that do this for you. They simply take in numpy arrays 
-and either use `numpy.einsum` or multiply arrays together. Below, the 
-definition of `bloch_qp` and `kweights` will be described later.
+and either use `numpy.einsum` or `numpy.dot` arrays together. Below, the 
+definition of `bloch_vector_qp` and `kweights` will be described later.
 
 Remember that you can check the docstring of a helper function with 
 `help(helpers.function)`.
@@ -268,12 +283,12 @@ from risb import helpers
 
 # H^qp single-particle density
 for bl, bl_size in gf_struct:
-    rho_qp[bl] = helpers.get_rho_qp(bloch_qp[bl], kweights[bl])
+    rho_qp[bl] = helpers.get_rho_qp(bloch_vector_qp[bl], kweights[bl])
 
 # H^qp (lopsided) quasiparticle kinetic energy
 for bl, bl_size in gf_struct:
-    h0_k_R = helpers.get_h0_k_R(R[bl], h0_kin_k[bl], bloch_qp[bl])
-    lopsided_kinetic_energy_qp[bl] = helpers.get_ke(h0_k_R, bloch_qp[bl], kweights[bl])
+    h0_k_R = helpers.get_h0_k_R(R[bl], h0_kin_k[bl], bloch_vector_qp[bl])
+    lopsided_kinetic_energy_qp[bl] = helpers.get_ke(h0_k_R, bloch_vector_qp[bl], kweights[bl])
 
 # H^emb hybridization
 for bl, bl_size in gf_struct:
@@ -308,7 +323,7 @@ for bl, bl_size in gf_struct:
 
 ## D: The $k$-space integrator
 
-Next you will specify how k-space integrals are performed. 
+Next you will need to construct how k-space integrals are performed. 
 {{RISB}} requires integrating many mean-field matrices. 
 The way to do this that generalizes to 
 many kinds of $k$-space integration methods is to 
@@ -333,28 +348,28 @@ the form
 
 $$
 \lim_{\mathcal{N} \rightarrow \infty} 
-\frac{1}{\mathcal{N}} \sum_k A_k f(\hat{H}_k^{\mathrm{qp}}),
+\frac{1}{\mathcal{N}} \sum_k A(k) f(\hat{H}^{\mathrm{qp}}(k)),
 $$
 
-where $\mathcal{N}$ is the number of unit cells, $A_k$ is a generic 
-function, and $f(\xi_n)$ is the Fermi-Dirac distribution. The meaning 
-of $f(\hat{H}^{\mathrm{qp}}$ is specifically the operation
+where $\mathcal{N}$ is the number of unit cells, $A(k)$ is a generic 
+function, and $f(\xi)$ is the Fermi-Dirac distribution. The meaning 
+of $f(\hat{H}^{\mathrm{qp}}(k))$ is specifically the operation
 
 $$
-U_k U_k^{\dagger} f(\hat{H}_k^{\mathrm{qp}}) U_k U_k^{\dagger} 
-= U_k f(\xi_{kn}) U_k^{\dagger},
+U^{}(k) U^{\dagger}(k) f(\hat{H}^{\mathrm{qp}}(k)) U^{}(k) U^{\dagger}(k) 
+= U^{}(k) f(\xi_{n}(k)) U^{\dagger}(k),
 $$
 
-where $U_k$ is the matrix representation of the unitary that diagonalizes 
-$\hat{H}_k^{\mathrm{qp}}$, $\xi_{kn}$ are its eigenenergies, and 
-$f(\xi_{kn})$ is a diagonal matrix of the Fermi-Dirac distribution for 
-each eigenvalue.
+where $U(k)$ is the matrix representation of the unitary that diagonalizes 
+$\hat{H}^{\mathrm{qp}}(k)$, $\xi_{n}(k)$ are its eigenenergies (bands), and 
+$f(\xi_{n}(k))$ is a diagonal matrix of the Fermi-Dirac distribution for 
+each quasiparticle band.
 
 The integral can be converted to a series of finite $k$-points, with an 
 appropriate integration weight such that the integral now takes the form 
 
 $$
-\sum_k A_k w(\varepsilon_{kn}).
+\sum_k A_k w(\xi_{kn}).
 $$
 
 There is a helper function that constructs $\hat{H}^{\mathrm{qp}}$ and 
@@ -365,9 +380,9 @@ grid.
 from risb import helpers
 
 energies_qp = dict()
-bloch_qp = dict()
+bloch_vector_qp = dict()
 for bl, bl_size in gf_struct
-energies_qp[bl], bloch_qp[bl] = helpers.get_h_qp(R[bl], Lambda[bl], h0_kin_k[bl])
+energies_qp[bl], bloch_vector_qp[bl] = helpers.get_h_qp(R[bl], Lambda[bl], h0_kin_k[bl])
 ```
 
 The simplest definition for the integration weight is to just calculate the 
@@ -375,7 +390,7 @@ integration weight using the Fermi-Dirac distribution function on a finite grid
 at the inverse temperature $\beta$. That is,
 
 $$
-w(\varepsilon_{kn}) = \frac{1}{\mathcal{N}} f(\varepsilon_{kn}).
+w(\xi_{kn}) = \frac{1}{\mathcal{N}} f(\xi_{kn}).
 $$
 
 The code to perform this is
@@ -421,7 +436,7 @@ Setting the embedding Hamiltonian $\hat{H}^{\mathrm{emb}}$ is done with
 embedding.set_h_emb(Lambda_c, D)
 ```
 
-Solving for the ground state in the $2M$ particle sector, which 
+Solving for the ground state in the $n_{\mathrm{orb}}$ particle sector, which 
 corresponds to the embedding problem being half-filled, is done with 
 
 ```python
@@ -440,7 +455,7 @@ for bl, bl_size in gf_struct:
 ## Exercises
 
 1. Can you match each part above with the self-consistent loop defined in the 
-literature?
+[literature](../about)?
 1. Piece together everything above and write your own code.
 1. Solve for a range of $U$ values at half-filling ($\mu = U / 2$).
 1. How does $\beta$ and the size of the k-space mesh affect the results?
@@ -468,10 +483,9 @@ complicated things.
 
 Below is some code that should be very easy to fill in. But you will understand 
 much more about {{RISB}} if you try to piece everything together from the 
-self-consistent equations in the literature found in 
-[About](../about)
+self-consistent equations in the [literature](../about).
 
-### Skeleton code cheat sheet
+## Skeleton code cheat sheet
 
 Below is a simple self-consistent loop that relies on everything we have set up.
 

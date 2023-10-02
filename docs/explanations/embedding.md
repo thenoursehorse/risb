@@ -44,7 +44,7 @@ In the normal phase (non-superconducting) {{RISB}} requires solving the ground
 state of the $M_i$ particle sector at each iteration of the self-consistent 
 loop. Here $M_i$ is the number of degrees of freedom in the impurity 
 (sites, orbitals, and spin in the correlated subspace $\mathcal{C}_i$). Since 
-the bath is a copy of the physical space, this particle sector  
+the bath is a copy of the physical space, this particle sector 
 corresponds to half-filling of the embedding Hamiltonian. Clearly, 
 compared to {{DMFT}}, this is a much simpler and smaller impurity problem to 
 solve, and is the biggest advantage of {{RISB}}.
@@ -54,7 +54,7 @@ solve, and is the biggest advantage of {{RISB}}.
 The simplest way to solve $\hat{H}^{\mathrm{emb}}$ is to use 
 exact diagonalization in the half-filled particle sector. This is what 
 `EmbeddingAtomDiag` does, and orbital sizes up to $M_i = 5$ are possible, but 
-very slow. 
+will take a very long time. 
 One can also construct a specialized sparse exact diagonalization solver that 
 takes into account the specific symmetries that the embedding Hamiltonian is 
 allowed to have. Succinctly, only symmetry allowed $\hat{c}$ and $\hat{f}$ 
@@ -62,12 +62,12 @@ degrees of freedom couple. This symmetry can come from, e.g., point-group
 symmetries, spin or orbital symmetries. This kind of implementation is done in 
 the `EmbeddingEd` solver (currently private, but will be public soon).
 
-## Density matrix renormalization group (DMRG)
+## {{DMRG}}
 
-Another method we have employed in the past is to use DMRG, which we 
-implemented using [ITensor](https://itensor.org/). There is nothing wrong with 
-this approach, but our implementation is currently very out of date. Given that 
-ITensor is even easier to use now with many more helper functions, a DMRG 
+Another method we have employed in the past is to use {{DMRG}}, which we 
+implemented using [ITensor](https://itensor.org/). Our implementation is 
+currently very out of date and needs to be updated. Given that 
+ITensor is even easier to use now with many more helper functions, a {{DMRG}} 
 solver for the embedding Hamiltonion should be very easy to code.
 
 ## Obvious other avenues
@@ -99,13 +99,14 @@ Any implementation can be used with our code provided it has the following
 class methods. A method to set the embedding Hamiltonian called as
 
 ```python
-self.set_h_emb(Lambda_c, D, h0_loc_mat)
+self.set_h_emb(Lambda_c, D, h0_loc_matrix)
 ```
 
-where `Lambda_c`, `D`, and `h0_loc_mat` are block matrices with the structure 
-dict[ndarray]. The dictionary has keys that define each block matricx stored as a 
-`numpy` array. `h0_loc_mat` is a matrix that defines the non-interacting 
-terms in $\hat{H}^{\mathrm{loc}}$.
+where `Lambda_c`, `D`, and `h0_loc_matrix` are block matrices with the structure 
+dict[ndarray]. The dictionary has keys that define each block matrix stored as 
+a `numpy` array (see `gf_struct` from {{TRIQS}}). 
+`h0_loc_matrix` is a matrix that defines the non-interacting quadratic terms in 
+$\hat{H}^{\mathrm{loc}}$.
 
 A method to solve the Hamiltonian for the ground-state in the half-filled 
 particle sector called as 
@@ -130,6 +131,6 @@ self.get_rho_cf(block)
 ```
 
 :::{seealso}
-`EmbeddingAtomDiag` for more details. The code is very minimal and 
-simple.
+Source code for `EmbeddingAtomDiag` for more details. The code is very 
+minimal and simple.
 :::

@@ -63,7 +63,8 @@ Next the embedding Hamiltonian `h_emb` has to be set with
 embedding.set_h_emb(Lambda_c, D)
 ```
 
-where `Lambda_c` and `D` are block matrices that describe the impurity problem.
+where `Lambda_c` and `D` are block matrices that describe the impurity problem 
+with the structure of `gf_struct`. 
 :py:meth:`EmbeddingAtomDiag.set_h_emb` is internally called from within 
 the self-consistent loop in the {{RISB}} `Solver` classes. The hybridzation 
 term from `D` is stored as `embedding.h_hybr` and the bath hopping from 
@@ -73,11 +74,11 @@ If the non-interacting quadratic couplings are not included in `h_int`, then
 they must be passed as 
 
 ```python
-embedding.set_h_emb(Lambda_c, D, h0_loc_mat)
+embedding.set_h_emb(Lambda_c, D, h0_loc_matrix)
 ```
 
-where `h0_loc_mat` is a matrix that describes the couplings, with the same 
-block matrix structure `Lambda_c` and `D`. This is stored in 
+where `h0_loc_matrix` is a matrix that describes the couplings, with the same 
+block matrix structure as `Lambda_c` and `D`. This is stored in 
 `embedding.h0_loc` as a {{TRIQS}} operator.
 
 ### Solving
@@ -129,7 +130,7 @@ embedding.overlap(Op)
 ```
 
 `Op` must be a {{TRIQS}} operator. See the {{TRIQS}} manual for helper 
-functions for how to construct some common observables. To get observables 
+functions to construct some common observables. To get observables 
 in the $f$ electrons, the structure is obtained as 
 
 ```python
@@ -155,7 +156,7 @@ This class is a copy of another
 
 ```python
 from risb.embedding import EmbeddingDummy
-embedding = EmbeddingDummy(embedding = embedding_atom_diag)
+embedding = EmbeddingDummy(embedding = embedding_atom_diag_instance)
 ```
 
 ### Rotations
@@ -167,6 +168,7 @@ correlated subspace is equivalent except that the spin is rotated,
 like in an antiferromagnetic phase, this can be done with
 
 ```python
+from itertools import deepcopy
 def rotate_spin(A):
     B = deepcopy(A)
     B['up'] = A['dn']
@@ -178,11 +180,14 @@ embedding = EmbeddingDummy(embedding = ...,
 ```
 
 :::{note}
-`set_h_emb()` and `solve()` are methods that just pass and do nothing. 
+`set_h_emb()` and `solve()` are methods that just `pass`` and do nothing. 
 The density matrix functions `get_rho_f`, `get_rho_cf`, and `get_rho_c` grab 
-what is stored in `embedding_atom_diag` and rotates.
+what is stored in `embedding_atom_diag` and rotates according to the functions 
+in `rotations`.
 :::
 
 :::{warning}
-The operator passed to `overlap` is not rotated.
+The operator passed to `overlap` is not rotated. Likely only rotationally 
+invariant quantities make sense to calculate, which are obtained from the 
+embedding class `EmbeddingDummy` copies.
 :::
