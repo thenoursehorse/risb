@@ -304,5 +304,5 @@ gf_struct_mapping = ...
 # A list of projectors into each correlated subspace
 projectors = 
 
-get_h0_kin_k(h0_k, projectors, gf_struct_mapping)
+h0_kin_k = get_h0_kin_k(h0_k, projectors, gf_struct_mapping)
 ```
