@@ -78,8 +78,6 @@ ARG BUILDARCH
 FROM build_arm64
 
 # Install any other software we need
-COPY requirements.txt $SRC/$APPNAME/requirements.txt
-RUN pip install -r $SRC/$APPNAME/requirements.txt
 RUN pip install --upgrade pip \
   && pip install nox matplotlib
 #mypy

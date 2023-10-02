@@ -18,7 +18,7 @@
 
 import numpy as np
 from triqs.operators import Operator, c, c_dag
-from risb.helpers import get_h0_loc_mat
+from risb.helpers import get_h0_loc_matrix
 
 def get_C_Op(gf_struct : list[tuple[str,int]], dagger : bool = False) -> dict[list[Operator]]:
     """
@@ -46,11 +46,11 @@ def get_C_Op(gf_struct : list[tuple[str,int]], dagger : bool = False) -> dict[li
             C_Op[bl] = [c(bl, o) for o in range(bl_size)]
     return C_Op
 
-def mat_to_Op(mat : dict[np.ndarray], gf_struct : list[tuple[str,int]]) -> dict[Operator]:
+def matrix_to_Op(A : dict[np.ndarray], gf_struct : list[tuple[str,int]]) -> dict[Operator]:
     """
     Parameters
     ----------
-    mat : dict[numpy.ndarray]
+    A : dict[numpy.ndarray]
         Single-particle matrix, where each key is a different block.
     gf_struct : list of pairs [ (str,int), ...]
         Structure of the matrices. It must be a
@@ -66,8 +66,8 @@ def mat_to_Op(mat : dict[np.ndarray], gf_struct : list[tuple[str,int]]) -> dict[
     C_dag_Op = get_C_Op(gf_struct=gf_struct, dagger=True)
     C_Op = get_C_Op(gf_struct=gf_struct, dagger=False)
     Op = dict()
-    for bl in mat:
-        Op[bl] = C_dag_Op[bl] @ mat[bl] @ C_Op[bl]
+    for bl in A:
+        Op[bl] = C_dag_Op[bl] @ A[bl] @ C_Op[bl]
     return Op
 
 def get_h0_loc_blocks(h0_k : dict[np.ndarray], 
@@ -106,15 +106,15 @@ def get_h0_loc_blocks(h0_k : dict[np.ndarray],
     if gf_struct_mapping is None:
         gf_struct_mapping = {bl:bl for bl in h0_k.keys()}
     
-    h0_loc_mat = dict()
+    h0_loc_matrix = dict()
     for bl_sub in P.keys(): # sub = subspace of full space defined by h0_k
         bl = gf_struct_mapping[bl_sub]
         if force_real:
-            h0_loc_mat[bl_sub] = get_h0_loc_mat(h0_k[bl], P[bl_sub]).real
+            h0_loc_matrix[bl_sub] = get_h0_loc_matrix(h0_k[bl], P[bl_sub]).real
         else:
-            h0_loc_mat[bl_sub] = get_h0_loc_mat(h0_k[bl], P[bl_sub])
+            h0_loc_matrix[bl_sub] = get_h0_loc_matrix(h0_k[bl], P[bl_sub])
 
-    return mat_to_Op(mat=h0_loc_mat, gf_struct=gf_struct)
+    return matrix_to_Op(A=h0_loc_matrix, gf_struct=gf_struct)
 
 def get_h0_loc(h0_k : dict[np.ndarray], 
                P : dict[np.ndarray], 

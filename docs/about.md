@@ -34,7 +34,7 @@ You may also find the following papers relevant:
 
 % :download:`BibTeX file of citations <risb.bib>`
 
-## Original theory
+## Literature of original theory
 
 Slave-bosons as introduced by Kotliar and Ruckenstein[^Kotliar1986] was 
 extended to the {{RISB}} formalism by Lechermann, 

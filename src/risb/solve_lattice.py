@@ -149,7 +149,7 @@ class LatticeSolver:
 
         #: list[dict(numpy.ndarray)] : Matrices of non-interacting local hopping 
         #: terms and energies in :attr:`h0_k`.
-        self.h0_loc_mat = self._get_h0_loc_mat()
+        self.h0_loc_matrix = self._get_h0_loc_matrix()
         
         #: list[dict[numpy.ndarray]] : Renormalization matrix
         #: from c- to f-electrons at the mean-field level for each cluster.
@@ -276,18 +276,18 @@ class LatticeSolver:
     def _initialize_block_mf_matrix(gf_struct : GfStructType,
                                     is_real : bool) -> MFType:
         n_clusters = len(gf_struct)
-        mat = [dict() for i in range(n_clusters)]
+        A = [dict() for i in range(n_clusters)]
         for i in range(n_clusters):
             for bl, bsize in gf_struct[i]:
                 if is_real:
-                    mat[i][bl] = np.zeros((bsize,bsize))
+                    A[i][bl] = np.zeros((bsize,bsize))
                 else:
-                    mat[i][bl] = np.zeros((bsize,bsize), dtype=complex)
-        return mat
+                    A[i][bl] = np.zeros((bsize,bsize), dtype=complex)
+        return A
 
-    def _flatten_mat(self, 
-                     A : MFType, 
-                     is_coeff_real : bool):
+    def _flatten_matrix(self, 
+                        A : MFType, 
+                        is_coeff_real : bool):
         if len(A) != len(self._H_basis):
             raise ValueError(f'len(A) = {len(A)} and len(H_basis) = {len(self._H_basis)} must have the same number of clusters !')
         x = []
@@ -308,23 +308,23 @@ class LatticeSolver:
                         x.append( coeff.imag )
         return x
 
-    def _unflatten_mat(self,
-                       x : ArrayLike, 
-                       is_coeff_real : bool, 
-                       offset : int = 0) -> tuple[MFType, int]:
-        mat = self._initialize_block_mf_matrix(self.gf_struct, self.force_real)
+    def _unflatten_matrix(self,
+                          x : ArrayLike, 
+                          is_coeff_real : bool, 
+                          offset : int = 0) -> tuple[MFType, int]:
+        A = self._initialize_block_mf_matrix(self.gf_struct, self.force_real)
         for i in range(self.n_clusters):
             for bl, bl_size in self.gf_struct[i]:
                 for h in self._H_basis[i][bl]:
                     # x stores the coefficients of the basis of Hermitian 
                     # matrices defined in self._H_basis.
                     if is_coeff_real or self.force_real:
-                        mat[i][bl] += x[offset] * h
+                        A[i][bl] += x[offset] * h
                         offset = offset + 1
                     else:
-                        mat[i][bl] += (x[offset] + 1j*x[offset+1]) * h
+                        A[i][bl] += (x[offset] + 1j*x[offset+1]) * h
                         offset = offset + 2
-        return mat, offset
+        return A, offset
 
     @staticmethod
     # Not really used
@@ -342,22 +342,22 @@ class LatticeSolver:
             raise ValueError('A is not a list[dict[ndarray]], dict[ndarray], or ndarray !')
         return A
     
-    def _get_h0_loc_mat(self) -> MFType:
-        h0_loc_mat = self._initialize_block_mf_matrix(self.gf_struct, self.force_real)
+    def _get_h0_loc_matrix(self) -> MFType:
+        h0_loc_matrix = self._initialize_block_mf_matrix(self.gf_struct, self.force_real)
         
         for i in range(self.n_clusters):
             for bl, bl_size in self.gf_struct[i]:
                 bl_full = self.gf_struct_mapping[i][bl]
                 if self.projectors is not None:
-                    h0_loc_mat[i][bl] = helpers.get_h0_loc_mat(self.h0_k[bl_full], self.projectors[i][bl] )
+                    h0_loc_matrix[i][bl] = helpers.get_h0_loc_matrix(self.h0_k[bl_full], self.projectors[i][bl] )
                 else:
-                    h0_loc_mat[i][bl] = helpers.get_h0_loc_mat(self.h0_k[bl_full])
+                    h0_loc_matrix[i][bl] = helpers.get_h0_loc_matrix(self.h0_k[bl_full])
 
-        h0_loc_mat, _ = self._unflatten_mat( self._flatten_mat( h0_loc_mat, is_coeff_real=True ), is_coeff_real=True )
+        h0_loc_matrix, _ = self._unflatten_matrix( self._flatten_matrix( h0_loc_matrix, is_coeff_real=True ), is_coeff_real=True )
         for function in self.symmetries:
-            h0_loc_mat = function(h0_loc_mat)
+            h0_loc_matrix = function(h0_loc_matrix)
 
-        return h0_loc_mat
+        return h0_loc_matrix
         
     def _target_function(self, 
                         x : ArrayLike, 
@@ -365,13 +365,13 @@ class LatticeSolver:
                         kweight_param : dict[str, Any], 
                         ) -> np.ndarray | tuple[np.ndarray, np.ndarray]:
         
-        self.Lambda, offset = self._unflatten_mat(x, is_coeff_real=True)
-        self.R, _ = self._unflatten_mat(x, is_coeff_real=False, offset=offset)
+        self.Lambda, offset = self._unflatten_matrix(x, is_coeff_real=True)
+        self.R, _ = self._unflatten_matrix(x, is_coeff_real=False, offset=offset)
         self.Lambda, self.R, self.f1, self.f2  = self.one_cycle(embedding_param, kweight_param)
-        x_new = np.array( self._flatten_mat(self.Lambda, is_coeff_real=True) + self._flatten_mat(self.R, is_coeff_real=False) )
+        x_new = np.array( self._flatten_matrix(self.Lambda, is_coeff_real=True) + self._flatten_matrix(self.R, is_coeff_real=False) )
         
         if self.error_fun == 'root':
-            x_error = np.array( self._flatten_mat(self.f2, is_coeff_real=True) + self._flatten_mat(self.f1, is_coeff_real=False) )
+            x_error = np.array( self._flatten_matrix(self.f2, is_coeff_real=True) + self._flatten_matrix(self.f1, is_coeff_real=False) )
         elif self.error_fun == 'recursion':
             x_error = x - x_new
         else:
@@ -456,8 +456,8 @@ class LatticeSolver:
         # FIXME More expensive to do this than just storing and working with the coefficients, but 
         # nothing compared to solving the embedding problem so this is likely fine
         # Enforce matrix structure from symmetries
-        self.rho_qp, _ = self._unflatten_mat( self._flatten_mat( self.rho_qp, is_coeff_real=True ), is_coeff_real=True )
-        #self.lopsided_ke_qp, _ = self._unflatten_mat( self._flatten_mat( self.lopsided_ke_qp, is_coeff_real=False ), is_coeff_real=False )
+        self.rho_qp, _ = self._unflatten_matrix( self._flatten_matrix( self.rho_qp, is_coeff_real=True ), is_coeff_real=True )
+        #self.lopsided_ke_qp, _ = self._unflatten_matrix( self._flatten_matrix( self.lopsided_ke_qp, is_coeff_real=False ), is_coeff_real=False )
         for function in self.symmetries:
             self.rho_qp = function(self.rho_qp)
             #self.lopsided_ke_qp = function(self.lopsided_ke_qp) # FIXME can I do it to ke as well? It should have same symm as D
@@ -475,22 +475,22 @@ class LatticeSolver:
                     self.Lambda_c[i][bl] = helpers.get_lambda_c(self.rho_qp[i][bl], self.R[i][bl], self.Lambda[i][bl], self.D[i][bl])
                     
         # Enforce matrix structure from symmetries
-        self.Lambda_c, _ = self._unflatten_mat( self._flatten_mat( self.Lambda_c, is_coeff_real=True ), is_coeff_real=True )
-        self.D, _ = self._unflatten_mat( self._flatten_mat( self.D, is_coeff_real=False ), is_coeff_real=False )
+        self.Lambda_c, _ = self._unflatten_matrix( self._flatten_matrix( self.Lambda_c, is_coeff_real=True ), is_coeff_real=True )
+        self.D, _ = self._unflatten_matrix( self._flatten_matrix( self.D, is_coeff_real=False ), is_coeff_real=False )
         for function in self.symmetries:
             self.Lambda_c = function(self.Lambda_c)
             self.D = function(self.D)
 
         for i in range(self.n_clusters):
-            self.embedding[i].set_h_emb(self.Lambda_c[i], self.D[i], self.h0_loc_mat[i])
+            self.embedding[i].set_h_emb(self.Lambda_c[i], self.D[i], self.h0_loc_matrix[i])
             self.embedding[i].solve(**embedding_param[i])
             for bl, _ in self.gf_struct[i]:
                 self.rho_f[i][bl] = self.embedding[i].get_rho_f(bl)
                 self.rho_cf[i][bl] = self.embedding[i].get_rho_cf(bl)
         
         ## Enforce matrix structure from symmetries
-        self.rho_f, _ = self._unflatten_mat( self._flatten_mat( self.rho_f, is_coeff_real=True ), is_coeff_real=True )
-        self.rho_cf, _ = self._unflatten_mat( self._flatten_mat( self.rho_cf, is_coeff_real=False ), is_coeff_real=False )
+        self.rho_f, _ = self._unflatten_matrix( self._flatten_matrix( self.rho_f, is_coeff_real=True ), is_coeff_real=True )
+        self.rho_cf, _ = self._unflatten_matrix( self._flatten_matrix( self.rho_cf, is_coeff_real=False ), is_coeff_real=False )
         for function in self.symmetries:
             self.rho_f = function(self.rho_f)
             self.rho_cf = function(self.rho_cf)
@@ -501,8 +501,8 @@ class LatticeSolver:
                 self.f2[i][bl] = helpers.get_f2(self.rho_f[i][bl], self.rho_qp[i][bl])
         
         # Enforce matrix structure from symmetries
-        self.f2, _ = self._unflatten_mat( self._flatten_mat( self.f2, is_coeff_real=True ), is_coeff_real=True )
-        self.f1, _ = self._unflatten_mat( self._flatten_mat( self.f1, is_coeff_real=False ), is_coeff_real=False )
+        self.f2, _ = self._unflatten_matrix( self._flatten_matrix( self.f2, is_coeff_real=True ), is_coeff_real=True )
+        self.f1, _ = self._unflatten_matrix( self._flatten_matrix( self.f1, is_coeff_real=False ), is_coeff_real=False )
         for function in self.symmetries:
             self.f1 = function(self.f1)
             self.f2 = function(self.f2)
@@ -517,8 +517,8 @@ class LatticeSolver:
                     self.R[i][bl] = helpers.get_r(self.rho_cf[i][bl], self.rho_f[i][bl])
         
         # Enforce matrix structure from symmetries
-        self.Lambda, _ = self._unflatten_mat( self._flatten_mat( self.Lambda, is_coeff_real=True ), is_coeff_real=True )
-        self.R, _ = self._unflatten_mat( self._flatten_mat( self.R, is_coeff_real=False ), is_coeff_real=False )
+        self.Lambda, _ = self._unflatten_matrix( self._flatten_matrix( self.Lambda, is_coeff_real=True ), is_coeff_real=True )
+        self.R, _ = self._unflatten_matrix( self._flatten_matrix( self.R, is_coeff_real=False ), is_coeff_real=False )
         for function in self.symmetries:
             self.Lambda = function(self.Lambda)
             self.R = function(self.R)
@@ -562,10 +562,10 @@ class LatticeSolver:
 
         if one_shot:
             self.Lambda, self.R, _, _ = self.one_cycle(embedding_param, kweight_param)
-            x = np.array( self._flatten_mat(self.Lambda, is_coeff_real=True) + self._flatten_mat(self.R, is_coeff_real=False) )
+            x = np.array( self._flatten_matrix(self.Lambda, is_coeff_real=True) + self._flatten_matrix(self.R, is_coeff_real=False) )
         
         else:
-            x0 = np.array( self._flatten_mat(self.Lambda, is_coeff_real=True) + self._flatten_mat(self.R, is_coeff_real=False) )
+            x0 = np.array( self._flatten_matrix(self.Lambda, is_coeff_real=True) + self._flatten_matrix(self.R, is_coeff_real=False) )
             x = self.root(fun=self._target_function, 
                           x0=x0,
                           args=(embedding_param, kweight_param),

@@ -7,4 +7,6 @@ quadratic_terms
 embedding
 lattice_solver
 projectors
+kweight
+diis
 ```

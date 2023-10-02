@@ -94,4 +94,5 @@ myst_substitutions = {
     'DMFT': r"{abbr}`DMFT (dynamical mean-field theory)`",
     'TRIQS': r"[TRIQS](https://triqs.github.io/)",
     'DIIS': r"{abbr}`DIIS (direct inversion in the iterative subspace)`",
+    'DMRG': r"{abbr}`DMRG (density matrix renormalization group)`",
 }

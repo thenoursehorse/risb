@@ -466,8 +466,8 @@ def block_to_full(A : np.ndarray) -> np.ndarray:
         raise ValueError(f'Should be same number of blocks in i and j dimesnions, but got {na} and {nb} !')
     return np.block( [ [A[...,i,j,:,:] for j in range(na)] for i in range(na) ] )
 
-def get_h0_loc_mat(h0_k : np.ndarray, 
-                   P : np.ndarray | None = None) -> np.ndarray:
+def get_h0_loc_matrix(h0_k : np.ndarray, 
+                      P : np.ndarray | None = None) -> np.ndarray:
     """
     Parameters
     ----------
@@ -503,8 +503,8 @@ def get_h0_kin_k_mat(h0_k : np.ndarray,
         The single-particle hopping without the contribution from the cluster 
         defined by the projector.
     """
-    h0_loc_mat = get_h0_loc_mat(h0_k, P)
-    return h0_k - P.conj().T @ h0_loc_mat @ P
+    h0_loc_matrix = get_h0_loc_matrix(h0_k, P)
+    return h0_k - P.conj().T @ h0_loc_matrix @ P
 
 def get_h0_kin_k(h0_k : dict[np.ndarray], 
                  projectors : list[dict[np.ndarray]] | None = None, 
@@ -538,12 +538,12 @@ def get_h0_kin_k(h0_k : dict[np.ndarray],
         for i, P in enumerate(projectors):
             for bl in P.keys():
                 bl_full = gf_struct_mapping[i][bl]
-                h0_loc_mat = get_h0_loc_mat(h0_k[bl_full], P[bl])
-                h0_kin_k[bl_full] -= P[bl].conj().T @ h0_loc_mat @ P[bl]
+                h0_loc_matrix = get_h0_loc_matrix(h0_k[bl_full], P[bl])
+                h0_kin_k[bl_full] -= P[bl].conj().T @ h0_loc_matrix @ P[bl]
                 #h0_kin_k[bl_full] = get_h0_kin_k_mat(h0_kin_k[bl_full], P[bl])
     else:
         for bl in h0_k.keys():
-            h0_kin_k[bl] -= get_h0_loc_mat(h0_k[bl])
+            h0_kin_k[bl] -= get_h0_loc_matrix(h0_k[bl])
 
     return h0_kin_k
     

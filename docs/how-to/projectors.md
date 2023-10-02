@@ -2,16 +2,18 @@
 
 This guide shows you how to project onto ineqvuialent correlated subspaces
 $\mathcal{C}_i$. 
-There are three technical choices for projectors in increasing 
-complication.
+There are two technical choices for projectors.
 Projecting onto subspaces in the same basis as the larger set of orbitals. 
 Projecting onto subspaces with a different block matrix structure than 
-the larger space, e.g., to enforce some local symmetry, but each 
-projector is the same for all $k$. 
-Projecting onto subspaces where the projector is different for all $k$, 
-e.g., using projected local orbitals from {{DFT}}.
+the larger space, e.g., to enforce some local symmetry.
 
-## Simple example: single-site kagome lattice
+:::{seealso}
+:class: dropdown
+[About projectors](../explanations/projectors.md) for more details and the 
+theory of projectors.
+:::
+
+## Simple projectors
 
 If you want a correlated model where each inequivalent correlated subspace 
 has the same block structure as the non-interacting model, (e.g., the 
@@ -80,9 +82,10 @@ S = SomeSolver(...
 :class: dropdown
 In this case a correlated subspace for each orbital within a unit cell was 
 defined. This is not a requirement. It is fine if there were multiple orbitals 
-per site and only some of them were treated as correlated.
+per site and only some of them were treated as correlated, or if only some 
+sites in a unit cell were treated as correlated.
 :::
 
-## Complicated example: decorated honeycomb lattice
+## Complicated projectors with `gf_struct_mapping`
 
-## Projectors for DFT+RISB
+Work in progress.
