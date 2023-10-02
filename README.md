@@ -150,13 +150,8 @@ See the `examples` folder.
 * Add kweights tests, DIIS tests, multiple cluster tests, complex SOC tests, 
 all helpers functions (make random inputs and store, because current tests
 have too much structure.)
-* Make h0_k all h0 hoppings, and work out h0_loc and add to h_int to make a 
-h_loc = h0_loc + h_int, and then h0_kin_k = h0_k - h_0_loc
 * as always, very sensitive to initial R, Lambda guess, make more robust
 * Get static type hints working for mypy
-* Maybe change embedding.solve to now also take h0_loc. h0_loc could be worked out
-from h0_k and projectors. But this might be annoying because then
-embedding class needs to construct h0_loc as an operator from a matrix. But this 
-is probably a good thing.
 * Add verbose output to LatticeSolver
 * Helper functions for calculating free/total energy
+* Documentation for kweight, diis, and more examples
