@@ -5,7 +5,7 @@ bit about how they do things.
 
 :::{seealso}
 :class: dropdown
-[About the embedding Hamiltonian](../explanations/embedding.md)
+[About the embedding Hamiltonian](../explanations/embedding.md).
 :::
 
 ## :py:class:`EmbeddingAtomDiag`
