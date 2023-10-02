@@ -122,14 +122,14 @@ class EmbeddingAtomDiag:
     def _dict_gf_struct(gf_struct : GfStructType) -> dict[str, int]:
         return {bl: bl_size for bl, bl_size in gf_struct}
     
-    def set_h0_loc(self, h0_loc_mat : MFType) -> None:
+    def set_h0_loc(self, h0_loc_matrix : MFType) -> None:
         """
         Sets the single-particle quadratic couplings of the c-electrons in the 
         embedding Hamiltonian.
         
         Parameters
         ----------
-        h0_loc_mat : dict of ndarray, optional
+        h0_loc_matrix : dict of ndarray, optional
             Quadratic terms as a matrix. Each key in dictionary must follow 
             :attr:`gf_struct`.
         """
@@ -137,7 +137,7 @@ class EmbeddingAtomDiag:
         C_dag_Op = get_C_Op(self.gf_struct, dagger=True)
         self.h0_loc : OpType = Operator()
         for bl, bl_size in self.gf_struct:
-            self.h0_loc += C_dag_Op[bl] @ h0_loc_mat[bl] @ C_Op[bl]
+            self.h0_loc += C_dag_Op[bl] @ h0_loc_matrix[bl] @ C_Op[bl]
     
     def set_h_bath(self, Lambda_c : MFType) -> None:
         """
@@ -177,7 +177,7 @@ class EmbeddingAtomDiag:
     def set_h_emb(self, 
                   Lambda_c : MFType, 
                   D : MFType, 
-                  h0_loc_mat : MFType | None = None,
+                  h0_loc_matrix : MFType | None = None,
                   mu : float | None = None) -> None:
         """
         Sets the terms in the impurity Hamiltonian to solve the embedding 
@@ -191,12 +191,12 @@ class EmbeddingAtomDiag:
         D : dict[numpy.ndarray]
             Hybridization coupling. Each key in dictionary must follow 
             :attr:`gf_struct`.
-        h0_loc_mat : dict[numpy.ndarray], optional
+        h0_loc_matrix : dict[numpy.ndarray], optional
             Single-particle quadratic couplings of the c-electrons. Each key 
             in dictionary must follow :attr:`gf_struct`.
         """
-        if h0_loc_mat is not None:
-            self.set_h0_loc(h0_loc_mat)
+        if h0_loc_matrix is not None:
+            self.set_h0_loc(h0_loc_matrix)
         self.set_h_bath(Lambda_c)
         self.set_h_hybr(D)
 
