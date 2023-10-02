@@ -129,6 +129,14 @@ S = LatticeSolver(...
 
 ## Enforcing symmetries
 
+:::{admonition} Thanks <3
+This way to do symmetries is unashamedly taken from 
+[TRIQS/hartree_fock](https://triqs.github.io/hartree_fock). There are other 
+ways to enforce symmetries on the matrices that we also implement at the 
+same time, but this is very easy and quick for a user to cater to their 
+specific needs.
+:::
+
 If you want to enforce symmetries this is done through functions that are 
 called at each self-consistent loop. For example, if the block structure in 
 each cluster is just the spin, paramagnetism can be enforced as
@@ -161,14 +169,6 @@ S = LatticeSolver(...
 ```
 
 and are called in the sequence they are given in the list.
-
-:::{admonition} Thanks <3
-This way to do symmetries is unashamedly taken from 
-[TRIQS/hartree_fock](https://triqs.github.io/hartree_fock). There are other 
-ways to enforce symmetries on the matrices that we also implement at the 
-same time, but this is very easy and quick for a user to cater to their 
-specific needs.
-:::
 
 ## Using other functions to find a root
 
