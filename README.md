@@ -8,8 +8,8 @@ Source at [https://github.com/thenoursehorse/risb](https://github.com/thenourseh
 
 Tools to solve strongly correlated many-body electronic problems using 
 rotationally invariant slave-bosons (RISB), an auxilliary particle method. 
-RISB is like dynamical mean-field theory (DMFT), but solves in a fraction of 
-the time (with hopefully not a fraction of the accuracy!).
+RISB is like dynamical mean-field theory (DMFT), but solves problems in a 
+fraction of the time (with hopefully not a fraction of the accuracy!).
 
 ## Where to start?
 
