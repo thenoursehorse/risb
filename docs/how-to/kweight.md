@@ -34,7 +34,7 @@ kweight = SmearingKWeight(beta = beta, n_target = n_target)
 ```
 
 The fixed electron filling method uses :py:func:`scipy.optimize.brentq` to 
-find a $mu$ that gives the correct $n$.
+find a $\mu$ that gives the correct $n$.
 
 ## Getting integration weights
 
@@ -45,13 +45,13 @@ energies = ...
 weight = kweight.update_weights(energies = energies)
 ```
 
-The method sets the appropriate $mu$ and returns the integration weight 
+The method sets the appropriate $\mu$ and returns the integration weight 
 at each $k$-point as a `dict[list]`, in the same structure as `energies`.
 
 ## Smearing method
 
-There are three smearing functions used. Below $\xi$ is the energies minus 
-the chemical potential $mu$.
+There are three smearing functions implemented. Below $\xi$ 
+is the energies minus the chemical potential $\mu$.
 
 ```python
 kweight = SmearingKWeight(...,
