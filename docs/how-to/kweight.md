@@ -50,8 +50,8 @@ at each $k$-point as a `dict[list]`, in the same structure as `energies`.
 
 ## Smearing method
 
-There are three smearing functions implemented. Below $\xi$ 
-is the energies minus the chemical potential $\mu$.
+There are three smearing functions implemented. Below $\xi$ is an energy and 
+$\mu$ is the chemical potential.
 
 ```python
 kweight = SmearingKWeight(...,
@@ -62,20 +62,20 @@ kweight = SmearingKWeight(...,
 The `fermi` method is the weighting function (Fermi-Dirac)
 
 $$
-f(\xi) = \frac{1}{\exp \left( \beta \xi \right) + 1 }.
+f(\xi) = \frac{1}{\exp \left( \beta (\xi - \mu) \right) + 1 }.
 $$
 
 The `gaussian` method is the weighting function
 
 $$
-f(\xi) = \frac{1}{2} \left[ 1 - \mathrm{erf} (\beta \xi) \right],
+f(\xi) = \frac{1}{2} \left[ 1 - \mathrm{erf} (\beta (\xi - \mu)) \right],
 $$
 
 where $\mathrm{erf}$ is the error function, and $f(\xi)$ is the 
 integral of the Gaussian
 
 $$
-\delta(\xi) = \frac{\beta}{\sqrt{\pi}} \exp \left[ - (\beta \xi)^2 \right].
+\delta(\xi) = \frac{\beta}{\sqrt{\pi}} \exp \left[ - (\beta (\xi - \mu))^2 \right].
 $$
 
 The `methfessel-paxton` method is the $N=1$ one outlined in 

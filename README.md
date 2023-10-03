@@ -176,6 +176,8 @@ have too much structure.)
 * Add verbose output to LatticeSolver
 * Add verbose output to DIIS
 * Helper functions for calculating free/total energy
-* Refactor DIIS and NewtonSolver
+* Maybe? Refactor DIIS and NewtonSolver
 * More tutorial examples
 * Finish TBmodels in tight-binding how-to
+* Setup github actions
+* Sort out intersphinx linking in docs
