@@ -5,7 +5,7 @@ bit about how they do things.
 
 :::{seealso}
 :class: dropdown
-[About the embedding Hamiltonian](../explanations/embedding.md)
+[About the embedding Hamiltonian](../explanations/embedding.md).
 :::
 
 ## :py:class:`EmbeddingAtomDiag`
@@ -188,6 +188,6 @@ in `rotations`.
 
 :::{warning}
 The operator passed to `overlap` is not rotated. Likely only rotationally 
-invariant quantities make sense to calculate, which are obtained from the 
-embedding class `EmbeddingDummy` copies.
+invariant quantities make sense to calculate, which are can be obtained from 
+the embedding class that `EmbeddingDummy` copies.
 :::

@@ -1,6 +1,5 @@
 # Constructing the {{RISB}} self-consistent loop
 
-
 In this tutorial, you will construct the self-consistent loop in rotationally 
 invariant slave-bosons, and use it to solve the bilayer Hubbard model. This 
 will allow you to easily expand upon the algorithms that we provide so that 
@@ -321,55 +320,21 @@ for bl, bl_size in gf_struct:
     f2 = helpers.get_f2(rho_f[bl], rho_qp[bl])
 ```
 
-## D: The $k$-space integrator
+## D: The k-integrator
 
-Next you will need to construct how k-space integrals are performed. 
-{{RISB}} requires integrating many mean-field matrices. 
-The way to do this that generalizes to 
-many kinds of $k$-space integration methods is to 
-find the weight of the integral at each $k$-point. This is, e.g., how 
-linear tetrahedron works and smearing methods work. As you will see below, 
-because the reference energy for the integration are the eigenenergies of 
-$\hat{H}^{\mathrm{qp}}$, the weight at each $k$-point has to be updated at 
-each iteration of the self-consistency process. Not to worry though, 
-in practice this can be very fast. Below we will describe the general theory 
-for taking these integrals in multi-orbital cases. 
+:::{seealso}
+[About k-integration](../explanations/kweight.md) for the theory of how 
+$k$-space integration is numerically done in most condensed matter codes.
+:::
 
-The weights are with respect to the quasiparticle Hamiltonian 
+Next you will need to construct how $k$-space integrals are performed. All 
+integrals are with respect to the eigenenergies $\xi^{\mathrm{qp}}_{kn}$ ($n$ 
+is a band index) of the quasiparticle Hamiltonian 
 
 $$
 \hat{H}^{\mathrm{qp}} = 
 \mathcal{R} \hat{H}^{\mathrm{kin}} \mathcal{R}^{\dagger}
-+ \lambda,
-$$
-
-which, in this case, are block diagonal in $k$. All of the integrals take 
-the form
-
-$$
-\lim_{\mathcal{N} \rightarrow \infty} 
-\frac{1}{\mathcal{N}} \sum_k A(k) f(\hat{H}^{\mathrm{qp}}(k)),
-$$
-
-where $\mathcal{N}$ is the number of unit cells, $A(k)$ is a generic 
-function, and $f(\xi)$ is the Fermi-Dirac distribution. The meaning 
-of $f(\hat{H}^{\mathrm{qp}}(k))$ is specifically the operation
-
-$$
-U^{}(k) U^{\dagger}(k) f(\hat{H}^{\mathrm{qp}}(k)) U^{}(k) U^{\dagger}(k) 
-= U^{}(k) f(\xi_{n}(k)) U^{\dagger}(k),
-$$
-
-where $U(k)$ is the matrix representation of the unitary that diagonalizes 
-$\hat{H}^{\mathrm{qp}}(k)$, $\xi_{n}(k)$ are its eigenenergies (bands), and 
-$f(\xi_{n}(k))$ is a diagonal matrix of the Fermi-Dirac distribution for 
-each quasiparticle band.
-
-The integral can be converted to a series of finite $k$-points, with an 
-appropriate integration weight such that the integral now takes the form 
-
-$$
-\sum_k A_k w(\xi_{kn}).
++ \lambda.
 $$
 
 There is a helper function that constructs $\hat{H}^{\mathrm{qp}}$ and 
@@ -385,12 +350,12 @@ for bl, bl_size in gf_struct
 energies_qp[bl], bloch_vector_qp[bl] = helpers.get_h_qp(R[bl], Lambda[bl], h0_kin_k[bl])
 ```
 
-The simplest definition for the integration weight is to just calculate the 
-integration weight using the Fermi-Dirac distribution function on a finite grid 
+The simplest approximation for the integration weight is to just use the 
+Fermi-Dirac distribution function $f(\xi)$ on a finite grid 
 at the inverse temperature $\beta$. That is,
 
 $$
-w(\xi_{kn}) = \frac{1}{\mathcal{N}} f(\xi_{kn}).
+w(\xi^{\mathrm{qp}}_{kn}) = \frac{1}{\mathcal{N}} f(\xi^{\mathrm{qp}}_{kn}).
 $$
 
 The code to perform this is

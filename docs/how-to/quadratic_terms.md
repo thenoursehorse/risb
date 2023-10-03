@@ -214,6 +214,10 @@ Work in progress.
 
 ## Constructing `h0_loc` as a matrix
 
+:::{seealso}
+[Using projectors](projectors.md).
+:::
+
 If you want to get $\hat{H}_i^{\mathrm{loc}}$ for each correlated 
 space $\mathcal{C}_i$ calculated from `h0_k` then there are some helper 
 functions.
@@ -251,10 +255,6 @@ for i in range(n_clusters):
         h0_loc_matrix[i][bl] = get_h0_loc_matrix(h0_k[bl_full], projectors[i][bl] )
 ```
 
-:::{seealso}
-[Using projectors](projectors.md)
-:::
-
 ### As a {{TRIQS}} operator
 
 If you have a block matrix representation of a single-particle operator and 
@@ -288,6 +288,10 @@ Op = matrix_to_Op(A, gf_struct)
 
 ## Constructing `h0_kin_k`
 
+:::{seealso}
+[Using projectors](projectors.md).
+:::
+
 If you want only the kinetic terms in `h0_k` with all of the local terms 
 `h0_loc` from $\hat{H}_i^{\mathrm{loc}}$ removed then you can use 
 
@@ -304,5 +308,5 @@ gf_struct_mapping = ...
 # A list of projectors into each correlated subspace
 projectors = 
 
-get_h0_kin_k(h0_k, projectors, gf_struct_mapping)
+h0_kin_k = get_h0_kin_k(h0_k, projectors, gf_struct_mapping)
 ```

@@ -17,7 +17,7 @@
 
 import numpy as np
 from numpy.typing import ArrayLike
-from risb.other.from_triqs_hartree import update_mu, fermi
+from .from_triqs_hartree import update_mu, fermi
 
 class SmearingKWeight:
     """
@@ -67,7 +67,7 @@ class SmearingKWeight:
         elif method == 'methfessel-paxton':
             self.smear_function = self._methfessel_paxton
         else:
-            raise ValueError('Unrecoganized smearing function !')
+            raise ValueError('Unrecognized smearing function !')
         
     @staticmethod
     def _fermi(energies : ArrayLike, 

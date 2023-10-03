@@ -95,6 +95,11 @@ to try.
 
 ## To interface with our code
 
+:::{seealso}
+Source code for `EmbeddingAtomDiag` for more details. The code is very 
+minimal and simple.
+:::
+
 Any implementation can be used with our code provided it has the following 
 class methods. A method to set the embedding Hamiltonian called as
 
@@ -129,8 +134,3 @@ as
 ```
 self.get_rho_cf(block)
 ```
-
-:::{seealso}
-Source code for `EmbeddingAtomDiag` for more details. The code is very 
-minimal and simple.
-:::

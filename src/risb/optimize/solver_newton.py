@@ -69,8 +69,8 @@ class NewtonSolver(ABC):
 
     @staticmethod
     def _load_history(x : list[ArrayLike], 
-                     error : list[ArrayLike], 
-                     max_size : int) -> tuple[ list[ArrayLike], list[ArrayLike] ]:
+                      error : list[ArrayLike], 
+                      max_size : int) -> tuple[ list[ArrayLike], list[ArrayLike] ]:
 
         if (len(x) != len(error)) and (len(x) != (len(error) + 1)):
             raise ValueError('x and error are the wrong lengths !')
@@ -87,8 +87,8 @@ class NewtonSolver(ABC):
 
     @staticmethod
     def _insert_vector(vec : list[ArrayLike], 
-                      vec_new : ArrayLike, 
-                      max_size : int | None = None) -> None:
+                       vec_new : ArrayLike, 
+                       max_size : int | None = None) -> None:
 
         # Note these operations are mutable on input list
         vec.insert(0, vec_new)
@@ -98,24 +98,14 @@ class NewtonSolver(ABC):
     
     @abstractmethod
     def update_x(self, 
-                 x : list[ArrayLike], 
-                 g_x : list[ArrayLike], 
-                 error : list[ArrayLike], 
-                 alpha : float = 1.0) -> np.ndarray:
+                 **kwargs) -> np.ndarray:
         """
         A single iteration for the new guess for :attr:`x`.
         
         Parameters
         ----------
-        x : list[numpy.ndarray]
-            Every guess for x in the history.
-        g_x : list[numpy.ndarray]
-            Every solution in the history to the fixed-point function, 
-            ``g(x)``, that gives a new ``x``.
-        error : list[numpy.ndarray]
-            Every error function in the history. This is often ``error = g_x - x``.
-        alpha : float, optional
-            Step size for linear-mixing.
+        **kwargs : dict
+            Keyword arguments specific to the solver implementation.
 
         Returns
         -------
@@ -130,7 +120,7 @@ class NewtonSolver(ABC):
               args : tuple[Any, ...] = (), 
               tol : float = 1e-12, 
               maxiter : int = 1000,
-              alpha : float = 1) -> ArrayLike:
+              options : dict = {}) -> ArrayLike:
         """
         Find the root of a function. It is called similarly to 
         :func:scipy.optimize.root
@@ -151,8 +141,8 @@ class NewtonSolver(ABC):
             is less than this, the solver stops.
         maxiter : int, optional
             Maximum number of iterations.
-        alpha : float, optional
-            Step size for linear-mixing.
+        options : dict, optional
+            keyword arguments to pass to :meth:`update_x`.
         
         Returns
         -------
@@ -180,7 +170,7 @@ class NewtonSolver(ABC):
                 self.success = True
                 break
 
-            x = self.update_x(x, g_x, error, alpha)
+            x = self.update_x(**options)
                             
             if (self.n % self.n_restart) == 0:
                 self.x = []

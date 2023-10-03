@@ -88,4 +88,58 @@ sites in a unit cell were treated as correlated.
 
 ## Complicated projectors with `gf_struct_mapping`
 
-Work in progress.
+If the block matrix structure of the non-interacting Hamiltonian $\hat{H}_0$ 
+(`h0_k` in code) is not the same as the block matrix structure of the 
+correlated subspaces $\mathcal{C}_i$ then you can use a mapping dictionary 
+to go between them. 
+
+This is used if there is some well defined local 
+symmetry in the subspace $\mathcal{C}_i$ that is not valid in the larger 
+space of $\hat{H}_0$. An example is if projecting onto a $d$-orbital subspace 
+of a metal and because of crystal field symmetries the $t_{2g}$ and $e_g$ 
+orbitals make sense as block matrices in the subspace of $\mathcal{C}_i$, 
+but only spin up and spin down block matrices are possible in the larger 
+space of $\hat{H}_0$.
+
+The mapping is used as
+
+```python
+# h0_k is a dict[ndarray] with, e.g., blocks 'up', 'dn'.
+h0_k = 
+
+# The structure of each correlated subspace 
+gf_struct_subspace_1 = [('block_1', n_orb_1), ...]
+...
+
+# The mapping from a correlated subspace to the space of h0_k
+gf_struct_mapping_1 = {'block_1': 'block_in_h0_k', ...}
+...
+
+# Make a list of all subspaces
+gf_struct = [gf_struct_subspace_1, ...]
+gf_struct_mapping = [gf_struct_mapping_1, ...]
+```
+
+An example of a $d$ orbital with octohedral/tetrahedral symmetry
+
+```python
+h0_k = {'up' : ..., 'dn' : ...}
+
+gf_struct_d = [('up_eg', 2), ('dn_eg', 2), ('up_t2g', 3), ('dn_t2g', 3)]
+gf_struct_mapping_d  {'up_eg' : 'up', 'up_t2g' : 'up', 'dn_eg' : 'dn', 'dn_t2g' : 'dn'}
+```
+
+There are several helper functions that might need a `gf_struct_mapping`, 
+either as a list of all correlated subspaces or for a single correlated 
+subspace. The documentation will say what is required.
+
+If you need the mapping for the `Solver` classes 
+
+```python
+from risb import LatticeSolver
+
+S = LatticeSolver(...,
+                  gf_struct = list of gf_struct in each subspace,
+                  gf_struct_mapping = list of mappings in each subspace,
+)
+```
