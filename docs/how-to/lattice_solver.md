@@ -1,6 +1,8 @@
 # Using`LatticeSolver`
 
-If you want to solve a strongly correlated model on a lattice you can use :py:class:`LatticeSolver`.
+If you want to solve a strongly correlated model on a lattice you can use 
+:py:class:`LatticeSolver`. This guide shows you how to use it for most kinds 
+of problems you might want to solve.
 
 ## Simple setup
 
