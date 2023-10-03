@@ -94,7 +94,7 @@ spin_names = ['up','dn']
 
 # Setup non-interacting Hamiltonian matrix on the lattice
 tg = 0.5
-nkx = 30
+nkx = 18
 h0_k = get_h0_k(tg=tg, nkx=nkx, spin_names=spin_names)
 
 # Set up class to work out k-space integration weights

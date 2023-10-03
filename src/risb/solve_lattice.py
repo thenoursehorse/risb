@@ -93,7 +93,7 @@ class LatticeSolver:
                  gf_struct_mapping : list[dict[str,str]] | None = None,
                  symmetries : list[Callable[[MFType], dict[MFType]]] | None = [],
                  force_real : bool = False,
-                 error_fun : {'root', 'recursion'} = 'root',
+                 error_fun : {'root', 'recursion'} = 'recursion',
                  return_x_new : bool = True,
                  ):
 
