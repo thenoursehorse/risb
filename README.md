@@ -180,3 +180,4 @@ have too much structure.)
 * Setup github actions
 * Sort out intersphinx linking in docs
 * When make public change install instructions to be from git and not local
+* Explanation for why the root finders kind of suck.
