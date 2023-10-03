@@ -204,7 +204,7 @@ S = LatticeSolver(...
 
 You can change whether `x_err` is from the root functions `f1` and 
 `f2` or as a recursion from successive changes to `x` as 
-`x_err = x - x_new` with
+`x_err = x_new - x` with
 
 ```python
 S = LatticeSolver(...
