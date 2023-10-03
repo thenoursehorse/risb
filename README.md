@@ -2,10 +2,24 @@
 
 <!-- INDEX-START -->
 
-Rotationally invariant slave-bosons (RISB) is a non-perturbative method to 
-approximately solve many-body fermionic problems. 
-
 Source at [https://github.com/thenoursehorse/risb](https://github.com/thenoursehorse/risb)
+
+## What is risb?
+
+Tools to solve strongly correlated many-body electronic problems using 
+rotationally invariant slave-bosons (RISB), an auxilliary particle method. 
+RISB is like dynamical mean-field theory (DMFT), but solves in a fraction of 
+the time (with hopefully not a fraction of the accuracy!).
+
+## Where to start?
+
+If you want to learn how to solve some common strongly correlated lattice 
+models, and how RISB is implemented, then start with 
+[tutorials](https://github.com/thenoursehorse/risb/tutorials). 
+
+If you want to quickly see a calculation, then start with the `examples/` 
+folder in this repository and refer to the 
+[how-to guides](https://github.com/thenoursehorse/risb/how-to/).
 
 <!-- INDEX-END -->
 
@@ -24,6 +38,10 @@ We kindly request that you cite the following paper if your project uses our cod
 The [TRIQS](https://triqs.github.io/triqs) library should also be cited if any of their library is used:
 
 [O. Parcollet, M. Ferrero, T. Ayral, H. Hafermann, I. Krivenko, L. Messio, and P. Seth, Comp. Phys. Comm. 196, 398-415 (2015)](https://doi.org/10.1016/j.cpc.2015.04.023)
+
+If the default root DIIS method is used in the `Solver` classes you should also cite:
+
+[M. Chupin, M.-S. Dupuy, G. Legendre and É. Séré, ESAIM: M2AN **55**, 6, 2785-2825 (2021)](https://doi.org/10.1051/m2an/2021069)
 
 <!-- CITATION-END -->
 
@@ -51,6 +69,8 @@ cd risb
 
 ### With [pipx](https://pypa.github.io/pipx/)
 
+Install from local
+
 ```shell
 pipx install .
 ```
@@ -63,11 +83,16 @@ pipx install --editable .
 
 ### With pip
 
-Install from local (-e allows to develop code without reinstalling, omit if
-not editing the source code)
+Install from local
 
 ```shell
-python3 -m pip install -e ./
+python3 -m pip install .
+```
+
+To develop code without reinstalling
+
+```shell
+python3 -m pip install -e .
 ```
 
 ### Uninstall
@@ -141,17 +166,16 @@ Access through a browser at `http://127.0.0.1:8000`.
 
 <!-- INSTALL-END -->
 
-## Examples
-
-See the `examples` folder.
-
 ## To do
 
 * Add kweights tests, DIIS tests, multiple cluster tests, complex SOC tests, 
 all helpers functions (make random inputs and store, because current tests
 have too much structure.)
-* as always, very sensitive to initial R, Lambda guess, make more robust
+* Fix sensitive to initial R, Lambda guess, make more robust
 * Get static type hints working for mypy
 * Add verbose output to LatticeSolver
+* Add verbose output to DIIS
 * Helper functions for calculating free/total energy
-* Documentation for kweight, diis, and more examples
+* Refactor DIIS and NewtonSolver
+* More tutorial examples
+* Finish TBmodels in tight-binding how-to
