@@ -1,8 +1,10 @@
 # risb - Rotationally invariant slave bosons
 
-<!-- INDEX-START -->
+Documentation at [https://thenoursehorse.github.io/risb](https://thenoursehorse.github.io/risb)
 
-Source at [https://github.com/thenoursehorse/risb](https://github.com/thenoursehorse/risb)
+Copyright (C) 2016-2023 H. L. Nourse and B. J. Powell, 2016-2022 R. H. McKenzie
+
+<!-- INDEX-START -->
 
 ## What is risb?
 
@@ -22,10 +24,6 @@ folder in this repository and refer to the
 [how-to guides](https://github.com/thenoursehorse/risb/how-to/).
 
 <!-- INDEX-END -->
-
-Documentation at [https://thenoursehorse.github.io/risb](https://thenoursehorse.github.io/risb)
-
-Copyright (C) 2016-2023 H. L. Nourse and B. J. Powell, 2016-2022 R. H. McKenzie
 
 <!-- CITATION-START -->
 
