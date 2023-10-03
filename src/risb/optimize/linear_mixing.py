@@ -16,8 +16,5 @@ class LinearMixing(NewtonSolver):
         super().__init__(history_size=0, **kwargs)
     
     def update_x(self, 
-                 x : ArrayLike, 
-                 g_x : ArrayLike, 
-                 error : ArrayLike | None = None, 
                  alpha : float = 1.0) -> ArrayLike:
-        return x + alpha * (g_x - x)
+        return self.x[0] + alpha * (self.g_x[0] - self.x[0])

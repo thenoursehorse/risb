@@ -50,8 +50,8 @@ class DIIS(NewtonSolver):
 
     @staticmethod
     def extrapolate(x : list[ArrayLike], 
-                     g_x : list[ArrayLike], 
-                     error : list[ArrayLike]) -> np.ndarray:
+                    g_x : list[ArrayLike], 
+                    error : list[ArrayLike]) -> np.ndarray:
         """
         The DIIS extrapolation algorithm for the new guess for :attr:`x`.
         """
@@ -82,15 +82,11 @@ class DIIS(NewtonSolver):
 
     # x_i, error(x_i), g(x_i) where g(x_i) is the fixed-point function 
     # that gives a new x_i
-    def update_x(self, 
-                 x : list[ArrayLike], 
-                 g_x : list[ArrayLike], 
-                 error : list[ArrayLike], 
-                 alpha : float = 1.0) -> np.ndarray:
+    def update_x(self, alpha : float = 1.0) -> np.ndarray:
                 
         if ((self.n+1) % self.n_period == 0):
             # Do linear mixing
-            x_opt = x + alpha*(g_x-x)
+            x_opt = self.x[0] + alpha*(self.g_x[0] - self.x[0])
         else:
             # Do DIIS
             x_opt = self.extrapolate(self.x, self.g_x, self.error)
