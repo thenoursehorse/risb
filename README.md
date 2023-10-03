@@ -11,12 +11,12 @@ Copyright (C) 2016-2023 H. L. Nourse and B. J. Powell, 2016-2022 R. H. McKenzie
 Tools to solve strongly correlated many-body electronic problems using 
 rotationally invariant slave-bosons (RISB), an auxilliary particle method. 
 RISB is like dynamical mean-field theory (DMFT), but solves problems in a 
-fraction of the time (with hopefully not a fraction of the accuracy!).
+fraction of the time, with hopefully not a fraction of the accuracy.
 
 ## Where to start?
 
 If you want to learn how to solve some common strongly correlated lattice 
-models, and how RISB is implemented, then start with 
+models, and how RISB is implemented, then start with the 
 [tutorials](https://github.com/thenoursehorse/risb/tutorials). 
 
 If you want to quickly see a calculation, then start with the `examples/` 
