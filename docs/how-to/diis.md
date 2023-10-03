@@ -1,4 +1,4 @@
-# Using {{DIIS}}
+# Using `DIIS`
 
 This guide shows you how to use and customize :py:class:`DIIS`. This is an 
 implementation of algorithms from Ref. [^Chupin2021].
