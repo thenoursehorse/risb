@@ -40,7 +40,7 @@ The size of the linear mixing step $\alpha$ is specified in the `solve()`
 method as
 
 ```python
-optimize.solve(..., alpha = ...)
+optimize.solve(alpha = ...)
 ```
 
 ## Only linear mixing
