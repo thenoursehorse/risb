@@ -23,7 +23,7 @@ hoppings = {}
 for i in range(3):
     hoppings[ tuple((units[:,i]).astype(int)) ] = np.eye(n_orb) * t
     hoppings[ tuple((-units[:,i]).astype(int)) ] = np.eye(n_orb) * t
-    hoppings[ tuple([0,0,0]) ] = np.array([ [0, V], [V, 0] ])
+    hoppings[ (0,0,0) ] = np.array([ [0, V], [V, 0] ])
 tbl = TBLattice(units=units, hoppings=hoppings, orbital_positions=[(0,0,0)]*n_orb)
 bl = BravaisLattice(units=units)
 bz = BrillouinZone(bl)
@@ -33,7 +33,7 @@ for bl, _ in gf_struct:
     h0_k[bl] = tbl.fourier(mk).data
 
 # Hubbard interactions    
-U = 4 # Hubbard
+U = 4
 h_int = Operator()
 for o in range(n_orb):
     h_int += U * n("up",o) * n("dn",o)

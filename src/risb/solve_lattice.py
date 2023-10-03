@@ -93,7 +93,7 @@ class LatticeSolver:
                  gf_struct_mapping : list[dict[str,str]] | None = None,
                  symmetries : list[Callable[[MFType], dict[MFType]]] | None = [],
                  force_real : bool = False,
-                 error_fun : {'root', 'recursion'} = 'root',
+                 error_fun : {'root', 'recursion'} = 'recursion',
                  return_x_new : bool = True,
                  ):
 
@@ -373,7 +373,7 @@ class LatticeSolver:
         if self.error_fun == 'root':
             x_error = np.array( self._flatten_matrix(self.f2, is_coeff_real=True) + self._flatten_matrix(self.f1, is_coeff_real=False) )
         elif self.error_fun == 'recursion':
-            x_error = x - x_new
+            x_error = x_new - x
         else:
             raise ValueError('Unrecognized error functions for root !')
         

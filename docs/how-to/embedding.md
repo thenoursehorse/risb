@@ -180,10 +180,10 @@ embedding = EmbeddingDummy(embedding = ...,
 ```
 
 :::{note}
-`set_h_emb()` and `solve()` are methods that just `pass`` and do nothing. 
+`set_h_emb()` and `solve()` are methods that just `pass` and do nothing. 
 The density matrix functions `get_rho_f`, `get_rho_cf`, and `get_rho_c` grab 
-what is stored in `embedding_atom_diag` and rotates according to the functions 
-in `rotations`.
+what is stored in `embedding_atom_diag` and rotates according to the list of 
+functions in `rotations`.
 :::
 
 :::{warning}

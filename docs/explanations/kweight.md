@@ -1,5 +1,9 @@
 # About k-integration
 
+:::{seealso}
+[Using `SmearingKWeight`](../how-to/kweight.md).
+:::
+
 {{RISB}} requires integrating many mean-field matrices. 
 The way to do this that generalizes to 
 many kinds of $k$-space integration methods is to 
@@ -48,7 +52,3 @@ to choose the weighting function $w(\xi^{\mathrm{qp}}_{kn})$.
 All of our `Solver` classes 
 require a function that takes the quasiparticle eigenenergies 
 $\xi_{kn}^{\mathrm{qp}}$ and returns the weights $w(\xi_{kn})$.
-
-:::{seealso}
-[Using `SmearingKWeight`](../how-to/kweight.md).
-:::
