@@ -1,5 +1,9 @@
 # About projectors
 
+:::{seealso}
+[Using projectors](../how-to/projectors.md).
+:::
+
 Sometimes one might want to project onto a correlated subspace 
 $\mathcal{C}_i = \{ |\chi_{Rm} \rangle_i \}$ from a larger set of states 
 $\mathcal{H} = \{ |\Psi_{k \nu} \rangle \}$, where $R$ labels a reference 
