@@ -1,6 +1,6 @@
-# FIXME figure out how to use a cff file
+% FIXME figure out how to use a cff file
 
-# The main paper to cite
+% The main paper to cite
 @article{nourse2021multiple,
   title = {Multiple insulating states due to the interplay of strong correlations and lattice geometry in a single-orbital Hubbard model},
   author = {Nourse, H. L. and McKenzie, Ross H. and Powell, B. J.},
@@ -16,7 +16,7 @@
   url = {https://link.aps.org/doi/10.1103/PhysRevB.103.L081114}
 }
 
-# This might also be relevant
+% This might also be relevant
 @article{nourse2021spin0,
   title = {Spin-0 Mott insulator to metal to spin-1 Mott insulator transition in the single-orbital Hubbard model on the decorated honeycomb lattice},
   author = {Nourse, H. L. and McKenzie, Ross H. and Powell, B. J.},
@@ -32,7 +32,7 @@
   url = {https://link.aps.org/doi/10.1103/PhysRevB.104.075104}
 }
 
-# This might also be relevant
+% This might also be relevant
 @article{nourse2022c3symmetry,
   title = {${C}_{3}$ symmetry breaking metal-insulator transitions in a flat band in the half-filled Hubbard model on the decorated honeycomb lattice},
   author = {Nourse, H. L. and McKenzie, Ross H. and Powell, B. J.},
@@ -59,7 +59,7 @@
   title = {Strongly correlated electrons on the decorated honeycomb lattice studied with rotationally invariant slave-boson mean-field theory}
 }
 
-# If you use parts that include the TRIQS library
+% If you use parts that include the TRIQS library
 @article{triqs,
   title = "TRIQS: A toolbox for research on interacting quantum systems",
   journal = "Computer Physics Communications",
@@ -81,7 +81,7 @@
   keywords = "Python"
 }
 
-# If you use the DIIS algorithm
+% If you use the DIIS algorithm (default root finding method)
 @article{Chuin2021,
 	author = {{Chupin, Maxime} and {Dupuy, Mi-Song} and {Legendre, Guillaume} and {S\'er\'e, \'Eric}},
 	title = {Convergence analysis of adaptive DIIS algorithms with application to electronic ground state calculations},
