@@ -223,7 +223,7 @@ S = LatticeSolver(...
                   return_x_new = False,
                   ...
 )
-S.solve(tol = , method = 'broyden1,hybr,krylov,etc', otherkwargs = )
+S.solve(tol = , method = 'broyden1, hybr, krylov, etc', other kwargs = )
 ```
 
 :::{warning}
