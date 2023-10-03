@@ -86,9 +86,7 @@ RUN pip install --upgrade pip \
 WORKDIR $BUILD/$APPNAME
 COPY . $SRC/$APPNAME
 RUN cp -as $SRC/$APPNAME/* .
-RUN pip install -e .
-RUN pip install -e .[test]
-RUN pip install -e .[docs]
+RUN pip install -e .[test,docs]
 
 # Build documentation
 #RUN nox -s buld_api_docs
