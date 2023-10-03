@@ -1,20 +1,22 @@
 # risb - Rotationally invariant slave bosons
 
-<!-- INDEX-START -->
+Documentation at [https://thenoursehorse.github.io/risb](https://thenoursehorse.github.io/risb)
 
-Source at [https://github.com/thenoursehorse/risb](https://github.com/thenoursehorse/risb)
+Copyright (C) 2016-2023 H. L. Nourse and B. J. Powell, 2016-2022 R. H. McKenzie
+
+<!-- INDEX-START -->
 
 ## What is risb?
 
 Tools to solve strongly correlated many-body electronic problems using 
 rotationally invariant slave-bosons (RISB), an auxilliary particle method. 
-RISB is like dynamical mean-field theory (DMFT), but solves in a fraction of 
-the time (with hopefully not a fraction of the accuracy!).
+RISB is like dynamical mean-field theory (DMFT), but solves problems in a 
+fraction of the time, with hopefully not a fraction of the accuracy.
 
 ## Where to start?
 
 If you want to learn how to solve some common strongly correlated lattice 
-models, and how RISB is implemented, then start with 
+models, and how RISB is implemented, then start with the 
 [tutorials](https://github.com/thenoursehorse/risb/tutorials). 
 
 If you want to quickly see a calculation, then start with the `examples/` 
@@ -22,10 +24,6 @@ folder in this repository and refer to the
 [how-to guides](https://github.com/thenoursehorse/risb/how-to/).
 
 <!-- INDEX-END -->
-
-Documentation at [https://thenoursehorse.github.io/risb](https://thenoursehorse.github.io/risb)
-
-Copyright (C) 2016-2023 H. L. Nourse and B. J. Powell, 2016-2022 R. H. McKenzie
 
 <!-- CITATION-START -->
 
@@ -181,3 +179,5 @@ have too much structure.)
 * Finish TBmodels in tight-binding how-to
 * Setup github actions
 * Sort out intersphinx linking in docs
+* When make public change install instructions to be from git and not local
+* Explanation for why the root finders kind of suck.
