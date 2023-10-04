@@ -54,14 +54,14 @@ subspace $\mathcal{C}_i$ as
 
 $$
 \Delta^{\mathrm{qp}}_i = \frac{1}{\mathcal{N}} \sum_k
-\mathbf{P}_i(k)^{} f(\mathbf{H}^{\mathrm{qp}}(k)) \mathbf{P}_i(k)^{\dagger},
+\mathbf{P}_i(k)^{} f(\mathbf{H}^{\mathrm{qp}}(k)) \mathbf{P}^{\dagger}_i(k),
 $$
 
 where $f(\xi)$ is the Fermi-Dirac function, 
 
 $$
 \mathbf{H}^{\mathrm{qp}}(k) = \mathbf{\mathcal{R}}(k) 
-\mathbf{H}_0^{\mathrm{kin}}(k) \mathbf{\mathcal{R}}(k)
+\mathbf{H}_0^{\mathrm{kin}}(k) \mathbf{\mathcal{R}}^{\dagger}(k)
 + \mathbf{\lambda}(k),
 $$
 

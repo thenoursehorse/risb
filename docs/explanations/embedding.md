@@ -4,7 +4,7 @@ The main reason the `Embedding` classes are separated is because the embedding
 Hamiltonian is computationally the most expensive part of the {{RISB}} 
 algorithm, and quickly becomes the computational bottleneck because of the 
 exponential scaling of the Hilbert space. Other parts of our implementation 
-are certainly not the most efficient, but it solving the embedding Hamiltonian 
+are certainly not the most efficient, but solving the embedding Hamiltonian 
 is the most important part to optimize.
 
 ## Fast track of theory

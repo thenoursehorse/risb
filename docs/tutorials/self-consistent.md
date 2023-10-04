@@ -67,7 +67,8 @@ $\hat{n}_{i\alpha\sigma} \equiv \hat{c}^{\dagger}_{i\alpha\sigma} \hat{c}_{i\alp
 In {{RISB}} the non-interacting quadratic terms within a cluster $i$ have 
 to be separated from the non-interacting quadratic terms coupling between 
 clusters. That is why the above is split into $\hat{H}^{\mathrm{kin}}_0$ 
-and $\hat{H}^{\mathrm{loc}}_i$.
+and $\hat{H}^{\mathrm{loc}}_i$. Note that this is done automatically when
+using `LatticeSolver`.
 :::
 
 ## A: Construct $\hat{H}_0^{\mathrm{kin}}$
