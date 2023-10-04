@@ -5,7 +5,7 @@ Single-site case. Three-site cluster case. Exercises like, what happens
 to hybridization? The total spin? The energy? 
 :::
 
-In this tutorial you will use :py:class:`LatticeSolver` to solve for the 
+In this tutorial you will use :py:class:`LatticeSolver` to solve the 
 single-orbital Hubbard model on the kagome lattice. We will do this in two 
 ways. 
 

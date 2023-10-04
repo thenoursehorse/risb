@@ -60,7 +60,7 @@ takes into account the specific symmetries that the embedding Hamiltonian is
 allowed to have. Succinctly, only symmetry allowed $\hat{c}$ and $\hat{f}$ 
 degrees of freedom couple. This symmetry can come from, e.g., point-group 
 symmetries, spin or orbital symmetries. This kind of implementation is done in 
-the `EmbeddingEd` solver (currently private, but will be public soon).
+the `EmbeddingEd`.
 
 ## {{DMRG}}
 
