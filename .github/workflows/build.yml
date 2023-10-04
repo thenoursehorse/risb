@@ -81,7 +81,7 @@ jobs:
         run: |
           git clone https://github.com/TRIQS/triqs
           mkdir triqs/build && cd triqs/build
-          cmake .. -DBuild_Documentation=OFF -DBuild_Tests=OFF
+          cmake .. -DBuild_Documentation=OFF -DBuild_Tests=OFF -DCMAKE_INSTALL_PREFIX=/usr/ 
           make -j1 install VERBOSE=1
           sudo make -j1 install VERBOSE=1
           cd ../ 
