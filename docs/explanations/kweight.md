@@ -4,7 +4,7 @@
 [Using `SmearingKWeight`](../how-to/kweight.md).
 :::
 
-{{RISB}} requires integrating many mean-field matrices. 
+{{RISB}} requires integrating many mean-field matrices as a function of $k$. 
 The way to do this that generalizes to 
 many kinds of $k$-space integration methods is to 
 find the weight of the integral at each $k$-point. This is, e.g., how 
@@ -12,7 +12,8 @@ linear tetrahedron works and smearing methods work.
 
 The reference energy for the integration weights in {{RISB}} are the 
 eigenenergies of the single-particle Hamiltonian $\hat{H}^{\mathrm{qp}}$, 
-which change at every iteration of the self-consistent process. The quasiprticle Hamiltonian is given by
+which change at every iteration of the self-consistent process. 
+The quasiparticle Hamiltonian is given by
 
 
 All of the integrals are in the thermodynamic limit and take the form
