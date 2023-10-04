@@ -46,7 +46,7 @@ $$
 \varepsilon_{k\alpha} = -\frac{2}{d} t_{\alpha} \sum_{\mu}^d \cos(k_\mu a),
 $$
 
-where $k$ labels a reciprocol lattice vector. Hence, 
+where $k$ labels a reciprocal lattice vector. Hence, 
 $\hat{H}_{0, k \alpha \beta}^{\mathrm{kin}} = \varepsilon_{k\alpha}$ 
 for $\alpha = \beta$ and zero otherwise.
 
@@ -67,7 +67,8 @@ $\hat{n}_{i\alpha\sigma} \equiv \hat{c}^{\dagger}_{i\alpha\sigma} \hat{c}_{i\alp
 In {{RISB}} the non-interacting quadratic terms within a cluster $i$ have 
 to be separated from the non-interacting quadratic terms coupling between 
 clusters. That is why the above is split into $\hat{H}^{\mathrm{kin}}_0$ 
-and $\hat{H}^{\mathrm{loc}}_i$.
+and $\hat{H}^{\mathrm{loc}}_i$. Note that this is done automatically when
+using `LatticeSolver`.
 :::
 
 ## A: Construct $\hat{H}_0^{\mathrm{kin}}$
