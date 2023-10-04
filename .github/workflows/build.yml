@@ -33,9 +33,9 @@ jobs:
     name: Check Python ${{ matrix.python-version }}
     steps:
       - uses: actions/checkout@v4
-      - uses: ./.github/workflows/triqs.yml
         with:
           fetch-depth: 0 # Only needed if using setuptools-scm
+      - uses: ./.github/workflows/triqs.yml
       
       - name: Setup Python ${{ matrix.python-version }}
         uses: actions/setup-python@v4
