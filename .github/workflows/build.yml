@@ -35,13 +35,13 @@ jobs:
       - uses: actions/checkout@v4
       
       - name: install dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y lsb-release wget software-properties-common 
-          wget -O /tmp/llvm.sh https://apt.llvm.org/llvm.sh
-          sudo chmod +x /tmp/llvm.sh
-          sudo apt-get purge --auto-remove llvm python3-lldb-${LLVM} llvm-${LLVM}
-          sudo /tmp/llvm.sh ${LLVM}
+        run:
+          sudo apt-get update &&
+          sudo apt-get install -y lsb-release wget software-properties-common &&
+          wget -O /tmp/llvm.sh https://apt.llvm.org/llvm.sh &&
+          sudo chmod +x /tmp/llvm.sh &&
+          sudo apt-get purge --auto-remove llvm python3-lldb-${LLVM} llvm-${LLVM} &&
+          sudo /tmp/llvm.sh ${LLVM} &&
           sudo apt-get install
             clang-${LLVM}
             cmake 
