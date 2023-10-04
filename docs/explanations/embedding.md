@@ -32,7 +32,7 @@ $$
 
 where $\hat{c}_{i\alpha}$ is an impurity (physical electron) degree of freedom 
 and $\hat{f}_{ia}$ is a bath (quasiparticle) degree of freedom, and 
-$\mathrm{H.c.}$ is the Hermitian compliment. The Hilbert 
+$\mathrm{H.c.}$ is the Hermitian conjugate. The Hilbert 
 space of the bath is a copy of the physical space defined by the physical 
 electron, and so the bath is the same size as the impurity. The local 
 Hamiltonian $\hat{H}^{\mathrm{loc}}$ is defined by the problem being solved. 

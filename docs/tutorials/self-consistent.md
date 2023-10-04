@@ -46,7 +46,7 @@ $$
 \varepsilon^{\mathrm{kin}}_{k\alpha} = -\frac{2}{d} t_{\alpha} \sum_{\mu}^d \cos(k_\mu a),
 $$
 
-where $k$ labels a reciprocol lattice vector. Hence, 
+where $k$ labels a reciprocal lattice vector. Hence, 
 $\hat{H}_{0, k \alpha \beta}^{\mathrm{kin}} = \varepsilon^{\mathrm{kin}}_{k\alpha}$ 
 for $\alpha = \beta$ and zero otherwise.
 
