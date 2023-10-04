@@ -51,8 +51,8 @@ matrix is given by
 
 $$
 \mathbf{H}_{\sigma}(k) = \begin{pmatrix}
-0                & - 2 \cos(k_1/2)  & -2 \cos(k_2/2) \\
--2 t \cos(k_1/2) & 0                & -2 \cos(k_3/2) \\
+0                & - 2 t \cos(k_1/2)  & -2 t \cos(k_2/2) \\
+-2 t \cos(k_1/2) & 0                & -2 t \cos(k_3/2) \\
 -2 t \cos(k_2/2) & -2 t \cos(k_3/2) & 0,
 \end{pmatrix} 
 $$

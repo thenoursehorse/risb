@@ -14,7 +14,7 @@ required ordering.
 There are many ways to construct the hopping matrices in $k$-space. Below 
 are a few of them that have been useful. Any method can be used as long 
 as it is possible to return an `numpy.ndarray` indexed as 
-`k, orb_i, orb_j` where `k` is a $k$-point on a meshgrid and `n_i` is one of 
+`k, orb_i, orb_j` where `k` is a $k$-point on a meshgrid and `orb_i` is one of 
 the `n_orb` orbitals that corresponds to a site, orbital, or spin in a unit 
 cell. These can possibly be partitioned into symmetry blocks, e.g., by spin.
 
