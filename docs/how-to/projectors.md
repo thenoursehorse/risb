@@ -3,9 +3,9 @@
 This guide shows you how to project onto ineqvuialent correlated subspaces
 $\mathcal{C}_i$. 
 There are two technical choices for projectors.
-Projecting onto subspaces in the same basis as the larger set of orbitals. 
-Projecting onto subspaces with a different block matrix structure than 
-the larger space, e.g., to enforce some local symmetry.
+Projecting onto subspaces with the same block matrix structure as the larger set 
+of orbitals. Projecting onto subspaces with a different block matrix structure 
+than the larger space, e.g., to enforce some local symmetry.
 
 :::{seealso}
 :class: dropdown
@@ -133,7 +133,7 @@ There are several helper functions that might need a `gf_struct_mapping`,
 either as a list of all correlated subspaces or for a single correlated 
 subspace. The documentation will say what is required.
 
-If you need the mapping for the `Solver` classes 
+If you need to use the mapping for the `Solver` classes 
 
 ```python
 from risb import LatticeSolver
