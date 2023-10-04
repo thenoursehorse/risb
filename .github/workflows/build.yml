@@ -35,8 +35,6 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0 # Only needed if using setuptools-scm
-      - uses: actions/checkout@v4
-      - uses: ./.github/workflows/triqs.yml
       
       - name: Setup Python ${{ matrix.python-version }}
         uses: actions/setup-python@v4
@@ -45,6 +43,7 @@ jobs:
           allow-prereleases: true
       
       - name: Install package
+        uses: ./.github/workflows/triqs.yml
         run: python -m pip install -e .[test]
       
       - name: Test package
