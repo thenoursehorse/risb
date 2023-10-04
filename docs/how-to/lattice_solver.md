@@ -108,8 +108,9 @@ projectors = [projector_1, projector_2, ...]
 
 (Optional) Depending on how the problem is set up, you might also need to 
 construct a mapping from the block structure defined in each `gf_struct[i]` 
-to the larger block structure space of `h0_k` as a list. Each 
-`gf_struct_mapping_i` is a dictionary of `str` $\rightarrow$ `str`
+to the larger block structure space of `h0_k`. For each correlated subspace 
+$\mathcal{C}_i$ `gf_struct_mapping_i` is a dictionary of 
+`str` $\rightarrow$ `str`
 
 ```python
 gf_struct_mapping_1 = {'bl_in_gf_struct_1' : 'bl_in_h0_k', ...}
@@ -214,7 +215,7 @@ S = LatticeSolver(...
 )
 ```
 
-For example, to use :py:func:`scipy.optimize.root` is done as
+For example, to use :py:func:`scipy.optimize.root`
 
 ```python
 from scipy.optimize import root
