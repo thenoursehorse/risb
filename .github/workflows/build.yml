@@ -17,19 +17,23 @@ on:
 jobs:
 
   tests:
-    uses: ./.github/workflows/triqs.yml
     
     strategy:
       fail-fast: false
       matrix:
+        os: 
+          - "ubuntu-latest"
         python-version:
           - "3.10"
           - "3.11"
           - "3.12"
       
+    runs-on: ${{ matrix.os }}
+    
     name: Check Python ${{ matrix.python-version }}
     steps:
       - uses: actions/checkout@v4
+      - uses: ./.github/workflows/triqs.yml
         with:
           fetch-depth: 0 # Only needed if using setuptools-scm
       
