@@ -2,47 +2,65 @@ name: Build TRIQS
 
 on:
   workflow_call:
-
-env:
-  LLVM: 15
-  GCC_VERSION: 12
+    inputs:
+      os:
+        required: true
+        type: string
+      cc:
+        required: true
+        type: string
+      cxx:
+        required: true
+        type: string
+      llvm:
+        default: "15"
+        type: string
+      gcc_version:
+        default: "12" 
+        type: string
 
 jobs:
 
-  build-triqs:
-
-    strategy:
-        fail-fast: true
-        matrix:
-          include:
-            - {os: ubuntu-latest, cc: gcc-12, cxx: g++-12}
-            - {os: ubuntu-latest, cc: clang-15, cxx: clang++-15}
+  build-base:
   
-    runs-on: ${{ matrix.os }}
+    runs-on: ${{ inputs.os }}
     
     steps:
       - uses: actions/checkout@v4
       
-      - name: install dependencies
-        run:
+      - name: install updates
+        run: |
           sudo apt-get update &&
-          sudo apt-get install -y lsb-release wget software-properties-common &&
-          wget -O /tmp/llvm.sh https://apt.llvm.org/llvm.sh &&
-          sudo chmod +x /tmp/llvm.sh &&
-          sudo apt-get purge --auto-remove llvm python3-lldb-${LLVM} llvm-${LLVM} &&
-          sudo /tmp/llvm.sh ${LLVM} &&
-          sudo apt-get install
-            clang-${LLVM}
+          sudo apt-get install -y lsb-release wget software-properties-common
+     
+      - name: install compiler tools
+        shell: bash
+        run: |
+          if [ "${{ inputs.cc }}$" = "clang" ]; then
+            wget -O /tmp/llvm.sh https://apt.llvm.org/llvm.sh &&
+            sudo chmod +x /tmp/llvm.sh &&
+            sudo /tmp/llvm.sh ${{ inputs.llvm }} &&
+            sudo apt-get install -y 
+              clang-${{ inputs.llvm }}
+              lldb-${{ inputs.llvm }}
+              libclang-${{ inputs.llvm }}-dev 
+              libc++-${{ inputs.llvm }}-dev 
+              libc++abi-${{ inputs.llvm }}-dev 
+              libomp-${{ inputs.llvm }}-dev 
+              python3-clang-${{ inputs.llvm }}
+          elif [ "${{ inputs.cc }}$" = "gcc" ]; then
+            echo "TESTTTTING"
+            sudo apt-get install -y
+              g++-${{ inputs.gcc_version }}
+          fi
+
+      - name: install dependencies
+        run:          
+          sudo apt-get install -y 
             cmake 
-            g++-${GCC_VERSION}
             gfortran 
             git 
             vim 
-            lldb-${LLVM} 
-            libclang-${LLVM}-dev 
-            libc++-${LLVM}-dev 
-            libc++abi-${LLVM}-dev 
-            libomp-${LLVM}-dev 
             hdf5-tools 
             libfftw3-dev 
             libgfortran5 
@@ -54,7 +72,6 @@ jobs:
             libopenmpi-dev 
             openmpi-bin 
             openmpi-common 
-            python3-clang-${LLVM} 
             python3-dev 
             python3-pip 
             python3-mako 
@@ -63,10 +80,18 @@ jobs:
             python3-numpy 
             python3-scipy 
 
+      - name: setup environment
+        shell: bash
+        run: |
+          if [ "${{ inputs.cc }}$" = "clang" ]; then
+            echo "CC=${{ inputs.cc }}-${{ inputs.llvm }}" >> $GITHUB_ENV
+            echo "CXX=${{ inputs.cxx }}-${{ inputs.llvm }}" >> $GITHUB_ENV
+          elif [ "${{ inputs.cc }}$" = "gcc" ]; then
+            echo "CC=${{ inputs.cc }}-${{ inputs.gcc_version }}" >> $GITHUB_ENV
+            echo "CXX=${{ inputs.cxx }}-${{ inputs.gcc_version }}" >> $GITHUB_ENV
+          fi
+      
       - name: install TRIQS
-        env:
-          CC: ${{ matrix.cc }}
-          CXX: ${{ matrix.cxx }}
         run: |
           git clone https://github.com/TRIQS/triqs
           mkdir triqs/build && cd triqs/build

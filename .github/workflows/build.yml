@@ -7,16 +7,32 @@ concurrency:
 on:
   pull_request:
     branches:
-      - main
-      - unstable
+      #- main
+      #- unstable
+      - dummy
   push:
     branches:
-      - main
-      - unstable
+      #- main
+      #- unstable
+      - dummy
 
 jobs:
 
+  build:
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - {os: ubuntu-latest, cc: gcc, cxx: g++}
+          #- {os: ubuntu-latest, cc: clang, cxx: clang++}
+    uses: ./.github/workflows/triqs.yml
+    with:
+      os: ${{ matrix.os }}
+      cc: ${{ matrix.cc }}
+      cxx: ${{ matrix.cxx }}
+
   tests:
+    needs: build
     
     strategy:
       fail-fast: false
@@ -35,7 +51,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0 # Only needed if using setuptools-scm
-      
+   
       - name: Setup Python ${{ matrix.python-version }}
         uses: actions/setup-python@v4
         with:
@@ -43,7 +59,6 @@ jobs:
           allow-prereleases: true
       
       - name: Install package
-        uses: ./.github/workflows/triqs.yml
         run: python -m pip install -e .[test]
       
       - name: Test package
