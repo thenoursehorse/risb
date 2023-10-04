@@ -1,5 +1,9 @@
 name: Build
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 on:
   pull_request:
     branches:
@@ -26,16 +30,18 @@ jobs:
             - {os: ubuntu-latest, cc: clang-15, cxx: clang++-15}
   
     runs-on: ${{ matrix.os }}
+    
     steps:
       - uses: actions/checkout@v4
+      
       - name: install dependencies
-        run:
-          sudo apt-get update && 
-          sudo apt-get install -y lsb-release wget software-properties-common && 
-          wget -O /tmp/llvm.sh https://apt.llvm.org/llvm.sh &&
-          sudo chmod +x /tmp/llvm.sh &&
-          sudo apt-get purge --auto-remove llvm python3-lldb-${LLVM} llvm-${LLVM} &&
-          sudo /tmp/llvm.sh ${LLVM} && 
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y lsb-release wget software-properties-common 
+          wget -O /tmp/llvm.sh https://apt.llvm.org/llvm.sh
+          sudo chmod +x /tmp/llvm.sh
+          sudo apt-get purge --auto-remove llvm python3-lldb-${LLVM} llvm-${LLVM}
+          sudo /tmp/llvm.sh ${LLVM}
           sudo apt-get install
             clang-${LLVM}
             cmake 
@@ -72,7 +78,7 @@ jobs:
         env:
           CC: ${{ matrix.cc }}
           CXX: ${{ matrix.cxx }}
-        run:
+        run: |
           git clone https://github.com/TRIQS/triqs
           mkdir triqs/build && cd triqs/build
           cmake .. -DBuild_Documentation=OFF -DBuild_Tests=OFF
@@ -94,6 +100,7 @@ jobs:
           - "3.12"
       
     runs-on: ${{ matrix.os }}
+    
     name: Check Python ${{ matrix.python-version }}
     steps:
       - uses: actions/checkout@v4
