@@ -79,7 +79,7 @@ jobs:
             libopenmpi-dev 
             openmpi-bin 
             openmpi-common 
-            python3${{ inputs.python-version }}-dev
+            python${{ inputs.python-version }}-dev
       
       - name: install python dependencies
         run:
