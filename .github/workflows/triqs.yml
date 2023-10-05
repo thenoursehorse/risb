@@ -83,20 +83,20 @@ jobs:
       
       - name: install python dependencies
         run:
-          sudo python -m pip install 
-            clang 
+          python -m pip install 
             mako 
             mpi4py 
             h5py 
             numpy 
             scipy 
+            clang 
 
       - name: setup clang environment
         if: ${{ contains(inputs.cc, 'clang') }}
         run: |
           echo "CC=${{ inputs.cc }}-${{ inputs.llvm }}" >> $GITHUB_ENV
           echo "CXX=${{ inputs.cxx }}-${{ inputs.llvm }}" >> $GITHUB_ENV
-          
+         
       - name: setup gcc environment
         if: ${{ contains(inputs.cc, 'gcc') }}
         run: |
