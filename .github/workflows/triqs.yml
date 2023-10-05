@@ -83,7 +83,7 @@ jobs:
       
       - name: install python dependencies
         run:
-          sudo pip install 
+          sudo python -m pip install 
             clang 
             mako 
             mpi4py 
