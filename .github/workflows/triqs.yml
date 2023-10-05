@@ -102,15 +102,15 @@ jobs:
           echo "CC=${{ inputs.cc }}-${{ inputs.gcc_version }}" >> $GITHUB_ENV
           echo "CXX=${{ inputs.cxx }}-${{ inputs.gcc_version }}" >> $GITHUB_ENV
       
-      - name: cache build TRIQS
-        id: build-triqs
-        uses: actions/cache@v3
-        with:
-          path: triqs
-          key: triqs-${{ inputs.os }}-${{ inputs.cc }}-${{ inputs.llvm }}-${{ inputs.gcc_version }}
+      #- name: cache build TRIQS
+      #  id: build-triqs
+      #  uses: actions/cache@v3
+      #  with:
+      #    path: triqs
+      #    key: triqs-${{ inputs.os }}-${{ inputs.cc }}-${{ inputs.llvm }}-${{ inputs.gcc_version }}
 
       - name: build TRIQS
-        if: steps.build-triqs.outputs.cache-hit != 'true'
+        #if: steps.build-triqs.outputs.cache-hit != 'true'
         run: |
           git clone https://github.com/TRIQS/triqs
           mkdir triqs/build && cd triqs/build
