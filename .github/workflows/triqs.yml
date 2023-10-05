@@ -24,7 +24,7 @@ on:
 
 jobs:
 
-  build-base:
+  build-triqs:
   
     runs-on: ${{ inputs.os }}
     

@@ -15,26 +15,7 @@ on:
       - unstable
 
 jobs:
-
-  build:
-    strategy:
-      fail-fast: true
-      matrix:
-        include:
-          - {os: "ubuntu-latest", cc: "gcc", cxx: "g++", python-version: "3.10"}
-          #- {os: "ubuntu-latest", cc: "gcc", cxx: "g++", python-version: "3.11"}
-          #- {os: "ubuntu-latest", cc: "clang", cxx: "clang++", python-version: "3.10"}
-          #- {os: "ubuntu-latest", cc: "clang", cxx: "clang++", python-version: "3.11"}
-    uses: ./.github/workflows/triqs.yml
-    with:
-      os: ${{ matrix.os }}
-      cc: ${{ matrix.cc }}
-      cxx: ${{ matrix.cxx }}
-      python-version: ${{ matrix.python-version }}
-
   tests:
-    needs: build
-    
     strategy:
       fail-fast: false
       matrix:
@@ -46,12 +27,20 @@ jobs:
       
     runs-on: ${{ matrix.os }}
     
-    name: Check Python ${{ matrix.python-version }}
+    name: Test Python ${{ matrix.python-version }}
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0 # Only needed if using setuptools-scm
-   
+
+      - name: Build TRIQS
+        uses: ./.github/workflows/triqs.yml
+        with:
+          os: ${{ matrix.os }}
+          cc: ${{ matrix.cc }}
+          cxx: ${{ matrix.cxx }}
+          python-version: ${{ matrix.python-version }}
+    
       - name: Setup Python ${{ matrix.python-version }}
         uses: actions/setup-python@v4
         with:
