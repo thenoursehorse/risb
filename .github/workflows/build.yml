@@ -7,14 +7,12 @@ concurrency:
 on:
   pull_request:
     branches:
-      #- main
-      #- unstable
-      - dummy
+      - main
+      - unstable
   push:
     branches:
-      #- main
-      #- unstable
-      - dummy
+      - main
+      - unstable
 
 jobs:
 
@@ -24,7 +22,7 @@ jobs:
       matrix:
         include:
           - {os: ubuntu-latest, cc: gcc, cxx: g++}
-          #- {os: ubuntu-latest, cc: clang, cxx: clang++}
+          - {os: ubuntu-latest, cc: clang, cxx: clang++}
     uses: ./.github/workflows/triqs.yml
     with:
       os: ${{ matrix.os }}
@@ -37,12 +35,13 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: 
-          - "ubuntu-latest"
         python-version:
           - "3.10"
           - "3.11"
           - "3.12"
+        include:
+          - {os: ubuntu-latest, cc: gcc, cxx: g++}
+          - {os: ubuntu-latest, cc: clang, cxx: clang++}
       
     runs-on: ${{ matrix.os }}
     

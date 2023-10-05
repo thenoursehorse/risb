@@ -33,29 +33,29 @@ jobs:
           sudo apt-get update &&
           sudo apt-get install -y lsb-release wget software-properties-common
      
-      - name: install compiler tools
-        shell: bash
-        run: |
-          if [ "${{ inputs.cc }}$" = "clang" ]; then
-            wget -O /tmp/llvm.sh https://apt.llvm.org/llvm.sh &&
-            sudo chmod +x /tmp/llvm.sh &&
-            sudo /tmp/llvm.sh ${{ inputs.llvm }} &&
-            sudo apt-get install -y 
-              clang-${{ inputs.llvm }}
-              lldb-${{ inputs.llvm }}
-              libclang-${{ inputs.llvm }}-dev 
-              libc++-${{ inputs.llvm }}-dev 
-              libc++abi-${{ inputs.llvm }}-dev 
-              libomp-${{ inputs.llvm }}-dev 
-              python3-clang-${{ inputs.llvm }}
-          elif [ "${{ inputs.cc }}$" = "gcc" ]; then
-            echo "TESTTTTING"
-            sudo apt-get install -y
-              g++-${{ inputs.gcc_version }}
-          fi
+      - name: install clang
+        if: ${{ contains(inputs.cc, 'clang') }}
+        run: 
+          wget -O /tmp/llvm.sh https://apt.llvm.org/llvm.sh &&
+          sudo chmod +x /tmp/llvm.sh &&
+          sudo /tmp/llvm.sh ${{ inputs.llvm }} &&
+          sudo apt-get install -y 
+            clang-${{ inputs.llvm }}
+            lldb-${{ inputs.llvm }}
+            libclang-${{ inputs.llvm }}-dev 
+            libc++-${{ inputs.llvm }}-dev 
+            libc++abi-${{ inputs.llvm }}-dev 
+            libomp-${{ inputs.llvm }}-dev 
+            python3-clang-${{ inputs.llvm }}
+      
+      - name: install gcc
+        if: ${{ contains(inputs.cc, 'gcc') }}
+        run:
+          sudo apt-get install -y 
+            g++-${{ inputs.gcc_version }}
 
       - name: install dependencies
-        run:          
+        run:
           sudo apt-get install -y 
             cmake 
             gfortran 
@@ -80,22 +80,33 @@ jobs:
             python3-numpy 
             python3-scipy 
 
-      - name: setup environment
-        shell: bash
+      - name: setup clang environment
+        if: ${{ contains(inputs.cc, 'clang') }}
         run: |
-          if [ "${{ inputs.cc }}$" = "clang" ]; then
-            echo "CC=${{ inputs.cc }}-${{ inputs.llvm }}" >> $GITHUB_ENV
-            echo "CXX=${{ inputs.cxx }}-${{ inputs.llvm }}" >> $GITHUB_ENV
-          elif [ "${{ inputs.cc }}$" = "gcc" ]; then
-            echo "CC=${{ inputs.cc }}-${{ inputs.gcc_version }}" >> $GITHUB_ENV
-            echo "CXX=${{ inputs.cxx }}-${{ inputs.gcc_version }}" >> $GITHUB_ENV
-          fi
+          echo "CC=${{ inputs.cc }}-${{ inputs.llvm }}" >> $GITHUB_ENV
+          echo "CXX=${{ inputs.cxx }}-${{ inputs.llvm }}" >> $GITHUB_ENV
+          
+      - name: setup gcc environment
+        if: ${{ contains(inputs.cc, 'gcc') }}
+        run: |
+          echo "CC=${{ inputs.cc }}-${{ inputs.gcc_version }}" >> $GITHUB_ENV
+          echo "CXX=${{ inputs.cxx }}-${{ inputs.gcc_version }}" >> $GITHUB_ENV
       
-      - name: install TRIQS
+      - name: cache build TRIQS
+        id: build-triqs
+        uses: actions/cache@v3
+        with:
+          path: triqs
+          key: triqs-${{ inputs.os }}-${{ inputs.cc }}-${{ inputs.llvm }}-${{ inputs.gcc_version }}
+
+      - name: build TRIQS
+        if: steps.build-triqs.outputs.cache-hit != 'true'
         run: |
           git clone https://github.com/TRIQS/triqs
           mkdir triqs/build && cd triqs/build
           cmake .. -DBuild_Documentation=OFF -DBuild_Tests=OFF -DCMAKE_INSTALL_PREFIX=/usr/ 
-          make -j1 install VERBOSE=1
-          sudo make install
+          make -j1 VERBOSE=1
           cd ../ 
+          
+      - name: install TRIQS
+        run: cd triqs/build && sudo make install
