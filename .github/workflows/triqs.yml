@@ -30,11 +30,12 @@ jobs:
     
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v4
+      
+      - name: Setup Python ${{ inputs.python-version }}
+        uses: actions/setup-python@v4
         with:
-          python-version: ${{ matrix.python-version }}
+          python-version: ${{ inputs.python-version }}
           allow-prereleases: true
-          cache: 'pip' # caching pip dependencies
       
       - name: install updates
         run: |
@@ -78,7 +79,7 @@ jobs:
             libopenmpi-dev 
             openmpi-bin 
             openmpi-common 
-            python3${{ matrix.python-version }}-dev
+            python3${{ inputs.python-version }}-dev
       
       - name: install python dependencies
         run:
@@ -102,15 +103,15 @@ jobs:
           echo "CC=${{ inputs.cc }}-${{ inputs.gcc_version }}" >> $GITHUB_ENV
           echo "CXX=${{ inputs.cxx }}-${{ inputs.gcc_version }}" >> $GITHUB_ENV
       
-      #- name: cache build TRIQS
-      #  id: build-triqs
-      #  uses: actions/cache@v3
-      #  with:
-      #    path: triqs
-      #    key: triqs-${{ inputs.os }}-${{ inputs.cc }}-${{ inputs.llvm }}-${{ inputs.gcc_version }}
+      - name: cache build TRIQS
+        id: build-triqs
+        uses: actions/cache@v3
+        with:
+          path: triqs
+          key: triqs-${{ inputs.os }}-${{ inputs.cc }}-${{ inputs.llvm }}-${{ inputs.gcc_version }}
 
       - name: build TRIQS
-        #if: steps.build-triqs.outputs.cache-hit != 'true'
+        if: steps.build-triqs.outputs.cache-hit != 'true'
         run: |
           git clone https://github.com/TRIQS/triqs
           mkdir triqs/build && cd triqs/build
