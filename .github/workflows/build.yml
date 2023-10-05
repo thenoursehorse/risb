@@ -3,14 +3,14 @@ name: Build
 on:
   pull_request:
     branches:
-      #- dummy
+      - dummy
       #- main
-      - unstable
+      #- unstable
   push:
     branches:
-      #- dummy
+      - dummy
       #- main
-      - unstable
+      #- unstable
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -61,7 +61,8 @@ jobs:
             libclang-${{ matrix.llvm }}-dev 
             libc++-${{ matrix.llvm }}-dev 
             libc++abi-${{ matrix.llvm }}-dev 
-            libomp-${{ matrix.llvm }}-dev 
+            libomp-${{ matrix.llvm }}-dev &&
+          echo "CXXFLAGS=-stdlib=libc++" >> $GITHUB_ENV
       
       - name: Install gcc
         if: ${{ contains(matrix.cc, 'gcc') }}
