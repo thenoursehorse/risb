@@ -1,9 +1,5 @@
 name: Build
 
-concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
-
 on:
   pull_request:
     branches:
@@ -14,6 +10,10 @@ on:
       - main
       - unstable
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
 
   build:
@@ -22,10 +22,10 @@ jobs:
       fail-fast: true
       matrix:
         include:
-          - {os: "ubuntu-latest", cc: "gcc", cxx: "g++", python-version: "3.10", llvm: "15", gcc_version: "12"}
-          #- {os: "ubuntu-latest", cc: "gcc", cxx: "g++", python-version: "3.11"}
-          #- {os: "ubuntu-latest", cc: "clang", cxx: "clang++", python-version: "3.10", llvm: "15", gcc_version: "12"}
-          #- {os: "ubuntu-latest", cc: "clang", cxx: "clang++", python-version: "3.11"}
+          #- {os: "ubuntu-22.04", cc: "gcc", cxx: "g++", python-version: "3.10", llvm: "15", gcc_version: "12"}
+          #- {os: "ubuntu-latest", cc: "gcc", cxx: "g++", python-version: "3.11", llvm: "15", gcc_version: "12"}
+          - {os: "ubuntu-22.04", cc: "clang", cxx: "clang++", python-version: "3.10", llvm: "15", gcc_version: "12"}
+          #- {os: "ubuntu-latest", cc: "clang", cxx: "clang++", python-version: "3.11", llvm: "15", gcc_version: "12"}
   
     runs-on: ${{ matrix.os }}
     
@@ -120,19 +120,21 @@ jobs:
         run: |
           git clone https://github.com/TRIQS/triqs
           mkdir triqs/build && cd triqs/build
-          cmake .. -DCMAKE_INSTALL_PREFIX=/usr/ -DBuild_Documentation=OFF -DBuild_Tests=OFF
+          cmake .. -DCMAKE_INSTALL_PREFIX=/$HOME/triqs_install -DBuild_Documentation=OFF -DBuild_Tests=OFF
           make -j1 VERBOSE=1
           cd ../../
           
       - name: Install TRIQS
-        run: cd triqs/build && sudo make install && cd ../../
+        run: cd triqs/build && make install && cd ../../
 
 ############       END TRIQS COPY PASTE       ############
       
       - name: Install risb
         run: |
+          source $HOME/triqs_install/share/triqs/triqsvars.sh
           python -m pip install -e .[test]
       
       - name: Test risb
         run: |
+          source $HOME/triqs_install/share/triqs/triqsvars.sh
           python -m pytest
