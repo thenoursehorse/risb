@@ -3,11 +3,13 @@ name: Build
 on:
   pull_request:
     branches:
-      - main
+      #- dummy
+      #- main
       - unstable
   push:
     branches:
-      - main
+      #- dummy
+      #- main
       - unstable
 
 concurrency:
@@ -23,9 +25,9 @@ jobs:
       matrix:
         include:
           #- {os: "ubuntu-22.04", cc: "gcc", cxx: "g++", python-version: "3.10", llvm: "15", gcc_version: "12"}
-          #- {os: "ubuntu-latest", cc: "gcc", cxx: "g++", python-version: "3.11", llvm: "15", gcc_version: "12"}
+          #- {os: "ubuntu-22.04", cc: "gcc", cxx: "g++", python-version: "3.11", llvm: "15", gcc_version: "12"}
           - {os: "ubuntu-22.04", cc: "clang", cxx: "clang++", python-version: "3.10", llvm: "15", gcc_version: "12"}
-          #- {os: "ubuntu-latest", cc: "clang", cxx: "clang++", python-version: "3.11", llvm: "15", gcc_version: "12"}
+          #- {os: "ubuntu-22.04", cc: "clang", cxx: "clang++", python-version: "3.11", llvm: "15", gcc_version: "12"}
   
     runs-on: ${{ matrix.os }}
     
@@ -120,7 +122,7 @@ jobs:
         run: |
           git clone https://github.com/TRIQS/triqs
           mkdir triqs/build && cd triqs/build
-          cmake .. -DCMAKE_INSTALL_PREFIX=/$HOME/triqs_install -DBuild_Documentation=OFF -DBuild_Tests=OFF
+          cmake .. -DCMAKE_INSTALL_PREFIX=$HOME/triqs_install -DBuild_Documentation=OFF -DBuild_Tests=OFF
           make -j1 VERBOSE=1
           cd ../../
           
