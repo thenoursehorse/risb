@@ -80,6 +80,7 @@ intersphinx_mapping = {
     # I don't think TRIQS has intersphinx set up?
     #"triqs": ('https://triqs.github.io/triqs/latest/documentation/', None),
 }
+intersphinx_disabled_reftypes = ["*"]
 
 nitpick_ignore = [
     ("py:class", "_io.StringIO"),
