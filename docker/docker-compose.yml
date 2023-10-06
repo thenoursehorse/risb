@@ -1,6 +1,6 @@
 services:
   risb:
-    image: risb:3.2.x
+    image: risb
     container_name: risb
     build:
       context: ../

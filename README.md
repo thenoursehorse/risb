@@ -49,9 +49,10 @@ Lastly, the appropriate original theory outlined in the [documentation](https://
 
 ## Dependencies
 
-* [TRIQS](https://triqs.github.io/) `v3.2.x` if using :class:`EmbeddingAtomDiag`
+* [python](https://www.python.org/) version `> 3.10`
 * [numpy](https://numpy.org/)
 * [scipy](https://scipy.org/)
+* [TRIQS](https://triqs.github.io/) version `3.2.x` if using :class:`EmbeddingAtomDiag`
 
 ## Installation
 
@@ -84,19 +85,19 @@ pipx install --editable .
 Install from local
 
 ```shell
-python3 -m pip install .
+pip install .
 ```
 
 To develop code without reinstalling
 
 ```shell
-python3 -m pip install -e .
+pip install -e .
 ```
 
 ### Uninstall
 
 ```
-python3 -m pip uninstall risb
+pip uninstall risb
 ```
 
 ### Docker
@@ -131,13 +132,13 @@ The tests require a working [TRIQS](https://triqs.github.io/) installation.
 Install the prerequisites
 
 ```shell
-python3 -m pip install -e .[test]
+pip install -e .[test]
 ```
 
 Tests are run with
 
 ```shell
-python3 -m pytest
+pytest
 ```
 
 ## Documentation
@@ -145,7 +146,7 @@ python3 -m pytest
 Install the prerequisites
 
 ```shell
-python3 -m pip install -e .[docs]
+pip install -e .[docs]
 ```
 
 Build the API
@@ -163,21 +164,3 @@ sphinx-autobuild -b html docs docs/_build
 Access through a browser at `http://127.0.0.1:8000`.
 
 <!-- INSTALL-END -->
-
-## To do
-
-* Add kweights tests, DIIS tests, multiple cluster tests, complex SOC tests, 
-all helpers functions (make random inputs and store, because current tests
-have too much structure.)
-* Fix sensitive to initial R, Lambda guess, make more robust
-* Get static type hints working for mypy
-* Add verbose output to LatticeSolver
-* Add verbose output to DIIS
-* Helper functions for calculating free/total energy
-* Maybe? Refactor DIIS and NewtonSolver
-* More tutorial examples
-* Finish TBmodels in tight-binding how-to
-* Setup github actions
-* Sort out intersphinx linking in docs
-* When make public change install instructions to be from git and not local
-* Explanation for why the root finders kind of suck.
