@@ -132,7 +132,7 @@ class LatticeSolver:
         else:
             self.gf_struct_mapping = gf_struct_mapping
         if len(self.gf_struct_mapping) != self.n_clusters:
-            raise ValueError(f'Need a a gf_struct_mapping (got {len(self.gf_struct_mapping)} for each cluster (got {self.n_clusters}) !')
+            raise ValueError(f'Need a a gf_struct_mapping (got {len(self.gf_struct_mapping)}) for each cluster (got {self.n_clusters}) !')
  
         self.symmetries = symmetries
         self.force_real = force_real
