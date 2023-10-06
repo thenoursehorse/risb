@@ -14,15 +14,17 @@ have too much structure)
 - Explanation for why the root finders kind of suck.
 - Remove h_emb to real if real in `EmbeddingAtom` when TRIQS bumps from 
 version 3.2.0
-- symmetry representation tutorial
+- Sort out intersphinx linking in docs
+- Helper plot functions
+- Helper functions for calculating free/total energy
 
 ### In Progress
 
-- Setup github actions
-- Helper functions for calculating free/total energy
+- symmetry representation tutorial
 - Kagome/projectors tutorial
 - single-orbital Hubbard tutorial 
 - Finish TBmodels in tight-binding how-to
-- Sort out intersphinx linking in docs
+- Sort out cross-referencing to API in docs
 
 ### Done ✓
+- Setup github actions
