@@ -8,7 +8,7 @@ author = "H. L. Nourse"
 try:
     version = release = importlib.metadata.version("risb")
 except:
-    version = release = "3.2.0"
+    version = release = "0.0.0"
 
 extensions = [
     "myst_parser",
@@ -80,7 +80,6 @@ intersphinx_mapping = {
     # I don't think TRIQS has intersphinx set up?
     #"triqs": ('https://triqs.github.io/triqs/latest/documentation/', None),
 }
-intersphinx_disabled_reftypes = ["*"]
 
 nitpick_ignore = [
     ("py:class", "_io.StringIO"),
