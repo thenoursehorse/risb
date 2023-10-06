@@ -14,6 +14,7 @@ have too much structure)
 - Explanation for why the root finders kind of suck.
 - Remove h_emb to real if real in `EmbeddingAtom` when TRIQS bumps from 
 version 3.2.0
+- symmetry representation tutorial
 
 ### In Progress
 
