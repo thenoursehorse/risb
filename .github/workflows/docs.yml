@@ -5,8 +5,7 @@ on:
   pull_request:
   push:
     branches:
-      - dummy
-      #- main
+      - main
 
 permissions:
   contents: read
@@ -20,157 +19,66 @@ concurrency:
 jobs:
 
   build:
-
-    strategy:
-      fail-fast: true
-      matrix:
-        include:
-          - {os: "ubuntu-latest", cc: "gcc", cxx: "g++", python-version: "3.10", llvm: "15", gcc_version: "12"}
-  
-    runs-on: ${{ matrix.os }}
+    runs-on: ubuntu-latest
     
     name: Build docs
-
-############      START TRIQS COPY PASTE      ############
-
     steps:
-      - uses: actions/checkout@v4
+    - uses: actions/checkout@v4
       
-      - name: Setup Python ${{ matrix.python-version }}
-        uses: actions/setup-python@v4
-        with:
-          python-version: ${{ matrix.python-version }}
-          allow-prereleases: true
+    - name: Setup Python 3.10
+      uses: actions/setup-python@v4
+      with:
+        python-version: "3.10"
+        allow-prereleases: true
       
-      - name: Install updates
-        run: |
-          sudo apt-get update &&
-          sudo apt-get install -y lsb-release wget software-properties-common
-     
-      - name: Install clang
-        if: ${{ contains(matrix.cc, 'clang') }}
-        run: 
-          wget -O /tmp/llvm.sh https://apt.llvm.org/llvm.sh &&
-          sudo chmod +x /tmp/llvm.sh &&
-          sudo /tmp/llvm.sh ${{ matrix.llvm }} &&
-          sudo apt-get install -y 
-            clang-${{ matrix.llvm }}
-            lldb-${{ matrix.llvm }}
-            libclang-${{ matrix.llvm }}-dev 
-            libc++-${{ matrix.llvm }}-dev 
-            libc++abi-${{ matrix.llvm }}-dev 
-            libomp-${{ matrix.llvm }}-dev 
+    - name: Setup TRIQS
+      uses: ./.github/actions/setup-triqs
+      with:
+        python-version: "3.10"
       
-      - name: Install gcc
-        if: ${{ contains(matrix.cc, 'gcc') }}
-        run:
-          sudo apt-get install -y 
-            g++-${{ matrix.gcc_version }}
+    - name: Install risb and docs dependencies
+      run: |
+        source $TRIQS_INSTALL/share/triqs/triqsvars.sh
+        python -m pip install -e .[docs]
 
-      - name: Install ubuntu dependencies
-        run:
-          sudo apt-get install -y 
-            cmake 
-            gfortran 
-            git 
-            hdf5-tools 
-            libfftw3-dev 
-            libgfortran5 
-            libgmp-dev 
-            libhdf5-dev 
-            libblas-dev 
-            liblapack-dev 
-            libboost-dev 
-            libopenmpi-dev 
-            openmpi-bin 
-            openmpi-common 
-            python${{ matrix.python-version }}-dev
-      
-      - name: Install python dependencies
-        run:
-          python -m pip install 
-            mako 
-            mpi4py 
-            h5py 
-            numpy 
-            scipy 
-            clang 
+    - name: Build docs
+      run: |
+        source $TRIQS_INSTALL/share/triqs/triqsvars.sh
+        sphinx-apidoc -o docs/api --module-first --no-toc --force --separate src/risb
+        sphinx-build -b html -n -T docs docs/_build
 
-      - name: Setup clang environment
-        if: ${{ contains(matrix.cc, 'clang') }}
-        run: |
-          echo "CC=${{ matrix.cc }}-${{ matrix.llvm }}" >> $GITHUB_ENV
-          echo "CXX=${{ matrix.cxx }}-${{ matrix.llvm }}" >> $GITHUB_ENV
-         
-      - name: Setup gcc environment
-        if: ${{ contains(matrix.cc, 'gcc') }}
-        run: |
-          echo "CC=${{ matrix.cc }}-${{ matrix.gcc_version }}" >> $GITHUB_ENV
-          echo "CXX=${{ matrix.cxx }}-${{ matrix.gcc_version }}" >> $GITHUB_ENV
-      
-      - name: Cache build TRIQS
-        id: build-triqs
-        uses: actions/cache@v3
-        with:
-          path: triqs
-          key: triqs-${{ matrix.os }}-${{ matrix.cc }}-${{ matrix.llvm }}-${{ matrix.gcc_version }}
-
-      - name: Build TRIQS
-        if: steps.build-triqs.outputs.cache-hit != 'true'
-        run: |
-          git clone https://github.com/TRIQS/triqs
-          mkdir triqs/build && cd triqs/build
-          cmake .. -DBuild_Documentation=OFF -DBuild_Tests=OFF -DCMAKE_INSTALL_PREFIX=$HOME/triqs_install
-          make -j1 VERBOSE=1
-          cd ../../
-          
-      - name: Install TRIQS
-        run: cd triqs/build && make install && cd ../../
-
-############       END COPY PASTE       ############
-      
-      - name: Install risb
-        run: |
-          source $HOME/triqs_install/share/triqs/triqsvars.sh
-          python -m pip install -e .[docs]
-
-      - name: Build docs
-        run: |
-          source $HOME/triqs_install/share/triqs/triqsvars.sh
-          sphinx-apidoc -o docs/api --module-first --no-toc --force --separate src/risb
-          sphinx-autobuild -b html -n -T docs docs/_build
-
-      - name: Upload docs artifact
-        uses: actions/upload-artifact@v3
-        with:
-          name: docs-build
-          path: docs/_build
+    - name: Upload docs artifact
+      uses: actions/upload-artifact@v3
+      with:
+        name: docs-build
+        path: docs/_build
 
   deploy:
     needs: [build]
+    
     runs-on: ubuntu-latest
+    
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
-    steps:
-      - uses: actions/checkout@v4
-      
-      - name: Setup Pages
-        id: pages
-        uses: actions/configure-pages@v3
-
-      - name: Download docs artifact
-        uses: actions/download-artifact@v3
-        with:
-          name: docs-build
-          path: _site
-
-      - name: Upload artifact
-        uses: actions/upload-pages-artifact@v2
-
-      - name: Deploy to GitHub Pages
-        id: deployment
-        uses: actions/deploy-pages@v2
-
-
     
+    name: Deploy docs
+    steps:
+    - uses: actions/checkout@v4
+      
+    - name: Setup Pages
+      id: pages
+      uses: actions/configure-pages@v3
+
+    - name: Download docs artifact
+      uses: actions/download-artifact@v3
+      with:
+        name: docs-build
+        path: _site
+
+    - name: Upload artifact
+      uses: actions/upload-pages-artifact@v2
+
+    - name: Deploy to GitHub Pages
+      id: deployment
+      uses: actions/deploy-pages@v2
