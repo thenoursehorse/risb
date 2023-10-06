@@ -8,10 +8,10 @@ inputs:
     default: "3.10"
     required: false
   cc:
-    default: "clang"
+    default: "gcc"
     required: false
   cxx:
-    default: "clang++"
+    default: "g++"
     required: false
   llvm:
     default: "15"
