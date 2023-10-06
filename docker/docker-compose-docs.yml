@@ -1,10 +1,10 @@
 services:
   risb:
-    image: risb-dev
+    image: risb-docs
     container_name: risb
     build:
       context: ../
-      dockerfile: docker/Dockerfile.dev
+      dockerfile: docker/Dockerfile.docs
     ports:
       - 8000:8000
     volumes:

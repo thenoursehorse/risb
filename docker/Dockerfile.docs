@@ -1,19 +1,24 @@
-FROM alpine:latest
-WORKDIR /etc/
-RUN mkdir -p /etc/sphinx/build
+FROM ubuntu:22.04
 
-RUN apk add --no-cache python3 py3-pip make
-RUN pip3 install sphinx sphinx-autobuild \
-  myst_parser sphinx_autodoc_typehints sphinx_copybutton linkify \
-  furo
+RUN apt-get update \
+  && apt-get install -y \
+    python3-pip \
+    python3-numpy \
+    python3-scipy
+
+# Where to install and build stuff
+ENV SRC=/src/ \
+    BUILD=/build/
+
+# Install library
+WORKDIR $BUILD/$APPNAME
+COPY . $SRC/$APPNAME
+RUN cp -as $SRC/$APPNAME/* .
+RUN pip install -e .[docs]
 
 # Build documentation
-#RUN sphinx-apidoc
-#CMD nox -s docs -- --serve
-
 EXPOSE 8000
-#RUN sphinx-apidoc -o $BUILD/$APPNAME/docs/api --module-first --no-toc --force --separate src/risb
-#CMD sphinx-autobuild -b html --host 0.0.0.0 --port 8000 -n -T -b=html /etc/sphinx/src/ /etc/sphinx/build
+RUN sphinx-apidoc -o $BUILD/$APPNAME/docs/api --module-first --no-toc --force --separate src/risb
+CMD sphinx-autobuild -b html --host 0.0.0.0 --port 8000 -n -T $BUILD/$APPNAME/docs $BUILD/$APPNAME/docs/_build
 
-# FIXME autodoc requires package installed, so to use this Dockerfile to generate the documentation we need
-# to use autodoc2 instead, which just parses the stuff. But I don't really like how autodoc2 looks.
+# I wish autodoc2 made better API documementation !
