@@ -18,6 +18,7 @@ version 3.2.0
 - Helper plot functions
 - Helper functions for calculating free/total energy
 - add linting actions
+- pipy packaging
 
 ### In Progress
 
