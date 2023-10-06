@@ -19,19 +19,12 @@ concurrency:
 jobs:
 
   build:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     
     name: Build docs
     steps:
-    - uses: actions/checkout@v4
       
-    - name: Setup Python 3.10
-      uses: actions/setup-python@v4
-      with:
-        python-version: "3.10"
-        allow-prereleases: true
-      
-    - name: Setup TRIQS
+    - name: Setup Python 3.10 and TRIQS
       uses: ./.github/actions/setup-triqs
       with:
         python-version: "3.10"

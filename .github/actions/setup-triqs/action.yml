@@ -1,6 +1,9 @@
 name: setup-triqs
 
 inputs:
+  os:
+    default: "ubuntu-22.04"
+    required: false
   python-version:
     default: "3.10"
     required: false
@@ -21,8 +24,6 @@ runs:
   using: "composite"
 
   steps:
-  - uses: actions/checkout@v4
-      
   - name: Setup Python ${{ inputs.python-version }}
     uses: actions/setup-python@v4
     with:

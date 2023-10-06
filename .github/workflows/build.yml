@@ -33,13 +33,7 @@ jobs:
     steps:
     - uses: actions/checkout@v4
       
-    - name: Setup Python ${{ matrix.python-version }}
-      uses: actions/setup-python@v4
-      with:
-        python-version: ${{ matrix.python-version }}
-        allow-prereleases: true
- 
-    - name: Setup TRIQS
+    - name: Setup Python ${{ matrix.python-version }} and TRIQS
       uses: ./.github/actions/setup-triqs
       with:
         python-version: ${{ matrix.python-version }}
