@@ -85,19 +85,19 @@ pipx install --editable .
 Install from local
 
 ```shell
-python3 -m pip install .
+pip install .
 ```
 
 To develop code without reinstalling
 
 ```shell
-python3 -m pip install -e .
+pip install -e .
 ```
 
 ### Uninstall
 
 ```
-python3 -m pip uninstall risb
+pip uninstall risb
 ```
 
 ### Docker
@@ -132,13 +132,13 @@ The tests require a working [TRIQS](https://triqs.github.io/) installation.
 Install the prerequisites
 
 ```shell
-python3 -m pip install -e .[test]
+pip install -e .[test]
 ```
 
 Tests are run with
 
 ```shell
-python3 -m pytest
+pytest
 ```
 
 ## Documentation
@@ -146,7 +146,7 @@ python3 -m pytest
 Install the prerequisites
 
 ```shell
-python3 -m pip install -e .[docs]
+pip install -e .[docs]
 ```
 
 Build the API
