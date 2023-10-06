@@ -125,3 +125,7 @@ runs:
   - name: Install TRIQS
     shell: bash
     run: cd triqs/build && make install && cd ../../
+
+branding:
+  icon: "package"
+  color: "purple"
