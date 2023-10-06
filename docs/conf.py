@@ -8,7 +8,7 @@ author = "H. L. Nourse"
 try:
     version = release = importlib.metadata.version("risb")
 except:
-    version = release = "3.2.0"
+    version = release = "0.0.0"
 
 extensions = [
     "myst_parser",

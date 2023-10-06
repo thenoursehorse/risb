@@ -1,0 +1,131 @@
+name: setup-triqs
+
+inputs:
+  os:
+    default: "ubuntu-22.04"
+    required: false
+  python-version:
+    default: "3.10"
+    required: false
+  cc:
+    default: "clang"
+    required: false
+  cxx:
+    default: "clang++"
+    required: false
+  llvm:
+    default: "15"
+    required: false
+  gcc-version:
+    default: "12"
+    required: false
+
+runs:
+  using: "composite"
+
+  steps:
+  - name: Setup Python ${{ inputs.python-version }}
+    uses: actions/setup-python@v4
+    with:
+      python-version: ${{ inputs.python-version }}
+      allow-prereleases: true
+ 
+  - name: Install updates
+    shell: bash
+    run: |
+      sudo apt-get update &&
+      sudo apt-get install -y lsb-release wget software-properties-common
+     
+  - name: Install clang
+    shell: bash
+    if: ${{ contains(inputs.cc, 'clang') }}
+    run: 
+      wget -O /tmp/llvm.sh https://apt.llvm.org/llvm.sh &&
+      sudo chmod +x /tmp/llvm.sh &&
+      sudo /tmp/llvm.sh ${{ inputs.llvm }} &&
+      sudo apt-get install -y 
+        clang-${{ inputs.llvm }}
+        lldb-${{ inputs.llvm }}
+        libclang-${{ inputs.llvm }}-dev 
+        libc++-${{ inputs.llvm }}-dev 
+        libc++abi-${{ inputs.llvm }}-dev 
+        libomp-${{ inputs.llvm }}-dev &&
+      echo "CXXFLAGS=-stdlib=libc++" >> $GITHUB_ENV
+      
+  - name: Install gcc
+    shell: bash
+    if: ${{ contains(inputs.cc, 'gcc') }}
+    run:
+      sudo apt-get install -y 
+        g++-${{ inputs.gcc-version }}
+
+  - name: Install ubuntu dependencies
+    shell: bash
+    run:
+      sudo apt-get install -y 
+        cmake 
+        gfortran 
+        git 
+        hdf5-tools 
+        libfftw3-dev 
+        libgfortran5 
+        libgmp-dev 
+        libhdf5-dev 
+        libblas-dev 
+        liblapack-dev 
+        libboost-dev 
+        libopenmpi-dev 
+        openmpi-bin 
+        openmpi-common 
+        python3-dev
+      
+  - name: Install python dependencies
+    shell: bash
+    run:
+      python -m pip install 
+        mako 
+        mpi4py 
+        h5py 
+        numpy 
+        scipy 
+        clang 
+
+  - name: Setup clang environment
+    shell: bash
+    if: ${{ contains(inputs.cc, 'clang') }}
+    run: |
+      echo "CC=${{ inputs.cc }}-${{ inputs.llvm }}" >> $GITHUB_ENV
+      echo "CXX=${{ inputs.cxx }}-${{ inputs.llvm }}" >> $GITHUB_ENV
+         
+  - name: Setup gcc environment
+    shell: bash
+    if: ${{ contains(inputs.cc, 'gcc') }}
+    run: |
+      echo "CC=${{ inputs.cc }}-${{ inputs.gcc-version }}" >> $GITHUB_ENV
+      echo "CXX=${{ inputs.cxx }}-${{ inputs.gcc-version }}" >> $GITHUB_ENV
+      
+  - name: Cache build TRIQS
+    id: build-triqs
+    uses: actions/cache@v3
+    with:
+      path: triqs
+      key: triqs-${{ inputs.os }}-${{ inputs.python-version }} ${{ inputs.cc }}-${{ inputs.llvm }}-${{ inputs.gcc-version }}
+
+  - name: Build TRIQS
+    shell: bash
+    if: steps.build-triqs.outputs.cache-hit != 'true'
+    run: |
+      git clone https://github.com/TRIQS/triqs
+      mkdir triqs/build && cd triqs/build
+      cmake .. -DCMAKE_INSTALL_PREFIX=$HOME/triqs_install -DBuild_Documentation=OFF -DBuild_Tests=OFF
+      make -j1 VERBOSE=1
+      cd ../../
+      echo "TRIQS_INSTALL=$HOME/triqs_install" >> $GITHUB_ENV
+          
+  - name: Install TRIQS
+    shell: bash
+    run: cd triqs/build && make install && cd ../../
+
+branding:
+  icon: "package"
+  color: "purple"

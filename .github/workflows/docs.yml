@@ -1,0 +1,78 @@
+name: Docs
+
+on:
+  workflow_dispatch:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: "pages"
+  cancel-in-progress: true
+
+jobs:
+
+  build:
+    runs-on: ubuntu-22.04
+    
+    name: Build docs
+    steps:
+    - uses: actions/checkout@v4
+      
+    - name: Setup Python 3.10 and TRIQS
+      uses: ./.github/actions/setup-triqs
+      with:
+        python-version: "3.10"
+      
+    - name: Install risb and docs dependencies
+      run: |
+        source $TRIQS_INSTALL/share/triqs/triqsvars.sh
+        python -m pip install -e .[docs]
+
+    - name: Build docs
+      run: |
+        source $TRIQS_INSTALL/share/triqs/triqsvars.sh
+        sphinx-apidoc -o docs/api --module-first --no-toc --force --separate src/risb
+        sphinx-build -b html -n -T docs docs/_build
+
+    - name: Upload docs artifact
+      uses: actions/upload-artifact@v3
+      with:
+        name: docs-build
+        path: docs/_build
+
+  deploy:
+    needs: [build]
+    
+    runs-on: ubuntu-latest
+    
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    
+    name: Deploy docs
+    steps:
+    - uses: actions/checkout@v4
+      
+    - name: Setup Pages
+      id: pages
+      uses: actions/configure-pages@v3
+
+    - name: Download docs artifact
+      uses: actions/download-artifact@v3
+      with:
+        name: docs-build
+        path: _site
+
+    - name: Upload artifact
+      uses: actions/upload-pages-artifact@v2
+
+    - name: Deploy to GitHub Pages
+      id: deployment
+      uses: actions/deploy-pages@v2
