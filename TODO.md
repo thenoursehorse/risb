@@ -17,6 +17,7 @@ version 3.2.0
 - Sort out intersphinx linking in docs
 - Helper plot functions
 - Helper functions for calculating free/total energy
+- add linting actions
 
 ### In Progress
 
