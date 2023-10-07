@@ -26,10 +26,10 @@ version 3.2.0
 
 - symmetry representation tutorial
 - Kagome/projectors tutorial
-- single-orbital Hubbard tutorial 
 - Finish TBmodels in tight-binding how-to
 - Sort out cross-referencing to API in docs
 - action for hatchling version bump
 
 ### Done ✓
 - Setup github actions
+- single-orbital Hubbard tutorial 
