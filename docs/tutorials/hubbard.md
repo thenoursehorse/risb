@@ -1,8 +1,10 @@
-# Brinkmann-Rice metal-insulator transition
+# Brinkman-Rice metal-insulator transition
 
 In this tutorial you will use `LatticeSolver` and `EmbeddingAtomDiag` to solve 
 the half-filled Hubbard model. This is one of the simplest strongly correlated 
-electron models, yet in general does not have an exact solution. 
+electron models, yet in general does not have an exact solution. Using this 
+model, you will learn about the Brinkman-Rice [^^Brinkman1970] description of 
+a Mott insulator, the quintessential strongly correlated phase of matter. 
 At the end of this tutorial you will have an idea of some of the kinds 
 ground states {{RISB}} can capture, and importantly some of its limitations.
 
@@ -284,6 +286,12 @@ from triqs.operators.util.observables import S2_op
 total_spin_Op = S2_op(spin_names, n_orb, off_diag=True)
 ```
 
+To calculate the overlap with the solution {{RISB}} finds 
+
+```python
+total_spin = embedding.overlap(total_spin_Op)
+```
+
 ## Exercises
 
 1. Solve for a range of $U$ values from $U = 0$ to $U = 12$. You may find 
@@ -332,9 +340,10 @@ theory of the half-filled Hubbard model as the Heisenberg model, given by
     
     The above implies that the localized spin-$1/2$s on each site 
     have a spin-spin exchange interaction between them arising from charge 
-    fluctuations. In the limit $t / U \rightarrow 0$ the spin exchange 
-    $J \rightarrow 0$, with an isolated spin-$1/2$ on each site because there 
-    is no coupling between them. 
+    fluctuations (high-energy virtual processes). In the atomic limit 
+    $t / U \rightarrow 0$ the spin exchange $J \rightarrow 0$, with an 
+    isolated spin-$1/2$ on each site because there is no coupling between 
+    them. 
     
     Recalling the observables you calculated to the right of the critical 
     interaction $U_c$ (which happened at a finite $U$) what does this imply 
@@ -352,7 +361,7 @@ theory of the half-filled Hubbard model as the Heisenberg model, given by
 ## Conclusion
 
 You have solved the Hubbard model using the {{RISB}} approximation and found 
-a Brinkmann-Rice metal-insulator transition to the Mott insulating phase. 
+a Brinkman-Rice metal-insulator transition to the Mott insulating phase. 
 In cluster extensions to {{RISB}} this type of transition can also occur. You 
 should now know one of the ways that {{RISB}} captures insulators, and 
 understand the limitations [^GHOST] for the kinds of ground states that {{RISB}} 
@@ -364,17 +373,20 @@ In this tutorial you only considered solutions where every site was the same.
 Construct a two-site super cell of the cubic lattice, and treat the 
 two sites as separate embedding spaces $\mathcal{C}_i$ (see 
 [Using projectors](../how-to/projectors.md)). You will also find a 
-metal-insulator (of the Slater type). 
+metal-insulator transition (of the Slater type). 
 
-1. How does this differ to the Brinmann-Rice metal-insulator transition? 
+1. How does this differ to the Brinkman-Rice metal-insulator transition? 
 
 1. How does this differ to the mean-field solution (Hartree-Fock) to the 
 Hubbard model on the cubic lattice?
 
 1. Knowing that the Mott insulating state that {{RISB}} captures in the 
-Brinkmann-Rice transition should have spin-spin exchange, what is the expected 
+Brinkman-Rice transition should have spin-spin exchange, what is the expected 
 ground state of the Hubbard model on the cubic lattice at half-filling?
 
+[^Brinkman1970]: [W. F. Brinkman and T. M. Rice, 
+*Application of Gutzwiller's Variational Method to the Metal-Insulator Transition*,
+Phys. Rev. B **2**, 4302 (1970)](https://doi.org/10.1103/PhysRevB.2.4302).
 
 [^GHOST]: See [N. Lanatà, T.-H. Lee, Y.-X. Yao, and V. Dobrosavljević, 
 *Emergent Bloch excitations in Mott matter*, 
