@@ -138,6 +138,18 @@ class EmbeddingAtomDiag:
         self.h0_loc : OpType = Operator()
         for bl, bl_size in self.gf_struct:
             self.h0_loc += C_dag_Op[bl] @ h0_loc_matrix[bl] @ C_Op[bl]
+
+    def set_h_int(self, h_int : OpType) -> None:
+        """
+        Sets the interaction terms of the c-electrons in the embedding 
+        Hamiltonian.
+        
+        Parameters
+        ----------
+        h_int : triqs.operators.Operator
+            Interaction Hamiltonian in the embedding space.
+        """
+        self.h_int = h_int
     
     def set_h_bath(self, Lambda_c : MFType) -> None:
         """

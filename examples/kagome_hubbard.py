@@ -85,7 +85,7 @@ projectors = [P_A, P_B, P_C]
 # Enforce paramagnetism. This is not really necessary because the primitive 
 # unit cell will not magnetically order. But it helps to stabalize the 
 # solver in the insulating state
-def make_paramagnetic(A):
+def force_paramagnetic(A):
     n_clusters = len(A)
     for i in range(n_clusters):
         A[i]['up'] = 0.5 * ( A[i]['up'] + A[i]['dn'] )
@@ -98,7 +98,7 @@ S = LatticeSolver(h0_k=h0_k,
                   embedding=embedding,
                   update_weights=kweight.update_weights,
                   projectors=projectors,
-                  symmetries=[make_paramagnetic],
+                  symmetries=[force_paramagnetic],
 )
 
 # Solve

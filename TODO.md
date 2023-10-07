@@ -18,14 +18,19 @@ version 3.2.0
 - Helper plot functions
 - Helper functions for calculating free/total energy
 - add linting actions
+- pipy packaging
+- dimer insulator to explain some different insulating states
+- change references in docs to use sphinxcontrib-bibtex
+
 
 ### In Progress
 
 - symmetry representation tutorial
 - Kagome/projectors tutorial
-- single-orbital Hubbard tutorial 
 - Finish TBmodels in tight-binding how-to
 - Sort out cross-referencing to API in docs
+- action for hatchling version bump
 
 ### Done ✓
 - Setup github actions
+- single-orbital Hubbard tutorial 

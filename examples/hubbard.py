@@ -19,7 +19,7 @@ def hubbard(U, n_orb):
 
 # Number of orbitals and spin structure
 n_orb = 1
-spin_names = ['up','dn']
+spin_names = ['up', 'dn']
 gf_struct = set_operator_structure(spin_names, n_orb, off_diag=True)
 
 # Non-interacting cubic dispersion on lattice, built using TRIQS
@@ -47,7 +47,7 @@ n_target = 1 # half-filling
 kweight = SmearingKWeight(beta=beta, n_target=n_target)
 
 # Symmetrize spin blocks to be the same (paramagnetism)
-def symmetries(A):
+def force_paramagnetic(A):
     # Paramagnetic
     A[0]['up'] = 0.5 * (A[0]['up'] + A[0]['dn'])
     A[0]['dn'] = A[0]['up']
@@ -61,7 +61,7 @@ S = LatticeSolver(h0_k=h0_k,
                   gf_struct=gf_struct,
                   embedding=embedding,
                   update_weights=kweight.update_weights,
-                  symmetries=[symmetries],
+                  symmetries=[force_paramagnetic],
                   force_real=True
 )
 
@@ -74,9 +74,7 @@ total_spin = [] # Total spin per site
 
 U_arr = np.arange(0, 10+0.1, 0.5)
 for U in U_arr:
-    # Update U # FIXME in the future this should be done with a set function
-    # so it works with C++ better 
-    embedding.h_int = hubbard(U=U, n_orb=n_orb)
+    embedding.set_h_int( hubbard(U=U, n_orb=n_orb) )
     
     # Solve
     S.solve(tol=1e-6)

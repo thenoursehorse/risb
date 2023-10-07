@@ -8,10 +8,10 @@ inputs:
     default: "3.10"
     required: false
   cc:
-    default: "clang"
+    default: "gcc"
     required: false
   cxx:
-    default: "clang++"
+    default: "g++"
     required: false
   llvm:
     default: "15"
@@ -120,11 +120,12 @@ runs:
       cmake .. -DCMAKE_INSTALL_PREFIX=$HOME/triqs_install -DBuild_Documentation=OFF -DBuild_Tests=OFF
       make -j1 VERBOSE=1
       cd ../../
-      echo "TRIQS_INSTALL=$HOME/triqs_install" >> $GITHUB_ENV
           
   - name: Install TRIQS
     shell: bash
-    run: cd triqs/build && make install && cd ../../
+    run: |
+      cd triqs/build && make install && cd ../../
+      echo "TRIQS_INSTALL=$HOME/triqs_install" >> $GITHUB_ENV
 
 branding:
   icon: "package"
