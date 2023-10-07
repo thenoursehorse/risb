@@ -8,7 +8,7 @@ bit about how they do things.
 [About the embedding Hamiltonian](../explanations/embedding.md).
 :::
 
-## :py:class:`EmbeddingAtomDiag`
+## `EmbeddingAtomDiag`
 
 First a `gf_struct` object has to be created that describes the correlated 
 subspace $\mathcal{C}_i$. This object should be constructed in the same way 
@@ -81,6 +81,17 @@ where `h0_loc_matrix` is a matrix that describes the couplings, with the same
 block matrix structure as `Lambda_c` and `D`. This is stored in 
 `embedding.h0_loc` as a {{TRIQS}} operator.
 
+### Setting `h_int`
+
+If you want to update the interaction terms on the impurity 
+
+```python
+# A new h_int
+h_int = ...
+
+embedding.set_h_int(h_int)
+```
+
 ### Solving
 
 It is solved as
@@ -144,7 +155,7 @@ embedding.gf_struct_emb
 ```
 
 
-## :py:class:`EmbeddingDummy`
+## `EmbeddingDummy`
 
 If you want to have some correlated subspaces $\mathcal{C}_i$ as inequivalent,
 but they are related by some symmetry, it is not necessary to solve for the 
