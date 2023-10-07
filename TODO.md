@@ -22,6 +22,7 @@ version 3.2.0
 - dimer insulator to explain some different insulating states
 - change references in docs to use sphinxcontrib-bibtex
 
+
 ### In Progress
 
 - symmetry representation tutorial
