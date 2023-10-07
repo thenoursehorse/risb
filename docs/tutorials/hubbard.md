@@ -3,7 +3,7 @@
 In this tutorial you will use `LatticeSolver` and `EmbeddingAtomDiag` to solve 
 the half-filled Hubbard model. This is one of the simplest strongly correlated 
 electron models, yet in general does not have an exact solution. Using this 
-model, you will learn about the Brinkman-Rice [^^Brinkman1970] description of 
+model, you will learn about the Brinkman-Rice [^Brinkman1970] description of 
 a Mott insulator, the quintessential strongly correlated phase of matter. 
 At the end of this tutorial you will have an idea of some of the kinds 
 ground states {{RISB}} can capture, and importantly some of its limitations.
@@ -388,7 +388,7 @@ ground state of the Hubbard model on the cubic lattice at half-filling?
 *Application of Gutzwiller's Variational Method to the Metal-Insulator Transition*,
 Phys. Rev. B **2**, 4302 (1970)](https://doi.org/10.1103/PhysRevB.2.4302).
 
-[^GHOST]: See [N. Lanatà, T.-H. Lee, Y.-X. Yao, and V. Dobrosavljević, 
+[^GHOST]: [N. Lanatà, T.-H. Lee, Y.-X. Yao, and V. Dobrosavljević, 
 *Emergent Bloch excitations in Mott matter*, 
 Phys. Rev. B **96**, 195126 (2017)](https://doi.org/10.1103/PhysRevB.96.195126), 
 and the papers that cite this paper for extensions that improve upon 
