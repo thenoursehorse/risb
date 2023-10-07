@@ -19,6 +19,7 @@ version 3.2.0
 - Helper functions for calculating free/total energy
 - add linting actions
 - pipy packaging
+- change references in docs to use sphinxcontrib-bibtex
 
 ### In Progress
 
