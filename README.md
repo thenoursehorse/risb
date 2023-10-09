@@ -17,11 +17,11 @@ fraction of the time, with hopefully not a fraction of the accuracy.
 
 If you want to learn how to solve some common strongly correlated lattice 
 models, and how RISB is implemented, then start with the 
-[tutorials](https://github.com/thenoursehorse/risb/tutorials). 
+[tutorials](https://thenoursehorse.github.io/risb/tutorials). 
 
 If you want to quickly see a calculation, then start with the `examples/` 
 folder in this repository and refer to the 
-[how-to guides](https://github.com/thenoursehorse/risb/how-to/).
+[how-to guides](https://thenoursehorse.github.io/risb/how-to/).
 
 <!-- INDEX-END -->
 

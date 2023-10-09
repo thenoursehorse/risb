@@ -1,8 +1,7 @@
-# Hubbard model on kagome lattice
+# Multiple clusters on the kagome lattice
 
 :::{admonition} TODO
-Single-site case. Three-site cluster case. Exercises like, what happens 
-to hybridization? The total spin? The energy? 
+Single-site case. Three-site cluster case.
 :::
 
 In this tutorial you will use :py:class:`LatticeSolver` to solve the 
@@ -11,14 +10,12 @@ ways.
 
 First, as three inequivalent correlated subspaces $\mathcal{C}$ for 
 $i \in \{A, B, C\}$. This will ignore spatial correlations within a triangle 
-in a unit cell. Doing it this way will be faster, and will introduce 
-how the projectors are used.
+in a unit cell. Doing it this way requires constructing projectors onto 
+the different correlated subspaces.
 
 The second way is take a single three-site cluster and 
 have one correlated subspace $\mathcal{C}$. This will include spatial 
-correlations within a triangle in a unit cell. This will be slower, but we 
-will also introduce how local symmetries can be encoded to ensure 
-the system adheres to the symmetries of the system.
+correlations within a triangle in a unit cell.
 
 :::{tip}
 In `examples/kagome_hubbard.py` we provide an example if you are stuck. But 

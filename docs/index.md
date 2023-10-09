@@ -18,7 +18,7 @@ explanations/index
 ```
 
 ```{toctree}
-:caption: Reference
+:caption: API Docs
 :hidden:
  
 api/risb
