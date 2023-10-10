@@ -13,9 +13,6 @@ _build
 # From pytest
 .pytest_cache
 
-# From build
-src/risb/version.py
-
 # Potential auth keys
 .github.auth
 
