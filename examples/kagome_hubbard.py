@@ -16,7 +16,7 @@ def get_h0_k(t=1, nkx=18, spin_names=['up','dn']):
     # Build shifted 2D mesh
     n_k = nkx**2
     mesh = np.empty(shape=(n_k, 2))
-    for idx,coords in enumerate(zip(range(nkx), range(nkx))):
+    for idx,coords in enumerate(product(range(nkx), range(nkx))):
         mesh[idx,0] = coords[0]/nkx + 0.5/nkx
         mesh[idx,1] = coords[1]/nkx + 0.5/nkx
 
@@ -26,11 +26,11 @@ def get_h0_k(t=1, nkx=18, spin_names=['up','dn']):
     R = np.array((R1, R2)).T
 
     # Bravais lattice vectors
-    G = 2.0*np.pi*np.linalg.inv(R)
+    G = 2.0*np.pi*np.linalg.inv(R).T
 
     h0_k = np.zeros([n_k, n_orb, n_orb], dtype=complex)
     for k in range(n_k):
-        kay = np.dot(G.T, mesh[k,:])
+        kay = np.dot(G, mesh[k,:])
         k1 = kay[0]
         k2 = 0.5 * kay[0] + 0.5 * np.sqrt(3) * kay[1]
         k3 = -0.5 * kay[0] + 0.5 * np.sqrt(3) * kay[1]

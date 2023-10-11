@@ -20,7 +20,7 @@ def get_h0_k(tg=0.5, tk=1.0, nkx=18, spin_names=['up','dn'], basis='trimer'):
 
     # Build shifted 2D mesh
     mesh = np.empty(shape=(n_k, 2))
-    for idx,coords in enumerate(zip(range(nkx), range(nkx))):
+    for idx,coords in enumerate(product(range(nkx), range(nkx))):
         mesh[idx,0] = coords[0]/nkx + 0.5/nkx
         mesh[idx,1] = coords[1]/nkx + 0.5/nkx
 
@@ -30,7 +30,7 @@ def get_h0_k(tg=0.5, tk=1.0, nkx=18, spin_names=['up','dn'], basis='trimer'):
     R = np.array((R1, R2)).T
 
     # Bravais lattice vectors
-    G = 2.0*np.pi*np.linalg.inv(R)
+    G = 2.0*np.pi*np.linalg.inv(R).T
 
     # Vectors to inter-triangle nearest neighbors
     d0 = ( 1.0, 0.0 )
@@ -42,7 +42,7 @@ def get_h0_k(tg=0.5, tk=1.0, nkx=18, spin_names=['up','dn'], basis='trimer'):
 
     # Construct in inequivalent block matrix structure  
     for k,i,j,m,mm in product(range(n_k), range(na), range(na), range(n_orb), range(n_orb)):
-        kay = np.dot(G.T, mesh[k,:])
+        kay = np.dot(G, mesh[k,:])
 
         # Dispersion terms between clusters
         if (i == 0) and (j == 1):
