@@ -85,11 +85,16 @@ a_d = [float_1, ..., float_d]
 A = np.array([a_1, a_2, ...]).T
 
 # The reciprocol lattice vectors as a matrix where each column is a vector
-G = 2 * np.pi * np.linalg.inv(A)
+G = 2 * np.pi * np.linalg.inv(A).T
 
 # Rotate mesh into this basis as k_cartesian = G @ k_fractional
+
+# Method 1: Using numpy broadcasting
+k_mesh = (G @ k_mesh.T).T
+
+# Method 2: Using an explicit for loop
 for k in range(k_mesh.shape[0]):
-    k_mesh[k,:] = G.T @ k_mesh[k,:]
+    k_mesh[k,:] = G @ k_mesh[k,:]
 ```
 
 Next, construct `h0_k` as
