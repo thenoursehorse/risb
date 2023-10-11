@@ -28,6 +28,7 @@ First construct a Monkhorst-Pack $k$-point mesh in fractional coordinates
 
 ```python
 import numpy as np
+from itertools import product
 
 # The spatial dimensions of the problem
 d = ...
@@ -49,14 +50,11 @@ shift_1 = ...
 shift_d = ...
 shift_list = [shift_1, ..., shift_d]
 
-# Create linear array in each spatial dimension
-k_linear_list = [np.linspace(0, 1, nk_list[i], endpoint = False) + shift_list[i] / nk_list[i] for i in range(d)]
-
-# Create a meshgrid
-k_mesh = np.meshgrid(*k_linear_list, indexing='ij')
-
-# Make it a list indexed as idx, k1, k2, ...
-k_mesh = np.reshape(k_mesh, (n_k, d))
+# Create empty mesh and populate it
+k_mesh = np.empty(shape=(nk, d))
+for idx, coords in enumerate(product( *[range(nk_list[i]) for i in range(len(nk_list))] )):
+    for dim in range(d):
+        k_mesh[idx,dim] = (coords[dim] + shift_list[dim]) / nk_list[dim]
 ```
 
 If your function for $\hat{H}_0$ is in a different basis then you will 
@@ -77,8 +75,8 @@ A = np.array([a_1, a_2, ...]).T
 G = 2 * np.pi * np.linalg.inv(A)
 
 # Rotate mesh into this basis as k_cartesian = G @ k_fractional
-# For numpy broadcasting: k_cartesian = (G @ k_fractional.T).T
-k_mesh = (G @ k_mesh.T).T
+for k in range(k_mesh.shape[0]):
+    k_mesh[k,:] = G.T @ k_mesh[k,:]
 ```
 
 Next, construct `h0_k` as

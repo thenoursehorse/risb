@@ -20,7 +20,7 @@ def get_h0_k(tg=0.5, tk=1.0, nkx=18, spin_names=['up','dn'], basis='trimer'):
 
     # Build shifted 2D mesh
     mesh = np.empty(shape=(n_k, 2))
-    for idx,coords in enumerate(zip(range(nkx), range(nkx))):
+    for idx,coords in enumerate(product(range(nkx), range(nkx))):
         mesh[idx,0] = coords[0]/nkx + 0.5/nkx
         mesh[idx,1] = coords[1]/nkx + 0.5/nkx
 
