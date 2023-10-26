@@ -39,7 +39,7 @@ jobs:
     - name: Install risb and docs dependencies
       run: |
         source $TRIQS_INSTALL/share/triqs/triqsvars.sh
-        python -m pip install -e .[docs]
+        python -m pip install .[docs]
 
     - name: Build docs
       run: |
