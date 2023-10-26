@@ -42,9 +42,15 @@ jobs:
     - name: Install risb
       run: |
         source $TRIQS_INSTALL/share/triqs/triqsvars.sh
-        python -m pip install -e .[test]
+        python -m pip install -e .[test,docs]
       
     - name: Test risb
       run: |
         source $TRIQS_INSTALL/share/triqs/triqsvars.sh
         python -m pytest
+    
+    - name: Test docs
+      run: |
+        source $TRIQS_INSTALL/share/triqs/triqsvars.sh
+        sphinx-apidoc -o docs/api --module-first --no-toc --force --separate src/risb
+        sphinx-build -b html -n -T docs docs/_build
