@@ -1,28 +1,35 @@
-name: Docs
+name: CD
 
 on:
-  workflow_dispatch:
-  push:
+  pull_request:
+    types:
+      - closed
     branches:
       - main
-
-permissions:
-  contents: read
-  pages: write
-  id-token: write
-
-concurrency:
-  group: "pages"
-  cancel-in-progress: true
 
 jobs:
 
   build:
+    if: github.event.pull_request.merged == true
     runs-on: ubuntu-22.04
+    permissions:
+      contents: write
     
-    name: Build docs
     steps:
     - uses: actions/checkout@v4
+
+    - name: Bump version and push tag
+      id: tag_version
+      uses: mathieudutour/github-tag-action@v6.1
+      with:
+        github_token: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Create a GitHub release
+      uses: ncipollo/release-action@v1
+      with:
+        tag: ${{ steps.tag_version.outputs.new_tag }}
+        name: Release ${{ steps.tag_version.outputs.new_tag }}
+        body: ${{ steps.tag_version.outputs.changelog }}
       
     - name: Setup Python 3.10 and TRIQS
       uses: ./.github/actions/setup-triqs
@@ -32,7 +39,7 @@ jobs:
     - name: Install risb and docs dependencies
       run: |
         source $TRIQS_INSTALL/share/triqs/triqsvars.sh
-        python -m pip install -e .[docs]
+        python -m pip install .[docs]
 
     - name: Build docs
       run: |
@@ -46,10 +53,13 @@ jobs:
         name: docs-build
         path: docs/_build
 
-  deploy:
+  deploy-docs:
     needs: [build]
-    
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
     
     environment:
       name: github-pages
