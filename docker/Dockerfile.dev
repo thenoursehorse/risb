@@ -85,7 +85,7 @@ RUN pip install --upgrade pip \
 # Install library
 WORKDIR $BUILD/$APPNAME
 COPY . $SRC/$APPNAME
-RUN cp -as $SRC/$APPNAME/* .
+RUN cp -asT $SRC/$APPNAME/ .
 RUN pip install -e .[test,docs]
 
 # Build documentation
