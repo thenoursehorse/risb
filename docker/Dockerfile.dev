@@ -79,13 +79,13 @@ FROM build_arm64
 
 # Install any other software we need
 RUN pip install --upgrade pip \
-  && pip install nox matplotlib
-#mypy
+  && pip install matplotlib
+# nox mypy
 
 # Install library
 WORKDIR $BUILD/$APPNAME
 COPY . $SRC/$APPNAME
-RUN cp -as $SRC/$APPNAME/* .
+RUN cp -asT $SRC/$APPNAME/ .
 RUN pip install -e .[test,docs]
 
 # Build documentation
