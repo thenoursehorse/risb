@@ -8,14 +8,17 @@ on:
 
 jobs:
 
-  build:
-    runs-on: ubuntu-22.04
+  bump-version:
+    runs-on: ubuntu-latest
     permissions:
+      id-token: write
       contents: write
     
     steps:
     - uses: actions/checkout@v4
-
+      with:
+        fetch-depth: 0
+    
     - name: Bump version and push tag
       id: tag_version
       uses: mathieudutour/github-tag-action@v6.1
@@ -29,6 +32,15 @@ jobs:
         name: Release ${{ steps.tag_version.outputs.new_tag }}
         body: ${{ steps.tag_version.outputs.changelog }}
       
+  build:
+    needs: [bump-version]
+    runs-on: ubuntu-22.04
+    
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+
     - name: Setup Python 3.10 and TRIQS
       uses: ./.github/actions/setup-triqs
       with:
