@@ -1,12 +1,18 @@
-.travis.yml
-Dockerfile
-Jenkinsfile
-.git/objects/pack
-build*
-_build*
-
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
 *$py.class
+*egg-info
 
+# From nox build
+build
+_build
+.nox
+
+# docker files
+docker/
+docker-compose*
+Dockerfile*
+
+# git files
+.git/objects/pack

@@ -2,18 +2,18 @@
 __pycache__/
 *.py[cod]
 *$py.class
-
 *egg-info
 
-# From nox
+# From nox build
 build
 _build
 .nox
 
-# From pytest
+# pytest
 .pytest_cache
 
 # Potential auth keys
 .github.auth
 
+# Visual Studio Code
 .vscode
