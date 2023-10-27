@@ -53,3 +53,28 @@ jobs:
         source $TRIQS_INSTALL/share/triqs/triqsvars.sh
         sphinx-apidoc -o docs/api --module-first --no-toc --force --separate src/risb
         sphinx-build -b html -n -T docs docs/_build
+
+#  test-dist:
+#    runs-on: ubuntu-latest
+#    steps:
+#    - uses: actions/checkout@v4
+#      with:
+#        fetch-depth: 0
+#
+#    - uses: hynek/build-and-inspect-python-package@v1
+#
+#  test-publish:
+#    needs: [test-dist]
+#    environment: testpypi
+#    #permissions:
+#    #  id-token: write
+#    runs-on: ubuntu-latest
+#
+#    steps:
+#      - uses: actions/download-artifact@v3
+#        with:
+#          name: artifact
+#          path: dist
+#          repository_url: https://test.pypi.org/legacy/
+#
+#      - uses: pypa/gh-action-pypi-publish@release/v1

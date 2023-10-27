@@ -32,7 +32,7 @@ jobs:
         name: Release ${{ steps.tag_version.outputs.new_tag }}
         body: ${{ steps.tag_version.outputs.changelog }}
       
-  build:
+  build-docs:
     needs: [bump-version]
     runs-on: ubuntu-22.04
     
@@ -64,7 +64,7 @@ jobs:
         path: docs/_build
 
   deploy-docs:
-    needs: [build]
+    needs: [build-docs]
     runs-on: ubuntu-latest
     permissions:
       contents: read
