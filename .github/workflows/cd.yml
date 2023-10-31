@@ -32,7 +32,7 @@ jobs:
         name: Release ${{ steps.tag_version.outputs.new_tag }}
         body: ${{ steps.tag_version.outputs.changelog }}
       
-  build:
+  build-docs:
     needs: [bump-version]
     runs-on: ubuntu-22.04
     
@@ -64,7 +64,7 @@ jobs:
         path: docs/_build
 
   deploy-docs:
-    needs: [build]
+    needs: [build-docs]
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -95,3 +95,27 @@ jobs:
     - name: Deploy to GitHub Pages
       id: deployment
       uses: actions/deploy-pages@v2
+
+  dist:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+
+    - uses: hynek/build-and-inspect-python-package@v1
+
+  publish:
+    needs: [dist]
+    environment: pypi
+    permissions:
+      id-token: write
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/download-artifact@v3
+        with:
+          name: artifact
+          path: dist
+
+      - uses: pypa/gh-action-pypi-publish@release/v1
