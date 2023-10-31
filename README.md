@@ -59,39 +59,10 @@ Lastly, the appropriate original theory outlined in the [documentation](https://
 (Optional) Create a 
 [virtual environment](https://packaging.python.org/en/latest/tutorials/installing-packages/#creating-virtual-environments).
 
-Clone source
+Install
 
 ```shell
-git clone https://github.com/thenoursehorse/risb
-cd risb
-```
-
-### With [pipx](https://pypa.github.io/pipx/)
-
-Install from local
-
-```shell
-pipx install .
-```
-
-To develop code without reinstalling
-
-```shell
-pipx install --editable .
-```
-
-### With pip
-
-Install from local
-
-```shell
-pip install .
-```
-
-To develop code without reinstalling
-
-```shell
-pip install -e .
+pip install risb
 ```
 
 ### Uninstall
@@ -129,6 +100,13 @@ Apple M1/M2 (arm64, aarch64), and any amd64 system.
 
 The tests require a working [TRIQS](https://triqs.github.io/) installation.
 
+Clone source
+
+```shell
+git clone https://github.com/thenoursehorse/risb
+cd risb
+```
+
 Install the prerequisites
 
 ```shell
@@ -142,6 +120,13 @@ pytest
 ```
 
 ## Documentation
+
+Clone source
+
+```shell
+git clone https://github.com/thenoursehorse/risb
+cd risb
+```
 
 Install the prerequisites
 
