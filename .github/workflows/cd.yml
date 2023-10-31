@@ -6,6 +6,10 @@ on:
     branches:
       - main
 
+concurrency:
+  group: "pages"
+  cancel-in-progress: true
+
 jobs:
 
   bump-version:
@@ -97,6 +101,7 @@ jobs:
       uses: actions/deploy-pages@v2
 
   dist:
+    needs: [bump-version]
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
@@ -115,7 +120,7 @@ jobs:
     steps:
       - uses: actions/download-artifact@v3
         with:
-          name: artifact
+          name: Packages
           path: dist
 
       - uses: pypa/gh-action-pypi-publish@release/v1
