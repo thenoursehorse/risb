@@ -20,7 +20,8 @@ def test_get_h_qp(subtests):
     np.fill_diagonal(R, 1)
     Lambda = np.zeros(shape=(2,2))
     np.fill_diagonal(Lambda, 0.5)
-    eig, vec = helpers.get_h_qp(R, Lambda, h0_k)
+    h_qp = helpers.get_h_qp(R, Lambda, h0_k)
+    eig, vec = np.linalg.eigh(h_qp)
     with subtests.test(msg="eigenvalues"):
         assert eig == approx(eig_expected, abs=abs)
     with subtests.test(msg="eigenvectors"):

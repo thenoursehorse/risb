@@ -436,7 +436,8 @@ class LatticeSolver:
         h0_k_R = dict()
         #R_h0_k_R = dict()
         for bl in self.h0_kin_k.keys():
-            self.energies_qp[bl], self.bloch_vector_qp[bl] = helpers.get_h_qp(self.R_full[bl], self.Lambda_full[bl], self.h0_kin_k[bl])
+            h_qp = helpers.get_h_qp(self.R_full[bl], self.Lambda_full[bl], self.h0_kin_k[bl])
+            self.energies_qp[bl], self.bloch_vector_qp[bl] = np.linalg.eigh(h_qp)
             h0_k_R[bl] = helpers.get_h0_kin_k_R(self.R_full[bl], self.h0_kin_k[bl], self.bloch_vector_qp[bl])
             #R_h0_k_R[bl] = helpers.get_R_h0_kin_kR(R_full[bl], self.h0_kin_k[bl], self.bloch_vector_qp[bl])
         
