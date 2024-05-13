@@ -56,6 +56,7 @@ addopts = ["-ra", "--showlocals", "--strict-markers", "--strict-config"]
 xfail_strict = true
 filterwarnings = [
   "ignore:::triqs.*:",
+  "error",
 ]
 log_cli_level = "info"
 testpaths = [
