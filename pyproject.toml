@@ -55,8 +55,8 @@ minversion = "7.0"
 addopts = ["-ra", "--showlocals", "--strict-markers", "--strict-config"]
 xfail_strict = true
 filterwarnings = [
-    "ignore:invalid escape sequence:DeprecationWarning",
-    "error",
+  "ignore:::.*triqs*",
+  "error",
 ]
 log_cli_level = "info"
 testpaths = [
