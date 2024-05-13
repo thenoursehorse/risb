@@ -19,7 +19,7 @@ jobs:
       matrix:
         include:
           - {os: "ubuntu-22.04", python-version: "3.10", cc: "gcc", cxx: "g++", llvm: "15", gcc-version: "12"}
-          - {os: "ubuntu-22.04", python-version: "3.11", cc: "gcc", cxx: "g++", llvm: "15", gccversion: "12"}
+          - {os: "ubuntu-22.04", python-version: "3.11", cc: "gcc", cxx: "g++", llvm: "15", gcc-version: "12"}
           #- {os: "ubuntu-22.04", python-version: "3.10", cc: "clang", cxx: "clang++", llvm: "15", gcc-version: "12"}
           #- {os: "ubuntu-22.04", python-version: "3.11", cc: "clang", cxx: "clang++", llvm: "15", gcc-version: "12"}
   
