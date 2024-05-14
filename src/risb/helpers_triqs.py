@@ -18,7 +18,8 @@
 
 import numpy as np
 from triqs.operators import Operator, c, c_dag
-from risb.helpers import get_h0_loc_matrix
+from triqs.gf import BlockGf, inverse
+from risb.helpers import get_h0_loc_matrix, get_h_qp
 
 def get_C_Op(gf_struct : list[tuple[str,int]], dagger : bool = False) -> dict[list[Operator]]:
     """
@@ -151,3 +152,66 @@ def get_h0_loc(h0_k : dict[np.ndarray],
     for Op in h0_loc_blocks.values():
         h0_loc += Op
     return h0_loc
+
+def get_gf_struct_from_g(block_gf):
+    gf_struct = []
+    for bl, gf in block_gf:
+        gf_struct.append( [bl, gf.data.shape[-1]] )
+    return gf_struct
+
+def get_sigma_w(gf_struct, mesh, Lambda, R, mu=0, h_loc=None):
+    sigma_w = BlockGf(mesh=mesh, gf_struct=gf_struct)
+    for bl, gf in sigma_w:
+        id = np.eye(*gf.data.shape[-2::]) # Last two indices are the orbital structure
+        Z = R[bl] @ R[bl].conj().T
+        id_Z = (id - np.linalg.inv(Z))
+        id_Z_mu = id_Z * mu
+        hf = np.linalg.inv(R[bl]) @ Lambda[bl] @ np.linalg.inv(R[bl].conj().T)
+        if h_loc is not None:
+            for w in gf.mesh:
+                gf[w] = id_Z * w + hf + id_Z_mu - h_loc[bl]
+        else:
+            for w in gf.mesh:
+                gf[w] = id_Z * w + hf + id_Z_mu
+    return sigma_w
+
+# FIXME have to check h0_kin_k shares the same mesh 
+def get_g_qp_k_w(gf_struct, mesh, h0_kin_k, Lambda, R, mu=0):
+    g_qp_k_w = BlockGf(mesh=mesh, gf_struct=gf_struct)
+    for bl, gf in g_qp_k_w:
+        h_qp = get_h_qp(R=R[bl], Lambda=Lambda[bl], h0_kin_k=h0_kin_k[bl], mu=mu)
+        for k, w in g_qp_k_w.mesh:
+            gf[k,w] = inverse(w - h_qp[k.data_index])
+    return g_qp_k_w
+
+def get_g_k_w(**kwargs):
+    if ('g0_k_w' in kwargs) and ('sigma_w' in kwargs):
+        g0_k_w = kwargs['g0_k_w']
+        sigma_w = kwargs['sigma_w']
+        g_k_w = g0_k_w.copy()
+        g_k_w.zero()
+        for bl, gf in g_k_w:
+            for k, w in gf.mesh:            
+                gf[k,w] = inverse(inverse(g0_k_w[bl][k,w]) - sigma_w[bl][w])
+    elif ('g_qp_k_w' in kwargs) and ('R' in kwargs):
+        g_qp_k_w = kwargs['g_qp_k_w']
+        R = kwargs['R']
+        g_k_w = g_qp_k_w.copy()
+        g_k_w.zero()
+        for bl, gf in g_qp_k_w:
+            g_k_w[bl] = R[bl].conj().T @ gf @ R[bl]
+    else:
+        msg = 'Required kwargs are g0_k_w and sigma_w, or g_qp_k_w and R !'
+        raise ValueError(msg)
+    return g_k_w
+
+def get_g_w_loc(g_k_w):
+    k_mesh = g_k_w.mesh[0]
+    w_mesh = g_k_w.mesh[1]
+    gf_struct = get_gf_struct_from_g(g_k_w)
+    g_w_loc = BlockGf(mesh=w_mesh, gf_struct=gf_struct)
+    for bl, gf in g_w_loc:
+        for k in k_mesh:
+            gf += g_k_w[bl][k,:]
+        gf /= np.prod(k_mesh.dims)
+    return g_w_loc

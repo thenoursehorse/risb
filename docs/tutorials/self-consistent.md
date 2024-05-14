@@ -230,9 +230,9 @@ input initial guesses to the solution to the self-consistent loop. Often a
 reasonable initial guess is to choose $\mathcal{R}$ as the identity and 
 $\lambda$ as the zero matrix.
 
-There is a helper function that constructs $\hat{H}^{\mathrm{qp}}$ and 
-returns its eigenvalues and eigenvectors at each $k$-point on the finite 
-grid.
+There is a helper function that constructs $\hat{H}^{\mathrm{qp}}$, and 
+it is simple to get its eigenvalues and eigenvectors at each $k$-point on the 
+finite grid.
 
 ```python
 from risb import helpers
@@ -240,7 +240,8 @@ from risb import helpers
 energies_qp = dict()
 bloch_vector_qp = dict()
 for bl, bl_size in gf_struct
-    energies_qp[bl], bloch_vector_qp[bl] = helpers.get_h_qp(R[bl], Lambda[bl], h0_kin_k[bl])
+    h_qp = helpers.get_h_qp(R[bl], Lambda[bl], h0_kin_k[bl])
+    energies_qp[bl], bloch_vector_qp[bl] = np.linalg.eigh(h_qp)
 ```
 
 ## D: Setup k-integrator function

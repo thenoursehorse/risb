@@ -17,3 +17,5 @@ _build
 
 # Visual Studio Code
 .vscode
+
+src/risb/version.py

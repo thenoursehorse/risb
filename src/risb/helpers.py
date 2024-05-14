@@ -248,26 +248,24 @@ def get_h_qp(R : np.ndarray,
              h0_kin_k : np.ndarray, 
              mu : float = 0) -> tuple[ np.ndarray, np.ndarray ]:
     """
-    Construct eigenvalues and eigenvectors of the quasiparticle Hamiltonian.
+    Construct the quasiparticle Hamiltonian.
     
     Parameters
     ----------
     R : numpy.ndarray
-        Renormalization matrix) from electrons to quasiparticles.
+        Renormalization matrix) from electrons to quasiparticles
     Lambda : numpy.ndarray
         Correlation potential of quasiparticles.
     h0_kin_k : numpy.ndarray
         Single-particle dispersion between local clusters. Indexed as 
-        k, orb_i, orb_j.
+        k, orb_i, orb_j
     mu : float, optional
-        Chemical potential.
+        Chemical potential
 
     Return
     ------
-    eigenvalues : numpy.ndarray
-        Indexed as k, band.
-    eigenvectors : numpy.ndarray
-        Indexed as k, each column an eigenvector.
+    h_qp : numpy.ndarray
+        Indexed as k, orb_i, orb_j
     
     Notes
     -----
@@ -280,8 +278,9 @@ def get_h_qp(R : np.ndarray,
         (Lambda - mu*np.eye(Lambda.shape[0]))
     if not np.allclose(h_qp, np.swapaxes(h_qp, 1, 2).conj()):
         warnings.warn("H_qp is not Hermitian !", RuntimeWarning)
-    eig, vec = np.linalg.eigh(h_qp)
-    return (eig, vec)
+    #eig, vec = np.linalg.eigh(h_qp)
+    #return (eig, vec)
+    return h_qp
 
 def get_h0_kin_k_R(R : np.ndarray, 
                    h0_kin_k : np.ndarray, 
