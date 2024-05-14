@@ -25,7 +25,7 @@ jobs:
     
     - name: Bump version and push tag
       id: tag_version
-      uses: mathieudutour/github-tag-action@v6.1
+      uses: mathieudutour/github-tag-action@v6.2
       with:
         github_token: ${{ secrets.GITHUB_TOKEN }}
 
@@ -62,7 +62,7 @@ jobs:
         sphinx-build -b html -n -T docs docs/_build
 
     - name: Upload docs artifact
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: docs-build
         path: docs/_build
@@ -85,20 +85,20 @@ jobs:
       
     - name: Setup Pages
       id: pages
-      uses: actions/configure-pages@v3
+      uses: actions/configure-pages@v5
 
     - name: Download docs artifact
-      uses: actions/download-artifact@v3
+      uses: actions/download-artifact@v4
       with:
         name: docs-build
         path: _site
 
     - name: Upload artifact
-      uses: actions/upload-pages-artifact@v2
+      uses: actions/upload-pages-artifact@v3
 
     - name: Deploy to GitHub Pages
       id: deployment
-      uses: actions/deploy-pages@v2
+      uses: actions/deploy-pages@v4
 
   dist:
     needs: [bump-version]
@@ -108,7 +108,7 @@ jobs:
       with:
         fetch-depth: 0
 
-    - uses: hynek/build-and-inspect-python-package@v1
+    - uses: hynek/build-and-inspect-python-package@v2
 
   publish:
     needs: [dist]
@@ -118,7 +118,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/download-artifact@v3
+      - uses: actions/download-artifact@v4
         with:
           name: Packages
           path: dist
