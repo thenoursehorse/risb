@@ -25,7 +25,7 @@ runs:
 
   steps:
   - name: Setup Python ${{ inputs.python-version }}
-    uses: actions/setup-python@v4
+    uses: actions/setup-python@v5
     with:
       python-version: ${{ inputs.python-version }}
       allow-prereleases: true
@@ -106,7 +106,7 @@ runs:
       
   - name: Cache build TRIQS
     id: build-triqs
-    uses: actions/cache@v3
+    uses: actions/cache@v4
     with:
       path: triqs
       key: triqs-${{ inputs.os }}-${{ inputs.python-version }} ${{ inputs.cc }}-${{ inputs.llvm }}-${{ inputs.gcc-version }}
