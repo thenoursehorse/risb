@@ -175,7 +175,8 @@ def get_sigma_w(gf_struct : list[tuple[str,int]],
                 Lambda : dict[np.ndarray], 
                 R : dict[np.ndarray], 
                 mu : float = 0, 
-                h_loc : dict[np.ndarray] | None = None) -> BlockGf:
+                h_loc : dict[np.ndarray] | None = None,
+                use_broadcasting : bool = True) -> BlockGf:
     """
     Parameters
     ----------
@@ -210,12 +211,19 @@ def get_sigma_w(gf_struct : list[tuple[str,int]],
         id_Z = (id - np.linalg.inv(Z))
         id_Z_mu = id_Z * mu
         hf = np.linalg.inv(R[bl]) @ Lambda[bl] @ np.linalg.inv(R[bl].conj().T)
-        if h_loc is not None:
-            for w in gf.mesh:
-                gf[w] = id_Z * w + hf + id_Z_mu - h_loc[bl]
+        if use_broadcasting:
+            w = np.fromiter(gf.mesh.values(), dtype=complex)
+            if h_loc is not None:
+                gf.data[...] = w[:,None,None] * id_Z + hf + id_Z_mu - h_loc[bl]
+            else:
+                gf.data[...] = w[:,None,None] * id_Z + hf + id_Z_mu
         else:
-            for w in gf.mesh:
-                gf[w] = id_Z * w + hf + id_Z_mu
+            if h_loc is not None:
+                for w in gf.mesh:
+                    gf[w] = id_Z * w + hf + id_Z_mu - h_loc[bl]
+            else:
+                for w in gf.mesh:
+                    gf[w] = id_Z * w + hf + id_Z_mu
     return sigma_w
 
 # FIXME have to check h0_kin_k shares the same mesh 
@@ -224,7 +232,8 @@ def get_g_qp_k_w(gf_struct : list[tuple[str,int]],
                  h0_kin_k : dict[np.ndarray],
                  Lambda : dict[np.ndarray], 
                  R : dict[np.ndarray], 
-                 mu : float = 0) -> BlockGf:
+                 mu : float = 0,
+                 use_broadcasting : bool = True) -> BlockGf:
     """
     Parameters
     ----------
@@ -257,15 +266,21 @@ def get_g_qp_k_w(gf_struct : list[tuple[str,int]],
     g_qp_k_w = BlockGf(mesh=mesh, gf_struct=gf_struct)
     for bl, gf in g_qp_k_w:
         h_qp = get_h_qp(R=R[bl], Lambda=Lambda[bl], h0_kin_k=h0_kin_k[bl], mu=mu)
-        for k, w in g_qp_k_w.mesh:
-            gf[k,w] = inverse(w - h_qp[k.data_index])
+        if use_broadcasting:
+            id = np.eye(*gf.data.shape[-2::]) # Last two indices are the orbital structure
+            w = np.fromiter(gf.mesh[1].values(), dtype=complex)
+            gf.data[...] = (w[:,None,None] * id[None,:])[None,:,...] - h_qp[:,None,...]
+            gf.invert()
+        else:
+            for k, w in g_qp_k_w.mesh:
+                gf[k,w] = inverse(w - h_qp[k.data_index])
     return g_qp_k_w
 
 def get_g_k_w(g0_k_w : BlockGf | None = None,
               sigma_w : BlockGf | None = None,
               g_qp_k_w : BlockGf | None = None,
-              R : dict[np.ndarray] | None = None
-              ) -> BlockGf:
+              R : dict[np.ndarray] | None = None,
+              use_broadcasting : bool = True) -> BlockGf:
     """
     Parameters
     ----------
@@ -293,8 +308,12 @@ def get_g_k_w(g0_k_w : BlockGf | None = None,
         g_k_w = g0_k_w.copy()
         g_k_w.zero()
         for bl, gf in g_k_w:
-            for k, w in gf.mesh:
-                gf[k,w] = inverse(inverse(g0_k_w[bl][k,w]) - sigma_w[bl][w])
+            if use_broadcasting:
+                gf.data[...] = g0_k_w[bl].inverse().data - sigma_w[bl].data[None,...]
+                gf.invert()
+            else:
+                for k, w in gf.mesh:
+                    gf[k,w] = inverse(inverse(g0_k_w[bl][k,w]) - sigma_w[bl][w])
     elif (g_qp_k_w is not None) and (R is not None):
         g_k_w = g_qp_k_w.copy()
         g_k_w.zero()
@@ -305,7 +324,8 @@ def get_g_k_w(g0_k_w : BlockGf | None = None,
         raise ValueError(msg)
     return g_k_w
 
-def get_g_w_loc(g_k_w : BlockGf) -> BlockGf:
+def get_g_w_loc(g_k_w : BlockGf,
+                use_broadcasting : bool = True) -> BlockGf:
     """
     Parameters
     ----------
@@ -324,7 +344,10 @@ def get_g_w_loc(g_k_w : BlockGf) -> BlockGf:
     gf_struct = get_gf_struct_from_g(g_k_w)
     g_w_loc = BlockGf(mesh=w_mesh, gf_struct=gf_struct)
     for bl, gf in g_w_loc:
-        for k in k_mesh:
-            gf += g_k_w[bl][k,:]
+        if use_broadcasting:
+            gf.data[...] = np.sum(g_k_w[bl].data, axis=0)
+        else:
+            for k in k_mesh:
+                gf += g_k_w[bl][k,:]
         gf /= np.prod(k_mesh.dims)
     return g_w_loc
