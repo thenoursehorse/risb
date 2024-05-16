@@ -4,12 +4,12 @@ from triqs.lattice.tight_binding import TBLattice, BravaisLattice, BrillouinZone
 from triqs.operators import Operator, n
 from triqs.operators.util.op_struct import set_operator_structure
 from triqs.operators.util.observables import S2_op, N_op
-from triqs.gf import BlockGf, MeshImFreq, MeshProduct
+from triqs.gf import MeshImFreq, MeshProduct
 
 from risb import LatticeSolver
 from risb.kweight import SmearingKWeight
 from risb.embedding import EmbeddingAtomDiag
-from risb.helpers_triqs import get_sigma_w, get_g_qp_k_w, get_g_k_w, get_g_w_loc
+from risb.helpers_triqs import get_g0_k_w, get_sigma_w, get_g_qp_k_w, get_g_k_w, get_g_w_loc
 
 import matplotlib.pyplot as plt
 
@@ -89,36 +89,39 @@ for U in U_arr:
         # Some different ways to construct some Green's functions
         mu = kweight.mu
 
-        # Non-interacting lattice Green's function
+        # The k-space and frequency mesh of the problem
         iw_mesh = MeshImFreq(beta=beta, S='Fermion', n_max=64)
         k_iw_mesh = MeshProduct(mk, iw_mesh)
-        G0_k_iw = BlockGf(mesh=k_iw_mesh, gf_struct=gf_struct)
-        for bl, gf in G0_k_iw:
-            e_k = tbl.fourier(mk)
-            for k, iw in gf.mesh:
-                gf[k,iw] = 1 / (iw - e_k[k] + mu)
 
-        # Quasiparticle lattice Green's function, local self-energy, lattice Green's function
-        G_qp_k_iw = get_g_qp_k_w(gf_struct=gf_struct, mesh=k_iw_mesh, h0_kin_k=S.h0_kin_k, Lambda=S.Lambda[0], R=S.R[0], mu=mu)
-        Sigma_iw = get_sigma_w(mesh=iw_mesh, gf_struct=gf_struct, Lambda=S.Lambda[0], R=S.R[0], mu=mu)
+        mu = kweight.mu
+
+        # Gf constructed from local self-energy
+        G0_k_iw = get_g0_k_w(gf_struct=gf_struct, mesh=k_iw_mesh, h0_k=h0_k, mu=mu)
+        Sigma_iw = get_sigma_w(mesh=iw_mesh, gf_struct=gf_struct, Lambda=S.Lambda[0], R=S.R[0], h0_loc=S.h0_loc_matrix[0], mu=mu)
         G_k_iw = get_g_k_w(g0_k_w=G0_k_iw, sigma_w=Sigma_iw)
+                
+        # Gf constructed from quasiparticle Gf
+        G_qp_k_iw = get_g_qp_k_w(gf_struct=gf_struct, mesh=k_iw_mesh, h0_kin_k=S.h0_kin_k, Lambda=S.Lambda[0], R=S.R[0], mu=mu)
         G_k_iw2 = get_g_k_w(g_qp_k_w=G_qp_k_iw, R=S.R[0])
-
-        # Local Green's functions integrated over k
-        G0_iw_loc = get_g_w_loc(G0_k_iw)
+        
+        # Local Gf integrated over k
+        G0_iw_loc = get_g_w_loc(G0_k_iw) # this is using the correlated chemical potential, so will not have right filling
         G_qp_iw_loc = get_g_w_loc(G_qp_k_iw)
         G_iw_loc = get_g_w_loc(G_k_iw)
         G_iw_loc2 = get_g_w_loc(G_k_iw2)
         
         # Filling of physical electron scales with Z
-        print("G0:", G0_iw_loc.total_density().real)
-        print("G_qp:", G_qp_iw_loc.total_density().real)
-        print("G:", G_iw_loc.total_density().real)
-        print("G2:", G_iw_loc2.total_density().real)
-        print("Z:", S.Z[0]['up'][0,0])
-        print()
+        print(f"Filling G0: {G0_iw_loc.total_density().real:.4f}")
+        print(f"Filling G_qp: {G_qp_iw_loc.total_density().real:.4f}")
+        print(f"Filling G: {G_iw_loc.total_density().real:.4f}")
+        print(f"Filling G2: {G_iw_loc2.total_density().real:.4f}")
+        print(f"Filling Z:: {S.Z[0]['up'][0,0]:.4f}")
         
 fig, axis = plt.subplots(1,2)
 axis[0].plot(U_arr, Z, '-ok')
-axis[0].plot(U_arr, -0.5 + 0.5 * np.sqrt( 1 + 4*np.array(total_spin) ), '-ok')
+axis[0].set_xlabel(r'$U$')
+axis[0].set_ylabel(r'$Z$')
+axis[1].plot(U_arr, -0.5 + 0.5 * np.sqrt( 1 + 4*np.array(total_spin) ), '-ok')
+axis[1].set_xlabel(r'$U$')
+axis[1].set_ylabel(r'$\mathcal{S}$')
 plt.show()
