@@ -15,12 +15,16 @@
 #
 # Authors: H. L. Nourse
 
-import numpy as np
+"""Embedding solver using TRIQS AtomDiag."""
+
 from itertools import product
 from typing import TypeAlias, TypeVar
+
+import numpy as np
 from numpy.typing import ArrayLike
 from triqs.atom_diag import AtomDiag, act
 from triqs.operators import Operator, c, c_dag, dagger
+
 from risb.helpers_triqs import get_C_Op
 
 GfStructType : TypeAlias = list[tuple[str,int]]
@@ -29,8 +33,7 @@ MFType : TypeAlias = dict[ArrayLike]
 
 class EmbeddingAtomDiag:
     """
-    Impurity solver of embedding space using :class:`triqs.atom_diag.AtomDiag` 
-    from TRIQS.
+    Impurity solver of embedding space using :class:`triqs.atom_diag.AtomDiag` from TRIQS.
 
     Parameters
     ----------
@@ -97,14 +100,14 @@ class EmbeddingAtomDiag:
         self.h_hybr : OpType = Operator()
         
         #: dict[numpy.ndarray] : f-electron density matrix.
-        self.rho_f = dict()
+        self.rho_f = {}
 
         #: dict[numpy.ndarray] : c-electron density matrix.
-        self.rho_c = dict()
+        self.rho_c = {}
         
         #: dict[numpy.ndarray] : Density matrix of hybridization terms 
         #: (c- and f-electrons).
-        self.rho_cf = dict()
+        self.rho_cf = {}
 
     @staticmethod
     def _bl_loc_to_bath(bl : str) -> str:
@@ -120,68 +123,70 @@ class EmbeddingAtomDiag:
     
     @staticmethod
     def _dict_gf_struct(gf_struct : GfStructType) -> dict[str, int]:
-        return {bl: bl_size for bl, bl_size in gf_struct}
+        return dict(gf_struct)
     
     def set_h0_loc(self, h0_loc_matrix : MFType) -> None:
         """
-        Sets the single-particle quadratic couplings of the c-electrons in the 
-        embedding Hamiltonian.
+        Set the single-particle quadratic couplings of the c-electrons in the embedding Hamiltonian.
         
         Parameters
         ----------
         h0_loc_matrix : dict of ndarray, optional
             Quadratic terms as a matrix. Each key in dictionary must follow 
             :attr:`gf_struct`.
+
         """
         C_Op = get_C_Op(self.gf_struct, dagger=False)
         C_dag_Op = get_C_Op(self.gf_struct, dagger=True)
         self.h0_loc : OpType = Operator()
-        for bl, bl_size in self.gf_struct:
+        for bl, _bl_size in self.gf_struct:
             self.h0_loc += C_dag_Op[bl] @ h0_loc_matrix[bl] @ C_Op[bl]
 
     def set_h_int(self, h_int : OpType) -> None:
         """
-        Sets the interaction terms of the c-electrons in the embedding 
-        Hamiltonian.
+        Set the interaction terms of the c-electrons in the embedding Hamiltonian.
         
         Parameters
         ----------
         h_int : triqs.operators.Operator
             Interaction Hamiltonian in the embedding space.
+
         """
         self.h_int = h_int
     
     def set_h_bath(self, Lambda_c : MFType) -> None:
         """
-        Sets the bath terms in the impurity Hamiltonian.
+        Set the bath terms in the impurity Hamiltonian.
         
         Parameters
         ----------
         Lambda_c : dict of ndarray, optional
             Bath coupling. Each key in dictionary must follow 
             :attr:`gf_struct`.
+
         """
         C_Op = get_C_Op(self.gf_struct_bath, dagger=False)
         C_dag_Op = get_C_Op(self.gf_struct_bath, dagger=True)
         self.h_bath : OpType = Operator()
-        for bl_bath, bl_bath_size in self.gf_struct_bath:
+        for bl_bath, _bl_bath_size in self.gf_struct_bath:
             bl = self._bl_bath_to_loc(bl_bath)
             self.h_bath += C_Op[bl_bath] @ Lambda_c[bl] @ C_dag_Op[bl_bath]
 
     def set_h_hybr(self, D : MFType) -> None:
         """
-        Sets the hybridization terms in the impurity Hamiltonian.
+        Set the hybridization terms in the impurity Hamiltonian.
         
         Parameters
         ----------
         D : dict[numpy.ndarray]
             Hybridization coupling. Each key in dictionary must follow 
             :attr:`gf_struct`.
+
         """
         C_Op = get_C_Op(self.gf_struct_bath, dagger=False)
         C_dag_Op = get_C_Op(self.gf_struct, dagger=True)
         self.h_hybr : OpType = Operator()
-        for bl, loc_size in self.gf_struct:
+        for bl, _loc_size in self.gf_struct:
             bl_bath = self._bl_loc_to_bath(bl)
             tmp = C_dag_Op[bl] @ D[bl] @ C_Op[bl_bath]
             self.h_hybr += tmp + dagger(tmp)
@@ -192,8 +197,7 @@ class EmbeddingAtomDiag:
                   h0_loc_matrix : MFType | None = None,
                   mu : float | None = None) -> None:
         """
-        Sets the terms in the impurity Hamiltonian to solve the embedding 
-        problem.
+        Set the terms in the impurity Hamiltonian to solve the embedding problem.
         
         Parameters
         ----------
@@ -206,6 +210,7 @@ class EmbeddingAtomDiag:
         h0_loc_matrix : dict[numpy.ndarray], optional
             Single-particle quadratic couplings of the c-electrons. Each key 
             in dictionary must follow :attr:`gf_struct`.
+
         """
         if h0_loc_matrix is not None:
             self.set_h0_loc(h0_loc_matrix)
@@ -226,10 +231,7 @@ class EmbeddingAtomDiag:
     # but it has been tested against sparse embedding and is the same answer
     # TODO what about superconductivity, ghosts?
     def solve(self) -> None:
-        """
-        Solve for the groundstate in the half-filled number sector of the 
-        embedding problem.
-        """
+        """Solve for the groundstate in the half-filled number sector of the embedding problem."""
         M = int(len(self.fops_emb) / 2)
         # term is an array holding info of term as monomial, last index is its value
         if any(np.iscomplex(term[-1]) for term in self.h_emb):
@@ -241,6 +243,8 @@ class EmbeddingAtomDiag:
 
     def get_rho_f(self, bl : str) -> np.ndarray:
         """
+        Return f-electron densitym atrix.
+
         Parameters
         ----------
         bl : str
@@ -250,6 +254,7 @@ class EmbeddingAtomDiag:
         -------
         numpy.ndarray
             The f-electron density matrix :attr:`rho_f` from impurity.
+
         """
         bl_bath = self._bl_loc_to_bath(bl)
         bl_size = self.gf_struct_bath_dict[bl_bath]
@@ -261,6 +266,8 @@ class EmbeddingAtomDiag:
     
     def get_rho_c(self, bl : str) -> np.ndarray:
         """
+        Return c-electron density matrix.
+
         Parameters
         ----------
         bl : str
@@ -270,6 +277,7 @@ class EmbeddingAtomDiag:
         -------
         numpy.ndarray
             The c-electron density matrix :attr:`rho_c` from impurity.
+
         """
         bl_size = self.gf_struct_dict[bl]
         self.rho_c[bl] = np.zeros([bl_size, bl_size], dtype=complex)
@@ -280,6 +288,8 @@ class EmbeddingAtomDiag:
     
     def get_rho_cf(self, bl : str) -> np.ndarray:
         """
+        Return the cf hybridization (off-diagonal) density matrix.
+
         Parameters
         ----------
         bl : str
@@ -290,6 +300,7 @@ class EmbeddingAtomDiag:
         numpy.ndarray
             The c,f-electron hybridization density matrix :attr:`rho_cf` from 
             impurity.
+
         """
         bl_bath = self._bl_loc_to_bath(bl)
         bath_size = self.gf_struct_bath_dict[bl_bath]
@@ -302,8 +313,7 @@ class EmbeddingAtomDiag:
     
     def overlap(self, Op : OpType, force_real : bool = True) -> float | complex:
         """
-        Calculate the expectation value of an operator against the ground 
-        state of the embedding problem.
+        Calculate the expectation value of an operator against the ground state of the embedding problem.
 
         Parameters
         ----------
@@ -316,16 +326,14 @@ class EmbeddingAtomDiag:
         -------
         triqs.operators.Operator
             Expectation value.
+
         """
         res = self.gs_vector @ act(Op, self.gs_vector, self.ad)
         if force_real:
             return res.real
-        else:
-            return res
+        return res
             
     @property
     def gs_energy(self) -> float:
-        """
-        float : Ground state energy of impurity problem.
-        """
+        """Return ground state energy of impurity problem."""
         return self.ad.gs_energy
