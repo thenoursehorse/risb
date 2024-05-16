@@ -1,4 +1,4 @@
-# Copyright (c) 2022 Simons Foundation
+# Copyright (c) 2022 Simons Foundation  # noqa: D100
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -22,13 +22,12 @@ from scipy.optimize import brentq
 
 def fermi(e, beta):
     """
-    Numerically stable version of the Fermi function
+    Numerically stable version of the Fermi function.
 
     Parameters
     ----------
     e : float or ndarray
         Energy minus chemical potential
-
     beta: float
         Inverse temperature
 
@@ -36,6 +35,23 @@ def fermi(e, beta):
     return np.exp(-beta * e * (e > 0))/(1 + np.exp(-beta*np.abs(e)))
 
 def update_mu(n_target, energies, beta, n_k, smear_function):
+    """
+    Update the chemical potential using :func:`scipy.optimize.brentq` for smearing k-space integrations.
+
+    Parameters
+    ----------
+    n_target : float
+        Filling target
+    energies : numpy.ndarray
+        Array of eigenenergies
+    beta : float
+        Inverse temperature
+    n_k : int
+        Number of unit cells on lattice
+    smear_function:
+        The function that smears the energy at each k-point.
+
+    """
     e_min = np.inf
     e_max = -np.inf
     for en in energies.values():

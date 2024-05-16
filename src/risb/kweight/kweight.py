@@ -15,9 +15,13 @@
 #
 # Authors: H. L. Nourse
 
+"""k-space integrator on a grid using smearing functions."""
+
 import numpy as np
 from numpy.typing import ArrayLike
-from .from_triqs_hartree import update_mu, fermi
+
+from .from_triqs_hartree import fermi, update_mu
+
 
 class SmearingKWeight:
     """
@@ -34,6 +38,7 @@ class SmearingKWeight:
         needs to be provided.
     method : str, 'fermi' | 'gaussian' | 'methfessel-paxton'
         Smearing method.
+
     """
     
     def __init__(self, 
@@ -67,7 +72,8 @@ class SmearingKWeight:
         elif method == 'methfessel-paxton':
             self.smear_function = self._methfessel_paxton
         else:
-            raise ValueError('Unrecognized smearing function !')
+            msg = 'Unrecognized smearing function !'
+            raise ValueError(msg)
         
     @staticmethod
     def _fermi(energies : ArrayLike, 
@@ -88,9 +94,7 @@ class SmearingKWeight:
                            beta : float, 
                            mu : float, 
                            N : int = 1) -> ArrayLike:
-        from scipy.special import erfc
-        from scipy.special import factorial
-        from scipy.special import hermite
+        from scipy.special import erfc, factorial, hermite
         def A_n(n):
             return (-1)**n / ( factorial(n) * 4**n * np.sqrt(np.pi) )
         
@@ -109,7 +113,8 @@ class SmearingKWeight:
             for en in self.energies.values():
                 if self.n_k != en.shape[0]:
                     # FIXME Must they? I don't see why, but its weird to not
-                    raise ValueError('Blocks must be on the same sized grid !')
+                    msg = 'Blocks must be on the same sized grid !'
+                    raise ValueError(msg)
         else:
             self.n_k = self.energies.shape[0]
         return self.n_k
@@ -128,13 +133,14 @@ class SmearingKWeight:
         -------
         dict[numpy.ndarray]
             Integration weights at each k-point in each band.
+
         """
         self.energies = energies
         self._update_n_k()
         if self.n_target is not None:
             self.mu = update_mu(self.n_target, self.energies, self.beta, self.n_k, self.smear_function)
 
-        self.weights = dict()
+        self.weights = {}
         for bl in self.energies:
             self.weights[bl] = self.smear_function(self.energies[bl], self.beta, self.mu) / self.n_k
         return self.weights 
