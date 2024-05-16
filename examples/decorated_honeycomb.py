@@ -1,18 +1,21 @@
-import numpy as np
+
+# ruff: noqa: T201, D100, D103
 from itertools import product
 
-from triqs.operators import Operator, c_dag, c
-from triqs.operators.util.op_struct import set_operator_structure
-from triqs.operators.util.observables import S2_op
+import numpy as np
+from triqs.operators import Operator, c, c_dag
 from triqs.operators.util.observables import N_op
 
 from risb import LatticeSolver
-from risb.kweight import SmearingKWeight
 from risb.embedding import EmbeddingAtomDiag, EmbeddingDummy
-from risb.helpers import get_h0_kin_k, block_to_full
+from risb.helpers import block_to_full, get_h0_kin_k
 from risb.helpers_triqs import get_h0_loc
+from risb.kweight import SmearingKWeight
 
-def get_h0_k(tg=0.5, tk=1.0, nkx=18, spin_names=['up','dn'], basis='trimer'):
+
+def get_h0_k(tg=0.5, tk=1.0, nkx=18, spin_names=None):
+    if spin_names is None:
+        spin_names = ['up', 'dn']
     na = 2 # Break up unit cell into 2 clusters
     n_orb = 3 # Number of orbitals/sites per cluster
     phi = 2.0 * np.pi / 3.0 # bloch factor for transforming to trimer orbital basis
@@ -58,7 +61,7 @@ def get_h0_k(tg=0.5, tk=1.0, nkx=18, spin_names=['up','dn'], basis='trimer'):
             continue
         
     # Get rid of the inequivalent block structure
-    h0_k_out = dict()
+    h0_k_out = {}
     for bl in spin_names:
         h0_k_out[bl] = block_to_full( h0_k )
     return h0_k_out
@@ -71,8 +74,7 @@ def get_hubb_trimer(spin_names, U=0, tk=0):
     def get_c(s, m, dagger):
         if dagger:
             return c_dag(s + "_" + block_map[m], orb_map[m])
-        else:
-            return c(s + "_" + block_map[m], orb_map[m])
+        return c(s + "_" + block_map[m], orb_map[m])
     spin_up = spin_names[0]
     spin_dn = spin_names[1]
     
@@ -109,7 +111,7 @@ gf_struct = [gf_struct_molecule for _ in range(n_clusters)]
 gf_struct_mapping = [gf_struct_molecule_mapping for _ in range(n_clusters)]
 
 # Make projectors onto each trimer cluster
-projectors = [dict() for i in range(n_clusters)]
+projectors = [{} for i in range(n_clusters)]
 for i in range(n_clusters):
     projectors[i]['up_A'] =  np.eye(n_clusters*n_orb)[0+i*n_orb:1+i*n_orb, :]
     projectors[i]['dn_A'] =  np.eye(n_clusters*n_orb)[0+i*n_orb:1+i*n_orb, :]
@@ -134,7 +136,7 @@ h_loc = [h0_loc[i] + h_int[i] for i in range(n_clusters)]
 # Set up embedding solvers 
 #embedding = [EmbeddingAtomDiag(h_loc[i], gf_struct[i]) for i in range(n_clusters)]
 embedding = [EmbeddingAtomDiag(h_loc[0], gf_struct[0])]
-for i in range(n_clusters-1):
+for _ in range(n_clusters-1):
     embedding.append( EmbeddingDummy(embedding[0]) )
 
 def symmetries(A):

@@ -1,16 +1,19 @@
-import numpy as np
+# ruff: noqa: T201, D100, D103
 from itertools import product
 
+import numpy as np
 from triqs.operators import n
+from triqs.operators.util.observables import N_op, S2_op
 from triqs.operators.util.op_struct import set_operator_structure
-from triqs.operators.util.observables import S2_op
-from triqs.operators.util.observables import N_op
 
 from risb import LatticeSolver
-from risb.kweight import SmearingKWeight
 from risb.embedding import EmbeddingAtomDiag, EmbeddingDummy
+from risb.kweight import SmearingKWeight
 
-def get_h0_k(t=1, nkx=18, spin_names=['up','dn']):
+
+def get_h0_k(t=1, nkx=18, spin_names=None):
+    if spin_names is None:
+        spin_names = ['up', 'dn']
     n_orb = 3
 
     # Build shifted 2D mesh
@@ -40,7 +43,7 @@ def get_h0_k(t=1, nkx=18, spin_names=['up','dn']):
                                    [ -2 * t * np.cos(0.5 * k2), -2 * t * np.cos(0.5 * k3),                         0 ] ] 
                                 )
             
-    h0_k_out = dict()
+    h0_k_out = {}
     for bl in spin_names:
         h0_k_out[bl] = h0_k
     return h0_k_out
@@ -55,7 +58,7 @@ gf_struct = [set_operator_structure(spin_names, n_orb, off_diag=True) for _ in r
 # Setup non-interacting Hamiltonian matrix on the lattice
 h0_k = get_h0_k(t = 1, nkx = 18, spin_names = spin_names)
 # For testing because on mac it returns nans
-for bl in h0_k.keys():
+for bl in h0_k:
     idx = np.where(np.isnan(h0_k[bl]))
     h0_k[bl][idx] = 0
 

@@ -1,17 +1,28 @@
+# ruff: noqa: T201, D100, D103
+import matplotlib.pyplot as plt
 import numpy as np
-
-from triqs.lattice.tight_binding import TBLattice, BravaisLattice, BrillouinZone, MeshBrZone
-from triqs.operators import Operator, n
-from triqs.operators.util.op_struct import set_operator_structure
-from triqs.operators.util.observables import S2_op, N_op
 from triqs.gf import MeshImFreq, MeshProduct
+from triqs.lattice.tight_binding import (
+    BravaisLattice,
+    BrillouinZone,
+    MeshBrZone,
+    TBLattice,
+)
+from triqs.operators import Operator, n
+from triqs.operators.util.observables import N_op, S2_op
+from triqs.operators.util.op_struct import set_operator_structure
 
 from risb import LatticeSolver
-from risb.kweight import SmearingKWeight
 from risb.embedding import EmbeddingAtomDiag
-from risb.helpers_triqs import get_g0_k_w, get_sigma_w, get_g_qp_k_w, get_g_k_w, get_g_w_loc
+from risb.helpers_triqs import (
+    get_g0_k_w,
+    get_g_k_w,
+    get_g_qp_k_w,
+    get_g_w_loc,
+    get_sigma_w,
+)
+from risb.kweight import SmearingKWeight
 
-import matplotlib.pyplot as plt
 
 def hubbard(U, n_orb):
     h_int = Operator()
@@ -36,7 +47,7 @@ tbl = TBLattice(units=units, hoppings=hoppings, orbital_positions=[(0,0,0)]*n_or
 bl = BravaisLattice(units=units)
 bz = BrillouinZone(bl)
 mk = MeshBrZone(bz, nkx)
-h0_k = dict()
+h0_k = {}
 for bl, _ in gf_struct:
     h0_k[bl] = tbl.fourier(mk).data
 
