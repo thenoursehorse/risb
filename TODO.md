@@ -6,7 +6,9 @@ Rotationally invariant slave-bosons.
 - Add kweights tests, DIIS tests, multiple cluster tests, complex SOC tests, 
 all helpers functions (make random inputs and store, because current tests
 have too much structure)
+- Add helpers_triqs tests
 - Fix sensitive to initial R, Lambda guess, make more robust
+- Implement initial guess as R, pdensity, as this will likely be more robust.
 - Get static type hints working for mypy
 - Add verbose output to `LatticeSolver`
 - Add verbose output to `DIIS`
@@ -33,3 +35,4 @@ version 3.2.0
 - single-orbital Hubbard tutorial 
 - action for hatchling version bump (done with tag update action)
 - pipy packaging
+- Green's function helper functions

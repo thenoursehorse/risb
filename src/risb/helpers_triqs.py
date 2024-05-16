@@ -18,7 +18,7 @@
 
 import numpy as np
 from triqs.operators import Operator, c, c_dag
-from triqs.gf import BlockGf, inverse
+from triqs.gf import BlockGf, inverse, MeshProduct, MeshReFreq, MeshImFreq
 from risb.helpers import get_h0_loc_matrix, get_h_qp
 
 def get_C_Op(gf_struct : list[tuple[str,int]], dagger : bool = False) -> dict[list[Operator]]:
@@ -153,65 +153,283 @@ def get_h0_loc(h0_k : dict[np.ndarray],
         h0_loc += Op
     return h0_loc
 
-def get_gf_struct_from_g(block_gf):
+def get_gf_struct_from_g(block_gf : BlockGf) -> list[tuple[str,int]]:
+    """
+    Parameters
+    ----------
+    block_gf : triqs.gf.BlockGf
+        Block Green's function.
+
+    Returns
+    -------
+    list[tuple[str,int]]
+        Green's function's structure.
+    """
     gf_struct = []
     for bl, gf in block_gf:
         gf_struct.append( [bl, gf.data.shape[-1]] )
     return gf_struct
 
-def get_sigma_w(gf_struct, mesh, Lambda, R, mu=0, h_loc=None):
+# FIXME have to check h0_k shares the same mesh as Gf 
+def get_g0_k_w(gf_struct : list[tuple[str,int]],
+               mesh : MeshProduct,
+               h0_k : dict[np.ndarray] | None = None,
+               h0_k_gf = None,
+               mu : float = 0,
+               use_broadcasting : bool = True) -> BlockGf:
+    """
+    Parameters
+    ----------
+    gf_struct : list of pairs [ (str,int), ...]
+        Structure of the matrices. It must be a
+        list of pairs, each containing the name of the
+        matrix block as a string and the size of that block.
+        For example: ``[ ('up', 3), ('down', 3) ]``.
+    mesh : triqs.gf.MeshProduct
+        A meshproduct where first index is a triqs.gf.MeshBrZone mesh and
+        the second index is a triqs.gf.MeshReFreq or triqs.gf.MeshImFreq 
+        mesh. MeshProduct is a fancy list.
+    h0_k : dict[numpy.ndarray], optional
+        Non-interacting dispersion indexed as k, orb_i, orb_j. 
+        Each key in dictionary must follow :attr:`gf_struct`.
+    h0_k : triqs.gf.BlockGf
+        Non-interacting dispersion as a triqs.gf.BlockGf.
+        Must follow the structure given by :attr:`gf_struct`, on 
+        the mesh given by :attr:`mesh`.
+    mu : float, optional
+        Chemical potential.
+    use_broadcasting : bool, optional
+        Whether to treat triqs.gf.Gf with its underlying numpy.ndarray 
+        data structure, or to use iterators over for loops and lazy 
+        expressions from TRIQS.
+
+    Returns
+    -------
+    triqs.gf.BlockGf
+        Non-interacting Green's function from a non-interacting dispersion
+        relation :attr:`h0_k`.
+    """
+    g0_k_w = BlockGf(mesh=mesh, gf_struct=gf_struct)
+    for bl, gf in g0_k_w:
+        identity = np.eye(*gf.data.shape[-2::]) # Last two indices are the orbital structure
+        if use_broadcasting:
+            w = np.fromiter(gf.mesh[1].values(), dtype=complex)
+            if h0_k is not None:
+                #gf.data[...] = np.linalg.inv( ((w + mu)[:,None,None] * identity[None,:])[None,:,...] - h0_k[bl][:,None,...] )
+                gf.data[...] = ((w + mu)[:,None,None] * identity[None,:])[None,:,...] - h0_k[bl][:,None,...]
+                gf.invert()
+            elif h0_k_gf is not None:
+                gf.data[...] = ((w + mu)[:,None,None] * identity[None,:])[None,:,...] - h0_k_gf[bl].data[:,None,...]
+                gf.invert()
+            else:
+                msg = 'Require a kwarg of h0_k or h0_k_gf !'
+                raise ValueError(msg)
+        else:
+            if h0_k is not None:
+                for k, w in gf.mesh:
+                    gf[k,w] = inverse(w + mu - h0_k[bl][k.data_index])
+            elif h0_k_gf is not None:
+                for k, w in gf.mesh:
+                    gf[k,w] = inverse(w + mu - h0_k_gf[bl][k])
+            else:
+                msg = 'Require a kwarg of h0_k or h0_k_gf !'
+                raise ValueError(msg)
+    return g0_k_w
+
+def get_sigma_w(gf_struct : list[tuple[str,int]],
+                mesh : MeshReFreq | MeshImFreq, 
+                Lambda : dict[np.ndarray], 
+                R : dict[np.ndarray], 
+                mu : float = 0, 
+                h0_loc : dict[np.ndarray] | None = None,
+                use_broadcasting : bool = True) -> BlockGf:
+    """
+    Parameters
+    ----------
+    gf_struct : list of pairs [ (str,int), ...]
+        Structure of the matrices. It must be a
+        list of pairs, each containing the name of the
+        matrix block as a string and the size of that block.
+        For example: ``[ ('up', 3), ('down', 3) ]``.
+    mesh : triqs.gf.meshes.MeshReFreq | triqs.gf.meshes.MeshImFreq
+        Frequency mesh of the returned self-energy.
+    Lambda : dict[numpy.ndarray]
+        Correlation potential of quasiparticles.
+        Each key in dictionary must follow :attr:`gf_struct`.
+    R : dict[numpy.ndarray]
+        Rormalization matrix from electrons to quasiparticles. 
+        Each key in dictionary must follow :attr:`gf_struct`.
+    mu : float, optional
+        Chemical potential.
+    h0_loc : dict[numpy.ndarray], optional
+        Matrix of non-interacting hopping terms in each local subspace.
+        Each key in dictionary must follow :attr:`gf_struct`.
+    use_broadcasting : bool, optional
+        Whether to treat triqs.gf.Gf with its underlying numpy.ndarray 
+        data structure, or to use iterators over for loops and lazy 
+        expressions from TRIQS.
+
+    Returns
+    -------
+    triqs.gf.BlockGf
+        RISB local self-energy :math:`\Sigma(\omega)`.
+    """
     sigma_w = BlockGf(mesh=mesh, gf_struct=gf_struct)
     for bl, gf in sigma_w:
-        id = np.eye(*gf.data.shape[-2::]) # Last two indices are the orbital structure
-        Z = R[bl] @ R[bl].conj().T
-        id_Z = (id - np.linalg.inv(Z))
-        id_Z_mu = id_Z * mu
+        identity = np.eye(*gf.data.shape[-2::]) # Last two indices are the orbital structure
+        Z_inv = np.linalg.inv(R[bl] @ R[bl].conj().T)
         hf = np.linalg.inv(R[bl]) @ Lambda[bl] @ np.linalg.inv(R[bl].conj().T)
-        if h_loc is not None:
-            for w in gf.mesh:
-                gf[w] = id_Z * w + hf + id_Z_mu - h_loc[bl]
+        if use_broadcasting:
+            w = np.fromiter(gf.mesh.values(), dtype=complex)
+            if h0_loc is not None:
+                gf.data[...] = (identity - Z_inv) * w[:,None,None] + hf + (identity - Z_inv) * mu - h0_loc[bl]
+            else:
+                gf.data[...] = (identity - Z_inv) * w[:,None,None] + hf + (identity - Z_inv) * mu
         else:
-            for w in gf.mesh:
-                gf[w] = id_Z * w + hf + id_Z_mu
+            if h0_loc is not None:
+                for w in gf.mesh:
+                    gf[w] = (identity - Z_inv) * w + hf + (identity - Z_inv) * mu - h0_loc[bl]
+            else:
+                for w in gf.mesh:
+                    gf[w] = (identity - Z_inv) * w + hf + (identity - Z_inv) * mu
     return sigma_w
 
 # FIXME have to check h0_kin_k shares the same mesh 
-def get_g_qp_k_w(gf_struct, mesh, h0_kin_k, Lambda, R, mu=0):
+# FIXME allow h0_kin_k_gf structure as well?
+def get_g_qp_k_w(gf_struct : list[tuple[str,int]],
+                 mesh : MeshProduct,
+                 h0_kin_k : dict[np.ndarray],
+                 Lambda : dict[np.ndarray], 
+                 R : dict[np.ndarray], 
+                 mu : float = 0,
+                 use_broadcasting : bool = True) -> BlockGf:
+    """
+    Parameters
+    ----------
+    gf_struct : list of pairs [ (str,int), ...]
+        Structure of the matrices. It must be a
+        list of pairs, each containing the name of the
+        matrix block as a string and the size of that block.
+        For example: ``[ ('up', 3), ('down', 3) ]``.
+    mesh : triqs.gf.MeshProduct
+        A meshproduct where first index is a triqs.gf.MeshBrZone mesh and
+        the second index is a triqs.gf.MeshReFreq or triqs.gf.MeshImFreq 
+        mesh. MeshProduct is a fancy list.
+    h0_kin_k : dict[numpy.ndarray]
+        Single-particle dispersion between local clusters. Indexed as 
+        k, orb_i, orb_j. Each key in dictionary must follow :attr:`gf_struct`.
+    Lambda : dict[numpy.ndarray]
+        Correlation potential of quasiparticles.
+        Each key in dictionary must follow :attr:`gf_struct`.
+    R : dict[numpy.ndarray]
+        Rormalization matrix from electrons to quasiparticles. 
+        Each key in dictionary must follow :attr:`gf_struct`.
+    mu : float, optional
+        Chemical potential.
+    use_broadcasting : bool, optional
+        Whether to treat triqs.gf.Gf with its underlying numpy.ndarray 
+        data structure, or to use iterators over for loops and lazy 
+        expressions from TRIQS.
+
+    Returns
+    -------
+    triqs.gf.BlockGf
+        Quasiparticle Green's function :math:`G^{\mathrm{qp}}(k,\omega)`.
+    """
     g_qp_k_w = BlockGf(mesh=mesh, gf_struct=gf_struct)
     for bl, gf in g_qp_k_w:
+        identity = np.eye(*gf.data.shape[-2::]) # Last two indices are the orbital structure
         h_qp = get_h_qp(R=R[bl], Lambda=Lambda[bl], h0_kin_k=h0_kin_k[bl], mu=mu)
-        for k, w in g_qp_k_w.mesh:
-            gf[k,w] = inverse(w - h_qp[k.data_index])
+        if use_broadcasting:
+            w = np.fromiter(gf.mesh[1].values(), dtype=complex)
+            #gf.data[...] = inverse( (w[:,None,None] * identity[None,:])[None,:,...] - h_qp[:,None,...] )
+            gf.data[...] = (w[:,None,None] * identity[None,:])[None,:,...] - h_qp[:,None,...]
+            gf.invert()
+        else:
+            for k, w in g_qp_k_w.mesh:
+                gf[k,w] = inverse(w - h_qp[k.data_index])
     return g_qp_k_w
 
-def get_g_k_w(**kwargs):
-    if ('g0_k_w' in kwargs) and ('sigma_w' in kwargs):
-        g0_k_w = kwargs['g0_k_w']
-        sigma_w = kwargs['sigma_w']
+def get_g_k_w(g0_k_w : BlockGf | None = None,
+              sigma_w : BlockGf | None = None,
+              g_qp_k_w : BlockGf | None = None,
+              R : dict[np.ndarray] | None = None,
+              use_broadcasting : bool = True) -> BlockGf:
+    """
+    Parameters
+    ----------
+    g0_k_w : triqs.gf.BlockGf, optional
+        Non-interacting Green's function on a meshproduct where
+        the first index is a triqs.gf.MeshBrZone mesh and
+        the second index is a triqs.gf.MeshReFreq or triqs.gf.MeshImFreq mesh.
+    sigma_w : triqs.gf.BlockGf, optional
+        Local self-energy on a triqs.gf.MeshReFreq or triqs.gf.MeshImFreq mesh.
+    gp_k_w : triqs.gf.BlockGf, optional
+        Quasiparticle Green's function on a meshproduct where
+        the first index is a triqs.gf.MeshBrZone mesh and
+        the second index is a triqs.gf.MeshReFreq or triqs.gf.MeshImFreq mesh.
+    R : dict[numpy.ndarray], optional
+        Rormalization matrix from electrons to quasiparticles. 
+        Each key in dictionary must follow the gf_struct in 
+        :attr:`g0_k_w` and :attr:`sigma_w`.
+    use_broadcasting : bool, optional
+        Whether to treat triqs.gf.Gf with its underlying numpy.ndarray 
+        data structure, or to use iterators over for loops and lazy 
+        expressions from TRIQS.
+
+    Returns
+    -------
+    triqs.gf.BlockGf
+        Physical c-electrons Green's function :math:`G(k,\omega)`.
+    """
+    if (g0_k_w is not None) and (sigma_w is not None):
         g_k_w = g0_k_w.copy()
         g_k_w.zero()
         for bl, gf in g_k_w:
-            for k, w in gf.mesh:            
-                gf[k,w] = inverse(inverse(g0_k_w[bl][k,w]) - sigma_w[bl][w])
-    elif ('g_qp_k_w' in kwargs) and ('R' in kwargs):
-        g_qp_k_w = kwargs['g_qp_k_w']
-        R = kwargs['R']
+            if use_broadcasting:
+                gf.data[...] = inverse(g0_k_w[bl]).data - sigma_w[bl].data[None,...]
+                gf.invert()
+            else:
+                for k, w in gf.mesh:
+                    gf[k,w] = inverse(inverse(g0_k_w[bl][k,w]) - sigma_w[bl][w])
+    elif (g_qp_k_w is not None) and (R is not None):
         g_k_w = g_qp_k_w.copy()
         g_k_w.zero()
         for bl, gf in g_qp_k_w:
             g_k_w[bl] = R[bl].conj().T @ gf @ R[bl]
     else:
-        msg = 'Required kwargs are g0_k_w and sigma_w, or g_qp_k_w and R !'
+        msg = 'Required kwargs are one of the pairs g0_k_w and sigma_w, or g_qp_k_w and R !'
         raise ValueError(msg)
     return g_k_w
 
-def get_g_w_loc(g_k_w):
+def get_g_w_loc(g_k_w : BlockGf,
+                use_broadcasting : bool = True) -> BlockGf:
+    """
+    Parameters
+    ----------
+    g_k_w : triqs.gf.BlockGf
+        A Green's function on a meshproduct where
+        the first index is a triqs.gf.MeshBrZone mesh and
+        the second index is a triqs.gf.MeshReFreq or triqs.gf.MeshImFreq mesh.
+    use_broadcasting : bool, optional
+        Whether to treat triqs.gf.Gf with its underlying numpy.ndarray 
+        data structure, or to use iterators over for loops and lazy 
+        expressions from TRIQS.
+
+    Returns
+    -------
+    triqs.gf.BlockGf
+        k-integrated Green's function on a triqs.gf.MeshReFreq or triqs.gf.MeshImFreq mesh.
+    """
     k_mesh = g_k_w.mesh[0]
     w_mesh = g_k_w.mesh[1]
     gf_struct = get_gf_struct_from_g(g_k_w)
     g_w_loc = BlockGf(mesh=w_mesh, gf_struct=gf_struct)
     for bl, gf in g_w_loc:
-        for k in k_mesh:
-            gf += g_k_w[bl][k,:]
+        if use_broadcasting:
+            gf.data[...] = np.sum(g_k_w[bl].data, axis=0)
+        else:
+            for k in k_mesh:
+                gf += g_k_w[bl][k,:]
         gf /= np.prod(k_mesh.dims)
     return g_w_loc
