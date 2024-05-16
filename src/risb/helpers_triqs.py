@@ -393,44 +393,6 @@ def get_g_k_w(g0_k_w : BlockGf | None = None,
                 for k, w in gf.mesh:
                     gf[k,w] = inverse(inverse(g0_k_w[bl][k,w]) - sigma_w[bl][w])
     elif (g_qp_k_w is not None) and (R is not None):
-=======
-def get_sigma_w(gf_struct, mesh, Lambda, R, mu=0, h_loc=None):
-    sigma_w = BlockGf(mesh=mesh, gf_struct=gf_struct)
-    for bl, gf in sigma_w:
-        id = np.eye(*gf.data.shape[-2::]) # Last two indices are the orbital structure
-        Z = R[bl] @ R[bl].conj().T
-        id_Z = (id - np.linalg.inv(Z))
-        id_Z_mu = id_Z * mu
-        hf = np.linalg.inv(R[bl]) @ Lambda[bl] @ np.linalg.inv(R[bl].conj().T)
-        if h_loc is not None:
-            for w in gf.mesh:
-                gf[w] = id_Z * w + hf + id_Z_mu - h_loc[bl]
-        else:
-            for w in gf.mesh:
-                gf[w] = id_Z * w + hf + id_Z_mu
-    return sigma_w
-
-# FIXME have to check h0_kin_k shares the same mesh 
-def get_g_qp_k_w(gf_struct, mesh, h0_kin_k, Lambda, R, mu=0):
-    g_qp_k_w = BlockGf(mesh=mesh, gf_struct=gf_struct)
-    for bl, gf in g_qp_k_w:
-        h_qp = get_h_qp(R=R[bl], Lambda=Lambda[bl], h0_kin_k=h0_kin_k[bl], mu=mu)
-        for k, w in g_qp_k_w.mesh:
-            gf[k,w] = inverse(w - h_qp[k.data_index])
-    return g_qp_k_w
-
-def get_g_k_w(**kwargs):
-    if ('g0_k_w' in kwargs) and ('sigma_w' in kwargs):
-        g0_k_w = kwargs['g0_k_w']
-        sigma_w = kwargs['sigma_w']
-        g_k_w = g0_k_w.copy()
-        g_k_w.zero()
-        for bl, gf in g_k_w:
-            for k, w in gf.mesh:            
-                gf[k,w] = inverse(inverse(g0_k_w[bl][k,w]) - sigma_w[bl][w])
-    elif ('g_qp_k_w' in kwargs) and ('R' in kwargs):
-        g_qp_k_w = kwargs['g_qp_k_w']
-        R = kwargs['R']
         g_k_w = g_qp_k_w.copy()
         g_k_w.zero()
         for bl, gf in g_qp_k_w:
