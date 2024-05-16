@@ -87,7 +87,6 @@ for U in U_arr:
     
     if np.abs(U - 3.5) < 1e-10:
         # Some different ways to construct some Green's functions
-        mu = kweight.mu
 
         # The k-space and frequency mesh of the problem
         iw_mesh = MeshImFreq(beta=beta, S='Fermion', n_max=64)
