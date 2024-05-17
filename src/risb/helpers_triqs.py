@@ -1,5 +1,5 @@
 
-# Copyright (c) 2023 H. L. Nourse
+# Copyright (c) 2016-2024 H. L. Nourse
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -16,13 +16,19 @@
 #
 # Authors: H. L. Nourse
 
+"""Functions used in RISB based on the TRIQS library."""
+
 import numpy as np
+from triqs.gf import BlockGf, MeshImFreq, MeshProduct, MeshReFreq, inverse
 from triqs.operators import Operator, c, c_dag
-from triqs.gf import BlockGf, inverse, MeshProduct, MeshReFreq, MeshImFreq
+
 from risb.helpers import get_h0_loc_matrix, get_h_qp
+
 
 def get_C_Op(gf_struct : list[tuple[str,int]], dagger : bool = False) -> dict[list[Operator]]:
     """
+    Return all creation operators in Hilbert space.
+
     Parameters
     ----------
     gf_struct : list of pairs [ (str,int), ...]
@@ -38,8 +44,9 @@ def get_C_Op(gf_struct : list[tuple[str,int]], dagger : bool = False) -> dict[li
     dict[list[triqs.operators.Operator]]
         For each block in `gf_struct`, a vector of all creation/annihilation 
         operators in its subspace.
+
     """
-    C_Op = dict()
+    C_Op = {}
     for bl, bl_size in gf_struct:
         if dagger:
             C_Op[bl] = [c_dag(bl, o) for o in range(bl_size)]
@@ -49,6 +56,8 @@ def get_C_Op(gf_struct : list[tuple[str,int]], dagger : bool = False) -> dict[li
 
 def matrix_to_Op(A : dict[np.ndarray], gf_struct : list[tuple[str,int]]) -> dict[Operator]:
     """
+    Return a TRIQS operator from a matrix representation of quadratic operators.
+
     Parameters
     ----------
     A : dict[numpy.ndarray]
@@ -63,10 +72,11 @@ def matrix_to_Op(A : dict[np.ndarray], gf_struct : list[tuple[str,int]]) -> dict
     -------
     dict[triqs.operators.Operator]
         The single-particle matrix as a quadratic TRIQS operator.
+
     """
     C_dag_Op = get_C_Op(gf_struct=gf_struct, dagger=True)
     C_Op = get_C_Op(gf_struct=gf_struct, dagger=False)
-    Op = dict()
+    Op = {}
     for bl in A:
         Op[bl] = C_dag_Op[bl] @ A[bl] @ C_Op[bl]
     return Op
@@ -77,6 +87,10 @@ def get_h0_loc_blocks(h0_k : dict[np.ndarray],
                       gf_struct_mapping : dict[str,str] | None = None, 
                       force_real: bool = True) -> dict[Operator]:
     """
+    Return a TRIQS operator of the non-interacting terms in the subspace given by :attr:`P`.
+
+    This function splits the terms into the symmetry blocks given by :attr:`gf_struct`.
+    
     Parameters
     ----------
     h0_k : dict[numpy.ndarray]
@@ -101,14 +115,15 @@ def get_h0_loc_blocks(h0_k : dict[np.ndarray],
     dict[triqs.operators.Operator]
         For each single-particle symmetry block the non-interacting 
         terms in the cluster defined by the projector `P`.
+
     """
     if gf_struct is None:
         gf_struct = [(k, v.shape[-2]) for k, v in P.items()]
     if gf_struct_mapping is None:
-        gf_struct_mapping = {bl:bl for bl in h0_k.keys()}
+        gf_struct_mapping = {bl:bl for bl in h0_k}
     
-    h0_loc_matrix = dict()
-    for bl_sub in P.keys(): # sub = subspace of full space defined by h0_k
+    h0_loc_matrix = {}
+    for bl_sub in P: # sub = subspace of full space defined by h0_k
         bl = gf_struct_mapping[bl_sub]
         if force_real:
             h0_loc_matrix[bl_sub] = get_h0_loc_matrix(h0_k[bl], P[bl_sub]).real
@@ -123,6 +138,8 @@ def get_h0_loc(h0_k : dict[np.ndarray],
                gf_struct_mapping : dict[str,str] | None = None, 
                force_real : bool = True) -> Operator:
     """
+    Return a TRIQS operator of the non-interacting terms in the subspace given by :attr:`P`.
+    
     Parameters
     ----------
     h0_k : dict[numpy.ndarray]
@@ -146,6 +163,7 @@ def get_h0_loc(h0_k : dict[np.ndarray],
     -------
     triqs.operators.Operator
         Non-interacting terms in the cluster defined by the projector `P`.
+
     """
     h0_loc_blocks = get_h0_loc_blocks(h0_k=h0_k, P=P, gf_struct=gf_struct, gf_struct_mapping=gf_struct_mapping, force_real=force_real)
     h0_loc = Operator()
@@ -155,6 +173,8 @@ def get_h0_loc(h0_k : dict[np.ndarray],
 
 def get_gf_struct_from_g(block_gf : BlockGf) -> list[tuple[str,int]]:
     """
+    Return the block structure of a TRIQS Green's function.
+
     Parameters
     ----------
     block_gf : triqs.gf.BlockGf
@@ -164,6 +184,7 @@ def get_gf_struct_from_g(block_gf : BlockGf) -> list[tuple[str,int]]:
     -------
     list[tuple[str,int]]
         Green's function's structure.
+
     """
     gf_struct = []
     for bl, gf in block_gf:
@@ -178,6 +199,8 @@ def get_g0_k_w(gf_struct : list[tuple[str,int]],
                mu : float = 0,
                use_broadcasting : bool = True) -> BlockGf:
     """
+    Return a TRIQS non-interacting lattice Green's function.
+
     Parameters
     ----------
     gf_struct : list of pairs [ (str,int), ...]
@@ -208,6 +231,7 @@ def get_g0_k_w(gf_struct : list[tuple[str,int]],
     triqs.gf.BlockGf
         Non-interacting Green's function from a non-interacting dispersion
         relation :attr:`h0_k`.
+
     """
     g0_k_w = BlockGf(mesh=mesh, gf_struct=gf_struct)
     for bl, gf in g0_k_w:
@@ -243,7 +267,9 @@ def get_sigma_w(gf_struct : list[tuple[str,int]],
                 mu : float = 0, 
                 h0_loc : dict[np.ndarray] | None = None,
                 use_broadcasting : bool = True) -> BlockGf:
-    """
+    r"""
+    Return a TRIQS local self-energy from RISB.
+
     Parameters
     ----------
     gf_struct : list of pairs [ (str,int), ...]
@@ -273,6 +299,7 @@ def get_sigma_w(gf_struct : list[tuple[str,int]],
     -------
     triqs.gf.BlockGf
         RISB local self-energy :math:`\Sigma(\omega)`.
+
     """
     sigma_w = BlockGf(mesh=mesh, gf_struct=gf_struct)
     for bl, gf in sigma_w:
@@ -303,7 +330,9 @@ def get_g_qp_k_w(gf_struct : list[tuple[str,int]],
                  R : dict[np.ndarray], 
                  mu : float = 0,
                  use_broadcasting : bool = True) -> BlockGf:
-    """
+    r"""
+    Return a TRIQS lattice RISB quasiparticle Green's function.
+
     Parameters
     ----------
     gf_struct : list of pairs [ (str,int), ...]
@@ -335,6 +364,7 @@ def get_g_qp_k_w(gf_struct : list[tuple[str,int]],
     -------
     triqs.gf.BlockGf
         Quasiparticle Green's function :math:`G^{\mathrm{qp}}(k,\omega)`.
+
     """
     g_qp_k_w = BlockGf(mesh=mesh, gf_struct=gf_struct)
     for bl, gf in g_qp_k_w:
@@ -355,7 +385,13 @@ def get_g_k_w(g0_k_w : BlockGf | None = None,
               g_qp_k_w : BlockGf | None = None,
               R : dict[np.ndarray] | None = None,
               use_broadcasting : bool = True) -> BlockGf:
-    """
+    r"""
+    Return a TRIQS lattice interacting Green's function, with a local self-energy.
+
+    Must pass g0_k_w and sigma_w, or g_qp_k_w and R. Passing g_qp_k_w and R is specific
+    to RISB. Passing g0_k_w and sigma_w is valid for any interacting theory with a local 
+    self-energy (it is just Dyson's equation at each k-point).
+        
     Parameters
     ----------
     g0_k_w : triqs.gf.BlockGf, optional
@@ -381,6 +417,7 @@ def get_g_k_w(g0_k_w : BlockGf | None = None,
     -------
     triqs.gf.BlockGf
         Physical c-electrons Green's function :math:`G(k,\omega)`.
+
     """
     if (g0_k_w is not None) and (sigma_w is not None):
         g_k_w = g0_k_w.copy()
@@ -405,6 +442,8 @@ def get_g_k_w(g0_k_w : BlockGf | None = None,
 def get_g_w_loc(g_k_w : BlockGf,
                 use_broadcasting : bool = True) -> BlockGf:
     """
+    Return a TRIQS local Green's function from a lattice Green's function.
+
     Parameters
     ----------
     g_k_w : triqs.gf.BlockGf
@@ -420,16 +459,17 @@ def get_g_w_loc(g_k_w : BlockGf,
     -------
     triqs.gf.BlockGf
         k-integrated Green's function on a triqs.gf.MeshReFreq or triqs.gf.MeshImFreq mesh.
+
     """
     k_mesh = g_k_w.mesh[0]
     w_mesh = g_k_w.mesh[1]
     gf_struct = get_gf_struct_from_g(g_k_w)
     g_w_loc = BlockGf(mesh=w_mesh, gf_struct=gf_struct)
-    for bl, gf in g_w_loc:
+    for bl, gf in g_k_w:
         if use_broadcasting:
-            gf.data[...] = np.sum(g_k_w[bl].data, axis=0)
+            g_w_loc[bl].data[...] = np.sum(gf.data, axis=0)
         else:
             for k in k_mesh:
-                gf += g_k_w[bl][k,:]
-        gf /= np.prod(k_mesh.dims)
+                g_w_loc[bl] += gf[k,:]
+        g_w_loc[bl] /= np.prod(k_mesh.dims)
     return g_w_loc

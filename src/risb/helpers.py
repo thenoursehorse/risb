@@ -15,13 +15,15 @@
 #
 # Authors: H. L. Nourse
 
-from copy import deepcopy
-import numpy as np
-from scipy.linalg import sqrtm
-from scipy.linalg import inv
+"""Helper functions to perform rotationally invariant slave-boson mean-field theory self-consistent loop."""
+
 #from scipy.linalg import pinv
 #from scipy.special import binom
 import warnings
+from copy import deepcopy
+
+import numpy as np
+from scipy.linalg import inv, sqrtm
 
 ## Formula is (1-A)^{-1/2} = sum_r=0^{infty} (-1)^r * 1/2 choose r * A^r
 #def one_sqrtm_inv(A, tol=np.finfo(float).eps, N=10000):
@@ -44,6 +46,11 @@ import warnings
 def get_d(rho_qp : np.ndarray, 
           ke : np.ndarray) -> np.ndarray:
     """
+    Return hybridization matrix of impurity problem.
+
+    Assumes the quasiparticle kinetic energy is lopsided as has not been multiplied
+    by R on the left-hand side.
+
     Parameters
     ----------
     rho_qp : numpy.ndarray
@@ -61,6 +68,7 @@ def get_d(rho_qp : np.ndarray,
     Eq. 35 in `10.1103/PhysRevX.5.011008 <PRX011008_>`__.
 
     .. _PRX011008: https://doi.org/10.1103/PhysRevX.5.011008
+
     """
     K = rho_qp - rho_qp @ rho_qp
     return inv(sqrtm(K)) @ ke.T
@@ -69,12 +77,16 @@ def get_d2(rho_qp : np.ndarray,
            ke : np.ndarray,
            R : np.ndarray) -> np.ndarray:
     """
+    Return hybridization matrix of impurity problem.
+
+    This will invert R, so will not work in a Mott insulator when R is singular.
+
     Parameters
     ----------
     rho_qp : numpy.ndarray
         Quasiparticle density matrix obtained from the mean-field.
     ke : numpy.ndarray
-        Lopsided quasiparticle kinetic energy.
+        Quasiparticle kinetic energy.
     R : numpy.ndarray
         Renormalization matrix from electrons to quasiparticles.
 
@@ -88,6 +100,9 @@ def get_d2(rho_qp : np.ndarray,
     Eq. 35 in `10.1103/PhysRevX.5.011008 <PRX011008_>`__.
 
     .. _PRX011008: https://doi.org/10.1103/PhysRevX.5.011008
+
+    The singular nature of R might be fixed by using the pseudo-inverse (untested).
+
     """
     K = rho_qp - rho_qp @ rho_qp
     return inv(sqrtm(K)) @ (inv(R) @ ke).T
@@ -97,6 +112,8 @@ def get_lambda_c(rho_qp : np.ndarray,
                  Lambda: np.ndarray, 
                  D: np.ndarray) -> np.ndarray:
     """
+    Return bath matrix of impurity problem.
+
     Parameters
     ----------
     rho_qp : numpy.ndarray
@@ -118,6 +135,7 @@ def get_lambda_c(rho_qp : np.ndarray,
     Eq. 36 in `10.1103/PhysRevX.5.011008 <PRX011008_>`__.
 
     .. _PRX011008: https://doi.org/10.1103/PhysRevX.5.011008
+
     """
     P = np.eye(rho_qp.shape[0]) - 2.0 * rho_qp
     K = rho_qp - rho_qp @ rho_qp
@@ -132,6 +150,8 @@ def get_lambda(R : np.ndarray,
                Lambda_c : np.ndarray, 
                rho_f : np.ndarray) -> np.ndarray:
     """
+    Return correlation potential matrix from impurity problem parameters and density matrices.
+
     Parameters
     ----------
     R : numpy.ndarray
@@ -155,6 +175,7 @@ def get_lambda(R : np.ndarray,
     matrix using Eq. 39.
 
     .. _PRX011008: https://doi.org/10.1103/PhysRevX.5.011008
+
     """
     P = np.eye(rho_f.shape[0]) - 2.0 * rho_f
     K = rho_f - rho_f @ rho_f
@@ -167,6 +188,8 @@ def get_lambda(R : np.ndarray,
 def get_r(rho_cf : np.ndarray, 
           rho_f : np.ndarray) -> np.ndarray:
     """
+    Return renormalization matrix from impurity problem density matrices.
+
     Parameters
     ----------
     rho_cf : numpy.ndarray
@@ -186,6 +209,7 @@ def get_r(rho_cf : np.ndarray,
     matrix using Eq. 39.
 
     .. _PRX011008: https://doi.org/10.1103/PhysRevX.5.011008
+
     """
     K = rho_f - rho_f @ rho_f
     K_sq = sqrtm(K)
@@ -196,6 +220,8 @@ def get_f1(rho_cf : np.ndarray,
            rho_qp : np.ndarray, 
            R : np.ndarray) -> np.ndarray:
     """
+    Return the first self-consistent equation of RISB.
+
     Parameters
     ----------
     rho_cf : numpy.ndarray
@@ -215,6 +241,7 @@ def get_f1(rho_cf : np.ndarray,
     Eq. 38 in `10.1103/PhysRevX.5.011008 <PRX011008_>`__.
 
     .. _PRX011008: https://doi.org/10.1103/PhysRevX.5.011008
+
     """
     K = rho_qp - rho_qp @ rho_qp
     K_sq = sqrtm(K)
@@ -223,6 +250,8 @@ def get_f1(rho_cf : np.ndarray,
 def get_f2(rho_f : np.ndarray, 
            rho_qp : np.ndarray) -> np.ndarray:
     """
+    Return the second self-consistent equation of RISB.
+    
     Parameters
     ----------
     rho_f : numpy.ndarray
@@ -240,6 +269,7 @@ def get_f2(rho_f : np.ndarray,
     Eq. 39 in `10.1103/PhysRevX.5.011008 <PRX011008_>`__.
 
     .. _PRX011008: https://doi.org/10.1103/PhysRevX.5.011008
+
     """
     return rho_f - rho_qp.T
 
@@ -247,8 +277,8 @@ def get_h_qp(R : np.ndarray,
              Lambda : np.ndarray, 
              h0_kin_k : np.ndarray, 
              mu : float = 0) -> tuple[ np.ndarray, np.ndarray ]:
-    """
-    Construct the quasiparticle Hamiltonian.
+    r"""
+    Construct the quasiparticle Hamiltonian :math:`\hat{H}^{\mathrm{qp}}`.
     
     Parameters
     ----------
@@ -272,12 +302,13 @@ def get_h_qp(R : np.ndarray,
     Eq. A34 in `10.1103/PhysRevX.5.011008 <PRX011008_>`__.
 
     .. _PRX011008: https://doi.org/10.1103/PhysRevX.5.011008
+
     """
     #h_qp = np.einsum('ac,cdk,db->kab', R, h0_kin_k, R.conj().T, optimize='optimal') + (Lambda - mu*np.eye(Lambda.shape[0]))
     h_qp = np.einsum('ac,kcd,db->kab', R, h0_kin_k, R.conj().T) + \
         (Lambda - mu*np.eye(Lambda.shape[0]))
     if not np.allclose(h_qp, np.swapaxes(h_qp, 1, 2).conj()):
-        warnings.warn("H_qp is not Hermitian !", RuntimeWarning)
+        warnings.warn("H_qp is not Hermitian !", RuntimeWarning, stacklevel=2)
     #eig, vec = np.linalg.eigh(h_qp)
     #return (eig, vec)
     return h_qp
@@ -286,6 +317,8 @@ def get_h0_kin_k_R(R : np.ndarray,
                    h0_kin_k : np.ndarray, 
                    vec : np.ndarray) -> np.ndarray:
     """
+    Return the matrix representation of the lopsided kinetic energy term in the quasiparticle Hamiltonian of RISB.
+
     Parameters
     ----------
     R : numpy.ndarray
@@ -306,6 +339,7 @@ def get_h0_kin_k_R(R : np.ndarray,
     -----
     This is equivalent to the kinetic part of ``H^qp`` with the inverse of 
     the renormalization matrix `R` multiplied on the left.
+
     """
     return np.einsum('kac,cd,kdb->kab', h0_kin_k, R.conj().T, vec)
 
@@ -313,6 +347,8 @@ def get_R_h0_kin_k_R(R : np.ndarray,
                      h0_kin_k : np.ndarray, 
                      vec : np.ndarray) -> np.ndarray:
     """
+    Return the matrix representation of the kinetic energy term in the quasiparticle Hamiltonian of RISB.
+    
     Parameters
     ----------
     R : numpy.ndarray
@@ -329,6 +365,7 @@ def get_R_h0_kin_k_R(R : np.ndarray,
     R_h0_kin_k_R : numpy.ndarray
         Matrix representation of kinetic part of quasiparticle 
         Hamiltonian ``H^qp``.
+
     """
     return np.einsum('pa,kac,cd,kdb->kpb', R, h0_kin_k, R.conj().T, vec)
 
@@ -336,7 +373,9 @@ def get_R_h0_kin_k_R(R : np.ndarray,
 def get_rho_qp(vec : np.ndarray, 
                kweights : np.ndarray, 
                P : np.ndarray | None = None) -> np.ndarray:
-    """
+    r"""
+    Return the single-particle density matrix of the quasiparticle Hamiltonian :math:`\hat{H}^{\mathrm{qp}}`.
+
     Parameters
     ----------
     vec : numpy.ndarray
@@ -364,16 +403,17 @@ def get_rho_qp(vec : np.ndarray,
     vec_dag = np.swapaxes(vec.conj(), -1, -2)
     if P is None:
         return np.einsum('kan,kn,knb->ab', vec, kweights, vec_dag).T
-    else:
-        P_dag = np.swapaxes(P.conj(), -2, -1)
-        middle = np.einsum('kan,kn,knb->kab', vec, kweights, vec_dag)
-        return np.sum(P @ middle @ P_dag, axis=0).T
+    P_dag = np.swapaxes(P.conj(), -2, -1)
+    middle = np.einsum('kan,kn,knb->kab', vec, kweights, vec_dag)
+    return np.sum(P @ middle @ P_dag, axis=0).T
 
 def get_ke(h0_kin_k_R : np.ndarray, 
            vec : np.ndarray, 
            kweights : np.ndarray, 
            P : np.ndarray | None = None) -> np.ndarray:
     """
+    Return average lopsided kinetic energy matrix of the quasiparticle Hamiltonian in RISB.
+
     Parameters
     ----------
     h0_kin_k_R : numpy.ndarray
@@ -401,16 +441,17 @@ def get_ke(h0_kin_k_R : np.ndarray,
     vec_dag = np.swapaxes(vec.conj(), -1, -2)
     if P is None:
         return np.einsum('kan,kn,knb->ab', h0_kin_k_R, kweights, vec_dag)
-    else:
-        P_dag = np.swapaxes(P.conj(), -2, -1)
-        middle = np.einsum('kan,kn,knb->kab', h0_kin_k_R, kweights, vec_dag)
-        return np.sum(P @ middle @ P_dag, axis=0)
+    P_dag = np.swapaxes(P.conj(), -2, -1)
+    middle = np.einsum('kan,kn,knb->kab', h0_kin_k_R, kweights, vec_dag)
+    return np.sum(P @ middle @ P_dag, axis=0)
 
 def get_ke2(R_h0_kin_k_R : np.ndarray, 
             vec : np.ndarray, 
             kweights : np.ndarray, 
             P : np.ndarray | None = None) -> np.ndarray:
     """
+    Return average kinetic energy matrix of the quasiparticle Hamiltonian in RISB.
+    
     Parameters
     ----------
     R_h0_kin_k_R : numpy.ndarray
@@ -437,16 +478,14 @@ def get_ke2(R_h0_kin_k_R : np.ndarray,
     vec_dag = np.swapaxes(vec.conj(), -1, -2)
     if P is None:
         return np.einsum('kan,kn,knb->ab', R_h0_kin_k_R, kweights, vec_dag)
-    else:
-        P_dag = np.swapaxes(P.conj(), -2, -1)
-        middle = np.einsum('kan,kn,knb->kab', R_h0_kin_k_R, kweights, vec_dag)
-        return np.sum(P @ middle @ P_dag, axis=0)
+    P_dag = np.swapaxes(P.conj(), -2, -1)
+    middle = np.einsum('kan,kn,knb->kab', R_h0_kin_k_R, kweights, vec_dag)
+    return np.sum(P @ middle @ P_dag, axis=0)
 
-# FIXME this does not have to be a numpy array, it could
-# be a ragged list of lists if each block has a different size
-# So should not use shape
 def block_to_full(A : np.ndarray) -> np.ndarray:
     """
+    Return a full block matrix from each block.
+
     Parameters
     ----------
     A : numpy.ndarray
@@ -456,18 +495,30 @@ def block_to_full(A : np.ndarray) -> np.ndarray:
     -------
     numpy.ndarray
         Matrix `A` of shape ``A[...,block * orb, block * orb]``.
+    
+    Notes
+    -----
+    FIXME this does not have to be a numpy array, it could be a ragged list of lists if each block has a different size.
+    So we should not use shape and handle the ragged list differently.
+
     """
     if len(A.shape) < 4:
-        raise ValueError(f'A.shape = {A.shape} must have at least ...,block,block,orb,orb structure !')
+        msg = f'A.shape = {A.shape} must have at least ...,block,block,orb,orb structure !'
+        raise ValueError(msg)
     na = A.shape[-4]
     nb = A.shape[-3]
     if na != nb:
-        raise ValueError(f'Should be same number of blocks in i and j dimesnions, but got {na} and {nb} !')
+        msg = f'Should be same number of blocks in i and j dimesnions, but got {na} and {nb} !'
+        raise ValueError(msg)
     return np.block( [ [A[...,i,j,:,:] for j in range(na)] for i in range(na) ] )
 
 def get_h0_loc_matrix(h0_k : np.ndarray, 
                       P : np.ndarray | None = None) -> np.ndarray:
     """
+    Return a matrix representation of the local terms in a non-interacting dispersion.
+
+    If a projector :attr:`P` onto a local subspace is given the local terms are only in that subspace.
+
     Parameters
     ----------
     h0_k : numpy.ndarray
@@ -480,27 +531,33 @@ def get_h0_loc_matrix(h0_k : np.ndarray,
     numpy.ndarray
         The matrix of single-particle hopping/energies on a cluster defined by 
         the projector.
+
     """
     n_k = h0_k.shape[0]
     if P is None:
         return np.sum(h0_k, axis=0) / float(n_k)
-    else:
-        return np.sum(P @ h0_k @ P.conj().T, axis=0) / float(n_k)
+    return np.sum(P @ h0_k @ P.conj().T, axis=0) / float(n_k)
 
 def get_h0_kin_k_mat(h0_k : np.ndarray, 
                      P : np.ndarray) -> np.ndarray:
     """
+    Return a matrix representation of the kinetic terms between clusters/local subspaces of a non-interacting dispersion.
+
+    This function only subtracts off the local terms in a single subspace given by :attr:`P`.
+
     Parameters
     ----------
     h0_k : numpy.ndarray
         Single-particle dispersion.
     P : numpy.ndarray
         The projector onto a local cluster within the supercell.
+
     Returns
     -------
     numpy.ndarray
         The single-particle hopping without the contribution from the cluster 
         defined by the projector.
+
     """
     h0_loc_matrix = get_h0_loc_matrix(h0_k, P)
     return h0_k - P.conj().T @ h0_loc_matrix @ P
@@ -509,6 +566,8 @@ def get_h0_kin_k(h0_k : dict[np.ndarray],
                  projectors : list[dict[np.ndarray]] | None = None, 
                  gf_struct_mapping : list[dict[str,str]] | None = None) -> dict[np.ndarray]:
     """
+    Return a matrix representation of only the kinetic terms between clusters/local subspaces of a non-interacting dispersion.
+    
     Parameters
     ----------
     h0_k : dict[numpy.ndarray]
@@ -527,21 +586,22 @@ def get_h0_kin_k(h0_k : dict[np.ndarray],
         The single-particle hopping with only the kinetic contribution, 
         without the single-particle terms from the clusters defined by 
         the projectors.
+
     """
     h0_kin_k = deepcopy(h0_k)
     
     if projectors is not None:
         n_clusters = len(projectors)
         if gf_struct_mapping is None:
-            gf_struct_mapping = [{bl:bl for bl in h0_k.keys()} for i in range(n_clusters)]
+            gf_struct_mapping = [{bl:bl for bl in h0_k} for i in range(n_clusters)]
         for i, P in enumerate(projectors):
-            for bl in P.keys():
+            for bl in P:
                 bl_full = gf_struct_mapping[i][bl]
                 h0_loc_matrix = get_h0_loc_matrix(h0_k[bl_full], P[bl])
                 h0_kin_k[bl_full] -= P[bl].conj().T @ h0_loc_matrix @ P[bl]
                 #h0_kin_k[bl_full] = get_h0_kin_k_mat(h0_kin_k[bl_full], P[bl])
     else:
-        for bl in h0_k.keys():
+        for bl in h0_k:
             h0_kin_k[bl] -= get_h0_loc_matrix(h0_k[bl])
 
     return h0_kin_k
