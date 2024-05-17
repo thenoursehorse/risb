@@ -8,19 +8,19 @@ Copyright (C) 2016-2023 H. L. Nourse and B. J. Powell, 2016-2022 R. H. McKenzie
 
 ## What is risb?
 
-Tools to solve strongly correlated many-body electronic problems using 
-rotationally invariant slave-bosons (RISB), an auxilliary particle method. 
-RISB is like dynamical mean-field theory (DMFT), but solves problems in a 
+Tools to solve strongly correlated many-body electronic problems using
+rotationally invariant slave-bosons (RISB), an auxilliary particle method.
+RISB is like dynamical mean-field theory (DMFT), but solves problems in a
 fraction of the time, with hopefully not a fraction of the accuracy.
 
 ## Where to start?
 
-If you want to learn how to solve some common strongly correlated lattice 
-models, and how RISB is implemented, then start with the 
-[tutorials](https://thenoursehorse.github.io/risb/tutorials). 
+If you want to learn how to solve some common strongly correlated lattice
+models, and how RISB is implemented, then start with the
+[tutorials](https://thenoursehorse.github.io/risb/tutorials).
 
-If you want to quickly see a calculation, then start with the `examples/` 
-folder in this repository and refer to the 
+If you want to quickly see a calculation, then start with the `examples/`
+folder in this repository and refer to the
 [how-to guides](https://thenoursehorse.github.io/risb/how-to/).
 
 <!-- INDEX-END -->
@@ -56,7 +56,7 @@ Lastly, the appropriate original theory outlined in the [documentation](https://
 
 ## Installation
 
-(Optional) Create a 
+(Optional) Create a
 [virtual environment](https://packaging.python.org/en/latest/tutorials/installing-packages/#creating-virtual-environments).
 
 Install
@@ -73,27 +73,27 @@ pip uninstall risb
 
 ### Docker
 
-There is a `Dockerfile` and `docker-compose.yml` inside the `docker` folder. 
-The `Dockerfile` will pull the 
-[TRIQS docker image](https://hub.docker.com/r/flatironinstitute/triqs) 
+There is a `Dockerfile` and `docker-compose.yml` inside the `docker` folder.
+The `Dockerfile` will pull the
+[TRIQS docker image](https://hub.docker.com/r/flatironinstitute/triqs)
 from the hub and install risb. Using the image will be the same as outlined in
 the [install instructions](https://triqs.github.io/triqs/latest/install.html#docker).
-To connect to the [Jupyter](https://jupyter.org/) notebook it is 
+To connect to the [Jupyter](https://jupyter.org/) notebook it is
 
 ```shell
 localhost:8888/?token=put/token/here
 ```
 
-You can find the token by attaching a shell to the container 
+You can find the token by attaching a shell to the container
 and running
 
 ```shell
 jupyter server list
 ```
 
-There is also a development `Dockerfile.dev` and the corresponding 
-`docker-compose-dev.yml` in order to have a container to develop code. It 
-installs [TRIQS](https://triqs.github.io/) from source, and works on 
+There is also a development `Dockerfile.dev` and the corresponding
+`docker-compose-dev.yml` in order to have a container to develop code. It
+installs [TRIQS](https://triqs.github.io/) from source, and works on
 Apple M1/M2 (arm64, aarch64), and any amd64 system.
 
 ## Tests

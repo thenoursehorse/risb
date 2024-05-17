@@ -13,7 +13,7 @@ concurrency:
 jobs:
 
   build:
-    
+
     strategy:
       fail-fast: true
       matrix:
@@ -23,13 +23,13 @@ jobs:
           - {os: "ubuntu-22.04", python-version: "3.12", cc: "gcc", cxx: "g++", llvm: "15", gcc-version: "12"}
           #- {os: "ubuntu-22.04", python-version: "3.10", cc: "clang", cxx: "clang++", llvm: "15", gcc-version: "12"}
           #- {os: "ubuntu-22.04", python-version: "3.11", cc: "clang", cxx: "clang++", llvm: "15", gcc-version: "12"}
-  
+
     runs-on: ${{ matrix.os }}
-    
+
     name: Test Python ${{ matrix.python-version }}
     steps:
     - uses: actions/checkout@v4
-      
+
     - name: Setup Python ${{ matrix.python-version }} and TRIQS
       uses: ./.github/actions/setup-triqs
       with:
@@ -38,17 +38,17 @@ jobs:
         cxx: ${{ matrix.cxx }}
         llvm: ${{ matrix.llvm }}
         gcc-version: ${{ matrix.gcc-version }}
-      
+
     - name: Install risb
       run: |
         source $TRIQS_INSTALL/share/triqs/triqsvars.sh
         python -m pip install -e .[test,docs]
-      
+
     - name: Test risb
       run: |
         source $TRIQS_INSTALL/share/triqs/triqsvars.sh
         python -m pytest
-    
+
     - name: Test docs
       run: |
         source $TRIQS_INSTALL/share/triqs/triqsvars.sh

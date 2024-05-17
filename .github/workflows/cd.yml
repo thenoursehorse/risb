@@ -17,12 +17,12 @@ jobs:
     permissions:
       id-token: write
       contents: write
-    
+
     steps:
     - uses: actions/checkout@v4
       with:
         fetch-depth: 0
-    
+
     - name: Bump version and push tag
       id: tag_version
       uses: mathieudutour/github-tag-action@v6.2
@@ -35,11 +35,11 @@ jobs:
         tag: ${{ steps.tag_version.outputs.new_tag }}
         name: Release ${{ steps.tag_version.outputs.new_tag }}
         body: ${{ steps.tag_version.outputs.changelog }}
-      
+
   build-docs:
     needs: [bump-version]
     runs-on: ubuntu-22.04
-    
+
     steps:
     - uses: actions/checkout@v4
       with:
@@ -49,7 +49,7 @@ jobs:
       uses: ./.github/actions/setup-triqs
       with:
         python-version: "3.10"
-      
+
     - name: Install risb and docs dependencies
       run: |
         source $TRIQS_INSTALL/share/triqs/triqsvars.sh
@@ -74,15 +74,15 @@ jobs:
       contents: read
       pages: write
       id-token: write
-    
+
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
-    
+
     name: Deploy docs
     steps:
     - uses: actions/checkout@v4
-      
+
     - name: Setup Pages
       id: pages
       uses: actions/configure-pages@v5

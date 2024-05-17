@@ -3,7 +3,7 @@
 
 import numpy as np
 import pytest
-from common import build_cubic_h0_k, symmetrize_blocks
+from test_common import build_cubic_h0_k, symmetrize_blocks
 from triqs.operators import Operator, n
 from triqs.operators.util.hamiltonians import h_int_kanamori
 from triqs.operators.util.op_struct import set_operator_structure
