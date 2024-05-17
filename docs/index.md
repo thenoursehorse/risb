@@ -20,7 +20,7 @@ explanations/index
 ```{toctree}
 :caption: API Docs
 :hidden:
- 
+
 api/risb
 ```
 

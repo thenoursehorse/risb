@@ -1,4 +1,3 @@
-
 # Explanations
 
 Some theory and justification for design choices.

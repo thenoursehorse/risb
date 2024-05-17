@@ -73,3 +73,46 @@ warn_unreachable = true
 [[tool.mypy.overrides]]
 module = [ "numpy.*", "scipy.*", "triqs.*", "nox.*"]
 ignore_missing_imports = true
+
+[tool.ruff]
+src = ["src"]
+
+[tool.ruff.format]
+docstring-code-format = true
+
+[tool.ruff.lint]
+extend-select = [
+  "B",           # flake8-bugbear
+  "I",           # isort
+  "ARG",         # flake8-unused-arguments
+  "C4",          # flake8-comprehensions
+  "EM",          # flake8-errmsg
+  "ICN",         # flake8-import-conventions
+  "PGH",         # pygrep-hooks
+  "PIE",         # flake8-pie
+  "PL",          # pylint
+  "PT",          # flake8-pytest-style
+  "PTH",         # flake8-use-pathlib
+  "RET",         # flake8-return
+  "RUF",         # Ruff-specific
+  "SIM",         # flake8-simplify
+  "TID251",      # flake8-tidy-imports.banned-api
+  "T20",         # flake8-print
+  "UP",          # pyupgrade
+  "YTT",         # flake8-2020
+  "D",           # pydocstyle
+  "D204",        # one-blank-line-after-class
+  "D301",        # escape-sequence-in-docstring
+  "D413",        # blank-line-after-last-section
+]
+ignore = [
+  "PLR",    # Design related pylint codes
+  "PT004",  # Incorrect check, usefixtures is the correct way to do this
+  "RUF012", # Would require a lot of ClassVar's
+]
+
+[tool.ruff.lint.pycodestyle]
+max-line-length = 100
+
+[tool.ruff.lint.pydocstyle]
+convention = "numpy"

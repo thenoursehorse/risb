@@ -1,27 +1,27 @@
 # Constructing tight-binding models
 
-This guide shows various methods for constructing the non-interacting 
+This guide shows various methods for constructing the non-interacting
 terms of a model required for {{RISB}}.
 
 ## Constructing `h0_k`
 
 :::{warning}
-The ordering of `k` matters for some $k$-space integration methods, e.g., 
-linear tetrahedron. If that is the case you must permute `h0_k` to the 
+The ordering of `k` matters for some $k$-space integration methods, e.g.,
+linear tetrahedron. If that is the case you must permute `h0_k` to the
 required ordering.
 :::
 
-There are many ways to construct the hopping matrices in $k$-space. Below 
-are a few of them that have been useful. Any method can be used as long 
-as it is possible to return an `numpy.ndarray` indexed as 
-`k, orb_i, orb_j` where `k` is a $k$-point on a meshgrid and `orb_i` is one of 
-the `n_orb` orbitals that corresponds to a site, orbital, or spin in a unit 
+There are many ways to construct the hopping matrices in $k$-space. Below
+are a few of them that have been useful. Any method can be used as long
+as it is possible to return an `numpy.ndarray` indexed as
+`k, orb_i, orb_j` where `k` is a $k$-point on a meshgrid and `orb_i` is one of
+the `n_orb` orbitals that corresponds to a site, orbital, or spin in a unit
 cell. These can possibly be partitioned into symmetry blocks, e.g., by spin.
 
 ### Explicit method
 
-If you have an equation for the matrix representation of $\hat{H}_0$ 
-at each $k$-point, then this is a simple way to code it to have the 
+If you have an equation for the matrix representation of $\hat{H}_0$
+at each $k$-point, then this is a simple way to code it to have the
 correct structure for {{RISB}}.
 
 First construct a Monkhorst-Pack $k$-point mesh in fractional coordinates
@@ -43,7 +43,7 @@ n_k_list = [n_k1, ..., n_k_d]
 # Total number of k-points
 n_k = np.product(n_k_list)
 
-# Shift to apply to each spatial dimension if want to move it off 
+# Shift to apply to each spatial dimension if want to move it off
 # high symmetry points. It should be a value between 0 and 1 (usually 0.5)
 shift_1 = ...
 ...
@@ -70,8 +70,8 @@ for idx, coords in enumerate(product( *[range(n_k_list[i]) for i in range(len(n_
         k_mesh[idx,dim] = (coords[dim] + shift_list[dim]) / n_k_list[dim]
 ```
 
-If your function for $\hat{H}_0$ is in a different basis then you will 
-have to rotate `k_mesh` into this basis. For example, to Cartesian 
+If your function for $\hat{H}_0$ is in a different basis then you will
+have to rotate `k_mesh` into this basis. For example, to Cartesian
 coordinates can be done as
 
 ```python
@@ -117,11 +117,11 @@ for k in range(n_k):
 
 ### Using {{TRIQS}} lattice tools
 
-If you know the positions of the orbitals in real-space then there is a 
-(currently poorly documented) way to do this in {{TRIQS}}. Here is some 
+If you know the positions of the orbitals in real-space then there is a
+(currently poorly documented) way to do this in {{TRIQS}}. Here is some
 complimentary information on top of what is provided by {{TRIQS}}.
 
-First specify the lattice vectors as 
+First specify the lattice vectors as
 
 ```python
 units = [a_1, ..., a_d]
@@ -129,9 +129,9 @@ units = [a_1, ..., a_d]
 
 The allowed number of spatial dimensions is one of $d = 1, 2, 3$.
 
-Next give a list of tuples that give the positions of each atom and orbital in 
-the unit cell. The units are in fractional coordinates of the lattice vectors 
-that are specified in `units`, and there are `n_orb` total sites, orbitals, 
+Next give a list of tuples that give the positions of each atom and orbital in
+the unit cell. The units are in fractional coordinates of the lattice vectors
+that are specified in `units`, and there are `n_orb` total sites, orbitals,
 and maybe spin.
 
 ```python
@@ -159,20 +159,20 @@ bz = BrillouinZone(bl)
 mk = MeshBrZone(bz, n_k_list)
 ```
 
-Next set up a dictionary of hoppings between orbitals, within a unit cell 
-and between unit cells. 
+Next set up a dictionary of hoppings between orbitals, within a unit cell
+and between unit cells.
 
-Each key in the dictionary is a tuple of the displacement from a reference unit 
+Each key in the dictionary is a tuple of the displacement from a reference unit
 cell at $\mathbf{R} = (0, \ldots, 0_d)$.
-The coordinates for this displacement is in the basis of lattice 
-vectors $\vec{a}_1, \ldots, \vec{a}_d$. For example, in two-dimensions, a 
-displacement by $\vec{a}_1$ is the key `(1,0)`. A displacement by 
-$2\vec{a}_1 + \vec{a}_2$ is the key `(2,1)`. Generally, the displacements are 
+The coordinates for this displacement is in the basis of lattice
+vectors $\vec{a}_1, \ldots, \vec{a}_d$. For example, in two-dimensions, a
+displacement by $\vec{a}_1$ is the key `(1,0)`. A displacement by
+$2\vec{a}_1 + \vec{a}_2$ is the key `(2,1)`. Generally, the displacements are
 `(n,m,p)` where `n`, `m`, and `p` have to be integers.
 
-The value of each key is a matrix of hopping amplitudes from the orbitals 
-in the reference unit cell to the unit cells defined by the displacement key. 
-Hopping between orbitals within a unit cell is encoded as a matrix and indexed 
+The value of each key is a matrix of hopping amplitudes from the orbitals
+in the reference unit cell to the unit cells defined by the displacement key.
+Hopping between orbitals within a unit cell is encoded as a matrix and indexed
 with the key `(0,...,0_d)`.
 
 Here is an example of how this structure looks like in code
@@ -192,7 +192,7 @@ hoppings = {
 }
 ```
 
-Next construct the tight-binding model as 
+Next construct the tight-binding model as
 
 ```
 from triqs.lattice.tight_binding import TBLattice
@@ -200,14 +200,14 @@ tbl = TBLattice(units=units, hoppings=hoppings, orbital_positions=orbital_positi
 ```
 
 :::{note}
-If `h0_k` has some block structure you want to encode, the above process 
-can be done for each block (by definition of being a block matrix structure 
-there cannot be coupling between orbitals of different blocks). 
-Each `TBLattice` instance must use the same `units` and $k$-space 
+If `h0_k` has some block structure you want to encode, the above process
+can be done for each block (by definition of being a block matrix structure
+there cannot be coupling between orbitals of different blocks).
+Each `TBLattice` instance must use the same `units` and $k$-space
 meshgrid `mk`.
 :::
 
-The last and important part is to Fourier transform the tight-binding model 
+The last and important part is to Fourier transform the tight-binding model
 onto the $k$-space meshgrid `mk` and have it indexed as `k, orb_i, orb_j` for
 the {{RISB}} `Solver` class. This is very easily done as
 
@@ -219,8 +219,8 @@ h0_k[bl_name] = tbl.fourier(mk).data
 ```
 
 :::{warning}
-I have only used this class on hypercubic lattices. It may work poorly for 
-something like kagome, or if the unit cell is very complicated. If this is not 
+I have only used this class on hypercubic lattices. It may work poorly for
+something like kagome, or if the unit cell is very complicated. If this is not
 an issue then let me know and I will remove this warning.
 :::
 
@@ -234,8 +234,8 @@ Work in progress.
 [Using projectors](projectors.md).
 :::
 
-If you want to get $\hat{H}_i^{\mathrm{loc}}$ for each correlated 
-space $\mathcal{C}_i$ calculated from `h0_k` then there are some helper 
+If you want to get $\hat{H}_i^{\mathrm{loc}}$ for each correlated
+space $\mathcal{C}_i$ calculated from `h0_k` then there are some helper
 functions.
 
 If there are no projectors and the correlated space is the entire unit cell
@@ -248,7 +248,7 @@ for bl in h0_k.keys():
     h0_loc_matrix[bl] = get_h0_loc_matrix(h0_k[bl])
 ```
 
-If there are multiple correlated spaces, indexed as `i` 
+If there are multiple correlated spaces, indexed as `i`
 
 ```python
 # Total number of clusters on the lattice
@@ -257,12 +257,12 @@ n_clusters = ...
 # A list of gf_struct objects in each correlated space
 gf_struct = ...
 
-# A list of mappings of the block structure from each correlated 
+# A list of mappings of the block structure from each correlated
 # subspace to the larger space of h0_k
 gf_struct_mapping = ...
 
 # A list of projectors into each correlated subspace
-projectors = 
+projectors =
 
 h0_loc_matrix = [dict() for i in range(n_clusters)]
 for i in range(n_clusters):
@@ -273,8 +273,8 @@ for i in range(n_clusters):
 
 ### As a {{TRIQS}} operator
 
-If you have a block matrix representation of a single-particle operator and 
-you want it as a {{TRIQS}} operator 
+If you have a block matrix representation of a single-particle operator and
+you want it as a {{TRIQS}} operator
 
 ```python
 from risb.helpers_triqs get_C_Op
@@ -285,7 +285,7 @@ A = ...
 # A gf_struct object of the structure of the space
 gf_struct = ...
 
-# A list/vector of operators 
+# A list/vector of operators
 C_Op = get_C_Op(gf_struct, dagger=False)
 C_dag_Op = get_C_Op(gf_struct, dagger=True)
 
@@ -308,8 +308,8 @@ Op = matrix_to_Op(A, gf_struct)
 [Using projectors](projectors.md).
 :::
 
-If you want only the kinetic terms in `h0_k` with all of the local terms 
-`h0_loc` from $\hat{H}_i^{\mathrm{loc}}$ removed then you can use 
+If you want only the kinetic terms in `h0_k` with all of the local terms
+`h0_loc` from $\hat{H}_i^{\mathrm{loc}}$ removed then you can use
 
 ```python
 from risb.helpers import get_h0_kin_k
@@ -317,12 +317,12 @@ from risb.helpers import get_h0_kin_k
 # A list of gf_struct objects in each correlated space
 gf_struct = ...
 
-# A list of mappings of the block structure from each correlated 
+# A list of mappings of the block structure from each correlated
 # subspace to the larger space of h0_k
 gf_struct_mapping = ...
 
 # A list of projectors into each correlated subspace
-projectors = 
+projectors =
 
 h0_kin_k = get_h0_kin_k(h0_k, projectors, gf_struct_mapping)
 ```

@@ -48,8 +48,8 @@
   url = {https://link.aps.org/doi/10.1103/PhysRevB.105.205119}
 }
 
-# H. L. Nourse thesis which has details about RISB and our implementation. 
-# It includes other algorithms for RISB that we have used in the past that we 
+# H. L. Nourse thesis which has details about RISB and our implementation.
+# It includes other algorithms for RISB that we have used in the past that we
 # have not reimplemented.
 @phdthesis{nourse2020phd,
   doi = {10.14264/uql.2020.169},
