@@ -1,17 +1,16 @@
-#!/usr/bin/env python
+# ruff: noqa: T201, D100, D103
+
 
 import numpy as np
-from itertools import product
 import pytest
-from pytest import approx
-
 from common import build_cubic_h0_k, symmetrize_blocks
-from triqs.operators import Operator, c_dag, c, n
+from triqs.operators import Operator, n
 from triqs.operators.util.hamiltonians import h_int_kanamori
 from triqs.operators.util.op_struct import set_operator_structure
+
 from risb import LatticeSolver
-from risb.kweight import SmearingKWeight
 from risb.embedding import EmbeddingAtomDiag
+from risb.kweight import SmearingKWeight
 
 # FIXME add one_shot test
 
@@ -20,17 +19,17 @@ def do_assert(subtests, mu, Lambda, Z,
     n_clusters = len(Lambda)
     abs = 1e-10
     with subtests.test(msg="mu"):
-        assert mu == approx(mu_expected, abs=abs)
+        assert mu == pytest.approx(mu_expected, abs=abs)
     with subtests.test(msg="Lambda"):
         for i in range(n_clusters):
-            for bl in Lambda[i].keys():
-                assert Lambda[i][bl] == approx(Lambda_expected, abs=abs)
+            for bl in Lambda[i]:
+                assert Lambda[i][bl] == pytest.approx(Lambda_expected, abs=abs)
     with subtests.test(msg="Z"):
         for i in range(n_clusters):
-            for bl in Z[i].keys():
-                assert Z[i][bl] == approx(Z_expected, abs=abs)
+            for bl in Z[i]:
+                assert Z[i][bl] == pytest.approx(Z_expected, abs=abs)
 
-@pytest.fixture
+@pytest.fixture()
 def one_band():
     n_orb = 1
     spatial_dim = 3
@@ -49,7 +48,7 @@ def one_band():
     Z_expected = np.array([[0.437828801025]])
     return gf_struct, h0_k, embedding, kweight, mu, Lambda_expected, Z_expected
 
-@pytest.fixture
+@pytest.fixture()
 def bilayer():
     U = 4
     V = 0.25
@@ -62,7 +61,7 @@ def bilayer():
     spin_names = ['up','dn']
     gf_struct = set_operator_structure(spin_names, n_orb, off_diag=True)
     h0_k = build_cubic_h0_k(gf_struct=gf_struct, nkx=nkx, spatial_dim=spatial_dim)
-    for bl in h0_k.keys():
+    for bl in h0_k:
         h0_k[bl][:,0,1] += V
         h0_k[bl][:,1,0] += V
     h_int = Operator()
@@ -75,7 +74,7 @@ def bilayer():
     Z_expected = np.array([[0.452846149446, 0],[0, 0.452846149446]])
     return gf_struct, h0_k, embedding, kweight, mu, Lambda_expected, Z_expected
 
-@pytest.fixture
+@pytest.fixture()
 def kanamori():
     coeff = 0.2
     U = 3
@@ -137,7 +136,7 @@ def test_diis_nosymmetrize(subtests, request, model):
     do_assert(subtests, mu_calculated, S.Lambda, S.Z, 
               mu_expected, Lambda_expected, Z_expected)
 
-@pytest.mark.parametrize('model, root_method', [
+@pytest.mark.parametrize(("model", "root_method"), [
     ('one_band', 'krylov'),
     ('bilayer', 'krylov'),
     ('kanamori', 'krylov'), 

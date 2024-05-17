@@ -1,5 +1,8 @@
-import numpy as np
+# ruff: noqa: T201, D100, D103
 from itertools import product
+
+import numpy as np
+
 
 def symmetrize_blocks(A : list[dict[np.ndarray]]):
     n_clusters = len(A)
@@ -11,12 +14,15 @@ def symmetrize_blocks(A : list[dict[np.ndarray]]):
             A[i][bl] = A_sym[i]
     return A
 
-def build_cubic_h0_k(gf_struct=[('up',1),('dn',1)], nkx=6, spatial_dim=2, t=1, a=1):
+def build_cubic_h0_k(gf_struct=None, nkx=6, spatial_dim=2, t=1, a=1):
+    if gf_struct is None:
+        gf_struct = [('up', 1), ('dn', 1)]
     for _, bsize in gf_struct:
         n_orb = bsize
     for _, bsize in gf_struct:
         if bsize != n_orb:
-            raise ValueError('Each block must have the same number of orbitals !')
+            msg = 'Each block must have the same number of orbitals !'
+            raise ValueError(msg)
     
     t_scaled = -t / float(spatial_dim)
     n_k = nkx**spatial_dim
@@ -29,7 +35,7 @@ def build_cubic_h0_k(gf_struct=[('up',1),('dn',1)], nkx=6, spatial_dim=2, t=1, a
             mesh[idx,i] = coord[i] / float(nkx)
     
     # Make hopping matrix
-    h0_k = dict()
+    h0_k = {}
     for bl, n_orb in gf_struct:
         di = np.diag_indices(n_orb)
         h0_k[bl] = np.zeros([n_k, n_orb, n_orb])
@@ -37,9 +43,11 @@ def build_cubic_h0_k(gf_struct=[('up',1),('dn',1)], nkx=6, spatial_dim=2, t=1, a
 
     return h0_k
 
-def build_block_mf_matrices(gf_struct=[('up',1),('dn',1)]):
-    R = dict()
-    Lambda = dict()
+def build_block_mf_matrices(gf_struct=None):
+    if gf_struct is None:
+        gf_struct = [('up', 1), ('dn', 1)]
+    R = {}
+    Lambda = {}
     for bl, bsize in gf_struct:
         R[bl] = np.zeros((bsize,bsize))
         Lambda[bl] = np.zeros((bsize,bsize))
