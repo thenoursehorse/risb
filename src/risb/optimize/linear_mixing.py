@@ -14,11 +14,9 @@ from .solver_newton import NewtonSolver
 class LinearMixing(NewtonSolver):
     """Linear mixing a new vector with an old vector."""
 
-    def __init__(self, /,
-                  **kwargs):
+    def __init__(self, /, **kwargs):
         super().__init__(history_size=0, **kwargs)
-    
-    def update_x(self, 
-                 alpha : float = 1.0) -> ArrayLike:
+
+    def update_x(self, alpha: float = 1.0) -> ArrayLike:
         """Return a new guess for the vector x."""
         return self.x[0] + alpha * (self.g_x[0] - self.x[0])

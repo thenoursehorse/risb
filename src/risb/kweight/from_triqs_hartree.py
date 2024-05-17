@@ -22,6 +22,7 @@ from scipy.optimize import brentq
 
 # Code below copied from github.com/TRIQS/hartree_fock
 
+
 def fermi(e, beta):
     """
     Numerically stable version of the Fermi function.
@@ -34,7 +35,8 @@ def fermi(e, beta):
         Inverse temperature
 
     """
-    return np.exp(-beta * e * (e > 0))/(1 + np.exp(-beta*np.abs(e)))
+    return np.exp(-beta * e * (e > 0)) / (1 + np.exp(-beta * np.abs(e)))
+
 
 def update_mu(n_target, energies, beta, n_k, smear_function):
     """
@@ -63,10 +65,11 @@ def update_mu(n_target, energies, beta, n_k, smear_function):
             e_min = bl_min
         if bl_max > e_max:
             e_max = bl_max
-            
+
     def target_function(mu):
         n = 0
         for en in energies.values():
             n += np.sum(smear_function(en, beta, mu)) / n_k
         return n - n_target
+
     return brentq(target_function, e_min, e_max)

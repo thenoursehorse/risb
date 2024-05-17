@@ -23,11 +23,11 @@ import numpy as np
 class EmbeddingDummy:
     """
     Dummy impurity solver.
-    
-    Does not solve anything and instead references 
-    variables of another embedding solver. This is useful when 
-    some inequivalent clusters are the same up to rotations, so only 
-    a single impurity problem has to be solved and then the single-particle 
+
+    Does not solve anything and instead references
+    variables of another embedding solver. This is useful when
+    some inequivalent clusters are the same up to rotations, so only
+    a single impurity problem has to be solved and then the single-particle
     matrices are rotated into the relevant basis.
 
     Parameters
@@ -39,19 +39,19 @@ class EmbeddingDummy:
 
     """
 
-    def __init__(self, embedding, rotations = None):
+    def __init__(self, embedding, rotations=None):
         if rotations is None:
             rotations = []
         self.embedding = embedding
         self.rotations = rotations
-    
+
     def set_h_emb(self, *args, **kwargs):  # noqa: D102
         pass
-    
+
     def solve(self, *args, **kwargs):  # noqa: D102
         pass
 
-    def get_rho_f(self, bl : str) -> np.ndarray:  # noqa: D102
+    def get_rho_f(self, bl: str) -> np.ndarray:  # noqa: D102
         if bl not in self.embedding.rho_f:
             rho_f = self.embedding.get_rho_f(bl)
         else:
@@ -59,8 +59,8 @@ class EmbeddingDummy:
         for func in self.rotations:
             rho_f = func(rho_f)
         return rho_f
-    
-    def get_rho_c(self, bl : str) -> np.ndarray:  # noqa: D102
+
+    def get_rho_c(self, bl: str) -> np.ndarray:  # noqa: D102
         if bl not in self.embedding.rho_c:
             rho_c = self.embedding.get_rho_c(bl)
         else:
@@ -68,8 +68,8 @@ class EmbeddingDummy:
         for func in self.rotations:
             rho_c = func(rho_c)
         return rho_c
-    
-    def get_rho_cf(self, bl : str) -> np.ndarray:  # noqa: D102
+
+    def get_rho_cf(self, bl: str) -> np.ndarray:  # noqa: D102
         if bl not in self.embedding.rho_cf:
             rho_cf = self.embedding.get_rho_cf(bl)
         else:
@@ -77,7 +77,7 @@ class EmbeddingDummy:
         for func in self.rotations:
             rho_cf = func(rho_cf)
         return rho_cf
-    
+
     # FIXME rotate Op correctly, is this even correctly possible?
-    def overlap(self, Op, force_real : bool = True) -> float | complex:  # noqa: D102
+    def overlap(self, Op, force_real: bool = True) -> float | complex:  # noqa: D102
         return self.embedding.overlap(Op, force_real)
