@@ -22,6 +22,7 @@ version 3.2.0
 - add linting actions
 - dimer insulator to explain some different insulating states
 - change references in docs to use sphinxcontrib-bibtex
+- pytest filterwarnings are not working. They need to be for risb package only and not promote warnings to errors in third-party packages.
 
 ### In Progress
 
