@@ -80,6 +80,7 @@ E^{c,\mathrm{qp}}_i = \frac{1}{\mathcal{N}} \sum_k
 \mathbf{P}^{\dagger}_i(k).
 $$
 
-[^Maier2005]: [T. Maier, M. Jarrell, T. Pruschke, and M. H. Hettler,
-*Quantum cluster theories*,
-Rev. Mod. Phys. **77**, 1027 (2005)](https://doi.org/10.1016/j.cpc.2015.04.023)
+[^Maier2005]:
+    [T. Maier, M. Jarrell, T. Pruschke, and M. H. Hettler,
+    _Quantum cluster theories_,
+    Rev. Mod. Phys. **77**, 1027 (2005)](https://doi.org/10.1016/j.cpc.2015.04.023)

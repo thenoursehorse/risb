@@ -352,7 +352,7 @@ rho_c = dict()
 for bl, bl_size in gf_struct:
     rho_f[bl] = np.zeros((bl_size, bl_size))
     rho_cf[bl] = np.zeros((bl_size, bl_size))
-    rho_c[bl] = np.zeros((bl_size, bl_size))  
+    rho_c[bl] = np.zeros((bl_size, bl_size))
 ```
 
 ### Helper functions
@@ -389,7 +389,6 @@ for bl, bl_size in gf_struct:
 
 See [Solving $\hat{H}^{\mathrm{emb}}$](#f-solving-hat-h-mathrm-emb) for the
 single-particle density matrices of $\hat{H}^{\mathrm{emb}}$.
-
 
 ## F: Solving $\hat{H}^{\mathrm{emb}}$
 
@@ -457,23 +456,22 @@ for bl, bl_size in gf_struct:
     f2 = helpers.get_f2(rho_f[bl], rho_qp[bl])
 ```
 
-
 ## Exercises
 
 1. Can you match each part above with the self-consistent loop defined in the
-[literature](../about)?
+   [literature](../about)?
 1. Piece together everything above and write your own code.
 1. Solve for a range of $U$ values at half-filling ($\mu = U / 2$).
 1. How does $\beta$ and the size of the k-space mesh affect the results?
 1. What is the evolution of the quasiparticle weight $Z$ at
-half-filling (Fig. 7)?
+   half-filling (Fig. 7)?
 1. What is the evolution of the electron filling in the
-bonding/anti-bonding ($\pm$) basis?
+   bonding/anti-bonding ($\pm$) basis?
 1. Implement a method to solve for the chemical potential $\mu$ at a fixed
-electron density $n$ (you may find :py:func:`scipy.optimize.brentq`
-or :py:func:`scipy.optimize.bisect` from :py:mod:`scipy.optimize` useful).
+   electron density $n$ (you may find :py:func:`scipy.optimize.brentq`
+   or :py:func:`scipy.optimize.bisect` from :py:mod:`scipy.optimize` useful).
 1. What is the evolution of the quasiparticle weight at electron filling
-$n = 1.88$ (Fig. 10)?
+   $n = 1.88$ (Fig. 10)?
 
 ## Conclusion
 
@@ -529,7 +527,7 @@ for bl, bl_size in gf_struct:
     np.fill_diagonal(Lambda[bl], mu)
     np.fill_diagonal(R[bl], 1)
 
-for cycle in range(n_cycles):  
+for cycle in range(n_cycles):
     # For convergence checking
     norm = 0
     R_old = deepcopy(R)
@@ -584,8 +582,8 @@ for bl, bl_size in gf_struct:
     Z[bl] = R[bl] @ R[bl].conj().T
 ```
 
-
-[^Lechermann2007]: [F. Lechermann, A. Georges, G. Kotliar, and O. Parcollet,
-*Rotationally invariant slave-boson formalism and momentum dependence of the
-quasiparticle weight*,
-Phys. Rev.B **76**, 155102 (2007)](https://doi.org/10.1103/PhysRevB.76.155102)
+[^Lechermann2007]:
+    [F. Lechermann, A. Georges, G. Kotliar, and O. Parcollet,
+    _Rotationally invariant slave-boson formalism and momentum dependence of the
+    quasiparticle weight_,
+    Phys. Rev.B **76**, 155102 (2007)](https://doi.org/10.1103/PhysRevB.76.155102)

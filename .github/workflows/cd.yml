@@ -11,7 +11,6 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-
   bump-version:
     runs-on: ubuntu-latest
     permissions:
@@ -19,53 +18,53 @@ jobs:
       contents: write
 
     steps:
-    - uses: actions/checkout@v4
-      with:
-        fetch-depth: 0
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
-    - name: Bump version and push tag
-      id: tag_version
-      uses: mathieudutour/github-tag-action@v6.2
-      with:
-        github_token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Bump version and push tag
+        id: tag_version
+        uses: mathieudutour/github-tag-action@v6.2
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
 
-    - name: Create a GitHub release
-      uses: ncipollo/release-action@v1
-      with:
-        tag: ${{ steps.tag_version.outputs.new_tag }}
-        name: Release ${{ steps.tag_version.outputs.new_tag }}
-        body: ${{ steps.tag_version.outputs.changelog }}
+      - name: Create a GitHub release
+        uses: ncipollo/release-action@v1
+        with:
+          tag: ${{ steps.tag_version.outputs.new_tag }}
+          name: Release ${{ steps.tag_version.outputs.new_tag }}
+          body: ${{ steps.tag_version.outputs.changelog }}
 
   build-docs:
     needs: [bump-version]
     runs-on: ubuntu-22.04
 
     steps:
-    - uses: actions/checkout@v4
-      with:
-        fetch-depth: 0
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
-    - name: Setup Python 3.10 and TRIQS
-      uses: ./.github/actions/setup-triqs
-      with:
-        python-version: "3.10"
+      - name: Setup Python 3.10 and TRIQS
+        uses: ./.github/actions/setup-triqs
+        with:
+          python-version: "3.10"
 
-    - name: Install risb and docs dependencies
-      run: |
-        source $TRIQS_INSTALL/share/triqs/triqsvars.sh
-        python -m pip install .[docs]
+      - name: Install risb and docs dependencies
+        run: |
+          source $TRIQS_INSTALL/share/triqs/triqsvars.sh
+          python -m pip install .[docs]
 
-    - name: Build docs
-      run: |
-        source $TRIQS_INSTALL/share/triqs/triqsvars.sh
-        sphinx-apidoc -o docs/api --module-first --no-toc --force --separate src/risb
-        sphinx-build -b html -n -T docs docs/_build
+      - name: Build docs
+        run: |
+          source $TRIQS_INSTALL/share/triqs/triqsvars.sh
+          sphinx-apidoc -o docs/api --module-first --no-toc --force --separate src/risb
+          sphinx-build -b html -n -T docs docs/_build
 
-    - name: Upload docs artifact
-      uses: actions/upload-artifact@v4
-      with:
-        name: docs-build
-        path: docs/_build
+      - name: Upload docs artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: docs-build
+          path: docs/_build
 
   deploy-docs:
     needs: [build-docs]
@@ -81,34 +80,34 @@ jobs:
 
     name: Deploy docs
     steps:
-    - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-    - name: Setup Pages
-      id: pages
-      uses: actions/configure-pages@v5
+      - name: Setup Pages
+        id: pages
+        uses: actions/configure-pages@v5
 
-    - name: Download docs artifact
-      uses: actions/download-artifact@v4
-      with:
-        name: docs-build
-        path: _site
+      - name: Download docs artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: docs-build
+          path: _site
 
-    - name: Upload artifact
-      uses: actions/upload-pages-artifact@v3
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
 
-    - name: Deploy to GitHub Pages
-      id: deployment
-      uses: actions/deploy-pages@v4
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
 
   dist:
     needs: [bump-version]
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v4
-      with:
-        fetch-depth: 0
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
-    - uses: hynek/build-and-inspect-python-package@v2
+      - uses: hynek/build-and-inspect-python-package@v2
 
   publish:
     needs: [dist]

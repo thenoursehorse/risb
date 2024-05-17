@@ -100,8 +100,7 @@ kweight = SmearingKWeight(beta = ..., mu or n_target = ...)
 kweight.smear_function = my_smearing_function
 ```
 
-
-
-[^Methfessel1989]: [M. Methfessel and A. T. Paxton,
-*High-precision sampling for Brillouin-zone integration in metals*,
-Phys. Rev. B **40**, 3616 (1989)](https://doi.org/10.1103/PhysRevB.40.3616)
+[^Methfessel1989]:
+    [M. Methfessel and A. T. Paxton,
+    _High-precision sampling for Brillouin-zone integration in metals_,
+    Phys. Rev. B **40**, 3616 (1989)](https://doi.org/10.1103/PhysRevB.40.3616)

@@ -15,7 +15,6 @@ eigenenergies of the single-particle Hamiltonian $\hat{H}^{\mathrm{qp}}$,
 which change at every iteration of the self-consistent process.
 The quasiparticle Hamiltonian is given by
 
-
 All of the integrals are in the thermodynamic limit and take the form
 
 $$

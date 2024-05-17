@@ -49,10 +49,10 @@ Lastly, the appropriate original theory outlined in the [documentation](https://
 
 ## Dependencies
 
-* [python](https://www.python.org/) version `> 3.10`
-* [numpy](https://numpy.org/)
-* [scipy](https://scipy.org/)
-* [TRIQS](https://triqs.github.io/) version `3.2.x` if using :class:`EmbeddingAtomDiag`
+- [python](https://www.python.org/) version `> 3.10`
+- [numpy](https://numpy.org/)
+- [scipy](https://scipy.org/)
+- [TRIQS](https://triqs.github.io/) version `3.2.x` if using :class:`EmbeddingAtomDiag`
 
 ## Installation
 

@@ -154,7 +154,6 @@ The whole embedding space structure is obtained as
 embedding.gf_struct_emb
 ```
 
-
 ## `EmbeddingDummy`
 
 If you want to have some correlated subspaces $\mathcal{C}_i$ as inequivalent,

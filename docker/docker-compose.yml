@@ -10,4 +10,4 @@ services:
     ports:
       - "8888:8888"
     stdin_open: true # docker run -i
-    tty: true        # docker run -t
+    tty: true # docker run -t

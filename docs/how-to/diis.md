@@ -95,8 +95,7 @@ S.solve(...,
 If you want to access the default `DIIS` instance that is used it is stored
 in `S.optimize`.
 
-
-
-[^Chupin2021]: [M. Chupin, M.-S. Dupuy, G. Legendre and É. Séré,
-*Convergence analysis of adaptive DIIS algorithms with application to electronic ground state calculations*,
-ESAIM: M2AN **55**, 6, 2785-2825 (2021)](https://doi.org/10.1051/m2an/2021069)
+[^Chupin2021]:
+    [M. Chupin, M.-S. Dupuy, G. Legendre and É. Séré,
+    _Convergence analysis of adaptive DIIS algorithms with application to electronic ground state calculations_,
+    ESAIM: M2AN **55**, 6, 2785-2825 (2021)](https://doi.org/10.1051/m2an/2021069)

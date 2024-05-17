@@ -23,7 +23,7 @@ learn a lot more if you try to write everything yourself.
 The Hubbard model is given by
 
 $$
-\hat{H} = t \sum_{ij\sigma}  
+\hat{H} = t \sum_{ij\sigma}
 \hat{c}^{\dagger}_{i\sigma} \hat{c}^{}_{j\sigma}
 + U \sum_i \hat{n}^{}_{i\uparrow} \hat{n}^{}_{i\downarrow},
 $$
@@ -37,7 +37,7 @@ is the number operator.
 The non-interacting part is given by the first term
 
 $$
-\hat{H}^0 = t \sum_{ij\sigma}  
+\hat{H}^0 = t \sum_{ij\sigma}
 \hat{c}^{\dagger}_{i\sigma} \hat{c}^{}_{j\sigma},
 $$
 
@@ -218,6 +218,7 @@ n_target = 1 # half-filling
 
 kweight = SmearingKWeight(beta=beta, n_target=n_target)
 ```
+
 ## Setup the solvers and find a self-consistent solution
 
 :::{seealso}
@@ -294,24 +295,24 @@ total_spin = embedding.overlap(total_spin_Op)
 
 ## Exercises
 
-1. Solve for a range of $U$ values from $U = 0$ to $U = 12$. You may find
-`embedding.set_h_int()` useful.
+1.  Solve for a range of $U$ values from $U = 0$ to $U = 12$. You may find
+    `embedding.set_h_int()` useful.
 
-1. Plot the average spin $S$ on a site versus $U$. Plot the quasiparticle
-weight $Z$ (accessed by `S.Z`) versus $U$. What happens to $S$ and
-$Z$ for large $U$?
+1.  Plot the average spin $S$ on a site versus $U$. Plot the quasiparticle
+    weight $Z$ (accessed by `S.Z`) versus $U$. What happens to $S$ and
+    $Z$ for large $U$?
 
-1. Plot the hybridization coupling $D$ (accessed by `embedding.D`) of the
-[embedding Hamiltonian](../explanations/embedding.md). What happens to $D$
-for large $U$? What does this imply about the impurity and the bath coupling
-in the embedding Hamiltonian $\hat{H}^{\mathrm{emb}}$?
+1.  Plot the hybridization coupling $D$ (accessed by `embedding.D`) of the
+    [embedding Hamiltonian](../explanations/embedding.md). What happens to $D$
+    for large $U$? What does this imply about the impurity and the bath coupling
+    in the embedding Hamiltonian $\hat{H}^{\mathrm{emb}}$?
 
-1. You will notice that $Z$, $S$, and $D$ both have an abrupt change, and then
-plateau, at some critical interaction strength $U_c$. What is the phase of
-matter to the left of $U_c$? What is the phase of matter to the right of
-$U_c$? What type of phase transition occurs at $U_c$?
+1.  You will notice that $Z$, $S$, and $D$ both have an abrupt change, and then
+    plateau, at some critical interaction strength $U_c$. What is the phase of
+    matter to the left of $U_c$? What is the phase of matter to the right of
+    $U_c$? What type of phase transition occurs at $U_c$?
 
-1. Construct an operator that calculates the number variance
+1.  Construct an operator that calculates the number variance
 
     $$
     \mathrm{Var}(N) = \langle (\hat{N} - \langle N \rangle)^2 \rangle,
@@ -326,37 +327,37 @@ $U_c$? What type of phase transition occurs at $U_c$?
     and plot these as a function of $U$. How do they look like to the left
     and right of the critical interaction $\hat{U}_c$?
 
-1. If you know anything about the Mott metal-insulator phase transition,
-you might find the phase of matter to the right of $U_c$ a bit strange. In the
-limit $t/U$ is small, a perturbative expansion gives the low-energy effective
-theory of the half-filled Hubbard model as the Heisenberg model, given by
+1.  If you know anything about the Mott metal-insulator phase transition,
+    you might find the phase of matter to the right of $U_c$ a bit strange. In the
+    limit $t/U$ is small, a perturbative expansion gives the low-energy effective
+    theory of the half-filled Hubbard model as the Heisenberg model, given by
 
-    $$
-    \hat{H} = J \sum_{i \neq j} \vec{S}_i \cdot \vec{S}_j,
-    $$
+        $$
+        \hat{H} = J \sum_{i \neq j} \vec{S}_i \cdot \vec{S}_j,
+        $$
 
-    where $\vec{S}_i = (\hat{S}_i^x, \hat{S}_i^y, \hat{S}_i^z)$, and
-    $J = 4 t^2 / U$.
+        where $\vec{S}_i = (\hat{S}_i^x, \hat{S}_i^y, \hat{S}_i^z)$, and
+        $J = 4 t^2 / U$.
 
-    The above implies that the localized spin-$1/2$s on each site
-    have a spin-spin exchange interaction between them arising from charge
-    fluctuations (high-energy virtual processes). In the atomic limit
-    $t / U \rightarrow 0$ the spin exchange $J \rightarrow 0$, with an
-    isolated spin-$1/2$ on each site because there is no coupling between
-    them.
+        The above implies that the localized spin-$1/2$s on each site
+        have a spin-spin exchange interaction between them arising from charge
+        fluctuations (high-energy virtual processes). In the atomic limit
+        $t / U \rightarrow 0$ the spin exchange $J \rightarrow 0$, with an
+        isolated spin-$1/2$ on each site because there is no coupling between
+        them.
 
-    Recalling the observables you calculated to the right of the critical
-    interaction $U_c$ (which happened at a finite $U$) what does this imply
-    about the ground state that {{RISB}} predicts in the Mott phase?
+        Recalling the observables you calculated to the right of the critical
+        interaction $U_c$ (which happened at a finite $U$) what does this imply
+        about the ground state that {{RISB}} predicts in the Mott phase?
 
-    What physics is {{RISB}} not capturing that, e.g., {{DMFT}} captures,
-    and why?
+        What physics is {{RISB}} not capturing that, e.g., {{DMFT}} captures,
+        and why?
 
-    :::{hint}
-    In {{RISB}} the frequency dependence of the self-energy is linear and
-    goes like $\Sigma(\omega) \sim (I - Z^{-1}) \omega$, where $I$ is the
-    identity.
-    :::
+        :::{hint}
+        In {{RISB}} the frequency dependence of the self-energy is linear and
+        goes like $\Sigma(\omega) \sim (I - Z^{-1}) \omega$, where $I$ is the
+        identity.
+        :::
 
 ## Conclusion
 
@@ -378,18 +379,20 @@ metal-insulator transition (of the Slater type).
 1. How does this differ to the Brinkman-Rice metal-insulator transition?
 
 1. How does this differ to the mean-field solution (Hartree-Fock) to the
-Hubbard model on the cubic lattice?
+   Hubbard model on the cubic lattice?
 
 1. Knowing that the Mott insulating state that {{RISB}} captures in the
-Brinkman-Rice transition should have spin-spin exchange, what is the expected
-ground state of the Hubbard model on the cubic lattice at half-filling?
+   Brinkman-Rice transition should have spin-spin exchange, what is the expected
+   ground state of the Hubbard model on the cubic lattice at half-filling?
 
-[^Brinkman1970]: [W. F. Brinkman and T. M. Rice,
-*Application of Gutzwiller's Variational Method to the Metal-Insulator Transition*,
-Phys. Rev. B **2**, 4302 (1970)](https://doi.org/10.1103/PhysRevB.2.4302).
+[^Brinkman1970]:
+    [W. F. Brinkman and T. M. Rice,
+    _Application of Gutzwiller's Variational Method to the Metal-Insulator Transition_,
+    Phys. Rev. B **2**, 4302 (1970)](https://doi.org/10.1103/PhysRevB.2.4302).
 
-[^GHOST]: [N. Lanatà, T.-H. Lee, Y.-X. Yao, and V. Dobrosavljević,
-*Emergent Bloch excitations in Mott matter*,
-Phys. Rev. B **96**, 195126 (2017)](https://doi.org/10.1103/PhysRevB.96.195126),
-and the papers that cite this paper for extensions that improve upon
-normal {{RISB}}.
+[^GHOST]:
+    [N. Lanatà, T.-H. Lee, Y.-X. Yao, and V. Dobrosavljević,
+    _Emergent Bloch excitations in Mott matter_,
+    Phys. Rev. B **96**, 195126 (2017)](https://doi.org/10.1103/PhysRevB.96.195126),
+    and the papers that cite this paper for extensions that improve upon
+    normal {{RISB}}.

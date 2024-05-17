@@ -11,16 +11,35 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-
   build:
-
     strategy:
       fail-fast: true
       matrix:
         include:
-          - {os: "ubuntu-22.04", python-version: "3.10", cc: "gcc", cxx: "g++", llvm: "15", gcc-version: "12"}
-          - {os: "ubuntu-22.04", python-version: "3.11", cc: "gcc", cxx: "g++", llvm: "15", gcc-version: "12"}
-          - {os: "ubuntu-22.04", python-version: "3.12", cc: "gcc", cxx: "g++", llvm: "15", gcc-version: "12"}
+          - {
+              os: "ubuntu-22.04",
+              python-version: "3.10",
+              cc: "gcc",
+              cxx: "g++",
+              llvm: "15",
+              gcc-version: "12",
+            }
+          - {
+              os: "ubuntu-22.04",
+              python-version: "3.11",
+              cc: "gcc",
+              cxx: "g++",
+              llvm: "15",
+              gcc-version: "12",
+            }
+          - {
+              os: "ubuntu-22.04",
+              python-version: "3.12",
+              cc: "gcc",
+              cxx: "g++",
+              llvm: "15",
+              gcc-version: "12",
+            }
           #- {os: "ubuntu-22.04", python-version: "3.10", cc: "clang", cxx: "clang++", llvm: "15", gcc-version: "12"}
           #- {os: "ubuntu-22.04", python-version: "3.11", cc: "clang", cxx: "clang++", llvm: "15", gcc-version: "12"}
 
@@ -28,29 +47,29 @@ jobs:
 
     name: Test Python ${{ matrix.python-version }}
     steps:
-    - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-    - name: Setup Python ${{ matrix.python-version }} and TRIQS
-      uses: ./.github/actions/setup-triqs
-      with:
-        python-version: ${{ matrix.python-version }}
-        cc: ${{ matrix.cc }}
-        cxx: ${{ matrix.cxx }}
-        llvm: ${{ matrix.llvm }}
-        gcc-version: ${{ matrix.gcc-version }}
+      - name: Setup Python ${{ matrix.python-version }} and TRIQS
+        uses: ./.github/actions/setup-triqs
+        with:
+          python-version: ${{ matrix.python-version }}
+          cc: ${{ matrix.cc }}
+          cxx: ${{ matrix.cxx }}
+          llvm: ${{ matrix.llvm }}
+          gcc-version: ${{ matrix.gcc-version }}
 
-    - name: Install risb
-      run: |
-        source $TRIQS_INSTALL/share/triqs/triqsvars.sh
-        python -m pip install -e .[test,docs]
+      - name: Install risb
+        run: |
+          source $TRIQS_INSTALL/share/triqs/triqsvars.sh
+          python -m pip install -e .[test,docs]
 
-    - name: Test risb
-      run: |
-        source $TRIQS_INSTALL/share/triqs/triqsvars.sh
-        python -m pytest
+      - name: Test risb
+        run: |
+          source $TRIQS_INSTALL/share/triqs/triqsvars.sh
+          python -m pytest
 
-    - name: Test docs
-      run: |
-        source $TRIQS_INSTALL/share/triqs/triqsvars.sh
-        sphinx-apidoc -o docs/api --module-first --no-toc --force --separate src/risb
-        sphinx-build -b html -n -T docs docs/_build
+      - name: Test docs
+        run: |
+          source $TRIQS_INSTALL/share/triqs/triqsvars.sh
+          sphinx-apidoc -o docs/api --module-first --no-toc --force --separate src/risb
+          sphinx-build -b html -n -T docs docs/_build
