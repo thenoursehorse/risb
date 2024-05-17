@@ -15,13 +15,17 @@
 #
 # Authors: H. L. Nourse
 
+"""DIIS optimizers."""
+
 import numpy as np
 import scipy
 from numpy.typing import ArrayLike
+
 from . import NewtonSolver
 
+
 class DIIS(NewtonSolver):
-    '''
+    """
     Direct inversion in the iterative subspace to minimize a function.
     
     Parameters
@@ -35,7 +39,9 @@ class DIIS(NewtonSolver):
     Algorithm 2 (Anderson type) in `10.1051/m2an/2021069 <hal-02492983v5_>`__.
 
     .. _hal-02492983v5: https://doi.org/10.1051/m2an/2021069
-    '''
+
+    """
+
     def __init__(self, /, 
                  n_period : int = 0, 
                  **kwargs) -> None:
@@ -52,10 +58,7 @@ class DIIS(NewtonSolver):
     def extrapolate(x : list[ArrayLike], 
                     g_x : list[ArrayLike], 
                     error : list[ArrayLike]) -> np.ndarray:
-        """
-        The DIIS extrapolation algorithm for the new guess for :attr:`x`.
-        """
-        
+        """DIIS extrapolation algorithm for the new guess for :attr:`x`."""
         # Construct the B matrix
         m = len(error)
         B = np.empty(shape=(m,m))
@@ -83,7 +86,7 @@ class DIIS(NewtonSolver):
     # x_i, error(x_i), g(x_i) where g(x_i) is the fixed-point function 
     # that gives a new x_i
     def update_x(self, alpha : float = 1.0) -> np.ndarray:
-                
+        """Return a new guess for the vector x."""
         if ((self.n+1) % self.n_period == 0):
             # Do linear mixing
             x_opt = self.x[0] + alpha*(self.g_x[0] - self.x[0])

@@ -15,11 +15,19 @@
 #
 # Authors: H. L. Nourse
 
-from copy import deepcopy
-import numpy as np
+"""Abstract base class for quasi-Newton methods."""
+
+import logging
 from abc import ABC, abstractmethod
-from typing import Any, Callable
+from collections.abc import Callable
+from copy import deepcopy
+from typing import Any
+
+import numpy as np
 from numpy.typing import ArrayLike
+
+logger = logging.getLogger(__name__)
+
 
 # TODO fix up verbose messages
 class NewtonSolver(ABC):
@@ -32,21 +40,19 @@ class NewtonSolver(ABC):
         Maximum size of subspace.
     n_restart : int, optional
         Fully reset subspace after this many iterations.
-    verbose : bool, optional
-        Whether to report information during optimization.
     
     Notes
     -----
     :meth:`update_x` must be defined in the inherited class.
+
     """
+
     def __init__(self, 
                  history_size : int = 6, 
-                 n_restart : float = np.inf, 
-                 verbose : bool = False) -> None:
+                 n_restart : float = np.inf) -> None:
 
         self.history_size = history_size
         self.n_restart = n_restart
-        self.verbose = verbose
         self.initialized = False
 
         #: list[numpy.ndarray] : History of guesses to the root problem.
@@ -73,7 +79,8 @@ class NewtonSolver(ABC):
                       max_size : int) -> tuple[ list[ArrayLike], list[ArrayLike] ]:
 
         if (len(x) != len(error)) and (len(x) != (len(error) + 1)):
-            raise ValueError('x and error are the wrong lengths !')
+            msg = 'x and error are the wrong lengths !'
+            raise ValueError(msg)
 
         x_out = deepcopy(x)
         error_out = deepcopy(error)
@@ -92,15 +99,14 @@ class NewtonSolver(ABC):
 
         # Note these operations are mutable on input list
         vec.insert(0, vec_new)
-        if max_size is not None:
-            if len(vec) >= max_size:
-                vec.pop()
+        if max_size is not None and len(vec) >= max_size:
+            vec.pop()
     
     @abstractmethod
     def update_x(self, 
                  **kwargs) -> np.ndarray:
         """
-        A single iteration for the new guess for :attr:`x`.
+        Return a single iteration for the new guess for :attr:`x`.
         
         Parameters
         ----------
@@ -111,8 +117,8 @@ class NewtonSolver(ABC):
         -------
         numpy.ndarray
             New guess for x to add to history.
+
         """
-        pass
 
     def solve(self, 
               fun : Callable[..., ArrayLike],
@@ -120,14 +126,12 @@ class NewtonSolver(ABC):
               args : tuple[Any, ...] = (), 
               tol : float = 1e-12, 
               maxiter : int = 1000,
-              options : dict = {}) -> ArrayLike:
+              options : dict | None = None) -> ArrayLike:
         """
-        Find the root of a function. It is called similarly to 
-        :func:scipy.optimize.root
+        Find the root of a function. It is called similarly to :func:scipy.optimize.root.
 
         Parameters
         ----------
-
         fun : callable
             The function to find the root of. It must be callable as 
             ``fun(x, *args)``.
@@ -148,8 +152,10 @@ class NewtonSolver(ABC):
         -------
         numpy.ndarray
             Root of ``fun``.
-        """
 
+        """
+        if options is None:
+            options = {}
         self.success = False
         x = deepcopy(x0)
         if self.history_size > 0:
@@ -164,8 +170,7 @@ class NewtonSolver(ABC):
                 self._insert_vector(self.error, error, self.history_size)
 
             self.norm = np.linalg.norm(error)
-            if self.verbose:
-                print(f"n: {self.n}, rms(risb): {self.norm}")
+            logger.info(f"n: {self.n}, rms(risb): {self.norm}")
             if self.norm < tol:
                 self.success = True
                 break
@@ -180,10 +185,9 @@ class NewtonSolver(ABC):
             if self.history_size > 0: 
                 self._insert_vector(self.x, x, self.history_size)
                     
-        if self.verbose:
-            if self.success:
-                print(f"The solution converged. nit: {self.n}, tol: {self.norm}")
-            else:
-                print(f"The solution did NOT converge. nit: {self.n} tol: {self.norm}")
+        if self.success:
+            logger.info(f"The solution converged. nit: {self.n}, tol: {self.norm}")
+        else:
+            logger.info(f"The solution did NOT converge. nit: {self.n} tol: {self.norm}")
         
         return x
