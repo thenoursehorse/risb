@@ -21,7 +21,7 @@ import numpy as np
 import scipy
 from numpy.typing import ArrayLike
 
-from . import NewtonSolver
+from .solver_newton import NewtonSolver
 
 
 class DIIS(NewtonSolver):

@@ -2,7 +2,7 @@
 
 from numpy.typing import ArrayLike
 
-from . import NewtonSolver
+from .solver_newton import NewtonSolver
 
 
 # error function f(x_i) = x_i - x_i-1
