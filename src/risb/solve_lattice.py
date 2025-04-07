@@ -458,8 +458,8 @@ class LatticeSolver:
 
         # Make R, Lambda in supercell basis from basis of the clusters
         # FIXME check if projectors get broadcast correctly if they are a diff proj at each k
-        self.R_full = {bl: 0 for bl in self.h0_kin_k}
-        self.Lambda_full = {bl: 0 for bl in self.h0_kin_k}
+        self.R_full = dict.fromkeys(self.h0_kin_k, 0)
+        self.Lambda_full = dict.fromkeys(self.h0_kin_k, 0)
         if self.projectors is not None:
             for i in range(self.n_clusters):
                 for bl, _ in self.gf_struct[i]:

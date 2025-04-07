@@ -152,5 +152,5 @@ with np.printoptions(precision=4, suppress=True):
             print(f"Correlation potential Lambda[{bl}] = \n{Lambda}")
         print(f"Number of partices per cluster N = \n{total_number:0.4f}")
         print(
-            f"Effective spin of a cluster S = \n{ -0.5 + 0.5 * np.sqrt( 1 + 4*total_spin) : 4f}"
+            f"Effective spin of a cluster S = \n{-0.5 + 0.5 * np.sqrt(1 + 4 * total_spin): 4f}"
         )
