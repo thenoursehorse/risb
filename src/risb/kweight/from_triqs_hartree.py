@@ -72,4 +72,30 @@ def update_mu(n_target, energies, beta, n_k, smear_function):
             n += np.sum(smear_function(en, beta, mu)) / n_k
         return n - n_target
 
-    return brentq(target_function, e_min, e_max)
+    def adjust_brackets(e_min, e_max):
+        """
+        Gets called if target_function(e_min) and target_function(e_max)
+        have the same sign. Adjusts e_min and e_max until they bracket 
+        the chemical potential (i.e. until target_function(e_min) and 
+        target_function(e_max) have different signs).
+        """
+        old_sign = np.sign(target_function(e_min))
+        if old_sign > 0:
+            e_min -= 0.5
+            new_sign = np.sign(target_function(e_min))
+        else:
+            e_max += 0.5
+            new_sign = np.sign(target_function(e_max))
+
+        if old_sign == new_sign:
+            e_min, e_max = adjust_brackets(e_min, e_max)
+        else:
+            return e_min, e_max
+
+    try:
+        res = brentq(target_function, e_min, e_max)
+    except ValueError:
+        e_min, e_max = adjust_brackets(e_min, e_max)
+        res = brentq(target_function, e_min, e_max)
+
+    return res
