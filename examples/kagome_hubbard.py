@@ -135,7 +135,7 @@ with np.printoptions(formatter={"float": "{: 0.4f}".format}):
     print(f"Density matrix rho_cf = \n{embedding[0].rho_cf['up']}")
     print(f"Bath coupling matrix Lambda_c = \n{S.Lambda_c[0]['up']}")
     print(f"Hybridization matrix D = \n{S.D[0]['up']}")
-    print(f"Number of partices on cluster N = \n{total_number[0] : 0.4f}")
+    print(f"Number of partices on cluster N = \n{total_number[0]: 0.4f}")
     print(
-        f"Effective spin of cluster S = \n{  -0.5 + 0.5 * np.sqrt( 1 + 4*np.array(total_spin[0]) ) : 0.4f}"
+        f"Effective spin of cluster S = \n{-0.5 + 0.5 * np.sqrt(1 + 4 * np.array(total_spin[0])): 0.4f}"
     )

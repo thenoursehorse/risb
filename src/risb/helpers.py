@@ -611,7 +611,7 @@ def get_h0_kin_k(
                 h0_kin_k[bl_full] -= P[bl].conj().T @ h0_loc_matrix @ P[bl]
                 # h0_kin_k[bl_full] = get_h0_kin_k_mat(h0_kin_k[bl_full], P[bl])
     else:
-        for bl in h0_k:
-            h0_kin_k[bl] -= get_h0_loc_matrix(h0_k[bl])
+        for bl, mat in h0_k.items():
+            h0_kin_k[bl] -= get_h0_loc_matrix(mat)
 
     return h0_kin_k

@@ -30,7 +30,7 @@ def do_assert(subtests, mu, Lambda, Z, mu_expected, Lambda_expected, Z_expected)
                 assert Z[i][bl] == pytest.approx(Z_expected, abs=abs)
 
 
-@pytest.fixture()
+@pytest.fixture
 def one_band():
     n_orb = 1
     spatial_dim = 3
@@ -50,7 +50,7 @@ def one_band():
     return gf_struct, h0_k, embedding, kweight, mu, Lambda_expected, Z_expected
 
 
-@pytest.fixture()
+@pytest.fixture
 def bilayer():
     U = 4
     V = 0.25
@@ -77,7 +77,7 @@ def bilayer():
     return gf_struct, h0_k, embedding, kweight, mu, Lambda_expected, Z_expected
 
 
-@pytest.fixture()
+@pytest.fixture
 def kanamori():
     coeff = 0.2
     U = 3

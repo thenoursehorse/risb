@@ -146,7 +146,7 @@ for U in U_arr:
         print(f"Filling G_qp: {G_qp_iw_loc.total_density().real:.4f}")
         print(f"Filling G: {G_iw_loc.total_density().real:.4f}")
         print(f"Filling G2: {G_iw_loc2.total_density().real:.4f}")
-        print(f"Filling Z:: {S.Z[0]['up'][0,0]:.4f}")
+        print(f"Filling Z:: {S.Z[0]['up'][0, 0]:.4f}")
 
 fig, axis = plt.subplots(1, 2)
 axis[0].plot(U_arr, Z, "-ok")

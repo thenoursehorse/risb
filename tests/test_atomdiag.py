@@ -42,7 +42,7 @@ def do_assert(
         assert pytest.approx(S2_expected, abs=abs) == S2
 
 
-@pytest.fixture()
+@pytest.fixture
 def one_band():
     U = 1
     mu = U / 2.0  # half-filling
@@ -59,7 +59,7 @@ def one_band():
     return spin_names, n_orb, Lambda_c, D, h0_loc_mat, h_int
 
 
-@pytest.fixture()
+@pytest.fixture
 def one_band_expected():
     rho_f_expected = np.array([[0.5]])
     rho_cf_expected = np.array([[0.4681588161332029]])
@@ -77,7 +77,7 @@ def one_band_expected():
     )
 
 
-@pytest.fixture()
+@pytest.fixture
 def bilayer():
     U = 1
     V = 0.25
@@ -100,7 +100,7 @@ def bilayer():
     return spin_names, n_orb, Lambda_c, D, h0_loc_mat, h_int
 
 
-@pytest.fixture()
+@pytest.fixture
 def bilayer_expected():
     rho_f_expected = np.array([[0.5, -0.1999913941210893], [-0.1999913941210893, 0.5]])
     rho_cf_expected = np.array([[0.42326519677453511, 0], [0, 0.42326519677453511]])
@@ -118,7 +118,7 @@ def bilayer_expected():
     )
 
 
-@pytest.fixture()
+@pytest.fixture
 def dh_trimer():
     # At two-thirds filling
     U = 1
@@ -165,7 +165,7 @@ def dh_trimer():
     return spin_names, n_orb, Lambda_c, D, h0_loc_mat, h_int
 
 
-@pytest.fixture()
+@pytest.fixture
 def dh_trimer_expected():
     rho_f_expected = np.array(
         [
