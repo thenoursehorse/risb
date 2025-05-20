@@ -81,8 +81,8 @@ def matrix_to_Op(
     C_dag_Op = get_C_Op(gf_struct=gf_struct, dagger=True)
     C_Op = get_C_Op(gf_struct=gf_struct, dagger=False)
     Op = {}
-    for bl in A:
-        Op[bl] = C_dag_Op[bl] @ A[bl] @ C_Op[bl]
+    for bl, mat in A.items():
+        Op[bl] = C_dag_Op[bl] @ mat @ C_Op[bl]
     return Op
 
 
@@ -130,12 +130,12 @@ def get_h0_loc_blocks(
         gf_struct_mapping = {bl: bl for bl in h0_k}
 
     h0_loc_matrix = {}
-    for bl_sub in P:  # sub = subspace of full space defined by h0_k
+    for bl_sub, P_sub in P.items():  # sub = subspace of full space defined by h0_k
         bl = gf_struct_mapping[bl_sub]
         if force_real:
-            h0_loc_matrix[bl_sub] = get_h0_loc_matrix(h0_k[bl], P[bl_sub]).real
+            h0_loc_matrix[bl_sub] = get_h0_loc_matrix(h0_k[bl], P_sub).real
         else:
-            h0_loc_matrix[bl_sub] = get_h0_loc_matrix(h0_k[bl], P[bl_sub])
+            h0_loc_matrix[bl_sub] = get_h0_loc_matrix(h0_k[bl], P_sub)
 
     return matrix_to_Op(A=h0_loc_matrix, gf_struct=gf_struct)
 
