@@ -47,7 +47,7 @@ jobs:
 
     name: Test Python ${{ matrix.python-version }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Setup Python ${{ matrix.python-version }} and TRIQS
         uses: ./.github/actions/setup-triqs
