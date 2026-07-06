@@ -1,4 +1,4 @@
-# ruff: noqa: T201, D100, D103
+# ruff: noqa: D100, D103
 from itertools import product
 
 import numpy as np
