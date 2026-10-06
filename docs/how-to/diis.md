@@ -16,13 +16,13 @@ To specify how big the history should be
 ```python
 from risb.optimize import DIIS
 
-optimize = DIIS(history_size = ...)
+optimize = DIIS(history_size=...)
 ```
 
 If you want to reset the entire history after $n$ iterations
 
 ```python
-optimize = DIIS(n_restart = ...)
+optimize = DIIS(n_restart=...)
 ```
 
 ## Linear mixing step
@@ -33,14 +33,14 @@ iterations.
 To change how frequently a linear mixing step is taken
 
 ```python
-optimize = DIIS(n_period = ...)
+optimize = DIIS(n_period=...)
 ```
 
 The size of the linear mixing step $\alpha$ is specified in the `solve()`
 method as
 
 ```python
-optimize.solve(alpha = ...)
+optimize.solve(alpha=...)
 ```
 
 ## Only linear mixing
@@ -51,7 +51,7 @@ If you just want to use linear mixing with nothing special
 from risb.optimize import LinearMixing
 
 optimize = LinearMixing()
-optimize.solve(alpha = ...)
+optimize.solve(alpha=...)
 ```
 
 ## Arguments to `solve()`
@@ -77,18 +77,17 @@ If you want to use your customized {{DIIS}} solver
 ```python
 from risb import LatticeSolver
 
-S = LatticeSolver(...,
-                  root = optimize.solve
-)
+S = LatticeSolver(..., root=optimize.solve)
 ```
 
 To pass keyword arguments to `optimize.solve()`
 
 ```python
-S.solve(...,
-        tol = ...,
-        maxiter = ...,
-        alpha = ...,
+S.solve(
+    ...,
+    tol=...,
+    maxiter=...,
+    alpha=...,
 )
 ```
 

@@ -1,4 +1,4 @@
-# ruff: noqa: T201, D100, D103
+# ruff: noqa: T201, D100
 
 import numpy as np
 from triqs.gf import MeshImFreq, MeshProduct

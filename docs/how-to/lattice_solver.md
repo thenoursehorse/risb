@@ -70,12 +70,13 @@ embedding = EmbeddingClass(h_int, gf_struct)
 Finally, set up the solver class and solve
 
 ```python
-S = LatticeSolver(h0_k = h0_k,
-                  gf_struct = gf_struct,
-                  embedding = embedding,
-                  update_weights = kweight.update_weights,
+S = LatticeSolver(
+    h0_k=h0_k,
+    gf_struct=gf_struct,
+    embedding=embedding,
+    update_weights=kweight.update_weights,
 )
-S.solve(tol = ...)
+S.solve(tol=...)
 ```
 
 ## Multiple clusters
@@ -148,8 +149,8 @@ each cluster is just the spin, paramagnetism can be enforced as
 def paramagnetism(A):
     n_clusters = len(A)
     for i in range(n_clusters):
-        A[i]['up'] = 0.5 * (A[i]['up'] + A[i]['dn'])
-        A[i]['dn'] = A[i]['up']
+        A[i]["up"] = 0.5 * (A[i]["up"] + A[i]["dn"])
+        A[i]["dn"] = A[i]["up"]
     return A
 ```
 
