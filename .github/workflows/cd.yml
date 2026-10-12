@@ -11,7 +11,11 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  test:
+    uses: ./.github/workflows/ci.yml
+
   bump-version:
+    needs: [test]
     runs-on: ubuntu-latest
     permissions:
       id-token: write
