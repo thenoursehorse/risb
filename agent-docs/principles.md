@@ -1,0 +1,5 @@
+- Keep it simple.
+- Keep modules uncoupled; prefer functions over stateful classes.
+- Make a function public rather than import a private one.
+- Use `logging`, not `print`.
+- Comments and docstrings: minimal, human, no history or benchmark numbers.

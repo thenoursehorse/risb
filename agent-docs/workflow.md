@@ -1,0 +1,3 @@
+- One item at a time.
+- Before any decision, explain in chat: the problem, options, proposed fix, code touched, numbers.
+- Start every plan with the principles from `principles.md` and review the diff against them.
