@@ -181,7 +181,8 @@ def test_scipy_root(subtests, request, model, root_method):
     for i in range(S.n_clusters):
         for bl, _ in S.gf_struct[i]:
             np.fill_diagonal(S.Lambda[i][bl], mu_expected)
-    S.solve(method=root_method, tol=1e-12)
+    result = S.solve(method=root_method, tol=1e-10)
+    assert result.success, result.message
     mu_calculated = kweight.mu
     do_assert(
         subtests, mu_calculated, S.Lambda, S.Z, mu_expected, Lambda_expected, Z_expected
