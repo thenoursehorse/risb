@@ -53,21 +53,26 @@ shift_list = [shift_1, ..., shift_d]
 # Method 1: Using np.meshgrid
 
 # Create linear array in each spatial dimension
-k_linear_list = [np.linspace(0, 1, n_k_list[i], endpoint = False) + shift_list[i] / n_k_list[i] for i in range(d)]
+k_linear_list = [
+    np.linspace(0, 1, n_k_list[i], endpoint=False) + shift_list[i] / n_k_list[i]
+    for i in range(d)
+]
 
 # Create a meshgrid
-k_mesh = np.meshgrid(*k_linear_list, indexing='ij')
+k_mesh = np.meshgrid(*k_linear_list, indexing="ij")
 
 # Make it a list indexed as idx, k1, k2, ...
-k_mesh = np.reshape(k_mesh, (d,-1)).T
+k_mesh = np.reshape(k_mesh, (d, -1)).T
 
 # Method 2: Using an explicit for loop
 
 # Create empty mesh and populate it
 k_mesh = np.empty(shape=(n_k, d))
-for idx, coords in enumerate(product( *[range(n_k_list[i]) for i in range(len(n_k_list))] )):
+for idx, coords in enumerate(
+    product(*[range(n_k_list[i]) for i in range(len(n_k_list))])
+):
     for dim in range(d):
-        k_mesh[idx,dim] = (coords[dim] + shift_list[dim]) / n_k_list[dim]
+        k_mesh[idx, dim] = (coords[dim] + shift_list[dim]) / n_k_list[dim]
 ```
 
 If your function for $\hat{H}_0$ is in a different basis then you will
@@ -94,7 +99,7 @@ k_mesh = (G @ k_mesh.T).T
 
 # Method 2: Using an explicit for loop
 for k in range(k_mesh.shape[0]):
-    k_mesh[k,:] = G @ k_mesh[k,:]
+    k_mesh[k, :] = G @ k_mesh[k, :]
 ```
 
 Next, construct `h0_k` as

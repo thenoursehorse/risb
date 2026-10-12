@@ -52,7 +52,7 @@ Lastly, the appropriate original theory outlined in the [documentation](https://
 - [python](https://www.python.org/) version `>= 3.14`
 - [numpy](https://numpy.org/)
 - [scipy](https://scipy.org/)
-- [TRIQS](https://triqs.github.io/) version `3.2.x` if using :class:`EmbeddingAtomDiag`
+- [TRIQS](https://triqs.github.io/) version `4.x` if using :class:`EmbeddingAtomDiag`
 
 ## Installation
 
@@ -82,11 +82,16 @@ git clone https://github.com/thenoursehorse/risb
 cd risb
 ```
 
-Install the prerequisites
+Create a [conda](https://docs.conda.io/) environment with TRIQS, then
+install risb and the test prerequisites with [uv](https://docs.astral.sh/uv)
 
 ```shell
-pip install -e . --group test
+conda env create --prefix ./.venv --file environment.yml
+conda activate ./.venv
+uv sync --inexact
 ```
+
+The `--inexact` flag stops uv from removing TRIQS from the environment.
 
 Tests are run with
 
@@ -103,10 +108,12 @@ git clone https://github.com/thenoursehorse/risb
 cd risb
 ```
 
-Install the prerequisites
+Create the conda environment as in Tests above, then install the
+documentation prerequisites
 
 ```shell
-pip install -e .[docs]
+conda activate ./.venv
+uv sync --inexact --extra docs
 ```
 
 Build the API

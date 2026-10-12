@@ -18,7 +18,7 @@ symmetry sector (two orbitals) in a system where spin is conserved, the
 structure can be encoded as
 
 ```python
-gf_struct = [ ('up_eg', 2),  ('dn_eg', 2)]
+gf_struct = [("up_eg", 2), ("dn_eg", 2)]
 ```
 
 Next a local Hamiltonian has to be constructed. This must
@@ -30,16 +30,17 @@ constructed as
 
 ```python
 from triqs.operators import Operator, c_dag, c, n
+
 n_orb = 2
 
 U = 1
 h_int = Operator()
 for o in range(n_orb):
-    h_int += U * n('up', o) * n('dn', o)
+    h_int += U * n("up", o) * n("dn", o)
 
 # Optional local terms
-#V = 0.25
-#for s in ['up', 'dn']:
+# V = 0.25
+# for s in ['up', 'dn']:
 #    h_int += V * ( c_dag(s, 0) * c(s, 1) + c_dag(s, 1) * c(s, 0) )
 ```
 
@@ -49,6 +50,7 @@ The solver is instantiated as
 
 ```python
 from risb.embedding import EmbeddingAtomDiag
+
 embedding = EmbeddingAtomDiag(h_int, gf_struct)
 ```
 
@@ -166,7 +168,8 @@ This class is a copy of another
 
 ```python
 from risb.embedding import EmbeddingDummy
-embedding = EmbeddingDummy(embedding = embedding_atom_diag_instance)
+
+embedding = EmbeddingDummy(embedding=embedding_atom_diag_instance)
 ```
 
 ### Rotations
@@ -179,14 +182,16 @@ like in an antiferromagnetic phase, this can be done with
 
 ```python
 from itertools import deepcopy
+
+
 def rotate_spin(A):
     B = deepcopy(A)
-    B['up'] = A['dn']
-    B['dn'] = A['up']
+    B["up"] = A["dn"]
+    B["dn"] = A["up"]
     return B
 
-embedding = EmbeddingDummy(embedding = ...,
-                           rotations = [rotate_spin])
+
+embedding = EmbeddingDummy(embedding=..., rotations=[rotate_spin])
 ```
 
 :::{note}

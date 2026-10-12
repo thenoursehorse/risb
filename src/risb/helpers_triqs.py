@@ -18,7 +18,7 @@
 """Functions used in RISB based on the TRIQS library."""
 
 import numpy as np
-from triqs.gf import BlockGf, MeshImFreq, MeshProduct, MeshReFreq, inverse
+from triqs.gfs import BlockGf, MeshImFreq, MeshProduct, MeshReFreq, inverse
 from triqs.operators import Operator, c, c_dag
 
 from risb.helpers import get_h0_loc_matrix, get_h_qp
@@ -194,7 +194,7 @@ def get_gf_struct_from_g(block_gf: BlockGf) -> list[tuple[str, int]]:
 
     Parameters
     ----------
-    block_gf : triqs.gf.BlockGf
+    block_gf : triqs.gfs.BlockGf
         Block Green's function.
 
     Returns
@@ -228,27 +228,27 @@ def get_g0_k_w(
         list of pairs, each containing the name of the
         matrix block as a string and the size of that block.
         For example: ``[ ('up', 3), ('down', 3) ]``.
-    mesh : triqs.gf.MeshProduct
-        A meshproduct where first index is a triqs.gf.MeshBrZone mesh and
-        the second index is a triqs.gf.MeshReFreq or triqs.gf.MeshImFreq
+    mesh : triqs.gfs.MeshProduct
+        A meshproduct where first index is a triqs.gfs.MeshBrZone mesh and
+        the second index is a triqs.gfs.MeshReFreq or triqs.gfs.MeshImFreq
         mesh. MeshProduct is a fancy list.
     h0_k : dict[numpy.ndarray], optional
         Non-interacting dispersion indexed as k, orb_i, orb_j.
         Each key in dictionary must follow :attr:`gf_struct`.
-    h0_k : triqs.gf.BlockGf
-        Non-interacting dispersion as a triqs.gf.BlockGf.
+    h0_k : triqs.gfs.BlockGf
+        Non-interacting dispersion as a triqs.gfs.BlockGf.
         Must follow the structure given by :attr:`gf_struct`, on
         the mesh given by :attr:`mesh`.
     mu : float, optional
         Chemical potential.
     use_broadcasting : bool, optional
-        Whether to treat triqs.gf.Gf with its underlying numpy.ndarray
+        Whether to treat triqs.gfs.Gf with its underlying numpy.ndarray
         data structure, or to use iterators over for loops and lazy
         expressions from TRIQS.
 
     Returns
     -------
-    triqs.gf.BlockGf
+    triqs.gfs.BlockGf
         Non-interacting Green's function from a non-interacting dispersion
         relation :attr:`h0_k`.
 
@@ -306,7 +306,7 @@ def get_sigma_w(
         list of pairs, each containing the name of the
         matrix block as a string and the size of that block.
         For example: ``[ ('up', 3), ('down', 3) ]``.
-    mesh : triqs.gf.meshes.MeshReFreq | triqs.gf.meshes.MeshImFreq
+    mesh : triqs.gfs.meshes.MeshReFreq | triqs.gfs.meshes.MeshImFreq
         Frequency mesh of the returned self-energy.
     Lambda : dict[numpy.ndarray]
         Correlation potential of quasiparticles.
@@ -320,13 +320,13 @@ def get_sigma_w(
         Matrix of non-interacting hopping terms in each local subspace.
         Each key in dictionary must follow :attr:`gf_struct`.
     use_broadcasting : bool, optional
-        Whether to treat triqs.gf.Gf with its underlying numpy.ndarray
+        Whether to treat triqs.gfs.Gf with its underlying numpy.ndarray
         data structure, or to use iterators over for loops and lazy
         expressions from TRIQS.
 
     Returns
     -------
-    triqs.gf.BlockGf
+    triqs.gfs.BlockGf
         RISB local self-energy :math:`\Sigma(\omega)`.
 
     """
@@ -386,9 +386,9 @@ def get_g_qp_k_w(
         list of pairs, each containing the name of the
         matrix block as a string and the size of that block.
         For example: ``[ ('up', 3), ('down', 3) ]``.
-    mesh : triqs.gf.MeshProduct
-        A meshproduct where first index is a triqs.gf.MeshBrZone mesh and
-        the second index is a triqs.gf.MeshReFreq or triqs.gf.MeshImFreq
+    mesh : triqs.gfs.MeshProduct
+        A meshproduct where first index is a triqs.gfs.MeshBrZone mesh and
+        the second index is a triqs.gfs.MeshReFreq or triqs.gfs.MeshImFreq
         mesh. MeshProduct is a fancy list.
     h0_kin_k : dict[numpy.ndarray]
         Single-particle dispersion between local clusters. Indexed as
@@ -402,13 +402,13 @@ def get_g_qp_k_w(
     mu : float, optional
         Chemical potential.
     use_broadcasting : bool, optional
-        Whether to treat triqs.gf.Gf with its underlying numpy.ndarray
+        Whether to treat triqs.gfs.Gf with its underlying numpy.ndarray
         data structure, or to use iterators over for loops and lazy
         expressions from TRIQS.
 
     Returns
     -------
-    triqs.gf.BlockGf
+    triqs.gfs.BlockGf
         Quasiparticle Green's function :math:`G^{\mathrm{qp}}(k,\omega)`.
 
     """
@@ -447,28 +447,28 @@ def get_g_k_w(
 
     Parameters
     ----------
-    g0_k_w : triqs.gf.BlockGf, optional
+    g0_k_w : triqs.gfs.BlockGf, optional
         Non-interacting Green's function on a meshproduct where
-        the first index is a triqs.gf.MeshBrZone mesh and
-        the second index is a triqs.gf.MeshReFreq or triqs.gf.MeshImFreq mesh.
-    sigma_w : triqs.gf.BlockGf, optional
-        Local self-energy on a triqs.gf.MeshReFreq or triqs.gf.MeshImFreq mesh.
-    gp_k_w : triqs.gf.BlockGf, optional
+        the first index is a triqs.gfs.MeshBrZone mesh and
+        the second index is a triqs.gfs.MeshReFreq or triqs.gfs.MeshImFreq mesh.
+    sigma_w : triqs.gfs.BlockGf, optional
+        Local self-energy on a triqs.gfs.MeshReFreq or triqs.gfs.MeshImFreq mesh.
+    gp_k_w : triqs.gfs.BlockGf, optional
         Quasiparticle Green's function on a meshproduct where
-        the first index is a triqs.gf.MeshBrZone mesh and
-        the second index is a triqs.gf.MeshReFreq or triqs.gf.MeshImFreq mesh.
+        the first index is a triqs.gfs.MeshBrZone mesh and
+        the second index is a triqs.gfs.MeshReFreq or triqs.gfs.MeshImFreq mesh.
     R : dict[numpy.ndarray], optional
         Rormalization matrix from electrons to quasiparticles.
         Each key in dictionary must follow the gf_struct in
         :attr:`g0_k_w` and :attr:`sigma_w`.
     use_broadcasting : bool, optional
-        Whether to treat triqs.gf.Gf with its underlying numpy.ndarray
+        Whether to treat triqs.gfs.Gf with its underlying numpy.ndarray
         data structure, or to use iterators over for loops and lazy
         expressions from TRIQS.
 
     Returns
     -------
-    triqs.gf.BlockGf
+    triqs.gfs.BlockGf
         Physical c-electrons Green's function :math:`G(k,\omega)`.
 
     """
@@ -499,19 +499,19 @@ def get_g_w_loc(g_k_w: BlockGf, use_broadcasting: bool = True) -> BlockGf:
 
     Parameters
     ----------
-    g_k_w : triqs.gf.BlockGf
+    g_k_w : triqs.gfs.BlockGf
         A Green's function on a meshproduct where
-        the first index is a triqs.gf.MeshBrZone mesh and
-        the second index is a triqs.gf.MeshReFreq or triqs.gf.MeshImFreq mesh.
+        the first index is a triqs.gfs.MeshBrZone mesh and
+        the second index is a triqs.gfs.MeshReFreq or triqs.gfs.MeshImFreq mesh.
     use_broadcasting : bool, optional
-        Whether to treat triqs.gf.Gf with its underlying numpy.ndarray
+        Whether to treat triqs.gfs.Gf with its underlying numpy.ndarray
         data structure, or to use iterators over for loops and lazy
         expressions from TRIQS.
 
     Returns
     -------
-    triqs.gf.BlockGf
-        k-integrated Green's function on a triqs.gf.MeshReFreq or triqs.gf.MeshImFreq mesh.
+    triqs.gfs.BlockGf
+        k-integrated Green's function on a triqs.gfs.MeshReFreq or triqs.gfs.MeshImFreq mesh.
 
     """
     k_mesh = g_k_w.mesh[0]

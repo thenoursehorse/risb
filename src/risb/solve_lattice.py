@@ -19,7 +19,7 @@
 
 from collections.abc import Callable
 from itertools import product
-from typing import Any, TypeAlias
+from typing import Any
 
 import numpy as np
 from numpy.typing import ArrayLike
@@ -27,8 +27,8 @@ from numpy.typing import ArrayLike
 from risb import helpers
 from risb.optimize import DIIS
 
-GfStructType: TypeAlias = list[tuple[str, int]]
-MFType: TypeAlias = dict[ArrayLike]
+type GfStructType = list[tuple[str, int]]
+type MFType = dict[ArrayLike]
 
 
 # The structure and methods here have been modeled
@@ -360,7 +360,7 @@ class LatticeSolver:
             A = 0.5 * (A + A.conj().T)
         else:
             msg = "A is not a list[dict[ndarray]], dict[ndarray], or ndarray !"
-            raise ValueError(msg)
+            raise TypeError(msg)
         return A
 
     def _get_h0_loc_matrix(self) -> MFType:

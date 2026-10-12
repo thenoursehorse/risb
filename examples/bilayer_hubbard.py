@@ -1,7 +1,7 @@
-# ruff: noqa: T201, D100, D103
+# ruff: noqa: T201, D100
 
 import numpy as np
-from triqs.gf import MeshImFreq, MeshProduct
+from triqs.gfs import MeshImFreq, MeshProduct
 from triqs.lattice.tight_binding import (
     BravaisLattice,
     BrillouinZone,

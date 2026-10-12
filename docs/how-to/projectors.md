@@ -30,13 +30,13 @@ define a `gf_struct` for each correlated space $i$
 import numpy as np
 
 # The block structure of the non-interacting space
-spin_names = ['up', 'dn']
+spin_names = ["up", "dn"]
 
 # Define number of clusters/correlated subspaces
 n_clusters = 3
 
 # Define a local structure for each correlated subspace
-gf_struct = [ [(bl, 1) for bl in spin_names] for i in range(n_clusters) ]
+gf_struct = [[(bl, 1) for bl in spin_names] for i in range(n_clusters)]
 ```
 
 Next define the projectors as rectangular matrices
@@ -45,9 +45,9 @@ Next define the projectors as rectangular matrices
 import numpy as np
 
 # Dictionaries of projectors onto each block in gf_struct[i]
-P_A = { bl : np.array( [ [1, 0, 0] ] ) for bl in spin_names }
-P_B = { bl : np.array( [ [0, 1, 0] ] ) for bl in spin_names }
-P_C = { bl : np.array( [ [0, 0, 1] ] ) for bl in spin_names }
+P_A = {bl: np.array([[1, 0, 0]]) for bl in spin_names}
+P_B = {bl: np.array([[0, 1, 0]]) for bl in spin_names}
+P_C = {bl: np.array([[0, 0, 1]]) for bl in spin_names}
 
 # A list holding each projector, 1 for each i in gf_struct
 projectors = [P_A, P_B, P_C]

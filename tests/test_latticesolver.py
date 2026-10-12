@@ -1,8 +1,9 @@
-# ruff: noqa: T201, D100, D103
+# ruff: noqa: D100, D103
 
 
 import numpy as np
 import pytest
+from scipy.optimize import root as root_fun
 from test_common import build_cubic_h0_k, symmetrize_blocks
 from triqs.operators import Operator, n
 from triqs.operators.util.hamiltonians import h_int_kanamori
@@ -167,7 +168,6 @@ def test_scipy_root(subtests, request, model, root_method):
     gf_struct, h0_k, embedding, kweight, mu_expected, Lambda_expected, Z_expected = (
         model
     )
-    from scipy.optimize import root as root_fun
 
     S = LatticeSolver(
         h0_k=h0_k,

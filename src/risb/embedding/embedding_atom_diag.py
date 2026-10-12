@@ -18,7 +18,7 @@
 """Embedding solver using TRIQS AtomDiag."""
 
 from itertools import product
-from typing import TypeAlias, TypeVar
+from typing import TypeVar
 
 import numpy as np
 from numpy.typing import ArrayLike
@@ -27,9 +27,9 @@ from triqs.operators import Operator, c, c_dag, dagger
 
 from risb.helpers_triqs import get_C_Op
 
-GfStructType: TypeAlias = list[tuple[str, int]]
+type GfStructType = list[tuple[str, int]]
 OpType = TypeVar("OpType")
-MFType: TypeAlias = dict[ArrayLike]
+type MFType = dict[ArrayLike]
 
 
 class EmbeddingAtomDiag:
@@ -240,7 +240,7 @@ class EmbeddingAtomDiag:
             self.ad = AtomDiag(self.h_emb, self.fops_emb, n_min=M, n_max=M)
         else:
             self.ad = AtomDiag(self.h_emb.real, self.fops_emb, n_min=M, n_max=M)
-        self.gs_vector = self.ad.vacuum_state
+        self.gs_vector = self.ad.vacuum_state.copy()
         self.gs_vector[0] = 1
 
     def get_rho_f(self, bl: str) -> np.ndarray:

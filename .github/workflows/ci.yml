@@ -12,47 +12,39 @@ concurrency:
 
 jobs:
   build:
-    strategy:
-      fail-fast: true
-      matrix:
-        include:
-          - {
-              os: "ubuntu-22.04",
-              python-version: "3.14",
-              cc: "gcc",
-              cxx: "g++",
-              llvm: "15",
-              gcc-version: "12",
-            }
-          #- {os: "ubuntu-22.04", python-version: "3.14", cc: "clang", cxx: "clang++", llvm: "15", gcc-version: "12"}
+    runs-on: ubuntu-latest
 
-    runs-on: ${{ matrix.os }}
+    name: Test
+    defaults:
+      run:
+        shell: bash -el {0}
 
-    name: Test Python ${{ matrix.python-version }}
     steps:
       - uses: actions/checkout@v6
 
-      - name: Setup Python ${{ matrix.python-version }} and TRIQS
-        uses: ./.github/actions/setup-triqs
+      - name: Setup TRIQS
+        uses: mamba-org/setup-micromamba@v3
         with:
-          python-version: ${{ matrix.python-version }}
-          cc: ${{ matrix.cc }}
-          cxx: ${{ matrix.cxx }}
-          llvm: ${{ matrix.llvm }}
-          gcc-version: ${{ matrix.gcc-version }}
+          environment-file: environment.yml
+          environment-name: risb
+          cache-environment: true
+
+      - uses: astral-sh/setup-uv@v10
+        with:
+          enable-cache: true
 
       - name: Install risb
+        run: UV_PROJECT_ENVIRONMENT=$CONDA_PREFIX uv sync --inexact --locked --extra docs
+
+      - name: Lint
         run: |
-          source $TRIQS_INSTALL/share/triqs/triqsvars.sh
-          python -m pip install -e .[docs] --group test
+          ruff check .
+          ruff format --check .
 
       - name: Test risb
-        run: |
-          source $TRIQS_INSTALL/share/triqs/triqsvars.sh
-          python -m pytest
+        run: pytest
 
       - name: Test docs
         run: |
-          source $TRIQS_INSTALL/share/triqs/triqsvars.sh
           sphinx-apidoc -o docs/api --module-first --no-toc --force --separate src/risb
           sphinx-build -b html -n -T docs docs/_build

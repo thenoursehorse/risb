@@ -19,6 +19,7 @@
 
 import numpy as np
 from numpy.typing import ArrayLike
+from scipy.special import erfc, factorial, hermite
 
 from .from_triqs_hartree import fermi, update_mu
 
@@ -83,16 +84,12 @@ class SmearingKWeight:
 
     @staticmethod
     def _gaussian(energies: ArrayLike, beta: float, mu: float) -> ArrayLike:
-        from scipy.special import erfc
-
         return 0.5 * erfc(beta * (energies - mu))
 
     @staticmethod
     def _methfessel_paxton(
         energies: ArrayLike, beta: float, mu: float, N: int = 1
     ) -> ArrayLike:
-        from scipy.special import erfc, factorial, hermite
-
         def A_n(n):
             return (-1) ** n / (factorial(n) * 4**n * np.sqrt(np.pi))
 

@@ -12,6 +12,10 @@ _build
 # pytest
 .pytest_cache
 
+# environments
+.venv
+.envrc
+
 # Potential auth keys
 .github.auth
 

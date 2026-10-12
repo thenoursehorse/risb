@@ -37,26 +37,32 @@ jobs:
 
   build-docs:
     needs: [bump-version]
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: bash -el {0}
 
     steps:
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0
 
-      - name: Setup Python 3.14 and TRIQS
-        uses: ./.github/actions/setup-triqs
+      - name: Setup TRIQS
+        uses: mamba-org/setup-micromamba@v3
         with:
-          python-version: "3.14"
+          environment-file: environment.yml
+          environment-name: risb
+          cache-environment: true
+
+      - uses: astral-sh/setup-uv@v10
+        with:
+          enable-cache: true
 
       - name: Install risb and docs dependencies
-        run: |
-          source $TRIQS_INSTALL/share/triqs/triqsvars.sh
-          python -m pip install .[docs]
+        run: UV_PROJECT_ENVIRONMENT=$CONDA_PREFIX uv sync --inexact --locked --extra docs --no-dev
 
       - name: Build docs
         run: |
-          source $TRIQS_INSTALL/share/triqs/triqsvars.sh
           sphinx-apidoc -o docs/api --module-first --no-toc --force --separate src/risb
           sphinx-build -b html -n -T docs docs/_build
 

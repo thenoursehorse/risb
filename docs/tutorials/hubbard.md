@@ -90,7 +90,7 @@ k_linear = np.linspace(0, 2 * np.pi, n_k_x, endpoint=False)
 
 # Make the mesh
 # Can you figure out the outcome of the pythonic syntax for the first param?
-k_mesh = np.meshgrid(*[k_linear]*3, indexing='ij')
+k_mesh = np.meshgrid(*[k_linear] * 3, indexing="ij")
 
 # Reshape to list
 k_mesh = np.reshape(k_mesh, (n_k, d))
@@ -112,12 +112,14 @@ n_orb = 1
 
 # Hopping matrix
 h0_k = dict()
-for bl in ['up', 'dn']:
+for bl in ["up", "dn"]:
     h0_k[bl] = np.zeros([n_k, n_orb, n_orb])
     for orb in range(n_orb):
-        h0_k[bl][:, orb, orb] = -2.0 * t * ( np.cos(k_mesh[:,0]) \
-                                           + np.cos(k_mesh[:,1]) \
-                                           + np.cos(k_mesh[:,2]) )
+        h0_k[bl][:, orb, orb] = (
+            -2.0
+            * t
+            * (np.cos(k_mesh[:, 0]) + np.cos(k_mesh[:, 1]) + np.cos(k_mesh[:, 2]))
+        )
 ```
 
 ## Local structure on a site
@@ -126,7 +128,7 @@ Now set up how the local structure looks like. This follows the same
 conventions as Green's functions in {{TRIQS}}
 
 ```python
-gf_struct = [('up', n_orb), ('dn', n_orb)]
+gf_struct = [("up", n_orb), ("dn", n_orb)]
 ```
 
 All single-particle matrices defined on a cluster (a site) will follow this
@@ -154,7 +156,7 @@ from triqs.operators import n
 # Hubbard U
 U = 5
 
-h_int = U * n('up', 0) * n('dn', 0)
+h_int = U * n("up", 0) * n("dn", 0)
 ```
 
 There are also some great helper tools for constructing interactions
@@ -165,16 +167,13 @@ is completely overkill for this interaction, but let's do it anyway.
 from triqs.operators.util.hamiltonians import h_int_density
 
 # 2D matrix of U_ij^{sigma sigma} (same spins)
-U = np.zeros(shape = [n_orb, n_orb])
+U = np.zeros(shape=[n_orb, n_orb])
 
 # 2D matrix of U_ij^{sigma nu} (different spins)
-Uprime = np.full(shape = [n_orb, n_orb], fill_value = 5)
+Uprime = np.full(shape=[n_orb, n_orb], fill_value=5)
 
-h_int = h_int_density(spin_names = ['up', 'dn'],
-                      n_orb = n_orb,
-                      U = U,
-                      Uprime = Uprime,
-                      off_diag=True
+h_int = h_int_density(
+    spin_names=["up", "dn"], n_orb=n_orb, U=U, Uprime=Uprime, off_diag=True
 )
 ```
 
@@ -190,8 +189,8 @@ You can do this by passing a symmetrization function to the solver
 # item in the list is a cluster. In this case there is only one
 # cluster.
 def force_paramagnetic(A):
-    A[0]['up'] = 0.5 * (A[0]['up'] + A[0]['dn'])
-    A[0]['dn'] = A[0]['up']
+    A[0]["up"] = 0.5 * (A[0]["up"] + A[0]["dn"])
+    A[0]["dn"] = A[0]["up"]
     return A
 ```
 
@@ -214,7 +213,7 @@ Fermi-Dirac functions
 beta = 40
 
 # 1 electron on average per unit cell, half-filling
-n_target = 1 # half-filling
+n_target = 1  # half-filling
 
 kweight = SmearingKWeight(beta=beta, n_target=n_target)
 ```
@@ -244,11 +243,12 @@ loop until $\mathcal{R}$ and $\lambda$ reach a fixed point. On a lattice
 the solver is setup as
 
 ```python
-S = LatticeSolver(h0_k = h0_k,
-                  gf_struct = gf_struct,
-                  embedding = embedding,
-                  update_weights = kweight.update_weights,
-                  symmetries = [force_paramagnetic]
+S = LatticeSolver(
+    h0_k=h0_k,
+    gf_struct=gf_struct,
+    embedding=embedding,
+    update_weights=kweight.update_weights,
+    symmetries=[force_paramagnetic],
 )
 ```
 
@@ -258,7 +258,7 @@ Now you can solve the model
 # Tolerance for when self-consistent procedure is stopped
 tol = 1e-6
 
-S.solve(tol = tol)
+S.solve(tol=tol)
 ```
 
 ## Observables on a site

@@ -100,7 +100,8 @@ $k$-grid mesh of the Brillouin zone in crystal coordinates
 import numpy as np
 from itertools import product
 
-def make_kmesh(n_kx = 6, d = 3):
+
+def make_kmesh(n_kx=6, d=3):
     """
     Return a shifted Monkhorst-Pack k-space mesh on a hypercubic Bravais
     lattice.
@@ -125,7 +126,7 @@ def make_kmesh(n_kx = 6, d = 3):
     coords = [range(n_kx) for _ in range(d)]
     for idx, coord in enumerate(product(*coords)):
         for i in range(len(coord)):
-            mesh[idx,i] = coord[i] / float(n_kx) + 0.5 / float(n_kx)
+            mesh[idx, i] = coord[i] / float(n_kx) + 0.5 / float(n_kx)
 
     return mesh
 ```
@@ -133,7 +134,7 @@ def make_kmesh(n_kx = 6, d = 3):
 Now construct $\hat{H}_0^{\mathrm{kin}}$ on this mesh.
 
 ```python
-def make_h0_kin_k(mesh, gf_struct, t = 1, a = 1):
+def make_h0_kin_k(mesh, gf_struct, t=1, a=1):
     """
     Return dispersion of degenerate orbitals on a hypercubic lattice as a
     dictionary, where each key is the spin.
@@ -160,7 +161,9 @@ def make_h0_kin_k(mesh, gf_struct, t = 1, a = 1):
     for bl, n_orb in gf_struct:
         di = np.diag_indices(n_orb)
         h0_kin_k[bl] = np.zeros([n_k, n_orb, n_orb])
-        h0_kin_k[bl][:,di[0],di[1]] = -2.0 * t * np.sum(np.cos(2.0 * a * np.pi * mesh), axis=1)[:, None]
+        h0_kin_k[bl][:, di[0], di[1]] = (
+            -2.0 * t * np.sum(np.cos(2.0 * a * np.pi * mesh), axis=1)[:, None]
+        )
 
     return h0_kin_k
 ```
@@ -169,7 +172,7 @@ Note that the structure of the matrices is given in the same way as {{TRIQS}}
 Green's functions as
 
 ```python
-gf_struct = [ ("up", 2), ("dn", 2) ]
+gf_struct = [("up", 2), ("dn", 2)]
 ```
 
 ## B: Construct $\hat{H}_i^{\mathrm{loc}}$
@@ -183,7 +186,8 @@ second-quantized operators that the {{TRIQS}} library provides.
 ```python
 from triqs.operators import *
 
-def make_h_loc(V = 0.25, U = 4):
+
+def make_h_loc(V=0.25, U=4):
     """
     Return the local terms of the bilayer Hubbad model as a TRIQS operator.
 
@@ -203,7 +207,7 @@ def make_h_loc(V = 0.25, U = 4):
     for o in range(2):
         h_loc += U * n("up", o) * n("dn", o)
     for bl in ["up", "dn"]:
-        h_loc += V * ( c_dag(bl, 0) * c(bl, 1) + c_dag(bl, 1) * c(bl, 0) )
+        h_loc += V * (c_dag(bl, 0) * c(bl, 1) + c_dag(bl, 1) * c(bl, 0))
 
     return h_loc
 ```
@@ -289,13 +293,16 @@ def update_weights(energies, mu=0, beta=10):
     weights : dict[numpy.ndarray]
     """
     n_k = energies.shape[0]
-    return {bl : 1.0 / (np.exp(beta * (energies[bl] - mu)) + 1.0) / n_k for bl in energies.keys()}
+    return {
+        bl: 1.0 / (np.exp(beta * (energies[bl] - mu)) + 1.0) / n_k
+        for bl in energies.keys()
+    }
 ```
 
 Then the integration weight at each $k$-point can be calculated
 
 ```python
-kweights = update_weights(energies = energies_qp, mu = ..., beta = ...)
+kweights = update_weights(energies=energies_qp, mu=..., beta=...)
 ```
 
 ## E: Setup mean-field matrices
@@ -376,7 +383,9 @@ for bl, bl_size in gf_struct:
 # H^qp (lopsided) quasiparticle kinetic energy
 for bl, bl_size in gf_struct:
     h0_kin_k_R[bl] = helpers.get_h0_kin_k_R(R[bl], h0_kin_k[bl], bloch_vector_qp[bl])
-    lopsided_kinetic_energy_qp[bl] = helpers.get_ke(h0_kin_k_R, bloch_vector_qp[bl], kweights[bl])
+    lopsided_kinetic_energy_qp[bl] = helpers.get_ke(
+        h0_kin_k_R, bloch_vector_qp[bl], kweights[bl]
+    )
 
 # H^emb hybridization
 for bl, bl_size in gf_struct:

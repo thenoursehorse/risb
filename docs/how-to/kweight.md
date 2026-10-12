@@ -16,7 +16,7 @@ beta = ...
 # Fixed chemical potential
 mu = ...
 
-kweight = SmearingKWeight(beta = beta, mu = mu)
+kweight = SmearingKWeight(beta=beta, mu=mu)
 ```
 
 If you want the electon filling per unit cell $n$ fixed to a specific value
@@ -30,7 +30,7 @@ beta = ...
 # Fixed filling
 n_target = ...
 
-kweight = SmearingKWeight(beta = beta, n_target = n_target)
+kweight = SmearingKWeight(beta=beta, n_target=n_target)
 ```
 
 The fixed electron filling method uses :py:func:`scipy.optimize.brentq` to
@@ -42,7 +42,7 @@ find a $\mu$ that gives the correct $n$.
 # A dict[list] of energies
 energies = ...
 
-weight = kweight.update_weights(energies = energies)
+weight = kweight.update_weights(energies=energies)
 ```
 
 The method sets the appropriate $\mu$ and returns the integration weight
@@ -54,8 +54,9 @@ There are three smearing functions implemented. Below $\xi$ is an energy and
 $\mu$ is the chemical potential.
 
 ```python
-kweight = SmearingKWeight(...,
-                          method = 'fermi' or 'gaussian' or 'methfessel-paxton',
+kweight = SmearingKWeight(
+    ...,
+    method="fermi" or "gaussian" or "methfessel-paxton",
 )
 ```
 
