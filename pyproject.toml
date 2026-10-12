@@ -58,6 +58,7 @@ test = [
 dev = [
   {include-group = "test"},
   "mypy",
+  "pre-commit",
   "ruff",
 ]
 
