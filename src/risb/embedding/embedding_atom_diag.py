@@ -18,7 +18,6 @@
 """Embedding solver using TRIQS AtomDiag."""
 
 from itertools import product
-from typing import TypeVar
 
 import numpy as np
 from triqs.atom_diag import AtomDiag, act
@@ -26,8 +25,6 @@ from triqs.operators import Operator, c, c_dag, dagger
 
 from risb.helpers_triqs import get_C_Op
 from risb.types import BlockMatrix, GfStruct
-
-OpType = TypeVar("OpType")
 
 
 class EmbeddingAtomDiag:
@@ -46,7 +43,7 @@ class EmbeddingAtomDiag:
 
     """
 
-    def __init__(self, h_int: OpType, gf_struct: GfStruct) -> None:
+    def __init__(self, h_int: Operator, gf_struct: GfStruct) -> None:
         #: triqs.operators.Operator : Interaction Hamiltonian.
         self.h_int = h_int
 
@@ -85,17 +82,17 @@ class EmbeddingAtomDiag:
 
         #: triqs.operators.Operator : Embedding Hamiltonian. It is the sum of
         #: :attr:`h0_loc`, :attr:`h_int`, :attr:`h_hybr`, and :attr:`h_bath`.
-        self.h_emb: OpType = Operator()
+        self.h_emb: Operator = Operator()
 
         #: triqs.operators.Operator : Single-particle quadratic couplings of
         #: c-electron terms in ::attr:`h_emb`.
-        self.h0_loc: OpType = Operator()
+        self.h0_loc: Operator = Operator()
 
         #: triqs.operators.Operator : Bath terms in :attr:`h_emb`.
-        self.h_bath: OpType = Operator()
+        self.h_bath: Operator = Operator()
 
         #: triqs.operators.Operator : Hybridization terms in :attr:`h_emb`.
-        self.h_hybr: OpType = Operator()
+        self.h_hybr: Operator = Operator()
 
         #: dict[numpy.ndarray] : f-electron density matrix.
         self.rho_f = {}
@@ -136,11 +133,11 @@ class EmbeddingAtomDiag:
         """
         C_Op = get_C_Op(self.gf_struct, dagger=False)
         C_dag_Op = get_C_Op(self.gf_struct, dagger=True)
-        self.h0_loc: OpType = Operator()
+        self.h0_loc: Operator = Operator()
         for bl, _bl_size in self.gf_struct:
             self.h0_loc += C_dag_Op[bl] @ h0_loc_matrix[bl] @ C_Op[bl]
 
-    def set_h_int(self, h_int: OpType) -> None:
+    def set_h_int(self, h_int: Operator) -> None:
         """
         Set the interaction terms of the c-electrons in the embedding Hamiltonian.
 
@@ -165,7 +162,7 @@ class EmbeddingAtomDiag:
         """
         C_Op = get_C_Op(self.gf_struct_bath, dagger=False)
         C_dag_Op = get_C_Op(self.gf_struct_bath, dagger=True)
-        self.h_bath: OpType = Operator()
+        self.h_bath: Operator = Operator()
         for bl_bath, _bl_bath_size in self.gf_struct_bath:
             bl = self._bl_bath_to_loc(bl_bath)
             self.h_bath += C_Op[bl_bath] @ Lambda_c[bl] @ C_dag_Op[bl_bath]
@@ -183,7 +180,7 @@ class EmbeddingAtomDiag:
         """
         C_Op = get_C_Op(self.gf_struct_bath, dagger=False)
         C_dag_Op = get_C_Op(self.gf_struct, dagger=True)
-        self.h_hybr: OpType = Operator()
+        self.h_hybr: Operator = Operator()
         for bl, _loc_size in self.gf_struct:
             bl_bath = self._bl_loc_to_bath(bl)
             tmp = C_dag_Op[bl] @ D[bl] @ C_Op[bl_bath]
@@ -311,7 +308,7 @@ class EmbeddingAtomDiag:
             self.rho_cf[bl][alpha, a] = self.overlap(Op, force_real=False)
         return self.rho_cf[bl]
 
-    def overlap(self, Op: OpType, force_real: bool = True) -> float | complex:
+    def overlap(self, Op: Operator, force_real: bool = True) -> float | complex:
         """
         Calculate the expectation value of an operator against the ground state of the embedding problem.
 
