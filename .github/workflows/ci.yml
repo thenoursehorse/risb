@@ -36,7 +36,7 @@ jobs:
           enable-cache: true
 
       - name: Install risb
-        run: UV_PROJECT_ENVIRONMENT=$CONDA_PREFIX uv sync --inexact --locked --extra docs
+        run: UV_PROJECT_ENVIRONMENT=$CONDA_PREFIX uv sync --inexact --locked --group docs
 
       - name: Lint
         run: |

@@ -43,7 +43,7 @@ build.targets.sdist.include = [
   "/COPYRIGHT",
 ]
 
-[project.optional-dependencies]
+[dependency-groups]
 docs = [
   "furo",
   "myst-parser[linkify]",
@@ -51,8 +51,6 @@ docs = [
   "sphinx-autobuild",
   "sphinx-copybutton",
 ]
-
-[dependency-groups]
 test = [
   "pytest >=9.0",
   "h5py",

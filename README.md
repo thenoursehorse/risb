@@ -113,7 +113,7 @@ documentation prerequisites
 
 ```shell
 conda activate ./.venv
-uv sync --inexact --extra docs
+uv sync --inexact --group docs
 ```
 
 Build the API

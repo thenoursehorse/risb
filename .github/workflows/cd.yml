@@ -67,7 +67,7 @@ jobs:
           enable-cache: true
 
       - name: Install risb and docs dependencies
-        run: UV_PROJECT_ENVIRONMENT=$CONDA_PREFIX uv sync --inexact --locked --extra docs --no-dev
+        run: UV_PROJECT_ENVIRONMENT=$CONDA_PREFIX uv sync --inexact --locked --no-dev --group docs
 
       - name: Build docs
         run: |

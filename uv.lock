@@ -762,21 +762,19 @@ dependencies = [
     { name = "scipy" },
 ]
 
-[package.optional-dependencies]
-docs = [
-    { name = "furo" },
-    { name = "myst-parser", extra = ["linkify"] },
-    { name = "sphinx" },
-    { name = "sphinx-autobuild" },
-    { name = "sphinx-copybutton" },
-]
-
 [package.dev-dependencies]
 dev = [
     { name = "h5py" },
     { name = "mypy" },
     { name = "pytest" },
     { name = "ruff" },
+]
+docs = [
+    { name = "furo" },
+    { name = "myst-parser", extra = ["linkify"] },
+    { name = "sphinx" },
+    { name = "sphinx-autobuild" },
+    { name = "sphinx-copybutton" },
 ]
 test = [
     { name = "h5py" },
@@ -785,15 +783,9 @@ test = [
 
 [package.metadata]
 requires-dist = [
-    { name = "furo", marker = "extra == 'docs'" },
-    { name = "myst-parser", extras = ["linkify"], marker = "extra == 'docs'" },
     { name = "numpy" },
     { name = "scipy" },
-    { name = "sphinx", marker = "extra == 'docs'" },
-    { name = "sphinx-autobuild", marker = "extra == 'docs'" },
-    { name = "sphinx-copybutton", marker = "extra == 'docs'" },
 ]
-provides-extras = ["docs"]
 
 [package.metadata.requires-dev]
 dev = [
@@ -801,6 +793,13 @@ dev = [
     { name = "mypy" },
     { name = "pytest", specifier = ">=9.0" },
     { name = "ruff" },
+]
+docs = [
+    { name = "furo" },
+    { name = "myst-parser", extras = ["linkify"] },
+    { name = "sphinx" },
+    { name = "sphinx-autobuild" },
+    { name = "sphinx-copybutton" },
 ]
 test = [
     { name = "h5py" },
