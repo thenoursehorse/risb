@@ -22,6 +22,9 @@ type UpdateWeights = Callable[[BlockRealArray], BlockRealArray]
 type Symmetrize = Callable[[list[BlockMatrix]], list[BlockMatrix]]
 """Takes a block matrix for each cluster and returns the symmetrized ones."""
 
+type SmearFunction = Callable[[NDArray[np.float64], float, float], NDArray[np.float64]]
+"""Smears band energies at inverse temperature beta and chemical potential mu into occupations."""
+
 type RootFinder = Callable[..., NDArray[np.float64] | OptimizeResult]
 """Root finder called as ``root(fun, x0, args=..., **kwargs)``, e.g. DIIS.solve or scipy.optimize.root."""
 

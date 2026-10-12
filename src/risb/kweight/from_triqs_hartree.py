@@ -18,27 +18,39 @@
 # Authors: Jonathan Karp, Alexander Hampel, Nils Wentzell, Hugo U. R. Strand, Olivier Parcollet
 
 import numpy as np
+from numpy.typing import NDArray
 from scipy.optimize import brentq
+
+from risb.types import BlockRealArray, SmearFunction
 
 # Code below copied from github.com/TRIQS/hartree_fock
 
 
-def fermi(e, beta):
+def fermi(e: NDArray[np.float64], beta: float) -> NDArray[np.float64]:
     """
     Numerically stable version of the Fermi function.
 
     Parameters
     ----------
-    e : float or ndarray
+    e : numpy.ndarray
         Energy minus chemical potential
     beta: float
         Inverse temperature
 
     """
-    return np.exp(-beta * e * (e > 0)) / (1 + np.exp(-beta * np.abs(e)))
+    occupation: NDArray[np.float64] = np.exp(-beta * e * (e > 0)) / (
+        1 + np.exp(-beta * np.abs(e))
+    )
+    return occupation
 
 
-def update_mu(n_target, energies, beta, n_k, smear_function):
+def update_mu(
+    n_target: float,
+    energies: BlockRealArray,
+    beta: float,
+    n_k: int,
+    smear_function: SmearFunction,
+) -> float:
     """
     Update the chemical potential using :func:`scipy.optimize.brentq` for smearing k-space integrations.
 
@@ -46,8 +58,8 @@ def update_mu(n_target, energies, beta, n_k, smear_function):
     ----------
     n_target : float
         Filling target
-    energies : numpy.ndarray
-        Array of eigenenergies
+    energies : dict[str, numpy.ndarray]
+        Eigenenergies of each block
     beta : float
         Inverse temperature
     n_k : int
@@ -66,8 +78,8 @@ def update_mu(n_target, energies, beta, n_k, smear_function):
         if bl_max > e_max:
             e_max = bl_max
 
-    def target_function(mu):
-        n = 0
+    def target_function(mu: float) -> float:
+        n = 0.0
         for en in energies.values():
             n += np.sum(smear_function(en, beta, mu)) / n_k
         return n - n_target
