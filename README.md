@@ -71,31 +71,6 @@ pip install risb
 pip uninstall risb
 ```
 
-### Docker
-
-There is a `Dockerfile` and `docker-compose.yml` inside the `docker` folder.
-The `Dockerfile` will pull the
-[TRIQS docker image](https://hub.docker.com/r/flatironinstitute/triqs)
-from the hub and install risb. Using the image will be the same as outlined in
-the [install instructions](https://triqs.github.io/triqs/latest/install.html#docker).
-To connect to the [Jupyter](https://jupyter.org/) notebook it is
-
-```shell
-localhost:8888/?token=put/token/here
-```
-
-You can find the token by attaching a shell to the container
-and running
-
-```shell
-jupyter server list
-```
-
-There is also a development `Dockerfile.dev` and the corresponding
-`docker-compose-dev.yml` in order to have a container to develop code. It
-installs [TRIQS](https://triqs.github.io/) from source, and works on
-Apple M1/M2 (arm64, aarch64), and any amd64 system.
-
 ## Tests
 
 The tests require a working [TRIQS](https://triqs.github.io/) installation.
