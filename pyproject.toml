@@ -60,6 +60,7 @@ dev = [
   "mypy",
   "pre-commit",
   "ruff",
+  "scipy-stubs",
 ]
 
 [tool.pytest.ini_options]
@@ -78,12 +79,17 @@ testpaths = [
 files = "src"
 python_version = "3.14"
 strict = true
-show_error_codes = true
-enable_error_code = ["ignore-without-code", "redundant-expr", "truthy-bool"]
+enable_error_code = [
+  "ignore-without-code",
+  "redundant-expr",
+  "truthy-bool",
+  "explicit-override",
+  "possibly-undefined",
+]
 warn_unreachable = true
 
 [[tool.mypy.overrides]]
-module = [ "numpy.*", "scipy.*", "triqs.*"]
+module = ["triqs.*"]
 ignore_missing_imports = true
 
 [tool.ruff]
