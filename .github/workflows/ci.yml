@@ -18,30 +18,13 @@ jobs:
         include:
           - {
               os: "ubuntu-22.04",
-              python-version: "3.10",
+              python-version: "3.14",
               cc: "gcc",
               cxx: "g++",
               llvm: "15",
               gcc-version: "12",
             }
-          - {
-              os: "ubuntu-22.04",
-              python-version: "3.11",
-              cc: "gcc",
-              cxx: "g++",
-              llvm: "15",
-              gcc-version: "12",
-            }
-          - {
-              os: "ubuntu-22.04",
-              python-version: "3.12",
-              cc: "gcc",
-              cxx: "g++",
-              llvm: "15",
-              gcc-version: "12",
-            }
-          #- {os: "ubuntu-22.04", python-version: "3.10", cc: "clang", cxx: "clang++", llvm: "15", gcc-version: "12"}
-          #- {os: "ubuntu-22.04", python-version: "3.11", cc: "clang", cxx: "clang++", llvm: "15", gcc-version: "12"}
+          #- {os: "ubuntu-22.04", python-version: "3.14", cc: "clang", cxx: "clang++", llvm: "15", gcc-version: "12"}
 
     runs-on: ${{ matrix.os }}
 
@@ -61,7 +44,7 @@ jobs:
       - name: Install risb
         run: |
           source $TRIQS_INSTALL/share/triqs/triqsvars.sh
-          python -m pip install -e .[test,docs]
+          python -m pip install -e .[docs] --group test
 
       - name: Test risb
         run: |

@@ -3,8 +3,9 @@ name = "risb"
 dynamic = ["version"]
 description = "Rotationally invariant slave boson mean-field theory."
 readme = "README.md"
-requires-python = ">=3.10"
-license = {file = "LICENSE"}
+requires-python = ">=3.14"
+license = "GPL-3.0-or-later"
+license-files = ["LICENSE"]
 keywords = ["quantum", "mean field", 'correlated electrons', 'quantum embedding', 'risb', 'slave bosons']
 authors = [
   {name = "H. L. Nourse"}
@@ -15,7 +16,7 @@ dependencies = [
 ]
 classifiers = [
     "Programming Language :: Python :: 3",
-    "License :: OSI Approved :: GNU General Public License v3 (GPLv3)",
+    "Programming Language :: Python :: 3.14",
     "Operating System :: OS Independent",
     "Intended Audience :: Science/Research",
     "Topic :: Scientific/Engineering :: Physics",
@@ -37,21 +38,25 @@ version.fallback-version = "0.0.0"
 [project.optional-dependencies]
 docs = [
   "furo",
-  "myst_parser >=0.13",
   "myst-parser[linkify]",
-  "sphinx >=4.0",
+  "sphinx",
   "sphinx-autobuild",
   "sphinx-copybutton",
-  "sphinx-autodoc-typehints",
 ]
+
+[dependency-groups]
 test = [
-  "pytest >=7.0",
-  "pytest-subtests>=0.11",
+  "pytest >=9.0",
   "h5py",
+]
+dev = [
+  {include-group = "test"},
+  "mypy",
+  "ruff",
 ]
 
 [tool.pytest.ini_options]
-minversion = "7.0"
+minversion = "9.0"
 addopts = ["-ra", "--showlocals", "--strict-markers", "--strict-config"]
 xfail_strict = true
 filterwarnings = [
@@ -64,14 +69,14 @@ testpaths = [
 
 [tool.mypy]
 files = "src"
-python_version = "3.10"
+python_version = "3.14"
 strict = true
 show_error_codes = true
 enable_error_code = ["ignore-without-code", "redundant-expr", "truthy-bool"]
 warn_unreachable = true
 
 [[tool.mypy.overrides]]
-module = [ "numpy.*", "scipy.*", "triqs.*", "nox.*"]
+module = [ "numpy.*", "scipy.*", "triqs.*"]
 ignore_missing_imports = true
 
 [tool.ruff]
@@ -107,7 +112,6 @@ extend-select = [
 ]
 ignore = [
   "PLR",    # Design related pylint codes
-  "PT004",  # Incorrect check, usefixtures is the correct way to do this
   "RUF012", # Would require a lot of ClassVar's
 ]
 

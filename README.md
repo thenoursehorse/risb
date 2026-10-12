@@ -49,7 +49,7 @@ Lastly, the appropriate original theory outlined in the [documentation](https://
 
 ## Dependencies
 
-- [python](https://www.python.org/) version `> 3.10`
+- [python](https://www.python.org/) version `>= 3.14`
 - [numpy](https://numpy.org/)
 - [scipy](https://scipy.org/)
 - [TRIQS](https://triqs.github.io/) version `3.2.x` if using :class:`EmbeddingAtomDiag`
@@ -85,7 +85,7 @@ cd risb
 Install the prerequisites
 
 ```shell
-pip install -e .[test]
+pip install -e . --group test
 ```
 
 Tests are run with

@@ -38,7 +38,7 @@ def do_assert(
         assert gs_energy == pytest.approx(gs_energy_expected, abs=abs)
     with subtests.test(msg="N"):
         assert pytest.approx(N_expected, abs=abs) == N
-    with subtests.test(ms="S2"):
+    with subtests.test(msg="S2"):
         assert pytest.approx(S2_expected, abs=abs) == S2
 
 
