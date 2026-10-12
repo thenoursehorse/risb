@@ -21,15 +21,13 @@ from itertools import product
 from typing import TypeVar
 
 import numpy as np
-from numpy.typing import ArrayLike
 from triqs.atom_diag import AtomDiag, act
 from triqs.operators import Operator, c, c_dag, dagger
 
 from risb.helpers_triqs import get_C_Op
+from risb.types import BlockMatrix, GfStruct
 
-type GfStructType = list[tuple[str, int]]
 OpType = TypeVar("OpType")
-type MFType = dict[ArrayLike]
 
 
 class EmbeddingAtomDiag:
@@ -48,7 +46,7 @@ class EmbeddingAtomDiag:
 
     """
 
-    def __init__(self, h_int: OpType, gf_struct: GfStructType) -> None:
+    def __init__(self, h_int: OpType, gf_struct: GfStruct) -> None:
         #: triqs.operators.Operator : Interaction Hamiltonian.
         self.h_int = h_int
 
@@ -118,14 +116,14 @@ class EmbeddingAtomDiag:
         return bl.replace("bath_", "")
 
     @staticmethod
-    def _fops_from_gf_struct(gf_struct: GfStructType) -> list[tuple[str, int]]:
+    def _fops_from_gf_struct(gf_struct: GfStruct) -> list[tuple[str, int]]:
         return [(bl, i) for bl, bl_size in gf_struct for i in range(bl_size)]
 
     @staticmethod
-    def _dict_gf_struct(gf_struct: GfStructType) -> dict[str, int]:
+    def _dict_gf_struct(gf_struct: GfStruct) -> dict[str, int]:
         return dict(gf_struct)
 
-    def set_h0_loc(self, h0_loc_matrix: MFType) -> None:
+    def set_h0_loc(self, h0_loc_matrix: BlockMatrix) -> None:
         """
         Set the single-particle quadratic couplings of the c-electrons in the embedding Hamiltonian.
 
@@ -154,7 +152,7 @@ class EmbeddingAtomDiag:
         """
         self.h_int = h_int
 
-    def set_h_bath(self, Lambda_c: MFType) -> None:
+    def set_h_bath(self, Lambda_c: BlockMatrix) -> None:
         """
         Set the bath terms in the impurity Hamiltonian.
 
@@ -172,7 +170,7 @@ class EmbeddingAtomDiag:
             bl = self._bl_bath_to_loc(bl_bath)
             self.h_bath += C_Op[bl_bath] @ Lambda_c[bl] @ C_dag_Op[bl_bath]
 
-    def set_h_hybr(self, D: MFType) -> None:
+    def set_h_hybr(self, D: BlockMatrix) -> None:
         """
         Set the hybridization terms in the impurity Hamiltonian.
 
@@ -193,9 +191,9 @@ class EmbeddingAtomDiag:
 
     def set_h_emb(
         self,
-        Lambda_c: MFType,
-        D: MFType,
-        h0_loc_matrix: MFType | None = None,
+        Lambda_c: BlockMatrix,
+        D: BlockMatrix,
+        h0_loc_matrix: BlockMatrix | None = None,
         mu: float | None = None,
     ) -> None:
         """

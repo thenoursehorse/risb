@@ -26,9 +26,7 @@ from numpy.typing import ArrayLike
 
 from risb import helpers
 from risb.optimize import DIIS
-
-type GfStructType = list[tuple[str, int]]
-type MFType = dict[ArrayLike]
+from risb.types import BlockMatrix, GfStruct
 
 
 # The structure and methods here have been modeled
@@ -91,14 +89,14 @@ class LatticeSolver:
 
     def __init__(
         self,
-        h0_k: MFType,
-        gf_struct: GfStructType,
+        h0_k: BlockMatrix,
+        gf_struct: GfStruct,
         embedding,
         update_weights,
         root=None,
         projectors=None,
         gf_struct_mapping: list[dict[str, str]] | None = None,
-        symmetries: list[Callable[[MFType], dict[MFType]]] | None = None,
+        symmetries: list[Callable[[BlockMatrix], dict[BlockMatrix]]] | None = None,
         force_real: bool = False,
         error_fun: str = "recursion",
         return_x_new: bool = True,
@@ -296,7 +294,7 @@ class LatticeSolver:
         return H_rs
 
     @staticmethod
-    def _initialize_block_mf_matrix(gf_struct: GfStructType, is_real: bool) -> MFType:
+    def _initialize_block_mf_matrix(gf_struct: GfStruct, is_real: bool) -> BlockMatrix:
         n_clusters = len(gf_struct)
         A = [{} for i in range(n_clusters)]
         for i in range(n_clusters):
@@ -307,7 +305,7 @@ class LatticeSolver:
                     A[i][bl] = np.zeros((bsize, bsize), dtype=complex)
         return A
 
-    def _flatten_matrix(self, A: MFType, is_coeff_real: bool):
+    def _flatten_matrix(self, A: BlockMatrix, is_coeff_real: bool):
         if len(A) != len(self._H_basis):
             msg = f"len(A) = {len(A)} and len(H_basis) = {len(self._H_basis)} must have the same number of clusters !"
             raise ValueError(msg)
@@ -331,7 +329,7 @@ class LatticeSolver:
 
     def _unflatten_matrix(
         self, x: ArrayLike, is_coeff_real: bool, offset: int = 0
-    ) -> tuple[MFType, int]:
+    ) -> tuple[BlockMatrix, int]:
         A = self._initialize_block_mf_matrix(self.gf_struct, self.force_real)
         for i in range(self.n_clusters):
             for bl, _bl_size in self.gf_struct[i]:
@@ -363,7 +361,7 @@ class LatticeSolver:
             raise TypeError(msg)
         return A
 
-    def _get_h0_loc_matrix(self) -> MFType:
+    def _get_h0_loc_matrix(self) -> BlockMatrix:
         h0_loc_matrix = self._initialize_block_mf_matrix(
             self.gf_struct, self.force_real
         )
@@ -422,7 +420,7 @@ class LatticeSolver:
         embedding_param: list[dict[str, Any]] | None = None,
         kweight_param: dict[str, Any] | None = None,
     ):
-        # -> tuple[MFType, MFType, MFType, MFType]:
+        # -> tuple[BlockMatrix, BlockMatrix, BlockMatrix, BlockMatrix]:
         """
         Single iteration of the RISB self-consistent cycle.
 
@@ -699,7 +697,7 @@ class LatticeSolver:
         return x
 
     @property
-    def Z(self) -> MFType:
+    def Z(self) -> BlockMatrix:
         """Returns the quasiparticle weight matrix Z of each cluster as a list[dict[numpy.ndarray]]."""
         Z = [{} for i in range(self.n_clusters)]
         for i in range(self.n_clusters):
