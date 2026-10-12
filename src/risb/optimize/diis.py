@@ -17,9 +17,11 @@
 
 """DIIS optimizers."""
 
+from typing import override
+
 import numpy as np
 import scipy
-from numpy.typing import ArrayLike
+from numpy.typing import ArrayLike, NDArray
 
 from .solver_newton import NewtonSolver
 
@@ -30,9 +32,15 @@ class DIIS(NewtonSolver):
 
     Parameters
     ----------
+    history_size : int, optional
+        Maximum size of subspace.
+    n_restart : int, optional
+        Fully reset subspace after this many iterations.
     n_period : int, optional
         Take a single linear mixing step afer this many iterations. Default
         round(history_size / 2).
+    alpha : float, optional
+        Step size of the linear mixing step.
 
     Notes
     -----
@@ -42,8 +50,15 @@ class DIIS(NewtonSolver):
 
     """
 
-    def __init__(self, /, n_period: int = 0, **kwargs) -> None:
-        super().__init__(**kwargs)
+    def __init__(
+        self,
+        history_size: int = 6,
+        n_restart: float = np.inf,
+        n_period: int = 0,
+        alpha: float = 1.0,
+    ) -> None:
+        super().__init__(history_size=history_size, n_restart=n_restart)
+        self.alpha = alpha
 
         if n_period == 0:
             self.n_period = int(np.round(self.history_size / 2.0))
@@ -83,11 +98,12 @@ class DIIS(NewtonSolver):
 
     # x_i, error(x_i), g(x_i) where g(x_i) is the fixed-point function
     # that gives a new x_i
-    def update_x(self, alpha: float = 1.0) -> np.ndarray:
+    @override
+    def update_x(self) -> NDArray[np.float64]:
         """Return a new guess for the vector x."""
         if (self.n + 1) % self.n_period == 0:
             # Do linear mixing
-            x_opt = self.x[0] + alpha * (self.g_x[0] - self.x[0])
+            x_opt = self.x[0] + self.alpha * (self.g_x[0] - self.x[0])
         else:
             # Do DIIS
             x_opt = self.extrapolate(self.x, self.g_x, self.error)

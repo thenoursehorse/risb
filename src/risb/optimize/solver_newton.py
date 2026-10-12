@@ -21,10 +21,10 @@ import logging
 from abc import ABC, abstractmethod
 from collections.abc import Callable
 from copy import deepcopy
-from typing import Any
+from typing import Concatenate
 
 import numpy as np
-from numpy.typing import ArrayLike
+from numpy.typing import NDArray
 
 logger = logging.getLogger(__name__)
 
@@ -53,13 +53,13 @@ class NewtonSolver(ABC):
         self.initialized = False
 
         #: list[numpy.ndarray] : History of guesses to the root problem.
-        self.x: list[ArrayLike] = []
+        self.x: list[NDArray[np.float64]] = []
 
         #: list[numpy.ndarray] : History of fixed point function with ``x`` as the input.
-        self.g_x: list[ArrayLike] = []
+        self.g_x: list[NDArray[np.float64]] = []
 
         #: list[numpy.ndarray] : History of error vector of ``x``.
-        self.error: list[ArrayLike] = []
+        self.error: list[NDArray[np.float64]] = []
 
         #: int : Iteration counter for solver.
         self.n: int = 0
@@ -72,8 +72,8 @@ class NewtonSolver(ABC):
 
     @staticmethod
     def _load_history(
-        x: list[ArrayLike], error: list[ArrayLike], max_size: int
-    ) -> tuple[list[ArrayLike], list[ArrayLike]]:
+        x: list[NDArray[np.float64]], error: list[NDArray[np.float64]], max_size: int
+    ) -> tuple[list[NDArray[np.float64]], list[NDArray[np.float64]]]:
         if (len(x) != len(error)) and (len(x) != (len(error) + 1)):
             msg = "x and error are the wrong lengths !"
             raise ValueError(msg)
@@ -90,7 +90,9 @@ class NewtonSolver(ABC):
 
     @staticmethod
     def _insert_vector(
-        vec: list[ArrayLike], vec_new: ArrayLike, max_size: int | None = None
+        vec: list[NDArray[np.float64]],
+        vec_new: NDArray[np.float64],
+        max_size: int | None = None,
     ) -> None:
         # Note these operations are mutable on input list
         vec.insert(0, vec_new)
@@ -98,14 +100,12 @@ class NewtonSolver(ABC):
             vec.pop()
 
     @abstractmethod
-    def update_x(self, **kwargs) -> np.ndarray:
+    def update_x(self) -> NDArray[np.float64]:
         """
         Return a single iteration for the new guess for :attr:`x`.
 
-        Parameters
-        ----------
-        **kwargs : dict
-            Keyword arguments specific to the solver implementation.
+        Parameters of the method, such as a mixing step, are set when the
+        solver is constructed.
 
         Returns
         -------
@@ -116,13 +116,15 @@ class NewtonSolver(ABC):
 
     def solve(
         self,
-        fun: Callable[..., ArrayLike],
-        x0: ArrayLike,
-        args: tuple[Any, ...] = (),
+        fun: Callable[
+            Concatenate[NDArray[np.float64], ...],
+            tuple[NDArray[np.float64], NDArray[np.float64]],
+        ],
+        x0: NDArray[np.float64],
+        args: tuple[object, ...] = (),
         tol: float = 1e-12,
         maxiter: int = 1000,
-        options: dict | None = None,
-    ) -> ArrayLike:
+    ) -> NDArray[np.float64]:
         """
         Find the root of a function. It is called similarly to :func:scipy.optimize.root.
 
@@ -130,7 +132,8 @@ class NewtonSolver(ABC):
         ----------
         fun : callable
             The function to find the root of. It must be callable as
-            ``fun(x, *args)``.
+            ``fun(x, *args)`` and return ``(g_x, error)``, the fixed-point
+            function and the error vector of ``x``.
         x0 : numpy.ndarray
             Initial guess of the parameters. This does not neccessarily have to
             be flattened, but it usually is.
@@ -141,8 +144,6 @@ class NewtonSolver(ABC):
             is less than this, the solver stops.
         maxiter : int, optional
             Maximum number of iterations.
-        options : dict, optional
-            keyword arguments to pass to :meth:`update_x`.
 
         Returns
         -------
@@ -150,8 +151,6 @@ class NewtonSolver(ABC):
             Root of ``fun``.
 
         """
-        if options is None:
-            options = {}
         self.success = False
         x = deepcopy(x0)
         if self.history_size > 0:
@@ -170,7 +169,7 @@ class NewtonSolver(ABC):
                 self.success = True
                 break
 
-            x = self.update_x(**options)
+            x = self.update_x()
 
             if (self.n % self.n_restart) == 0:
                 self.x = []

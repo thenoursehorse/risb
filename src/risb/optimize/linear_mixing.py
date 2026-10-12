@@ -1,6 +1,9 @@
 # noqa: D100
 
-from numpy.typing import ArrayLike
+from typing import override
+
+import numpy as np
+from numpy.typing import NDArray
 
 from .solver_newton import NewtonSolver
 
@@ -12,11 +15,21 @@ from .solver_newton import NewtonSolver
 # dx_i = alpha * F(x_i)
 # g(x_i) is the fixed-point function that gives a new x_i+1
 class LinearMixing(NewtonSolver):
-    """Linear mixing a new vector with an old vector."""
+    """
+    Linear mixing a new vector with an old vector.
 
-    def __init__(self, /, **kwargs):
-        super().__init__(history_size=0, **kwargs)
+    Parameters
+    ----------
+    alpha : float, optional
+        Step size of the linear mixing.
 
-    def update_x(self, alpha: float = 1.0) -> ArrayLike:
+    """
+
+    def __init__(self, alpha: float = 1.0) -> None:
+        super().__init__(history_size=2)
+        self.alpha = alpha
+
+    @override
+    def update_x(self) -> NDArray[np.float64]:
         """Return a new guess for the vector x."""
-        return self.x[0] + alpha * (self.g_x[0] - self.x[0])
+        return self.x[0] + self.alpha * (self.g_x[0] - self.x[0])

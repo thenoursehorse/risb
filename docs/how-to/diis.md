@@ -36,11 +36,11 @@ To change how frequently a linear mixing step is taken
 optimize = DIIS(n_period=...)
 ```
 
-The size of the linear mixing step $\alpha$ is specified in the `solve()`
-method as
+The size of the linear mixing step $\alpha$ is specified when creating the
+solver
 
 ```python
-optimize.solve(alpha=...)
+optimize = DIIS(alpha=...)
 ```
 
 ## Only linear mixing
@@ -50,8 +50,7 @@ If you just want to use linear mixing with nothing special
 ```python
 from risb.optimize import LinearMixing
 
-optimize = LinearMixing()
-optimize.solve(alpha=...)
+optimize = LinearMixing(alpha=...)
 ```
 
 ## Arguments to `solve()`
@@ -62,7 +61,6 @@ optimize.solve(fun = function to minimize,
                args = args for fun,
                tol = stop solver when the error is less than this,
                maxiter = maxium number of iterations,
-               alpha = step size in linear mixing,
 )
 ```
 
@@ -77,7 +75,7 @@ If you want to use your customized {{DIIS}} solver
 ```python
 from risb import LatticeSolver
 
-S = LatticeSolver(..., root=optimize.solve)
+S = LatticeSolver(..., root=DIIS(alpha=...).solve)
 ```
 
 To pass keyword arguments to `optimize.solve()`
@@ -87,7 +85,6 @@ S.solve(
     ...,
     tol=...,
     maxiter=...,
-    alpha=...,
 )
 ```
 
