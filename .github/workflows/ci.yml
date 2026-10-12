@@ -31,7 +31,7 @@ jobs:
           environment-name: risb
           cache-environment: true
 
-      - uses: astral-sh/setup-uv@v10
+      - uses: astral-sh/setup-uv@v10.3.0
         with:
           enable-cache: true
 
