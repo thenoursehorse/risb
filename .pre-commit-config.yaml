@@ -15,7 +15,6 @@ repos:
       - id: name-tests-test
         args: ["--pytest-test-first"]
       - id: no-commit-to-branch
-      - id: requirements-txt-fixer
       - id: trailing-whitespace
         args: [--markdown-linebreak-ext=md]
 
