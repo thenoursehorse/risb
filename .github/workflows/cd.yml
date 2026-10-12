@@ -18,16 +18,18 @@ jobs:
     uses: ./.github/workflows/ci.yml
 
   bump-version:
+    name: Bump version
     needs: [test]
     runs-on: ubuntu-latest
     permissions:
-      contents: write
+      contents: write  # push the version tag and create the GitHub release
     outputs:
       new_tag: ${{ steps.tag_version.outputs.new_tag }}
 
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          persist-credentials: false
           fetch-depth: 0
 
       - name: Bump version and push tag
@@ -39,13 +41,14 @@ jobs:
 
       - name: Create a GitHub release
         if: steps.tag_version.outputs.new_tag
-        uses: ncipollo/release-action@339a81892b84b4eeb0f6e744e4574d79d0d9b8dd # v1.21.0
-        with:
-          tag: ${{ steps.tag_version.outputs.new_tag }}
-          name: Release ${{ steps.tag_version.outputs.new_tag }}
-          body: ${{ steps.tag_version.outputs.changelog }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.tag_version.outputs.new_tag }}
+          CHANGELOG: ${{ steps.tag_version.outputs.changelog }}
+        run: gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --verify-tag --title "Release $TAG" --notes "$CHANGELOG"
 
   build-docs:
+    name: Build docs
     needs: [bump-version]
     runs-on: ubuntu-latest
     defaults:
@@ -55,6 +58,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          persist-credentials: false
           fetch-depth: 0
 
       - name: Setup TRIQS
@@ -85,8 +89,8 @@ jobs:
     needs: [build-docs]
     runs-on: ubuntu-latest
     permissions:
-      pages: write
-      id-token: write
+      pages: write  # deploy to GitHub Pages
+      id-token: write  # OIDC token required by deploy-pages
 
     environment:
       name: github-pages
@@ -99,21 +103,24 @@ jobs:
         uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1
 
   dist:
+    name: Build package
     needs: [bump-version]
     if: needs.bump-version.outputs.new_tag
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          persist-credentials: false
           fetch-depth: 0
 
       - uses: hynek/build-and-inspect-python-package@2abe76da66d0a6a4a227101f9348ee855797cfa5 # v3.0.1
 
   publish:
+    name: Publish to PyPI
     needs: [dist]
     environment: pypi
     permissions:
-      id-token: write
+      id-token: write  # PyPI trusted publishing
     runs-on: ubuntu-latest
 
     steps:

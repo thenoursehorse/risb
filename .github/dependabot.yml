@@ -4,14 +4,14 @@ multi-ecosystem-groups:
   dependencies:
     schedule:
       interval: "monthly"
+    commit-message:
+      prefix: "chore(deps)"
 
 updates:
   - package-ecosystem: "github-actions"
     directory: "/"
     patterns: ["*"]
     multi-ecosystem-group: "dependencies"
-    commit-message:
-      prefix: "chore(deps)"
     cooldown:
       default-days: 7
 
@@ -20,8 +20,6 @@ updates:
     patterns: ["*"]
     multi-ecosystem-group: "dependencies"
     versioning-strategy: "lockfile-only"
-    commit-message:
-      prefix: "chore(deps)"
     cooldown:
       default-days: 7
 
@@ -29,7 +27,5 @@ updates:
     directory: "/"
     patterns: ["*"]
     multi-ecosystem-group: "dependencies"
-    commit-message:
-      prefix: "chore(deps)"
     cooldown:
       default-days: 7
