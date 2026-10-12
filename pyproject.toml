@@ -38,7 +38,8 @@ build.targets.sdist.include = [
   "/tests",
   "/docs",
   "/examples",
-  "/CITATION",
+  "/CITATION.bib",
+  "/CITATION.cff",
   "/COPYRIGHT",
 ]
 

@@ -1,0 +1,118 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite the paper below."
+type: software
+title: "risb: Rotationally invariant slave boson mean-field theory"
+authors:
+  - family-names: Nourse
+    given-names: H. L.
+license: GPL-3.0-or-later
+repository-code: "https://github.com/thenoursehorse/risb"
+url: "https://thenoursehorse.github.io/risb"
+keywords:
+  - quantum
+  - mean field
+  - correlated electrons
+  - quantum embedding
+  - risb
+  - slave bosons
+preferred-citation:
+  type: article
+  title: "Multiple insulating states due to the interplay of strong correlations and lattice geometry in a single-orbital Hubbard model"
+  authors:
+    - family-names: Nourse
+      given-names: H. L.
+    - family-names: McKenzie
+      given-names: Ross H.
+    - family-names: Powell
+      given-names: B. J.
+  journal: "Physical Review B"
+  volume: 103
+  issue: 8
+  start: L081114
+  year: 2021
+  month: 2
+  doi: 10.1103/PhysRevB.103.L081114
+references:
+  - type: article
+    title: "Spin-0 Mott insulator to metal to spin-1 Mott insulator transition in the single-orbital Hubbard model on the decorated honeycomb lattice"
+    authors:
+      - family-names: Nourse
+        given-names: H. L.
+      - family-names: McKenzie
+        given-names: Ross H.
+      - family-names: Powell
+        given-names: B. J.
+    journal: "Physical Review B"
+    volume: 104
+    issue: 7
+    start: "075104"
+    year: 2021
+    month: 8
+    doi: 10.1103/PhysRevB.104.075104
+  - type: article
+    title: "C3 symmetry breaking metal-insulator transitions in a flat band in the half-filled Hubbard model on the decorated honeycomb lattice"
+    authors:
+      - family-names: Nourse
+        given-names: H. L.
+      - family-names: McKenzie
+        given-names: Ross H.
+      - family-names: Powell
+        given-names: B. J.
+    journal: "Physical Review B"
+    volume: 105
+    issue: 20
+    start: "205119"
+    year: 2022
+    month: 5
+    doi: 10.1103/PhysRevB.105.205119
+  - type: thesis
+    title: "Strongly correlated electrons on the decorated honeycomb lattice studied with rotationally invariant slave-boson mean-field theory"
+    authors:
+      - family-names: Nourse
+        given-names: Henry Leonard
+    thesis-type: PhD
+    institution:
+      name: "The University of Queensland"
+    year: 2020
+    doi: 10.14264/uql.2020.169
+  - type: article
+    title: "TRIQS: A toolbox for research on interacting quantum systems"
+    authors:
+      - family-names: Parcollet
+        given-names: Olivier
+      - family-names: Ferrero
+        given-names: Michel
+      - family-names: Ayral
+        given-names: Thomas
+      - family-names: Hafermann
+        given-names: Hartmut
+      - family-names: Krivenko
+        given-names: Igor
+      - family-names: Messio
+        given-names: Laura
+      - family-names: Seth
+        given-names: Priyanka
+    journal: "Computer Physics Communications"
+    volume: 196
+    start: 398
+    end: 415
+    year: 2015
+    doi: 10.1016/j.cpc.2015.04.023
+  - type: article
+    title: "Convergence analysis of adaptive DIIS algorithms with application to electronic ground state calculations"
+    authors:
+      - family-names: Chupin
+        given-names: Maxime
+      - family-names: Dupuy
+        given-names: Mi-Song
+      - family-names: Legendre
+        given-names: Guillaume
+      - family-names: Séré
+        given-names: Éric
+    journal: "ESAIM: Mathematical Modelling and Numerical Analysis"
+    volume: 55
+    issue: 6
+    start: 2785
+    end: 2825
+    year: 2021
+    doi: 10.1051/m2an/2021069
