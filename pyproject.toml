@@ -34,6 +34,14 @@ build-backend = "hatchling.build"
 version.source = "vcs"
 build.hooks.vcs.version-file = "src/risb/version.py"
 version.fallback-version = "0.0.0"
+build.targets.sdist.include = [
+  "/src",
+  "/tests",
+  "/docs",
+  "/examples",
+  "/CITATION",
+  "/COPYRIGHT",
+]
 
 [project.optional-dependencies]
 docs = [
