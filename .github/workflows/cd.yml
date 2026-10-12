@@ -20,6 +20,8 @@ jobs:
     permissions:
       id-token: write
       contents: write
+    outputs:
+      new_tag: ${{ steps.tag_version.outputs.new_tag }}
 
     steps:
       - uses: actions/checkout@v6
@@ -31,8 +33,10 @@ jobs:
         uses: mathieudutour/github-tag-action@v7
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
+          default_bump: false
 
       - name: Create a GitHub release
+        if: steps.tag_version.outputs.new_tag
         uses: ncipollo/release-action@v1
         with:
           tag: ${{ steps.tag_version.outputs.new_tag }}
@@ -111,6 +115,7 @@ jobs:
 
   dist:
     needs: [bump-version]
+    if: needs.bump-version.outputs.new_tag
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
