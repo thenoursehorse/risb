@@ -78,7 +78,7 @@ S = LatticeSolver(
     gf_struct=gf_struct,
     embedding=embedding,
     update_weights=kweight.update_weights,
-    symmetries=[force_paramagnetic],
+    symmetrizers=[force_paramagnetic],
     force_real=True,
 )
 

@@ -221,7 +221,7 @@ S = LatticeSolver(
     embedding=embedding,
     update_weights=kweight.update_weights,
     projectors=projectors,
-    symmetries=[symmetries],
+    symmetrizers=[symmetries],
     gf_struct_mapping=gf_struct_mapping,
 )
 

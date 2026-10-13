@@ -110,7 +110,7 @@ S = LatticeSolver(
     embedding=embedding,
     update_weights=kweight.update_weights,
     projectors=projectors,
-    symmetries=[force_paramagnetic],
+    symmetrizers=[force_paramagnetic],
 )
 
 # Solve

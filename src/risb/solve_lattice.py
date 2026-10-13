@@ -17,16 +17,25 @@
 
 """Solvers for rotationally invariant slave-boson mean-field theory on a lattice."""
 
-from collections.abc import Callable
+from collections.abc import Mapping, Sequence
 from itertools import product
-from typing import Any
+from typing import Literal, TypeIs
 
 import numpy as np
-from numpy.typing import ArrayLike
+from numpy.typing import NDArray
+from scipy.optimize import OptimizeResult
 
 from risb import helpers
 from risb.optimize import DIIS
-from risb.types import BlockMatrix, GfStruct
+from risb.types import (
+    BlockMatrix,
+    BlockRealArray,
+    Embedding,
+    GfStruct,
+    RootFinder,
+    Symmetrize,
+    UpdateWeights,
+)
 
 
 # The structure and methods here have been modeled
@@ -40,22 +49,19 @@ class LatticeSolver:
     h0_k : dict[numpy.ndarray]
         Single-particle dispersion between local clusters. Each key
         represents a single-particle symmetry.
-    gf_struct : list[ list of pairs [ (str,int), ...] ]
+    gf_struct : list of pairs [ (str,int), ...] or a list of these
         Structure of the matrices. For each cluster, it must be a
         list of pairs, each containing the name of the
         matrix block as a string and the size of that block.
         For example for a single cluster: ``[ ('up', 3), ('down', 3) ]``.
-    embedding : list[class]
-        The class that solves the embedding problem for each cluster. It must
-        already store the interactiong Hamiltonian ``h_int`` on a cluster,
-        have a method ``set_h_emb(h0_loc_mat, Lambda_c, D)`` to setup the
-        impurity problem, a method ``solve(**embedding_param)`` that solves
-        the impurity problem, and methods ``get_rho_f(block)`` and
-        ``get_rho_cf(block)`` for the bath and hybridization density matrices.
+    embedding : risb.types.Embedding or list[risb.types.Embedding]
+        The solver of the embedding problem for each cluster. It must
+        already store the interacting Hamiltonian ``h_int`` on a cluster,
+        and implement :class:`risb.types.Embedding`.
         See class :class:`.EmbeddingAtomDiag`.
     update_weights : callable
         The function that gives the integral weights at each k-point on the
-        lattice. It is called as ``update_weights(energies, **kweight_param)``,
+        lattice. It is called as ``update_weights(energies)``,
         where the energies are a dictionary with each key a list.
         See class :class:`.SmearingKWeight`.
     root : callable, optional
@@ -70,9 +76,9 @@ class LatticeSolver:
         The mapping from the symmetry blocks of each cluster in `embedding`
         to the symmetry blocks of `h0_k`. Default assumes the keys in
         all clusters are the same as the keys in `h0_k`.
-    symmetries : list[callable], optional
-        Symmetry functions acting on the mean-field matrices. The argument of
-        the function must take a list of all clusters.
+    symmetrizers : list[callable], optional
+        Functions that symmetrize the mean-field matrices. The argument of
+        each function must take a list of all clusters.
         E.g., ``[R_cluster1, R_cluster2, ...]``.
     force_real : bool, optional
         True if the mean-field matrices are forced to be real
@@ -80,7 +86,7 @@ class LatticeSolver:
         At each self-consistent cycle, whether the returned error function is
             - 'root' : f1 and f2 root functions
             - 'recursion' : the difference between consecutive :attr:`Lambda` and :attr:`R`.
-        Defaults to 'root'.
+        Defaults to 'recursion'.
     return_x_new : bool, optional
         Whether to return a new guess for ``x`` and the ``error`` at each iteration or
         only the ``error``. :func:`scipy.optimize.root` should only use the ``error``.
@@ -90,25 +96,23 @@ class LatticeSolver:
     def __init__(
         self,
         h0_k: BlockMatrix,
-        gf_struct: GfStruct,
-        embedding,
-        update_weights,
-        root=None,
-        projectors=None,
-        gf_struct_mapping: list[dict[str, str]] | None = None,
-        symmetries: list[Callable[[BlockMatrix], dict[BlockMatrix]]] | None = None,
+        gf_struct: GfStruct | list[GfStruct],
+        embedding: Embedding | list[Embedding],
+        update_weights: UpdateWeights,
+        root: RootFinder | None = None,
+        projectors: Sequence[BlockMatrix] | None = None,
+        gf_struct_mapping: Sequence[Mapping[str, str]] | None = None,
+        symmetrizers: Sequence[Symmetrize] = (),
         force_real: bool = False,
-        error_fun: str = "recursion",
+        error_fun: Literal["root", "recursion"] = "recursion",
         return_x_new: bool = True,
-    ):
-        if symmetries is None:
-            symmetries = []
-
+    ) -> None:
         #: dict[numpy.ndarray] : Non-interacting Hamiltonian in k-space.
         self.h0_k = h0_k
 
         # FIXME is this the best way to make sure gf_struct is a list of gf_struct?
-        if isinstance(gf_struct[0][0], str | int):
+        self.gf_struct: list[GfStruct]
+        if _is_single_gf_struct(gf_struct):
             self.gf_struct = [gf_struct]
         else:
             self.gf_struct = gf_struct
@@ -126,16 +130,17 @@ class LatticeSolver:
 
         self._update_weights = update_weights
 
-        self._root = root
-        if self._root is None:
+        if root is None:
             self.optimize = DIIS()
-            self._root = self.optimize.solve
+            root = self.optimize.solve
+        self._root: RootFinder = root
 
         self.projectors = projectors
         if (self.projectors is not None) and (len(self.projectors) != self.n_clusters):
             msg = f"Need a projector (got {len(self.projectors)} for each cluster (got {self.n_clusters}) !"
             raise ValueError(msg)
 
+        self.gf_struct_mapping: Sequence[Mapping[str, str]]
         if gf_struct_mapping is None:
             self.gf_struct_mapping = [
                 {bl: bl for bl in h0_k} for i in range(self.n_clusters)
@@ -146,14 +151,17 @@ class LatticeSolver:
             msg = f"Need a a gf_struct_mapping (got {len(self.gf_struct_mapping)}) for each cluster (got {self.n_clusters}) !"
             raise ValueError(msg)
 
-        self.symmetries = symmetries
+        self.symmetrizers = symmetrizers
         self.force_real = force_real
+        if error_fun not in {"root", "recursion"}:
+            msg = "Unrecognized error functions for root !"
+            raise ValueError(msg)
         self.error_fun = error_fun
         self.return_x_new = return_x_new
 
         # The Hermitian basis in each block of a cluster
         # TODO make H_basis an input
-        self._H_basis = [
+        self._H_basis: list[dict[str, list[NDArray[np.inexact]]]] = [
             {
                 bl: self._hermitian_basis(bl_size, self.force_real)
                 for bl, bl_size in self.gf_struct[i]
@@ -182,72 +190,80 @@ class LatticeSolver:
         self.Lambda = self._initialize_block_mf_matrix(self.gf_struct, self.force_real)
 
         #: list[dict[numpy.ndarray]] : Bath coupling of impurity for each cluster.
-        self.Lambda_c = [{} for i in range(self.n_clusters)]
+        self.Lambda_c: list[BlockMatrix] = [{} for i in range(self.n_clusters)]
 
         #: list[dict[numpy.ndarray]] : Hybridization of impurity for each cluster.
-        self.D = [{} for i in range(self.n_clusters)]
+        self.D: list[BlockMatrix] = [{} for i in range(self.n_clusters)]
 
         #: list[dict[numpy.ndarray]] : Density matrix of quasiparticles for each cluster.
-        self.rho_qp = [{} for i in range(self.n_clusters)]
+        self.rho_qp: list[BlockMatrix] = [{} for i in range(self.n_clusters)]
 
         #: list[dict[numpy.ndarray]] : Lopsided kinetic energy of quasiparticles for each cluster.
-        self.lopsided_ke_qp = [{} for i in range(self.n_clusters)]
+        self.lopsided_ke_qp: list[BlockMatrix] = [{} for i in range(self.n_clusters)]
 
         #: list[dict[numpy.ndarray]] : Kinetic energy of quasiparticles for each cluster.
-        self.ke_qp = [{} for i in range(self.n_clusters)]
+        self.ke_qp: list[BlockMatrix] = [{} for i in range(self.n_clusters)]
 
         #: list[dict[numpy.ndarray]] : Density matrix of cluster for each cluster.
-        self.rho_c = [{} for i in range(self.n_clusters)]
+        self.rho_c: list[BlockMatrix] = [{} for i in range(self.n_clusters)]
 
         #: list[dict[numpy.ndarray]] : Density matrix of f-electrons in the impurity of each cluster.
-        self.rho_f = [{} for i in range(self.n_clusters)]
+        self.rho_f: list[BlockMatrix] = [{} for i in range(self.n_clusters)]
 
         #: list[dict[numpy.ndarray]] : Hybridization density matrix between the c-
         #: and f-electrons in the impurity for each cluster.
-        self.rho_cf = [{} for i in range(self.n_clusters)]
+        self.rho_cf: list[BlockMatrix] = [{} for i in range(self.n_clusters)]
 
         #: list[dict[numpy.ndarray]] : The first root function of the self-consistent loop.
-        self.f1 = [{} for i in range(self.n_clusters)]
+        self.f1: list[BlockMatrix] = [{} for i in range(self.n_clusters)]
 
         #: list[dict[numpy.ndarray]] : The second root function of the self-consistent loop.
-        self.f2 = [{} for i in range(self.n_clusters)]
+        self.f2: list[BlockMatrix] = [{} for i in range(self.n_clusters)]
 
         #: dict[numpy.ndarray] : k-space integration weights of the
         #: quasiparticles in each band.
-        self.kweights = {}
+        self.kweights: BlockRealArray = {}
 
         #: dict[numpy.ndarray] : Band energy of quasiparticles.
-        self.energies_qp = {}
+        self.energies_qp: BlockRealArray = {}
 
         #: dict[numpy.ndarray] : Bloch band vectors of quasiparticles.
-        self.bloch_vector_qp = {}
+        self.bloch_vector_qp: BlockMatrix = {}
 
         self.iteration = 0
 
-    def root(self, *args, **kwargs) -> np.ndarray:
+    def root(
+        self, *args: object, **kwargs: object
+    ) -> NDArray[np.float64] | OptimizeResult:
         """
         Root function that drives the self-consistent procedure. It is called the same as :func:`scipy.optimize.root`.
 
         Returns
         -------
-        numpy.ndarray
+        numpy.ndarray or scipy.optimize.OptimizeResult
 
         """
         return self._root(*args, **kwargs)
 
-    def update_weights(self, *args, **kwargs) -> dict[np.ndarray]:
+    def update_weights(self, energies: BlockRealArray) -> BlockRealArray:
         """
-        Update function that gives k-space integration weights. It is called as ``update_weights(dict[numpy.ndarray], **params)``.
+        Update function that gives k-space integration weights.
+
+        Parameters
+        ----------
+        energies : dict[numpy.ndarray]
+            Energies at each k-point in each block.
 
         Returns
         -------
-        numpy.ndarray
+        dict[numpy.ndarray]
+            Integration weights at each k-point in each block.
 
         """
-        return self._update_weights(*args, **kwargs)
+        return self._update_weights(energies)
 
     @staticmethod
-    def _hermitian_basis(N: int, is_real: bool = False):
+    def _hermitian_basis(N: int, is_real: bool = False) -> list[NDArray[np.inexact]]:
         """
         Return a basis of Hermitian matrices of size N.
 
@@ -265,6 +281,7 @@ class LatticeSolver:
             Hermitian matrices of dimension `N`.
 
         """
+        H_rs: list[NDArray[np.inexact]]
         if is_real:
             n_basis = int(N + N * (N - 1) / 2)
             H_rs = [np.zeros([N, N]) for _ in range(n_basis)]
@@ -294,9 +311,11 @@ class LatticeSolver:
         return H_rs
 
     @staticmethod
-    def _initialize_block_mf_matrix(gf_struct: GfStruct, is_real: bool) -> BlockMatrix:
+    def _initialize_block_mf_matrix(
+        gf_struct: list[GfStruct], is_real: bool
+    ) -> list[BlockMatrix]:
         n_clusters = len(gf_struct)
-        A = [{} for i in range(n_clusters)]
+        A: list[BlockMatrix] = [{} for i in range(n_clusters)]
         for i in range(n_clusters):
             for bl, bsize in gf_struct[i]:
                 if is_real:
@@ -305,11 +324,11 @@ class LatticeSolver:
                     A[i][bl] = np.zeros((bsize, bsize), dtype=complex)
         return A
 
-    def _flatten_matrix(self, A: BlockMatrix, is_coeff_real: bool):
+    def _flatten_matrix(self, A: list[BlockMatrix], is_coeff_real: bool) -> list[float]:
         if len(A) != len(self._H_basis):
             msg = f"len(A) = {len(A)} and len(H_basis) = {len(self._H_basis)} must have the same number of clusters !"
             raise ValueError(msg)
-        x = []
+        x: list[float] = []
         for i in range(self.n_clusters):
             for bl, _bl_size in self.gf_struct[i]:
                 for h in self._H_basis[i][bl]:
@@ -322,14 +341,17 @@ class LatticeSolver:
                     # Could also vectorize both matrices as flatten('F') to
                     # column-major order and then take normal inner product
                     coeff = np.einsum("ij,ji->", h.conj().T, A[i][bl])
-                    x.append(coeff.real)
+                    x.append(float(coeff.real))
                     if (not is_coeff_real) and (not self.force_real):
-                        x.append(coeff.imag)
+                        x.append(float(coeff.imag))
         return x
 
     def _unflatten_matrix(
-        self, x: ArrayLike, is_coeff_real: bool, offset: int = 0
-    ) -> tuple[BlockMatrix, int]:
+        self,
+        x: Sequence[float] | NDArray[np.float64],
+        is_coeff_real: bool,
+        offset: int = 0,
+    ) -> tuple[list[BlockMatrix], int]:
         A = self._initialize_block_mf_matrix(self.gf_struct, self.force_real)
         for i in range(self.n_clusters):
             for bl, _bl_size in self.gf_struct[i]:
@@ -337,31 +359,20 @@ class LatticeSolver:
                     # x stores the coefficients of the basis of Hermitian
                     # matrices defined in self._H_basis.
                     if is_coeff_real or self.force_real:
-                        A[i][bl] += x[offset] * h
+                        A[i][bl] = A[i][bl] + x[offset] * h
                         offset = offset + 1
                     else:
-                        A[i][bl] += (x[offset] + 1j * x[offset + 1]) * h
+                        A[i][bl] = A[i][bl] + (x[offset] + 1j * x[offset + 1]) * h
                         offset = offset + 2
         return A, offset
 
     @staticmethod
     # Not really used
-    def _make_hermitian(A):
-        if isinstance(A, list):
-            for i in range(len(A)):
-                for bl in A[i]:
-                    A[i][bl] = 0.5 * (A[i][bl] + A[i][bl].conj().T)
-        elif isinstance(A, dict):
-            for bl in A:
-                A[bl] = 0.5 * (A[bl] + A[bl].conj().T)
-        elif isinstance(A, np.ndarray):
-            A = 0.5 * (A + A.conj().T)
-        else:
-            msg = "A is not a list[dict[ndarray]], dict[ndarray], or ndarray !"
-            raise TypeError(msg)
-        return A
+    def _make_hermitian(A: NDArray[np.inexact]) -> NDArray[np.inexact]:
+        A_hermitian: NDArray[np.inexact] = 0.5 * (A + A.conj().T)
+        return A_hermitian
 
-    def _get_h0_loc_matrix(self) -> BlockMatrix:
+    def _get_h0_loc_matrix(self) -> list[BlockMatrix]:
         h0_loc_matrix = self._initialize_block_mf_matrix(
             self.gf_struct, self.force_real
         )
@@ -379,37 +390,30 @@ class LatticeSolver:
         h0_loc_matrix, _ = self._unflatten_matrix(
             self._flatten_matrix(h0_loc_matrix, is_coeff_real=True), is_coeff_real=True
         )
-        for function in self.symmetries:
-            h0_loc_matrix = function(h0_loc_matrix)
+        for symmetrize in self.symmetrizers:
+            h0_loc_matrix = symmetrize(h0_loc_matrix)
 
         return h0_loc_matrix
 
     def _target_function(
-        self,
-        x: ArrayLike,
-        embedding_param: list[dict[str, Any]],
-        kweight_param: dict[str, Any],
-    ) -> np.ndarray | tuple[np.ndarray, np.ndarray]:
+        self, x: NDArray[np.float64]
+    ) -> NDArray[np.float64] | tuple[NDArray[np.float64], NDArray[np.float64]]:
         self.Lambda, offset = self._unflatten_matrix(x, is_coeff_real=True)
         self.R, _ = self._unflatten_matrix(x, is_coeff_real=False, offset=offset)
-        self.Lambda, self.R, self.f1, self.f2 = self.one_cycle(
-            embedding_param, kweight_param
-        )
-        x_new = np.array(
+        self.Lambda, self.R, self.f1, self.f2 = self.one_cycle()
+        x_new: NDArray[np.float64] = np.array(
             self._flatten_matrix(self.Lambda, is_coeff_real=True)
             + self._flatten_matrix(self.R, is_coeff_real=False)
         )
 
+        x_error: NDArray[np.float64]
         if self.error_fun == "root":
             x_error = np.array(
                 self._flatten_matrix(self.f2, is_coeff_real=True)
                 + self._flatten_matrix(self.f1, is_coeff_real=False)
             )
-        elif self.error_fun == "recursion":
-            x_error = x_new - x
         else:
-            msg = "Unrecognized error functions for root !"
-            raise ValueError(msg)
+            x_error = x_new - x
 
         if self.return_x_new:
             return x_new, x_error
@@ -417,19 +421,11 @@ class LatticeSolver:
 
     def one_cycle(
         self,
-        embedding_param: list[dict[str, Any]] | None = None,
-        kweight_param: dict[str, Any] | None = None,
-    ):
-        # -> tuple[BlockMatrix, BlockMatrix, BlockMatrix, BlockMatrix]:
+    ) -> tuple[
+        list[BlockMatrix], list[BlockMatrix], list[BlockMatrix], list[BlockMatrix]
+    ]:
         """
         Single iteration of the RISB self-consistent cycle.
-
-        Parameters
-        ----------
-        embedding_param : list[dict], optional
-            The kwarg arguments to pass to the :meth:`embedding.solve` for each cluster.
-        kweight_param : dict, optional
-            The kwarg arguments to pass to :meth:`update_weights`.
 
         Returns
         -------
@@ -445,38 +441,42 @@ class LatticeSolver:
             hybridzation density matrices on each cluster.
 
         """
-        if kweight_param is None:
-            kweight_param = {}
-        if embedding_param is None:
-            embedding_param = [{} for i in range(self.n_clusters)]
-
-        for function in self.symmetries:
-            self.R = function(self.R)
-            self.Lambda = function(self.Lambda)
+        for symmetrize in self.symmetrizers:
+            self.R = symmetrize(self.R)
+            self.Lambda = symmetrize(self.Lambda)
 
         # Make R, Lambda in supercell basis from basis of the clusters
         # FIXME check if projectors get broadcast correctly if they are a diff proj at each k
-        self.R_full = dict.fromkeys(self.h0_kin_k, 0)
-        self.Lambda_full = dict.fromkeys(self.h0_kin_k, 0)
+        # Accumulate out of place so the dtype upcasts to complex if needed
+        self.R_full: BlockMatrix = {
+            bl: np.zeros(h0.shape[1:]) for bl, h0 in self.h0_kin_k.items()
+        }
+        self.Lambda_full: BlockMatrix = {
+            bl: np.zeros(h0.shape[1:]) for bl, h0 in self.h0_kin_k.items()
+        }
         if self.projectors is not None:
             for i in range(self.n_clusters):
                 for bl, _ in self.gf_struct[i]:
                     bl_full = self.gf_struct_mapping[i][bl]
-                    self.R_full[bl_full] += (
-                        self.projectors[i][bl].conj().T
+                    self.R_full[bl_full] = (
+                        self.R_full[bl_full]
+                        + self.projectors[i][bl].conj().T
                         @ self.R[i][bl]
                         @ self.projectors[i][bl]
                     )
-                    self.Lambda_full[bl_full] += (
-                        self.projectors[i][bl].conj().T
+                    self.Lambda_full[bl_full] = (
+                        self.Lambda_full[bl_full]
+                        + self.projectors[i][bl].conj().T
                         @ self.Lambda[i][bl]
                         @ self.projectors[i][bl]
                     )
         else:
             for bl, _ in self.gf_struct[0]:
                 bl_full = self.gf_struct_mapping[0][bl]
-                self.R_full[bl_full] += self.R[0][bl]
-                self.Lambda_full[bl_full] += self.Lambda[0][bl]
+                self.R_full[bl_full] = self.R_full[bl_full] + self.R[0][bl]
+                self.Lambda_full[bl_full] = (
+                    self.Lambda_full[bl_full] + self.Lambda[0][bl]
+                )
 
         h0_k_R = {}
         # R_h0_k_R = dict()
@@ -490,7 +490,7 @@ class LatticeSolver:
             )
             # R_h0_k_R[bl] = helpers.get_R_h0_kin_kR(R_full[bl], self.h0_kin_k[bl], self.bloch_vector_qp[bl])
 
-        self.kweights = self.update_weights(self.energies_qp, **kweight_param)
+        self.kweights = self.update_weights(self.energies_qp)
 
         for i in range(self.n_clusters):
             for bl, _ in self.gf_struct[i]:
@@ -525,10 +525,10 @@ class LatticeSolver:
             self._flatten_matrix(self.rho_qp, is_coeff_real=True), is_coeff_real=True
         )
         # self.lopsided_ke_qp, _ = self._unflatten_matrix( self._flatten_matrix( self.lopsided_ke_qp, is_coeff_real=False ), is_coeff_real=False )
-        for function in self.symmetries:
-            self.rho_qp = function(self.rho_qp)
-            # self.lopsided_ke_qp = function(self.lopsided_ke_qp) # FIXME can I do it to ke as well? It should have same symm as D
-            # self.ke_qp = function(self.ke_qp)
+        for symmetrize in self.symmetrizers:
+            self.rho_qp = symmetrize(self.rho_qp)
+            # self.lopsided_ke_qp = symmetrize(self.lopsided_ke_qp) # FIXME can I do it to ke as well? It should have same symm as D
+            # self.ke_qp = symmetrize(self.ke_qp)
 
         for i in range(self.n_clusters):
             for bl, _ in self.gf_struct[i]:
@@ -562,15 +562,15 @@ class LatticeSolver:
         self.D, _ = self._unflatten_matrix(
             self._flatten_matrix(self.D, is_coeff_real=False), is_coeff_real=False
         )
-        for function in self.symmetries:
-            self.Lambda_c = function(self.Lambda_c)
-            self.D = function(self.D)
+        for symmetrize in self.symmetrizers:
+            self.Lambda_c = symmetrize(self.Lambda_c)
+            self.D = symmetrize(self.D)
 
         for i in range(self.n_clusters):
             self.embedding[i].set_h_emb(
                 self.Lambda_c[i], self.D[i], self.h0_loc_matrix[i]
             )
-            self.embedding[i].solve(**embedding_param[i])
+            self.embedding[i].solve()
             for bl, _ in self.gf_struct[i]:
                 self.rho_f[i][bl] = self.embedding[i].get_rho_f(bl)
                 self.rho_cf[i][bl] = self.embedding[i].get_rho_cf(bl)
@@ -582,9 +582,9 @@ class LatticeSolver:
         self.rho_cf, _ = self._unflatten_matrix(
             self._flatten_matrix(self.rho_cf, is_coeff_real=False), is_coeff_real=False
         )
-        for function in self.symmetries:
-            self.rho_f = function(self.rho_f)
-            self.rho_cf = function(self.rho_cf)
+        for symmetrize in self.symmetrizers:
+            self.rho_f = symmetrize(self.rho_f)
+            self.rho_cf = symmetrize(self.rho_cf)
 
         for i in range(self.n_clusters):
             for bl, _ in self.gf_struct[i]:
@@ -600,9 +600,9 @@ class LatticeSolver:
         self.f1, _ = self._unflatten_matrix(
             self._flatten_matrix(self.f1, is_coeff_real=False), is_coeff_real=False
         )
-        for function in self.symmetries:
-            self.f1 = function(self.f1)
-            self.f2 = function(self.f2)
+        for symmetrize in self.symmetrizers:
+            self.f1 = symmetrize(self.f1)
+            self.f2 = symmetrize(self.f2)
 
         for i in range(self.n_clusters):
             for bl, _ in self.gf_struct[i]:
@@ -632,21 +632,17 @@ class LatticeSolver:
         self.R, _ = self._unflatten_matrix(
             self._flatten_matrix(self.R, is_coeff_real=False), is_coeff_real=False
         )
-        for function in self.symmetries:
-            self.Lambda = function(self.Lambda)
-            self.R = function(self.R)
+        for symmetrize in self.symmetrizers:
+            self.Lambda = symmetrize(self.Lambda)
+            self.R = symmetrize(self.R)
 
         self.iteration += 1
 
         return self.Lambda, self.R, self.f1, self.f2
 
     def solve(
-        self,
-        one_shot: bool = False,
-        embedding_param: list[dict[str, Any]] | None = None,
-        kweight_param: dict[str, Any] | None = None,
-        **kwargs,
-    ) -> Any:
+        self, one_shot: bool = False, **kwargs: object
+    ) -> NDArray[np.float64] | OptimizeResult:
         """
         Solve for the renormalization matrix :attr:`R` and correlation potential matrix :attr:`Lambda`.
 
@@ -655,10 +651,6 @@ class LatticeSolver:
         one_shot : bool, optional
             True if the calcualtion is just one shot and not self consistent.
             Default is False.
-        embedding_param : list[dict], optional
-            kwarg options to pass to :meth:`embedding.solve` for each cluster.
-        kweight_param : dict, optional
-            kwarg options to pass to :meth:`update_weights`.
         **kwargs
             kwarg options to pass to :meth:`root`.
 
@@ -671,13 +663,9 @@ class LatticeSolver:
         Also sets the self-consistent solutions :attr:`Lambda` and :attr:`R`.
 
         """
-        if kweight_param is None:
-            kweight_param = {}
-        if embedding_param is None:
-            embedding_param = [{} for i in range(self.n_clusters)]
-
+        x: NDArray[np.float64] | OptimizeResult
         if one_shot:
-            self.Lambda, self.R, _, _ = self.one_cycle(embedding_param, kweight_param)
+            self.Lambda, self.R, _, _ = self.one_cycle()
             x = np.array(
                 self._flatten_matrix(self.Lambda, is_coeff_real=True)
                 + self._flatten_matrix(self.R, is_coeff_real=False)
@@ -688,19 +676,20 @@ class LatticeSolver:
                 self._flatten_matrix(self.Lambda, is_coeff_real=True)
                 + self._flatten_matrix(self.R, is_coeff_real=False)
             )
-            x = self.root(
-                fun=self._target_function,
-                x0=x0,
-                args=(embedding_param, kweight_param),
-                **kwargs,
-            )
+            x = self.root(fun=self._target_function, x0=x0, **kwargs)
         return x
 
     @property
-    def Z(self) -> BlockMatrix:
+    def Z(self) -> list[BlockMatrix]:
         """Returns the quasiparticle weight matrix Z of each cluster as a list[dict[numpy.ndarray]]."""
-        Z = [{} for i in range(self.n_clusters)]
+        Z: list[BlockMatrix] = [{} for i in range(self.n_clusters)]
         for i in range(self.n_clusters):
             for bl, _ in self.gf_struct[i]:
                 Z[i][bl] = self.R[i][bl] @ self.R[i][bl].conj().T
         return Z
+
+
+def _is_single_gf_struct(
+    gf_struct: GfStruct | list[GfStruct],
+) -> TypeIs[GfStruct]:
+    return isinstance(gf_struct[0][0], str)

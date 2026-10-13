@@ -33,7 +33,7 @@ kweight = KWeightClass(...)
 ```
 
 It must have a member function `update_weights()` that is called as
-`update_weights(energies, **kwargs)` where `energies` are a `dict[ndarray]`
+`update_weights(energies)` where `energies` are a `dict[ndarray]`
 that are the eigenenergies of `h0_k` in each block (e.g., `'up'` and `'dn'`
 spin blocks).
 
@@ -167,7 +167,7 @@ The functions are passed as a list to the solver
 
 ```python
 S = LatticeSolver(...
-                  symmetries = [paramagnetism, symmetry1, ...],
+                  symmetrizers = [paramagnetism, symmetry1, ...],
                   ...
 )
 ```
@@ -188,7 +188,7 @@ S = LatticeSolver(...
 
 `root` is called exactly the same as what :py:func:`scipy.optimize.root`
 requires. It must be a callable function that takes as input
-`root(S._target_function, x0, args=, **kwargs)`. Here `S._target_function`
+`root(S._target_function, x0, **kwargs)`. Here `S._target_function`
 by default returns a `tuple[ndarray,ndarray]` of a flattened ndarray `x_new`
 of a new `Lambda` and `R` matrix and a flattened ndarray `x_err` of the error
 from the `f1` and `f2` root functions.

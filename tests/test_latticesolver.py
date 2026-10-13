@@ -121,7 +121,7 @@ def test_diis_symmetrize(subtests, request, model):
         gf_struct=[gf_struct],
         embedding=[embedding],
         update_weights=kweight.update_weights,
-        symmetries=[symmetrize_blocks],
+        symmetrizers=[symmetrize_blocks],
     )
     for i in range(S.n_clusters):
         for bl, _ in S.gf_struct[i]:
@@ -174,7 +174,7 @@ def test_scipy_root(subtests, request, model, root_method):
         gf_struct=[gf_struct],
         embedding=[embedding],
         update_weights=kweight.update_weights,
-        symmetries=[symmetrize_blocks],
+        symmetrizers=[symmetrize_blocks],
         root=root_fun,
         return_x_new=False,
     )

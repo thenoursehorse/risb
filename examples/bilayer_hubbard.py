@@ -81,7 +81,7 @@ S = LatticeSolver(
     embedding=embedding,
     update_weights=kweight.update_weights,
 )
-# symmetries=[symmetries])
+# symmetrizers=[symmetries])
 
 # (Optional) Initialize R and Lambda matrices
 # for bl, bl_size in gf_struct:
