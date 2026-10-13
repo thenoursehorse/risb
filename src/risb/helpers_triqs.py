@@ -523,5 +523,5 @@ def get_g_w_loc(g_k_w: BlockGf, use_broadcasting: bool = True) -> BlockGf:
         else:
             for k in k_mesh:
                 g_w_loc[bl] += gf[k, :]
-        g_w_loc[bl] /= np.prod(k_mesh.dims)
+        g_w_loc[bl] /= len(k_mesh)
     return g_w_loc
