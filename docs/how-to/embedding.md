@@ -102,11 +102,12 @@ It is solved as
 embedding.solve()
 ```
 
-There are no arguments. All `solve()` does is call
+There are no arguments. `solve()` calls
 :py:class:`triqs.atom_diag.AtomDiag`, passes it `h_emb`
 and restricts the Hilbert space to the half-filled particle sector. The
 instance of this class is stored in `embedding.ad`. See the {{TRIQS}}
-documentation for its function.
+documentation for its function. It then calculates the density matrices
+described below for every block.
 
 ### Getting the density matrices
 
@@ -131,7 +132,8 @@ embedding.get_rho_c(block)
 ```
 
 The three terms above give the full single-particle density matrix in the
-embedding space.
+embedding space. They are also stored for every block as the dictionaries
+`embedding.rho_f`, `embedding.rho_cf`, and `embedding.rho_c`.
 
 ### Local expectation values
 
@@ -175,13 +177,15 @@ embedding = EmbeddingDummy(embedding=embedding_atom_diag_instance)
 ### Rotations
 
 If the copy is related by symmetry, you can pass `rotations` as a list of
-functions that operate in sequence on the block matrices that
-:py:class:`EmbeddingDummy` returns. For example, if the
+functions that operate in sequence on the dictionaries of block matrices that
+:py:class:`EmbeddingDummy` copies. Each function must return a dictionary with
+the same blocks as `gf_struct`, so a rotation that mixes orbitals in different
+blocks needs a `gf_struct` with those orbitals in the same block. For example, if the
 correlated subspace is equivalent except that the spin is rotated,
 like in an antiferromagnetic phase, this can be done with
 
 ```python
-from itertools import deepcopy
+from copy import deepcopy
 
 
 def rotate_spin(A):
@@ -195,14 +199,14 @@ embedding = EmbeddingDummy(embedding=..., rotations=[rotate_spin])
 ```
 
 :::{note}
-`set_h_emb()` and `solve()` are methods that just `pass` and do nothing.
-The density matrix functions `get_rho_f`, `get_rho_cf`, and `get_rho_c` grab
-what is stored in `embedding_atom_diag` and rotates according to the list of
-functions in `rotations`.
+`set_h_emb()` does nothing. `solve()` copies the density matrices stored in
+the referenced embedding class and rotates them according to the list of
+functions in `rotations`. The referenced embedding class must therefore be
+solved first, i.e., come before the `EmbeddingDummy` in the list of embedding
+classes passed to the `Solver` classes.
 :::
 
 :::{warning}
-The operator passed to `overlap` is not rotated. Likely only rotationally
-invariant quantities make sense to calculate, which are can be obtained from
-the embedding class that `EmbeddingDummy` copies.
+`EmbeddingDummy` has no `overlap` method. Rotationally invariant expectation
+values can be obtained from the embedding class that `EmbeddingDummy` copies.
 :::

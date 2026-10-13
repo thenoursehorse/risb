@@ -118,11 +118,11 @@ S.solve(tol=1e-8)
 
 # Average number of particles on a cluster
 total_number_Op = N_op(spin_names, n_orb, off_diag=True)
-total_number = [e.overlap(total_number_Op) for e in embedding]
+total_number = embedding[0].overlap(total_number_Op)
 
 # Effective total spin of a cluster
 total_spin_Op = S2_op(spin_names, n_orb, off_diag=True)
-total_spin = [e.overlap(total_spin_Op) for e in embedding]
+total_spin = embedding[0].overlap(total_spin_Op)
 
 # Print out some interesting observables
 with np.printoptions(formatter={"float": "{: 0.4f}".format}):
@@ -135,7 +135,7 @@ with np.printoptions(formatter={"float": "{: 0.4f}".format}):
     print(f"Density matrix rho_cf = \n{embedding[0].rho_cf['up']}")
     print(f"Bath coupling matrix Lambda_c = \n{S.Lambda_c[0]['up']}")
     print(f"Hybridization matrix D = \n{S.D[0]['up']}")
-    print(f"Number of partices on cluster N = \n{total_number[0]: 0.4f}")
+    print(f"Number of partices on cluster N = \n{total_number: 0.4f}")
     print(
-        f"Effective spin of cluster S = \n{-0.5 + 0.5 * np.sqrt(1 + 4 * np.array(total_spin[0])): 0.4f}"
+        f"Effective spin of cluster S = \n{-0.5 + 0.5 * np.sqrt(1 + 4 * total_spin): 0.4f}"
     )

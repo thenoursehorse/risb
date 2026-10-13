@@ -17,10 +17,16 @@
 
 """Embedding solver that acts as a copy of another solver without calculating anything."""
 
+from collections.abc import Callable, Sequence
+from typing import override
+
 import numpy as np
+from numpy.typing import NDArray
+
+from risb.types import BlockMatrix, Embedding
 
 
-class EmbeddingDummy:
+class EmbeddingDummy(Embedding):
     """
     Dummy impurity solver.
 
@@ -32,52 +38,58 @@ class EmbeddingDummy:
 
     Parameters
     ----------
-    embedding : class
-        The embedding solver class to reference.
-    rotations : list[callable], optional
-        A list of rotation functions to apply to matrices.
+    embedding : risb.types.Embedding
+        The embedding solver to reference. It must be solved before this one.
+    rotations : sequence of callable, optional
+        Functions applied in order to the density matrices of ``embedding``.
+        Each takes and returns a dictionary of block matrices with the
+        blocks of ``embedding.gf_struct``.
 
     """
 
-    def __init__(self, embedding, rotations=None):
-        if rotations is None:
-            rotations = []
+    def __init__(
+        self,
+        embedding: Embedding,
+        rotations: Sequence[Callable[[BlockMatrix], BlockMatrix]] = (),
+    ) -> None:
         self.embedding = embedding
         self.rotations = rotations
+        self.gf_struct = embedding.gf_struct
+        self.rho_f: BlockMatrix = {}
+        self.rho_cf: BlockMatrix = {}
+        self.rho_c: BlockMatrix = {}
 
-    def set_h_emb(self, *args, **kwargs):  # noqa: D102
-        pass
+    @override
+    def set_h_emb(
+        self,
+        Lambda_c: BlockMatrix,
+        D: BlockMatrix,
+        h0_loc_matrix: BlockMatrix | None = None,
+    ) -> None:
+        """Do nothing, because the referenced embedding solver is the one solved."""
 
-    def solve(self, *args, **kwargs):  # noqa: D102
-        pass
+    @override
+    def solve(self) -> None:
+        """Copy the density matrices of the referenced embedding solver and apply :attr:`rotations`."""
+        rho_f = dict(self.embedding.rho_f)
+        rho_cf = dict(self.embedding.rho_cf)
+        rho_c = dict(self.embedding.rho_c)
+        for rotate in self.rotations:
+            rho_f = rotate(rho_f)
+            rho_cf = rotate(rho_cf)
+            rho_c = rotate(rho_c)
+        self.rho_f = rho_f
+        self.rho_cf = rho_cf
+        self.rho_c = rho_c
 
-    def get_rho_f(self, bl: str) -> np.ndarray:  # noqa: D102
-        if bl not in self.embedding.rho_f:
-            rho_f = self.embedding.get_rho_f(bl)
-        else:
-            rho_f = self.embedding.rho_f[bl]
-        for func in self.rotations:
-            rho_f = func(rho_f)
-        return rho_f
+    @override
+    def get_rho_f(self, bl: str) -> NDArray[np.inexact]:
+        return self.rho_f[bl]
 
-    def get_rho_c(self, bl: str) -> np.ndarray:  # noqa: D102
-        if bl not in self.embedding.rho_c:
-            rho_c = self.embedding.get_rho_c(bl)
-        else:
-            rho_c = self.embedding.rho_c[bl]
-        for func in self.rotations:
-            rho_c = func(rho_c)
-        return rho_c
+    @override
+    def get_rho_cf(self, bl: str) -> NDArray[np.inexact]:
+        return self.rho_cf[bl]
 
-    def get_rho_cf(self, bl: str) -> np.ndarray:  # noqa: D102
-        if bl not in self.embedding.rho_cf:
-            rho_cf = self.embedding.get_rho_cf(bl)
-        else:
-            rho_cf = self.embedding.rho_cf[bl]
-        for func in self.rotations:
-            rho_cf = func(rho_cf)
-        return rho_cf
-
-    # FIXME rotate Op correctly, is this even correctly possible?
-    def overlap(self, Op, force_real: bool = True) -> float | complex:  # noqa: D102
-        return self.embedding.overlap(Op, force_real)
+    @override
+    def get_rho_c(self, bl: str) -> NDArray[np.inexact]:
+        return self.rho_c[bl]

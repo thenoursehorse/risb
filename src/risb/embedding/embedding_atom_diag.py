@@ -18,16 +18,18 @@
 """Embedding solver using TRIQS AtomDiag."""
 
 from itertools import product
+from typing import override
 
 import numpy as np
+from numpy.typing import NDArray
 from triqs.atom_diag import AtomDiag, act
 from triqs.operators import Operator, c, c_dag, dagger
 
 from risb.helpers_triqs import get_C_Op
-from risb.types import BlockMatrix, GfStruct
+from risb.types import BlockMatrix, Embedding, GfStruct
 
 
-class EmbeddingAtomDiag:
+class EmbeddingAtomDiag(Embedding):
     """
     Impurity solver of embedding space using :class:`triqs.atom_diag.AtomDiag` from TRIQS.
 
@@ -94,15 +96,17 @@ class EmbeddingAtomDiag:
         #: triqs.operators.Operator : Hybridization terms in :attr:`h_emb`.
         self.h_hybr: Operator = Operator()
 
-        #: dict[numpy.ndarray] : f-electron density matrix.
-        self.rho_f = {}
+        #: dict[numpy.ndarray] : f-electron density matrix, set by
+        #: :meth:`solve`.
+        self.rho_f: BlockMatrix = {}
 
-        #: dict[numpy.ndarray] : c-electron density matrix.
-        self.rho_c = {}
+        #: dict[numpy.ndarray] : c-electron density matrix, set by
+        #: :meth:`solve`.
+        self.rho_c: BlockMatrix = {}
 
         #: dict[numpy.ndarray] : Density matrix of hybridization terms
-        #: (c- and f-electrons).
-        self.rho_cf = {}
+        #: (c- and f-electrons), set by :meth:`solve`.
+        self.rho_cf: BlockMatrix = {}
 
     @staticmethod
     def _bl_loc_to_bath(bl: str) -> str:
@@ -186,6 +190,7 @@ class EmbeddingAtomDiag:
             tmp = C_dag_Op[bl] @ D[bl] @ C_Op[bl_bath]
             self.h_hybr += tmp + dagger(tmp)
 
+    @override
     def set_h_emb(
         self,
         Lambda_c: BlockMatrix,
@@ -227,8 +232,15 @@ class EmbeddingAtomDiag:
     # TODO other restrictions, like none, for testing
     # but it has been tested against sparse embedding and is the same answer
     # TODO what about superconductivity, ghosts?
+    @override
     def solve(self) -> None:
-        """Solve for the groundstate in the half-filled number sector of the embedding problem."""
+        """
+        Solve for the groundstate in the half-filled number sector of the embedding problem.
+
+        Sets the density matrices :attr:`rho_f`, :attr:`rho_cf`, and
+        :attr:`rho_c` of every block.
+
+        """
         M = int(len(self.fops_emb) / 2)
         # term is an array holding info of term as monomial, last index is its value
         if any(np.iscomplex(term[-1]) for term in self.h_emb):
@@ -238,7 +250,27 @@ class EmbeddingAtomDiag:
         self.gs_vector = self.ad.vacuum_state.copy()
         self.gs_vector[0] = 1
 
-    def get_rho_f(self, bl: str) -> np.ndarray:
+        for bl, loc_size in self.gf_struct:
+            bl_bath = self._bl_loc_to_bath(bl)
+            bath_size = self.gf_struct_bath_dict[bl_bath]
+
+            self.rho_f[bl] = np.zeros([bath_size, bath_size], dtype=complex)
+            for a, b in product(range(bath_size), range(bath_size)):
+                Op = c(bl_bath, b) * c_dag(bl_bath, a)
+                self.rho_f[bl][a, b] = self.overlap(Op, force_real=False)
+
+            self.rho_cf[bl] = np.zeros([loc_size, bath_size], dtype=complex)
+            for alpha, a in product(range(loc_size), range(bath_size)):
+                Op = c_dag(bl, alpha) * c(bl_bath, a)
+                self.rho_cf[bl][alpha, a] = self.overlap(Op, force_real=False)
+
+            self.rho_c[bl] = np.zeros([loc_size, loc_size], dtype=complex)
+            for alpha, beta in product(range(loc_size), range(loc_size)):
+                Op = c_dag(bl, alpha) * c(bl, beta)
+                self.rho_c[bl][alpha, beta] = self.overlap(Op, force_real=False)
+
+    @override
+    def get_rho_f(self, bl: str) -> NDArray[np.inexact]:
         """
         Return f-electron densitym atrix.
 
@@ -253,15 +285,10 @@ class EmbeddingAtomDiag:
             The f-electron density matrix :attr:`rho_f` from impurity.
 
         """
-        bl_bath = self._bl_loc_to_bath(bl)
-        bl_size = self.gf_struct_bath_dict[bl_bath]
-        self.rho_f[bl] = np.zeros([bl_size, bl_size], dtype=complex)
-        for a, b in product(range(bl_size), range(bl_size)):
-            Op = c(bl_bath, b) * c_dag(bl_bath, a)
-            self.rho_f[bl][a, b] = self.overlap(Op, force_real=False)
         return self.rho_f[bl]
 
-    def get_rho_c(self, bl: str) -> np.ndarray:
+    @override
+    def get_rho_c(self, bl: str) -> NDArray[np.inexact]:
         """
         Return c-electron density matrix.
 
@@ -276,14 +303,10 @@ class EmbeddingAtomDiag:
             The c-electron density matrix :attr:`rho_c` from impurity.
 
         """
-        bl_size = self.gf_struct_dict[bl]
-        self.rho_c[bl] = np.zeros([bl_size, bl_size], dtype=complex)
-        for alpha, beta in product(range(bl_size), range(bl_size)):
-            Op = c_dag(bl, alpha) * c(bl, beta)
-            self.rho_c[bl][alpha, beta] = self.overlap(Op, force_real=False)
         return self.rho_c[bl]
 
-    def get_rho_cf(self, bl: str) -> np.ndarray:
+    @override
+    def get_rho_cf(self, bl: str) -> NDArray[np.inexact]:
         """
         Return the cf hybridization (off-diagonal) density matrix.
 
@@ -299,13 +322,6 @@ class EmbeddingAtomDiag:
             impurity.
 
         """
-        bl_bath = self._bl_loc_to_bath(bl)
-        bath_size = self.gf_struct_bath_dict[bl_bath]
-        loc_size = self.gf_struct_dict[bl]
-        self.rho_cf[bl] = np.zeros([loc_size, bath_size], dtype=complex)
-        for alpha, a in product(range(loc_size), range(bath_size)):
-            Op = c_dag(bl, alpha) * c(bl_bath, a)
-            self.rho_cf[bl][alpha, a] = self.overlap(Op, force_real=False)
         return self.rho_cf[bl]
 
     def overlap(self, Op: Operator, force_real: bool = True) -> float | complex:

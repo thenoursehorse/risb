@@ -30,7 +30,24 @@ type RootFinder = Callable[..., NDArray[np.float64] | OptimizeResult]
 
 
 class Embedding(Protocol):
-    """Impurity solver for the embedding problem of one cluster."""
+    """
+    Impurity solver for the embedding problem of one cluster.
+
+    Subclass this to write your own solver, so that type checkers verify it
+    implements everything below.
+    """
+
+    gf_struct: GfStruct
+    """Block structure of the c-electrons."""
+
+    rho_f: BlockMatrix
+    """f-electron density matrix of each block in :attr:`gf_struct`, set by :meth:`solve`."""
+
+    rho_cf: BlockMatrix
+    """c-f hybridization density matrix of each block in :attr:`gf_struct`, set by :meth:`solve`."""
+
+    rho_c: BlockMatrix
+    """c-electron density matrix of each block in :attr:`gf_struct`, set by :meth:`solve`."""
 
     def set_h_emb(
         self,
@@ -41,10 +58,13 @@ class Embedding(Protocol):
         """Set the embedding Hamiltonian."""
 
     def solve(self) -> None:
-        """Solve the embedding problem."""
+        """Solve the embedding problem and set :attr:`rho_f`, :attr:`rho_cf`, and :attr:`rho_c` for every block."""
 
     def get_rho_f(self, bl: str) -> NDArray[np.inexact]:
         """Return the f-electron density matrix of block ``bl``."""
 
     def get_rho_cf(self, bl: str) -> NDArray[np.inexact]:
         """Return the c-f hybridization density matrix of block ``bl``."""
+
+    def get_rho_c(self, bl: str) -> NDArray[np.inexact]:
+        """Return the c-electron density matrix of block ``bl``."""
