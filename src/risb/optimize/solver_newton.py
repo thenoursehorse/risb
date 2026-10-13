@@ -81,9 +81,9 @@ class NewtonSolver(ABC):
         x_out = deepcopy(x)
         error_out = deepcopy(error)
 
-        while len(x_out) >= max_size:
+        while len(x_out) > max_size:
             x_out.pop()
-        while len(error_out) >= max_size:
+        while len(error_out) > max_size:
             error_out.pop()
 
         return x_out, error_out
@@ -96,7 +96,7 @@ class NewtonSolver(ABC):
     ) -> None:
         # Note these operations are mutable on input list
         vec.insert(0, vec_new)
-        if max_size is not None and len(vec) >= max_size:
+        if max_size is not None and len(vec) > max_size:
             vec.pop()
 
     @abstractmethod

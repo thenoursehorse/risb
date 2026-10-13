@@ -26,7 +26,7 @@ class LinearMixing(NewtonSolver):
     """
 
     def __init__(self, alpha: float = 1.0) -> None:
-        super().__init__(history_size=2)
+        super().__init__(history_size=1)
         self.alpha = alpha
 
     @override

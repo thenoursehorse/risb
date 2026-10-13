@@ -20,3 +20,9 @@ def test_solver_finds_fixed_point(solver: NewtonSolver) -> None:
     x = solver.solve(fixed_point, np.zeros(3), tol=1e-10)
     assert solver.success
     assert x == pytest.approx(2.0)
+
+
+def test_diis_keeps_history_size_vectors() -> None:
+    solver = DIIS(history_size=4)
+    solver.solve(fixed_point, np.zeros(3), tol=0, maxiter=10)
+    assert len(solver.error) == 4
