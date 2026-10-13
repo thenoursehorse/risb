@@ -1,7 +1,7 @@
 # Using`LatticeSolver`
 
 If you want to solve a strongly correlated model on a lattice you can use
-:py:class:`LatticeSolver`. This guide shows you how to use it for most kinds
+{py:class}`~risb.LatticeSolver`. This guide shows you how to use it for most kinds
 of problems you might want to solve.
 
 ## Simple setup
@@ -55,9 +55,9 @@ h_int = ...
 
 :::{tip}
 :class: dropdown
-The {{TRIQS}} library makes it very simple to define
-`h_int` as second-quantized operators. All of the impurity solvers we
-provide assume that `h_int` is a {{TRIQS}} operator.
+Build `h_int` with the second-quantized operators `c`, `cdag` and `nc` from
+`fockit.algebra`, whose modes are `(block, index)` following `gf_struct`. See
+[Using impurity solvers](impurity_solvers.md).
 :::
 
 Next define the class that solves in the correlated subspace $\mathcal{C}_i$
@@ -186,7 +186,7 @@ S = LatticeSolver(...
 )
 ```
 
-`root` is called exactly the same as what :py:func:`scipy.optimize.root`
+`root` is called exactly the same as what {py:func}`scipy.optimize.root`
 requires. It must be a callable function that takes as input
 `root(S._target_function, x0, **kwargs)`. Here `S._target_function`
 by default returns a `tuple[ndarray,ndarray]` of a flattened ndarray `x_new`
@@ -216,7 +216,7 @@ S = LatticeSolver(...
 )
 ```
 
-For example, to use :py:func:`scipy.optimize.root`
+For example, to use {py:func}`scipy.optimize.root`
 
 ```python
 from scipy.optimize import root
@@ -226,6 +226,16 @@ S = LatticeSolver(...
                   ...
 )
 S.solve(tol = , method = 'broyden1, hybr, krylov, etc', other kwargs = )
+```
+
+For `krylov`, `broyden1`, `broyden2`, `anderson`, `linearmixing`,
+`diagbroyden` and `excitingmixing`, scipy turns `tol` into a stop on the step
+size. The {{RISB}} equations can have directions in which the error does not
+change (the Jacobian at the solution of the bilayer Hubbard model is singular),
+and then the steps need not shrink. Stop on the size of the error instead
+
+```python
+S.solve(method="krylov", options={"fatol": 1e-10})
 ```
 
 :::{warning}

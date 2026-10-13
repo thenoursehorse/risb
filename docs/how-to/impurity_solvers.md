@@ -8,54 +8,59 @@ bit about how they do things.
 [About the impurity problem](../explanations/impurity.md).
 :::
 
-## `AtomDiagImpuritySolver`
+## `FockitImpuritySolver`
 
 First a `gf_struct` object has to be created that describes the correlated
-subspace $\mathcal{C}_i$. This object should be constructed in the same way
-as {{TRIQS}} Green's function objects are created: as a list of tuple pairs
-describing a symmetry block and its dimension. For example, for the $e_g$
-symmetry sector (two orbitals) in a system where spin is conserved, the
-structure can be encoded as
+subspace $\mathcal{C}_i$. It is a list of pairs, each the name of a symmetry
+block and its dimension. For example, for the $e_g$ symmetry sector (two
+orbitals) in a system where spin is conserved, the structure can be encoded as
 
 ```python
 gf_struct = [("up_eg", 2), ("dn_eg", 2)]
 ```
 
-Next a local Hamiltonian has to be constructed. This must
-be a {{TRIQS}} operator that includes the interaction terms. It can include
-the local quadratic terms in $\mathcal{C}_i$, but these can also be set
-later on. It does not make any difference for the solvers. For example,
-a two-orbital Hubbard model with hopping between the orbitals can be
-constructed as
+Next a local Hamiltonian has to be constructed. It is built from the
+[fockit](https://github.com/thenoursehorse/fockit) operators `c(block, index)`,
+`cdag(block, index)` and `nc(block, index)`, with the blocks and indices of
+`gf_struct`, and includes the interaction terms. It can include the local
+quadratic terms in $\mathcal{C}_i$, but these can also be set later on. It
+does not make any difference for the solver. For example, a two-orbital
+Hubbard model with hopping between the orbitals can be constructed as
 
 ```python
-from triqs.operators import Operator, c_dag, c, n
+from fockit.algebra import c, cdag, nc, zero
 
 n_orb = 2
 
 U = 1
-h_int = Operator()
+h_int = zero()
 for o in range(n_orb):
-    h_int += U * n("up", o) * n("dn", o)
+    h_int += U * nc("up", o) * nc("dn", o)
 
 # Optional local terms
 # V = 0.25
-# for s in ['up', 'dn']:
-#    h_int += V * ( c_dag(s, 0) * c(s, 1) + c_dag(s, 1) * c(s, 0) )
+# for s in ["up", "dn"]:
+#     h_int += V * (cdag(s, 0) * c(s, 1) + cdag(s, 1) * c(s, 0))
 ```
+
+{py:mod}`risb.helpers_fockit` has helper functions for some common operators,
+e.g., the Kanamori interaction
+{py:func}`~risb.helpers_fockit.h_int_kanamori`.
 
 ### Constructor
 
 The solver is instantiated as
 
 ```python
-from risb.impurity_solvers import AtomDiagImpuritySolver
+from risb.impurity_solvers import FockitImpuritySolver
 
-impurity_solver = AtomDiagImpuritySolver(h_int, gf_struct)
+impurity_solver = FockitImpuritySolver(h_int, gf_struct)
 ```
 
 The interaction Hamiltonian is stored in `impurity_solver.h_int` and the block
-matrix structure is stored in `impurity_solver.gf_struct`.
+matrix structure is stored in `impurity_solver.gf_struct`. The constructor
+also builds the basis of the half-filled particle sector of the impurity
+problem (physical and bath orbitals), stored in `impurity_solver.basis`.
 
 ### Setting `h_imp`
 
@@ -67,10 +72,11 @@ impurity_solver.set_h_imp(Lambda_c, D)
 
 where `Lambda_c` and `D` are block matrices that describe the impurity problem
 with the structure of `gf_struct`.
-:py:meth:`AtomDiagImpuritySolver.set_h_imp` is internally called from within
-the self-consistent loop in the {{RISB}} `Solver` classes. The hybridzation
-term from `D` is stored as `impurity_solver.h_hybr` and the bath hopping from
-`Lambda_c` stored as `impurity_solver.h_bath` as {{TRIQS}} operators.
+{py:meth}`~risb.impurity_solvers.FockitImpuritySolver.set_h_imp` is internally
+called from within the self-consistent loop in `LatticeSolver`. The
+hybridization term from `D` is stored as `impurity_solver.h_hybr` and the bath
+hopping from `Lambda_c` is stored as `impurity_solver.h_bath`, both as fockit
+operators.
 
 If the non-interacting quadratic couplings are not included in `h_int`, then
 they must be passed as
@@ -81,7 +87,7 @@ impurity_solver.set_h_imp(Lambda_c, D, h0_loc_matrix)
 
 where `h0_loc_matrix` is a matrix that describes the couplings, with the same
 block matrix structure as `Lambda_c` and `D`. This is stored in
-`impurity_solver.h0_loc` as a {{TRIQS}} operator.
+`impurity_solver.h0_loc` as a fockit operator.
 
 ### Setting `h_int`
 
@@ -102,12 +108,16 @@ It is solved as
 impurity_solver.solve()
 ```
 
-There are no arguments. `solve()` calls
-:py:class:`triqs.atom_diag.AtomDiag`, passes it `h_imp`
-and restricts the Hilbert space to the half-filled particle sector. The
-instance of this class is stored in `impurity_solver.ad`. See the {{TRIQS}}
-documentation for its function. It then calculates the density matrices
-described below for every block.
+There are no arguments. `solve()` builds the sparse matrix of `h_imp` in
+`impurity_solver.basis` and finds its lowest eigenstate with
+{py:func}`scipy.sparse.linalg.eigsh`. The ground state energy and vector are
+stored in `impurity_solver.gs_energy` and `impurity_solver.gs_vector`. It then
+calculates the density matrices described below for every block.
+
+`solve()` raises a `ValueError` if `h_imp` is not Hermitian, and
+{py:class}`scipy.sparse.linalg.ArpackNoConvergence` if `eigsh` does not
+converge. If the ground state is degenerate, the solver returns one state in
+the degenerate subspace, and which one is not specified.
 
 ### Getting the density matrices
 
@@ -144,19 +154,21 @@ obtained as
 impurity_solver.overlap(Op)
 ```
 
-`Op` must be a {{TRIQS}} operator. See the {{TRIQS}} manual for helper
-functions to construct some common observables. To get observables
-in the $f$ electrons, the structure is obtained as
+`Op` must be a fockit operator. For example, the total number of electrons and
+the total spin squared on the physical orbitals are
+
+```python
+from risb.helpers_fockit import N_op, S2_op
+
+total_number = impurity_solver.overlap(N_op(["up", "dn"], n_orb))
+total_spin = impurity_solver.overlap(S2_op(["up", "dn"], n_orb))
+```
+
+To get observables in the $f$ electrons, their modes are
+`("bath_" + block, index)`, and their structure is obtained as
 
 ```python
 impurity_solver.gf_struct_bath
-```
-
-The structure of the whole impurity problem (physical and bath orbitals) is
-obtained as
-
-```python
-impurity_solver.gf_struct_imp
 ```
 
 ## `DummyImpuritySolver`
@@ -167,19 +179,19 @@ ground state in each subspace separately.
 
 This class is a copy of another
 impurity solver. For example, to create a copy of
-:py:class:`AtomDiagImpuritySolver` it is instantiated as
+{py:class}`~risb.impurity_solvers.FockitImpuritySolver` it is instantiated as
 
 ```python
 from risb.impurity_solvers import DummyImpuritySolver
 
-impurity_solver = DummyImpuritySolver(impurity_solver=atom_diag_solver)
+dummy_solver = DummyImpuritySolver(impurity_solver=impurity_solver)
 ```
 
 ### Rotations
 
 If the copy is related by symmetry, you can pass `rotations` as a list of
 functions that operate in sequence on the dictionaries of block matrices that
-:py:class:`DummyImpuritySolver` copies. Each function must return a dictionary with
+{py:class}`~risb.impurity_solvers.DummyImpuritySolver` copies. Each function must return a dictionary with
 the same blocks as `gf_struct`, so a rotation that mixes orbitals in different
 blocks needs a `gf_struct` with those orbitals in the same block. For example, if the
 correlated subspace is equivalent except that the spin is rotated,
@@ -196,7 +208,7 @@ def rotate_spin(A):
     return B
 
 
-impurity_solver = DummyImpuritySolver(impurity_solver=..., rotations=[rotate_spin])
+dummy_solver = DummyImpuritySolver(impurity_solver=..., rotations=[rotate_spin])
 ```
 
 :::{note}
@@ -211,3 +223,13 @@ impurity solvers passed to `LatticeSolver`.
 `DummyImpuritySolver` has no `overlap` method. Rotationally invariant expectation
 values can be obtained from the impurity solver that `DummyImpuritySolver` copies.
 :::
+
+## `AtomDiagImpuritySolver`
+
+risb also has
+{py:class}`~risb.impurity_solvers.AtomDiagImpuritySolver`, based on
+`AtomDiag` from [TRIQS](https://triqs.github.io/). It needs a TRIQS
+installation and takes TRIQS operators, and it is slower than
+`FockitImpuritySolver` for all but the smallest impurity problems. Use
+`FockitImpuritySolver`. If you do use `AtomDiagImpuritySolver`, please also
+cite [TRIQS](https://doi.org/10.1016/j.cpc.2015.04.023).

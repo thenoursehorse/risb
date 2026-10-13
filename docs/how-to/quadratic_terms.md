@@ -120,115 +120,6 @@ for k in range(n_k):
     h0_k[bl_name][k][...] = n_orb by n_orb array that is the function for h0_k in symmetry block bl_name
 ```
 
-### Using {{TRIQS}} lattice tools
-
-If you know the positions of the orbitals in real-space then there is a
-(currently poorly documented) way to do this in {{TRIQS}}. Here is some
-complimentary information on top of what is provided by {{TRIQS}}.
-
-First specify the lattice vectors as
-
-```python
-units = [a_1, ..., a_d]
-```
-
-The allowed number of spatial dimensions is one of $d = 1, 2, 3$.
-
-Next give a list of tuples that give the positions of each atom and orbital in
-the unit cell. The units are in fractional coordinates of the lattice vectors
-that are specified in `units`, and there are `n_orb` total sites, orbitals,
-and maybe spin.
-
-```python
-orbital_positions = [
-    (frac of a_1, ... , frac of a_d),     # Position of orbital 1
-    ...
-    (frac of a_1, ... , frac of a_d),     # Position of orbital n_orb
-]
-```
-
-Next create a $k$-space mesh from this unit cell
-
-```python
-from triqs.lattice.tight_binding import BravaisLattice, BrillouinZone, MeshBrZone
-
-# How many points in each spatial dimension
-n_k_1 = ...
-...
-n_k_d = ...
-...
-n_k_list = [n_k1, ..., n_k_d]
-
-bl = BravaisLattice(units=units)
-bz = BrillouinZone(bl)
-mk = MeshBrZone(bz, n_k_list)
-```
-
-Next set up a dictionary of hoppings between orbitals, within a unit cell
-and between unit cells.
-
-Each key in the dictionary is a tuple of the displacement from a reference unit
-cell at $\mathbf{R} = (0, \ldots, 0_d)$.
-The coordinates for this displacement is in the basis of lattice
-vectors $\vec{a}_1, \ldots, \vec{a}_d$. For example, in two-dimensions, a
-displacement by $\vec{a}_1$ is the key `(1,0)`. A displacement by
-$2\vec{a}_1 + \vec{a}_2$ is the key `(2,1)`. Generally, the displacements are
-`(n,m,p)` where `n`, `m`, and `p` have to be integers.
-
-The value of each key is a matrix of hopping amplitudes from the orbitals
-in the reference unit cell to the unit cells defined by the displacement key.
-Hopping between orbitals within a unit cell is encoded as a matrix and indexed
-with the key `(0,...,0_d)`.
-
-Here is an example of how this structure looks like in code
-
-```python
-# Number of sites and orbitals (and maybe spin) in each unit cell
-n_orb = ...
-
-hoppings = {
-    (0,...,0_d) : n_orb by n_orb ndarray,
-    (1,...,0_d) : n_orb by n_orb ndarray,
-    ...
-    (0,...,1_d) : n_orb by n_orb ndarray,
-    ...
-    (-1,...,0_d) : n_orb by n_orb ndarray
-    ...
-}
-```
-
-Next construct the tight-binding model as
-
-```
-from triqs.lattice.tight_binding import TBLattice
-tbl = TBLattice(units=units, hoppings=hoppings, orbital_positions=orbital_positions)
-```
-
-:::{note}
-If `h0_k` has some block structure you want to encode, the above process
-can be done for each block (by definition of being a block matrix structure
-there cannot be coupling between orbitals of different blocks).
-Each `TBLattice` instance must use the same `units` and $k$-space
-meshgrid `mk`.
-:::
-
-The last and important part is to Fourier transform the tight-binding model
-onto the $k$-space meshgrid `mk` and have it indexed as `k, orb_i, orb_j` for
-the {{RISB}} `Solver` class. This is very easily done as
-
-```python
-h0_k = dict()
-
-# For each block (a string bl_name) in h0_k
-h0_k[bl_name] = tbl.fourier(mk).data
-```
-
-:::{warning}
-I have only used this class on hypercubic lattices. It may work poorly for
-something like kagome, or if the unit cell is very complicated. If this is not
-an issue then let me know and I will remove this warning.
-:::
-
 ### Using [TBmodels](https://github.com/Z2PackDev/TBmodels)
 
 Work in progress.
@@ -276,36 +167,23 @@ for i in range(n_clusters):
         h0_loc_matrix[i][bl] = get_h0_loc_matrix(h0_k[bl_full], projectors[i][bl] )
 ```
 
-### As a {{TRIQS}} operator
+### As a fockit operator
 
 If you have a block matrix representation of a single-particle operator and
-you want it as a {{TRIQS}} operator
+you want it as a fockit operator
 
 ```python
-from risb.helpers_triqs import get_C_Op
+from risb.helpers_fockit import matrix_to_Op
 
 # The block matrix
 A = ...
 
-# A gf_struct object of the structure of the space
-gf_struct = ...
-
-# A list/vector of operators
-C_Op = get_C_Op(gf_struct, dagger=False)
-C_dag_Op = get_C_Op(gf_struct, dagger=True)
-
-Op = dict()
-for bl, bl_size in gf_struct:
-    Op[bl] = C_dag_Op[bl] @ A[bl] @ C_Op[bl]
+# A dictionary of the operator in each block
+Op = matrix_to_Op(A)
 ```
 
-Or you can simply use
-
-```python
-from risb.helpers_triqs import matrix_to_Op
-
-Op = matrix_to_Op(A, gf_struct)
-```
+The operator in each block `bl` is
+`sum_ij A[bl][i, j] * cdag(bl, i) * c(bl, j)`.
 
 ## Constructing `h0_kin_k`
 
