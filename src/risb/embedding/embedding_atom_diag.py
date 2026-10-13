@@ -74,13 +74,13 @@ class EmbeddingAtomDiag(Embedding):
         self.gf_struct_bath_dict = self._dict_gf_struct(self.gf_struct_bath)
         self.gf_struct_emb_dict = self._dict_gf_struct(self.gf_struct_emb)
 
-        #: triqs.atom_diag.AtomDiag vacuum : Ground state of the embedding
-        #: problem.
-        self.gs_vector = None
+        #: numpy.ndarray : Ground state of the embedding problem in the
+        #: eigenbasis of :attr:`ad`, set by :meth:`solve`.
+        self.gs_vector: NDArray[np.inexact]
 
-        #: The TRIQS AtomDiag instance. See :class:`triqs.atom_diag.AtomDiag`
-        #: in the TRIQS manual.
-        self.ad = None
+        #: The TRIQS AtomDiag instance, set by :meth:`solve`. See
+        #: :class:`triqs.atom_diag.AtomDiag` in the TRIQS manual.
+        self.ad: AtomDiag
 
         #: triqs.operators.Operator : Embedding Hamiltonian. It is the sum of
         #: :attr:`h0_loc`, :attr:`h_int`, :attr:`h_hybr`, and :attr:`h_bath`.
@@ -137,7 +137,7 @@ class EmbeddingAtomDiag(Embedding):
         """
         C_Op = get_C_Op(self.gf_struct, dagger=False)
         C_dag_Op = get_C_Op(self.gf_struct, dagger=True)
-        self.h0_loc: Operator = Operator()
+        self.h0_loc = Operator()
         for bl, _bl_size in self.gf_struct:
             self.h0_loc += C_dag_Op[bl] @ h0_loc_matrix[bl] @ C_Op[bl]
 
@@ -166,7 +166,7 @@ class EmbeddingAtomDiag(Embedding):
         """
         C_Op = get_C_Op(self.gf_struct_bath, dagger=False)
         C_dag_Op = get_C_Op(self.gf_struct_bath, dagger=True)
-        self.h_bath: Operator = Operator()
+        self.h_bath = Operator()
         for bl_bath, _bl_bath_size in self.gf_struct_bath:
             bl = self._bl_bath_to_loc(bl_bath)
             self.h_bath += C_Op[bl_bath] @ Lambda_c[bl] @ C_dag_Op[bl_bath]
@@ -184,7 +184,7 @@ class EmbeddingAtomDiag(Embedding):
         """
         C_Op = get_C_Op(self.gf_struct_bath, dagger=False)
         C_dag_Op = get_C_Op(self.gf_struct, dagger=True)
-        self.h_hybr: Operator = Operator()
+        self.h_hybr = Operator()
         for bl, _loc_size in self.gf_struct:
             bl_bath = self._bl_loc_to_bath(bl)
             tmp = C_dag_Op[bl] @ D[bl] @ C_Op[bl_bath]
@@ -337,11 +337,11 @@ class EmbeddingAtomDiag(Embedding):
 
         Returns
         -------
-        triqs.operators.Operator
+        float or complex
             Expectation value.
 
         """
-        res = self.gs_vector @ act(Op, self.gs_vector, self.ad)
+        res = complex(self.gs_vector @ act(Op, self.gs_vector, self.ad))
         if force_real:
             return res.real
         return res
@@ -349,4 +349,4 @@ class EmbeddingAtomDiag(Embedding):
     @property
     def gs_energy(self) -> float:
         """Return ground state energy of impurity problem."""
-        return self.ad.gs_energy
+        return float(self.ad.gs_energy)
