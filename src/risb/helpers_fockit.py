@@ -17,12 +17,15 @@
 
 """Functions used in RISB based on the fockit library."""
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from itertools import product
 
 import numpy as np
 from fockit.algebra import OpSum, c, cdag, hc, nc, zero
 from numpy.typing import NDArray
+
+from risb.helpers import get_h0_loc_matrix
+from risb.types import BlockMatrixLike
 
 
 def N_op(spin_names: Sequence[str], n_orb: int) -> OpSum:
@@ -135,3 +138,71 @@ def h_int_kanamori(
             h_int += -0.5 * J_hund * cdag(s1, a1) * c(s2, a1) * cdag(s2, a2) * c(s1, a2)
             h_int += 0.5 * J_hund * cdag(s1, a1) * cdag(s2, a1) * c(s2, a2) * c(s1, a2)
     return h_int
+
+
+def matrix_to_Op(A: BlockMatrixLike) -> dict[str, OpSum]:
+    """
+    Return fockit operators from a matrix representation of quadratic operators.
+
+    Parameters
+    ----------
+    A : risb.types.BlockMatrixLike
+        Single-particle matrix, where each key is a different block.
+
+    Returns
+    -------
+    dict of fockit.algebra.OpSum
+        For each block ``bl``, the operator
+        ``sum_ij A[bl][i, j] * cdag(bl, i) * c(bl, j)``.
+
+    """
+    Op: dict[str, OpSum] = {}
+    for bl, mat in A.items():
+        Op[bl] = zero()
+        for i, j in np.ndindex(mat.shape):
+            Op[bl] += mat[i, j].item() * cdag(bl, i) * c(bl, j)
+    return Op
+
+
+def get_h0_loc(
+    h0_k: BlockMatrixLike,
+    P: BlockMatrixLike,
+    gf_struct_mapping: Mapping[str, str] | None = None,
+    force_real: bool = True,
+) -> OpSum:
+    """
+    Return a fockit operator of the non-interacting terms in the subspace given by ``P``.
+
+    Parameters
+    ----------
+    h0_k : risb.types.BlockMatrixLike
+        Single-particle dispersion in each block.
+    P : risb.types.BlockMatrixLike
+        The projector onto a local cluster within the supercell.
+    gf_struct_mapping : mapping, optional
+        The mapping from the symmetry blocks in the subspace of P to the
+        symmetry blocks of h0_k. Default assumes the keys in `P`
+        are the same as the keys in `h0_k`.
+    force_real : bool
+        Whether to make the resulting matrix real or not.
+
+    Returns
+    -------
+    fockit.algebra.OpSum
+        Non-interacting terms in the cluster defined by the projector `P`,
+        with modes ``(block, index)`` for the blocks of `P`.
+
+    """
+    if gf_struct_mapping is None:
+        gf_struct_mapping = {bl: bl for bl in h0_k}
+    h0_loc_matrix = {}
+    for bl_sub, P_sub in P.items():
+        h0_loc_matrix[bl_sub] = get_h0_loc_matrix(
+            h0_k[gf_struct_mapping[bl_sub]], P_sub
+        )
+        if force_real:
+            h0_loc_matrix[bl_sub] = h0_loc_matrix[bl_sub].real
+    h0_loc = zero()
+    for Op in matrix_to_Op(h0_loc_matrix).values():
+        h0_loc += Op
+    return h0_loc

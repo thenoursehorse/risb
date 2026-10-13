@@ -1,17 +1,22 @@
-# ruff: noqa: T201, D100, D103
+# ruff: noqa: D100, D103
+import logging
 from itertools import product
 
 import numpy as np
+from fockit.algebra import OpSum, c, cdag, zero
 from numpy.typing import NDArray
-from triqs.operators import Operator, c, c_dag
-from triqs.operators.util.observables import N_op
 
 from risb import LatticeSolver
 from risb.helpers import block_to_full, get_h0_kin_k
-from risb.helpers_triqs import get_h0_loc
-from risb.impurity_solvers import AtomDiagImpuritySolver, DummyImpuritySolver
+from risb.helpers_fockit import get_h0_loc
+from risb.impurity_solvers import DummyImpuritySolver, FockitImpuritySolver
 from risb.kweight import SmearingKWeight
 from risb.types import BlockMatrix, ImpuritySolver
+
+logging.basicConfig(level=logging.INFO, format="%(message)s")
+# Set to logging.INFO to see each iteration of the solver
+logging.getLogger("risb").setLevel(logging.WARNING)
+logger = logging.getLogger(__name__)
 
 
 def get_h0_k(
@@ -83,7 +88,7 @@ def get_h0_k(
     return h0_k_out
 
 
-def get_hubb_trimer(spin_names: list[str], U: float = 0, tk: float = 0) -> Operator:
+def get_hubb_trimer(spin_names: list[str], U: float = 0, tk: float = 0) -> OpSum:
     n_orb = 3
     phi = (
         2.0 * np.pi / n_orb
@@ -91,15 +96,15 @@ def get_hubb_trimer(spin_names: list[str], U: float = 0, tk: float = 0) -> Opera
     block_map = {0: "A", 1: "E1", 2: "E2"}
     orb_map = {0: 0, 1: 0, 2: 0}
 
-    def get_c(s: str, m: int, dagger: bool) -> Operator:
+    def get_c(s: str, m: int, dagger: bool) -> OpSum:
         if dagger:
-            return c_dag(s + "_" + block_map[m], orb_map[m])
+            return cdag(s + "_" + block_map[m], orb_map[m])
         return c(s + "_" + block_map[m], orb_map[m])
 
     spin_up = spin_names[0]
     spin_dn = spin_names[1]
 
-    h_loc = Operator()
+    h_loc = zero()
     for a, m, mm, s in product(range(n_orb), range(n_orb), range(n_orb), spin_names):
         h_loc += (
             (-tk / float(n_orb))
@@ -122,10 +127,10 @@ def get_hubb_trimer(spin_names: list[str], U: float = 0, tk: float = 0) -> Opera
             * get_c(spin_up, m, True)
             * get_c(spin_up, mm, False)
             * get_c(spin_dn, mmm, True)
-            * get_c(spin_dn, np.mod(m + mmm - mm, n_orb), False)
+            * get_c(spin_dn, (m + mmm - mm) % n_orb, False)
         )
 
-    return h_loc.real
+    return h_loc
 
 
 # Setup problem and gf_struct for each inequivalent trimer cluster
@@ -198,10 +203,8 @@ h_int = [get_hubb_trimer(spin_names=spin_names, U=U) for i in range(n_clusters)]
 h_loc = [h0_loc[i] + h_int[i] for i in range(n_clusters)]
 
 # Set up impurity solvers
-# impurity_solvers = [AtomDiagImpuritySolver(h_loc[i], gf_struct[i]) for i in range(n_clusters)]
-impurity_solvers: list[ImpuritySolver] = [
-    AtomDiagImpuritySolver(h_loc[0], gf_struct[0])
-]
+# impurity_solvers = [FockitImpuritySolver(h_loc[i], gf_struct[i]) for i in range(n_clusters)]
+impurity_solvers: list[ImpuritySolver] = [FockitImpuritySolver(h_loc[0], gf_struct[0])]
 for _ in range(n_clusters - 1):
     impurity_solvers.append(DummyImpuritySolver(impurity_solvers[0]))
 
@@ -239,22 +242,11 @@ S.solve(tol=1e-4)
 # for i in range(5):
 #    x = S.solve(one_shot=True)
 
-# Average number of particles on a cluster
-NOp = N_op(spin_names, n_orb, off_diag=True)
-# N = [e.overlap(NOp) for e in impurity_solvers]
-#
-## Effective total spin of a cluster
-# S2Op = S2_op(spin_names, n_orb, off_diag=True)
-# S2 = [e.overlap(S2Op) for e in impurity_solvers]
-#
 # Print out some interesting observables
 with np.printoptions(formatter={"float": "{: 0.4f}".format}):
     for i in range(S.n_clusters):
-        print(f"Cluster {i}:")
+        logger.info(f"Cluster {i}:")
         for bl, Z in S.Z[i].items():
-            print(f"Quasiaprticle weight Z[{bl}] = \n{Z}")
+            logger.info(f"Quasiaprticle weight Z[{bl}] = \n{Z}")
         for bl, Lambda in S.Lambda[i].items():
-            print(f"Correlation potential Lambda[{bl}] = \n{Lambda}")
-#        print(f"Number of partices on cluster N = \n{N[i]:0.4f}")
-#        print(f"Effective spin of cluster S = \n{(0.5 * np.sqrt(4 * (S2[i] + 1)) - 1):0.4f}")
-#        print()
+            logger.info(f"Correlation potential Lambda[{bl}] = \n{Lambda}")
