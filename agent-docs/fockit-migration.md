@@ -8,7 +8,7 @@ user to review. Update this file as steps finish. Delete it when done.
 
 1. [x] Check fockit works for risb (see Findings).
 2. [x] Implement a fockit impurity solver, modelled after `AtomDiagImpuritySolver`.
-3. [ ] Test it on the same things AtomDiag is tested on (`tests/test_atomdiag.py`,
+3. [x] Test it on the same things AtomDiag is tested on (`tests/test_atomdiag.py`,
    `tests/test_latticesolver.py`, `tests/test_dummy_impurity_solver.py`).
 4. [ ] Benchmark fockit vs AtomDiag. **Stop**: user decides the defaults.
 5. [ ] Swap all examples to fockit, with fockit's own syntax for building operators
@@ -17,8 +17,15 @@ user to review. Update this file as steps finish. Delete it when done.
    the default.
 7. [ ] Swap docs (tutorials, how-to, explanations, README) to fockit.
 8. [ ] Handle degenerate ground states (see Findings and Open questions). Until
-   then `solve` uses plain eigsh with `k=1`, which, like AtomDiag, picks an
-   arbitrary state when the ground state is degenerate.
+   then `solve` uses eigsh with `k=1` and a fixed random start vector, which,
+   like AtomDiag, picks an arbitrary state when the ground state is degenerate.
+9. [ ] Explore pinning RISB's gauge redundancy. At the bilayer solution the root
+   function's Jacobian has 3 zero singular values out of 24 (condition number
+   1e16, null directions in the R parameters), so roots are not isolated and
+   step-size stopping rules fail (see Step 3 notes). Ideas: fix the gauge (e.g.
+   a parametrization of R or the f-orbital basis that removes the redundant
+   directions), or a root finder that projects out the null space. Check first
+   that the null directions really are the gauge.
 
 ## Commits
 
@@ -26,8 +33,12 @@ One commit per step (or smaller), not one at the end. At the end of each step,
 list its files and suggest a commit message; the user commits.
 
 - Step 1: committed (`9f62a29`).
-- Step 2: `pyproject.toml`, `uv.lock`, `src/risb/impurity_solvers/fockit.py`,
-  `src/risb/impurity_solvers/__init__.py`, `docs/conf.py`, this file.
+- Step 2: committed (`aa53926`).
+- Step 3: `src/risb/helpers_fockit.py`, `docs/api/risb.helpers_fockit.rst`,
+  `docs/index.md`, `src/risb/impurity_solvers/fockit.py`,
+  `src/risb/impurity_solvers/__init__.py`, `tests/test_common.py`,
+  `tests/test_atomdiag.py` -> `tests/test_impurity_solvers.py`,
+  `tests/test_latticesolver.py`, `tests/test_dummy_impurity_solver.py`, this file.
 
 ## Step 2 notes
 
@@ -39,6 +50,53 @@ list its files and suggest a commit message; the user commits.
 - Checked by hand against AtomDiag on the step-1 models: max diff about 1e-14.
 - `docs/conf.py`: fockit types in `nitpick_ignore` (fockit has no hosted docs or
   intersphinx inventory).
+
+## Step 3 notes
+
+- Public `src/risb/helpers_fockit.py`: `N_op`, `S2_op`, `h_int_kanamori`. Each
+  docstring says "Adapted from TRIQS's ...". No TRIQS code or text is copied, so
+  there is no TRIQS copyright header. Other helpers in this file need not be
+  from TRIQS. Kanamori matches TRIQS (lattice Kanamori test passes to 1e-10).
+- `solve` checks `h_imp` is Hermitian (`ValueError` otherwise; tested). It calls
+  scipy's `eigsh` directly with a fixed random start vector, and
+  dense `eigh` when the sector dimension is < 3. fockit's `groundstate` is a thin
+  wrapper and not used.
+- `tests/test_atomdiag.py` -> `tests/test_impurity_solvers.py`. Models are written
+  once in fockit syntax; AtomDiag gets them through `fockit.algebra.to_triqs`. The
+  impurity, lattice and dummy tests are parametrized over `["fockit", "atom_diag"]`
+  (`tests/test_common.py`: `make_impurity_solver`, `overlap`). The AtomDiag cases
+  `importorskip("triqs")`.
+- Pulled forward from step 6: `risb/impurity_solvers/__init__.py` imports
+  `AtomDiagImpuritySolver` lazily (module `__getattr__`). In a venv without TRIQS
+  these three test files give 13 passed and 13 skipped. `test_examples.py` and
+  `test_docs.py` still need TRIQS (steps 5/6).
+- **Problem: eigsh breaks scipy's `root(method="krylov")`.**
+  `test_scipy_root[fockit-bilayer-krylov]` took anywhere from 0.3 s to 172 s.
+  Krylov uses finite-difference Jacobians; eigsh's answer is accurate (about 5e-15
+  from dense) but not smooth in the parameters. Bilayer, 3 runs each:
+
+  | ground state | time | impurity solves | converged |
+  | --- | --- | --- | --- |
+  | eigsh, random `v0` | 4 / 0.3 / 172 s | 798 / 54 / 32833 | yes |
+  | eigsh, fixed `v0` | about 170 s | 33412 | no |
+  | dense `eigh` | 0.5 s | 85 | yes |
+  | eigsh, `v0` = previous ground state | 0.3-0.5 s | 66-112 | yes |
+
+  Cause found: the problem is the test's stopping rule, not eigsh. The RISB
+  Jacobian at the solution has 3 zero singular values out of 24 (condition number
+  1e16, null directions in the R parameters; most likely the gauge freedom). So the
+  roots are not isolated. `root(method="krylov", tol=1e-10)` stops on the step
+  size (`xtol`), and along the null directions any noise makes the steps
+  arbitrary. Untested guess: dense and AtomDiag get away with it because their
+  rounding noise is the same on every call. With a residual stop (`options={"fatol": 1e-10}`), Krylov took
+  0.2 s and 33-36 calls for every eigsh start (random, or warm with weight 0 to
+  1e-1). `hybr` also stops on step size and failed once in 5.
+  Done: `test_scipy_root` uses `options={"fatol": 1e-10}` (0.7 s, 5 runs out of 5).
+- Warm start (tried, removed): a pure warm start (`v0` = previous ground state)
+  gets stuck in the wrong spin sector at a level crossing (dh_trimer + Zeeman
+  field, energy off by 0.026); mixing in >= 1e-8 of a fixed random vector fixes
+  that. Its only possible benefit now is speed (fewer Lanczos iterations): measure
+  in step 4 and add back if it pays.
 
 ## Findings (step 1)
 
@@ -104,8 +162,11 @@ Problems:
   warning if `E1 - E0 < tol`. `n_states=k` asks eigsh for k states; `dense=True`
   uses `eigh` on the whole sector. In both cases, average the density matrices
   over the states within tol of E0 (equal-weight mixture).
-- Step 2: `overlap(op)` takes a fockit `OpSum`. Where do `N`/`S2`/Kanamori helpers
-  live: risb, fockit, or inline in tests/examples?
+- Step 7: docs should say to stop scipy root finders on the residual (`fatol`),
+  not the step size, because RISB roots are not isolated.
+- Step 8: eigsh can fail by not converging (small gap, `ArpackNoConvergence`), and
+  silently gives garbage if `h_imp` is not Hermitian. Catch and fall back to dense?
+- Resolved (step 3): the `N`/`S2`/Kanamori helpers live in `risb.helpers_fockit`.
 - Step 5: hubbard and bilayer examples need TRIQS for Green's functions. Keep TRIQS
   for that part only, or drop it?
 - Step 5/6: should `AtomDiagImpuritySolver` accept fockit operators (fockit has

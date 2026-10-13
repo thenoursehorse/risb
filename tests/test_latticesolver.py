@@ -3,25 +3,37 @@
 
 import numpy as np
 import pytest
+from fockit.algebra import nc, zero
 from numpy.typing import NDArray
 from scipy.optimize import OptimizeResult
 from scipy.optimize import root as root_fun
-from test_common import build_cubic_h0_k, symmetrize_blocks
-from triqs.operators import Operator, n
-from triqs.operators.util.hamiltonians import h_int_kanamori
-from triqs.operators.util.op_struct import set_operator_structure
+from test_common import (
+    IMPURITY_SOLVERS,
+    build_cubic_h0_k,
+    make_impurity_solver,
+    symmetrize_blocks,
+)
 
 from risb import LatticeSolver
-from risb.impurity_solvers import AtomDiagImpuritySolver
+from risb.helpers_fockit import h_int_kanamori
 from risb.kweight import SmearingKWeight
-from risb.types import BlockMatrix, GfStruct
+from risb.types import BlockMatrix, GfStruct, ImpuritySolver
 
 # FIXME add one_shot test
+
+# Every test runs once per impurity solver, through the model fixtures
+pytestmark = pytest.mark.usefixtures("solver_name")
+
+
+@pytest.fixture(params=IMPURITY_SOLVERS)
+def solver_name(request: pytest.FixtureRequest) -> str:
+    return str(request.param)
+
 
 type Model = tuple[
     GfStruct,
     dict[str, NDArray[np.float64]],
-    AtomDiagImpuritySolver,
+    ImpuritySolver,
     SmearingKWeight,
     float,
     NDArray[np.float64],
@@ -53,7 +65,7 @@ def do_assert(
 
 
 @pytest.fixture
-def one_band() -> Model:
+def one_band(solver_name: str) -> Model:
     n_orb = 1
     spatial_dim = 3
     nkx = 10
@@ -63,8 +75,8 @@ def one_band() -> Model:
     n_target = 1
     gf_struct = [(bl, n_orb) for bl in ["up", "dn"]]
     h0_k = build_cubic_h0_k(gf_struct=gf_struct, nkx=nkx, spatial_dim=spatial_dim)
-    h_int = U * n("up", 0) * n("dn", 0)
-    impurity_solver = AtomDiagImpuritySolver(h_int, gf_struct)
+    h_int = U * nc("up", 0) * nc("dn", 0)
+    impurity_solver = make_impurity_solver(solver_name, h_int, gf_struct)
     # kweight = SmearingKWeight(beta=beta, mu=mu)
     kweight = SmearingKWeight(beta=beta, n_target=n_target)
     Lambda_expected = np.array([[2.0]])
@@ -73,7 +85,7 @@ def one_band() -> Model:
 
 
 @pytest.fixture
-def bilayer() -> Model:
+def bilayer(solver_name: str) -> Model:
     U = 4
     V = 0.25
     mu = U / 2.0  # half-filling
@@ -83,15 +95,15 @@ def bilayer() -> Model:
     nkx = 10
     beta = 40
     spin_names = ["up", "dn"]
-    gf_struct = set_operator_structure(spin_names, n_orb, off_diag=True)
+    gf_struct = [(bl, n_orb) for bl in spin_names]
     h0_k = build_cubic_h0_k(gf_struct=gf_struct, nkx=nkx, spatial_dim=spatial_dim)
     for bl in h0_k:
         h0_k[bl][:, 0, 1] += V
         h0_k[bl][:, 1, 0] += V
-    h_int = Operator()
+    h_int = zero()
     for o in range(n_orb):
-        h_int += U * n("up", o) * n("dn", o)
-    impurity_solver = AtomDiagImpuritySolver(h_int, gf_struct)
+        h_int += U * nc("up", o) * nc("dn", o)
+    impurity_solver = make_impurity_solver(solver_name, h_int, gf_struct)
     # kweight = SmearingKWeight(beta=beta, mu=mu)
     kweight = SmearingKWeight(beta=beta, n_target=n_target)
     Lambda_expected = np.array([[2.0, 0.114569681915], [0.114569681915, 2.0]])
@@ -100,7 +112,7 @@ def bilayer() -> Model:
 
 
 @pytest.fixture
-def kanamori() -> Model:
+def kanamori(solver_name: str) -> Model:
     coeff = 0.2
     U = 3
     J = coeff * U
@@ -113,7 +125,7 @@ def kanamori() -> Model:
     nkx = 10
     beta = 40
     spin_names = ["up", "dn"]
-    gf_struct = set_operator_structure(spin_names, n_orb, off_diag=True)
+    gf_struct = [(bl, n_orb) for bl in spin_names]
     h0_k = build_cubic_h0_k(gf_struct=gf_struct, nkx=nkx, spatial_dim=spatial_dim)
     h_int = h_int_kanamori(
         spin_names=spin_names,
@@ -121,9 +133,8 @@ def kanamori() -> Model:
         U=np.array([[0, Up - J], [Up - J, 0]]),
         Uprime=np.array([[U, Up], [Up, U]]),
         J_hund=J,
-        off_diag=True,
     )
-    impurity_solver = AtomDiagImpuritySolver(h_int, gf_struct)
+    impurity_solver = make_impurity_solver(solver_name, h_int, gf_struct)
     kweight = SmearingKWeight(beta=beta, mu=mu)
     kweight = SmearingKWeight(beta=beta, n_target=n_target)
     Lambda_expected = np.array([[3.0, 0.0], [0.0, 3.0]])
@@ -226,7 +237,7 @@ def test_scipy_root(
     for i in range(S.n_clusters):
         for bl, _ in S.gf_struct[i]:
             np.fill_diagonal(S.Lambda[i][bl], mu_expected)
-    result = S.solve(method=root_method, tol=1e-10)
+    result = S.solve(method=root_method, options={"fatol": 1e-10})
     assert isinstance(result, OptimizeResult)
     assert result.success, result.message
     mu_calculated = kweight.mu

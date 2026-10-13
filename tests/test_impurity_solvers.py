@@ -3,11 +3,12 @@ from itertools import product
 
 import numpy as np
 import pytest
+from fockit.algebra import OpSum, c, cdag, nc, zero
 from numpy.typing import NDArray
-from triqs.operators import Operator, c, c_dag, n
-from triqs.operators.util.observables import N_op, S2_op
+from test_common import IMPURITY_SOLVERS, make_impurity_solver, overlap
 
-from risb.impurity_solvers import AtomDiagImpuritySolver
+from risb.helpers_fockit import N_op, S2_op
+from risb.impurity_solvers import FockitImpuritySolver
 from risb.types import BlockMatrix
 
 type Model = tuple[
@@ -16,7 +17,7 @@ type Model = tuple[
     dict[str, NDArray[np.float64]],
     dict[str, NDArray[np.float64]],
     dict[str, NDArray[np.float64]],
-    Operator,
+    OpSum,
 ]
 type Expected = tuple[
     NDArray[np.float64], NDArray[np.float64], NDArray[np.float64], float, float, float
@@ -62,7 +63,7 @@ def one_band() -> Model:
     mu = U / 2.0  # half-filling
     n_orb = 1
     spin_names = ["up", "dn"]
-    h_int = U * n("up", 0) * n("dn", 0)
+    h_int = U * nc("up", 0) * nc("dn", 0)
     Lambda_c: dict[str, NDArray[np.float64]] = {}
     D: dict[str, NDArray[np.float64]] = {}
     h0_loc_mat: dict[str, NDArray[np.float64]] = {}
@@ -99,11 +100,11 @@ def bilayer() -> Model:
     mu = U / 2.0  # half-filling
     n_orb = 2
     spin_names = ["up", "dn"]
-    h_int = Operator()
+    h_int = zero()
     for o in range(n_orb):
-        h_int += U * n("up", o) * n("dn", o)
+        h_int += U * nc("up", o) * nc("dn", o)
     for s1, s2 in product(spin_names, spin_names):
-        h_int += 0.5 * J * c_dag(s1, 0) * c(s2, 0) * c_dag(s2, 1) * c(s1, 1)
+        h_int += 0.5 * J * cdag(s1, 0) * c(s2, 0) * cdag(s2, 1) * c(s1, 1)
     Lambda_c: dict[str, NDArray[np.float64]] = {}
     D: dict[str, NDArray[np.float64]] = {}
     h0_loc_mat: dict[str, NDArray[np.float64]] = {}
@@ -140,23 +141,23 @@ def dh_trimer() -> Model:
     n_orb = 3
     spin_names = ["up", "dn"]
 
-    def hubb_N(tk: float, U: float, n_orb: int, spin_names: list[str]) -> Operator:  # noqa: ARG001
+    def hubb_N(tk: float, U: float, n_orb: int, spin_names: list[str]) -> OpSum:  # noqa: ARG001
         # hopping
         # phi = 2.0 * np.pi / n_orb
         # for a,m,mm,s in product(range(n_orb),range(n_orb),range(n_orb), spin_names):
         #    h0_loc += (-tk / n_orb) * c_dag(s,m) * c(s,mm) * np.exp(-1j * phi * a * m) * np.exp(1j * phi * np.mod(a+1,n_orb) * mm)
         #    h0_loc += (-tk / n_orb) * c_dag(s,m) * c(s,mm) * np.exp(-1j * phi * np.mod(a+1,n_orb) * m) * np.exp(1j * phi * a * mm)
         # hubbard U
-        h_int = Operator()
+        h_int = zero()
         for m, mm, mmm in product(range(n_orb), range(n_orb), range(n_orb)):
             h_int += (
                 (U / n_orb)
-                * c_dag("up", m)
+                * cdag("up", m)
                 * c("up", mm)
-                * c_dag("dn", mmm)
-                * c("dn", np.mod(m + mmm - mm, n_orb))
+                * cdag("dn", mmm)
+                * c("dn", (m + mmm - mm) % n_orb)
             )
-        return h_int.real
+        return h_int
 
     h_int = hubb_N(tk, U, n_orb, spin_names)
     Lambda_c: dict[str, NDArray[np.float64]] = {}
@@ -215,6 +216,7 @@ def dh_trimer_expected() -> Expected:
     )
 
 
+@pytest.mark.parametrize("solver_name", IMPURITY_SOLVERS)
 @pytest.mark.parametrize(
     ("model", "model_expected"),
     [
@@ -226,6 +228,7 @@ def dh_trimer_expected() -> Expected:
 def test_solve(
     subtests: pytest.Subtests,
     request: pytest.FixtureRequest,
+    solver_name: str,
     model: str,
     model_expected: str,
 ) -> None:
@@ -239,7 +242,7 @@ def test_solve(
         S2_expected,
     ) = request.getfixturevalue(model_expected)
     gf_struct = [(bl, n_orb) for bl in spin_names]
-    impurity_solver = AtomDiagImpuritySolver(h_int, gf_struct)
+    impurity_solver = make_impurity_solver(solver_name, h_int, gf_struct)
     impurity_solver.set_h_imp(Lambda_c, D, h0_loc_mat)
     impurity_solver.solve()
     rho_f: BlockMatrix = {}
@@ -250,10 +253,8 @@ def test_solve(
         rho_cf[bl] = impurity_solver.get_rho_cf(bl)
         rho_c[bl] = impurity_solver.get_rho_c(bl)
     gs_energy = impurity_solver.gs_energy
-    NOp = N_op(spin_names, n_orb, off_diag=True)
-    S2Op = S2_op(spin_names, n_orb, off_diag=True)
-    N = impurity_solver.overlap(NOp)
-    S2 = impurity_solver.overlap(S2Op)
+    N = overlap(impurity_solver, N_op(spin_names, n_orb))
+    S2 = overlap(impurity_solver, S2_op(spin_names, n_orb))
     do_assert(
         subtests,
         rho_f,
@@ -269,3 +270,12 @@ def test_solve(
         N_expected,
         S2_expected,
     )
+
+
+def test_fockit_solver_rejects_non_hermitian_hamiltonian() -> None:
+    gf_struct = [("up", 1), ("dn", 1)]
+    impurity_solver = FockitImpuritySolver(cdag("up", 0) * c("dn", 0), gf_struct)
+    one = {bl: np.array([[1.0]]) for bl, _ in gf_struct}
+    impurity_solver.set_h_imp(one, one)
+    with pytest.raises(ValueError, match="not Hermitian"):
+        impurity_solver.solve()

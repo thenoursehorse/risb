@@ -23,8 +23,8 @@ from typing import override
 import numpy as np
 from fockit.algebra import OpSum, c, cdag, hc, nc, zero
 from fockit.hilbert import Basis, FermionSpace, build_basis, expectation, to_matrix
-from fockit.solve import groundstate
 from numpy.typing import NDArray
+from scipy.sparse.linalg import eigsh
 
 from risb.types import BlockMatrix, BlockMatrixLike, GfStruct, ImpuritySolver
 
@@ -222,8 +222,23 @@ class FockitImpuritySolver(ImpuritySolver):
         Sets the density matrices :attr:`rho_f`, :attr:`rho_cf`, and
         :attr:`rho_c` of every block.
 
+        Raises
+        ------
+        ValueError
+            If :attr:`h_imp` is not Hermitian.
+
         """
-        self.gs_energy, self.gs_vector = groundstate(to_matrix(self.h_imp, self.basis))
+        H = to_matrix(self.h_imp, self.basis)
+        if abs(H - H.conj().T).max() > 1e-10:
+            msg = "h_imp is not Hermitian."
+            raise ValueError(msg)
+        if self.basis.dim < 3:
+            energies, states = np.linalg.eigh(H.toarray())
+        else:
+            v0 = np.random.default_rng(0).normal(size=self.basis.dim)
+            energies, states = eigsh(H, k=1, which="SA", v0=v0)
+        self.gs_energy = float(energies[0])
+        self.gs_vector = np.asarray(states[:, 0], dtype=complex)
         for bl, bl_size in self.gf_struct:
             bl_bath = _bath(bl)
             sites = range(bl_size)
