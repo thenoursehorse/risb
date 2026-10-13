@@ -1,16 +1,21 @@
-# ruff: noqa: T201, D100, D103
+# ruff: noqa: D100, D103
+import logging
 from itertools import product
 
 import numpy as np
+from fockit.algebra import nc
 from numpy.typing import NDArray
-from triqs.operators import n
-from triqs.operators.util.observables import N_op, S2_op
-from triqs.operators.util.op_struct import set_operator_structure
 
 from risb import LatticeSolver
-from risb.impurity_solvers import AtomDiagImpuritySolver, DummyImpuritySolver
+from risb.helpers_fockit import N_op, S2_op
+from risb.impurity_solvers import DummyImpuritySolver, FockitImpuritySolver
 from risb.kweight import SmearingKWeight
 from risb.types import BlockMatrix, ImpuritySolver
+
+logging.basicConfig(level=logging.INFO, format="%(message)s")
+# Set to logging.INFO to see each iteration of the solver
+logging.getLogger("risb").setLevel(logging.WARNING)
+logger = logging.getLogger(__name__)
 
 
 def get_h0_k(
@@ -61,9 +66,7 @@ def get_h0_k(
 n_clusters = 3
 n_orb = 1
 spin_names = ["up", "dn"]
-gf_struct = [
-    set_operator_structure(spin_names, n_orb, off_diag=True) for _ in range(n_clusters)
-]
+gf_struct = [[(bl, n_orb) for bl in spin_names] for _ in range(n_clusters)]
 
 # Setup non-interacting Hamiltonian matrix on the lattice
 h0_k = get_h0_k(t=1, nkx=18, spin_names=spin_names)
@@ -75,16 +78,16 @@ kweight = SmearingKWeight(beta=beta, n_target=n_target)
 
 # Define the local interaction
 U = 10
-h_int = [U * n("up", 0) * n("dn", 0) for _ in range(n_clusters)]
+h_int = [U * nc("up", 0) * nc("dn", 0) for _ in range(n_clusters)]
 
 # Set up impurity solvers
 # All of the sites are equivalent on the Gamma-centred mesh, so it is sufficient
 # to just solve for one site and copy and paste onto the other sites
-atom_diag_solver = AtomDiagImpuritySolver(h_int[0], gf_struct[0])
+impurity_solver = FockitImpuritySolver(h_int[0], gf_struct[0])
 impurity_solvers: list[ImpuritySolver] = [
-    atom_diag_solver,
-    DummyImpuritySolver(atom_diag_solver),
-    DummyImpuritySolver(atom_diag_solver),
+    impurity_solver,
+    DummyImpuritySolver(impurity_solver),
+    DummyImpuritySolver(impurity_solver),
 ]
 
 # Setup projectors onto the three correlated spaces in a unit cell
@@ -120,25 +123,23 @@ S = LatticeSolver(
 S.solve(tol=1e-8)
 
 # Average number of particles on a cluster
-total_number_Op = N_op(spin_names, n_orb, off_diag=True)
-total_number = atom_diag_solver.overlap(total_number_Op)
+total_number = impurity_solver.overlap(N_op(spin_names, n_orb))
 
 # Effective total spin of a cluster
-total_spin_Op = S2_op(spin_names, n_orb, off_diag=True)
-total_spin = atom_diag_solver.overlap(total_spin_Op)
+total_spin = impurity_solver.overlap(S2_op(spin_names, n_orb))
 
 # Print out some interesting observables
 with np.printoptions(formatter={"float": "{: 0.4f}".format}):
-    print("Observables on each cluster:")
-    print(f"Quasiaprticle weight Z = \n{S.Z[0]['up']}")
-    print(f"Correlation potential Lambda = \n{S.Lambda[0]['up']}")
-    print(f"Density matrix rho_qp = \n{S.rho_qp[0]['up']}")
-    print(f"Density matrix rho_f = \n{impurity_solvers[0].rho_f['up']}")
-    print(f"Density matrix rho_c = \n{impurity_solvers[0].get_rho_c('up')}")
-    print(f"Density matrix rho_cf = \n{impurity_solvers[0].rho_cf['up']}")
-    print(f"Bath coupling matrix Lambda_c = \n{S.Lambda_c[0]['up']}")
-    print(f"Hybridization matrix D = \n{S.D[0]['up']}")
-    print(f"Number of partices on cluster N = \n{total_number: 0.4f}")
-    print(
+    logger.info("Observables on each cluster:")
+    logger.info(f"Quasiaprticle weight Z = \n{S.Z[0]['up']}")
+    logger.info(f"Correlation potential Lambda = \n{S.Lambda[0]['up']}")
+    logger.info(f"Density matrix rho_qp = \n{S.rho_qp[0]['up']}")
+    logger.info(f"Density matrix rho_f = \n{impurity_solvers[0].rho_f['up']}")
+    logger.info(f"Density matrix rho_c = \n{impurity_solvers[0].get_rho_c('up')}")
+    logger.info(f"Density matrix rho_cf = \n{impurity_solvers[0].rho_cf['up']}")
+    logger.info(f"Bath coupling matrix Lambda_c = \n{S.Lambda_c[0]['up']}")
+    logger.info(f"Hybridization matrix D = \n{S.D[0]['up']}")
+    logger.info(f"Number of partices on cluster N = \n{total_number: 0.4f}")
+    logger.info(
         f"Effective spin of cluster S = \n{-0.5 + 0.5 * np.sqrt(1 + 4 * total_spin): 0.4f}"
     )
