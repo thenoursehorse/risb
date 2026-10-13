@@ -78,7 +78,7 @@ S.solve(tol=1e-6)
 # Some different ways to construct some Green's functions
 
 # The k-space and frequency mesh of the problem
-iw_mesh = MeshImFreq(beta=beta, S="Fermion", n_max=64)
+iw_mesh = MeshImFreq(beta=beta, statistic="Fermion", n_iw=64)
 k_iw_mesh = MeshProduct(mk, iw_mesh)
 
 assert kweight.mu is not None
@@ -115,7 +115,7 @@ G_qp_iw_loc = get_g_w_loc(G_qp_k_iw)
 G_iw_loc = get_g_w_loc(G_k_iw)
 G_iw_loc2 = get_g_w_loc(G_k_iw2)
 
-# Filling from each Green's function
+# Filling of physical electron scales with Z
 logger.info(f"Filling G0: {G0_iw_loc.total_density().real:.4f}")
 logger.info(f"Filling G_qp: {G_qp_iw_loc.total_density().real:.4f}")
 logger.info(f"Filling G: {G_iw_loc.total_density().real:.4f}")
