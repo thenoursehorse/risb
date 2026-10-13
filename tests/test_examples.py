@@ -75,8 +75,8 @@ def test_kagome_hubbard_example() -> None:
     S = g["S"]
     embedding = g["embedding"]
     abs = 1e-7
-    Z_expected = 0.4762465219
-    Lambda_expected = [5.0000000348, 5.0007248374, 5.0007248374]
+    Z_expected = 0.4767757344
+    Lambda_expected = 5.0000000047
 
     assert S.optimize.success
     assert g["total_number"] == pytest.approx(1.0, abs=abs)
@@ -94,7 +94,7 @@ def test_kagome_hubbard_example() -> None:
     for i in range(3):
         for bl in ["up", "dn"]:
             assert S.Z[i][bl] == pytest.approx(Z_expected, abs=abs)
-            assert S.Lambda[i][bl] == pytest.approx(Lambda_expected[i], abs=abs)
+            assert S.Lambda[i][bl] == pytest.approx(Lambda_expected, abs=abs)
 
 
 def test_decorated_honeycomb_example() -> None:

@@ -27,11 +27,11 @@ def get_h0_k(
     phi = 2.0 * np.pi / 3.0  # bloch factor for transforming to trimer orbital basis
     n_k = nkx**2  # total number of k-points
 
-    # Build shifted 2D mesh
+    # Build Gamma-centred 2D mesh
     mesh = np.empty(shape=(n_k, 2))
     for idx, coords in enumerate(product(range(nkx), range(nkx))):
-        mesh[idx, 0] = coords[0] / nkx + 0.5 / nkx
-        mesh[idx, 1] = coords[1] / nkx + 0.5 / nkx
+        mesh[idx, 0] = coords[0] / nkx
+        mesh[idx, 1] = coords[1] / nkx
 
     # Unit cell lattice vectors
     R1 = (3.0 / 2.0, np.sqrt(3.0) / 2.0)

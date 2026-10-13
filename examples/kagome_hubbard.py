@@ -20,12 +20,12 @@ def get_h0_k(
         spin_names = ["up", "dn"]
     n_orb = 3
 
-    # Build shifted 2D mesh
+    # Build Gamma-centred 2D mesh, which keeps the three sites equivalent
     n_k = nkx**2
     mesh = np.empty(shape=(n_k, 2))
     for idx, coords in enumerate(product(range(nkx), range(nkx))):
-        mesh[idx, 0] = coords[0] / nkx + 0.5 / nkx
-        mesh[idx, 1] = coords[1] / nkx + 0.5 / nkx
+        mesh[idx, 0] = coords[0] / nkx
+        mesh[idx, 1] = coords[1] / nkx
 
     # Unit cell lattice vectors
     R1 = (1.0, 0)
@@ -67,10 +67,6 @@ gf_struct = [
 
 # Setup non-interacting Hamiltonian matrix on the lattice
 h0_k = get_h0_k(t=1, nkx=18, spin_names=spin_names)
-# For testing because on mac it returns nans
-for bl in h0_k:
-    idx = np.where(np.isnan(h0_k[bl]))
-    h0_k[bl][idx] = 0
 
 # Set up class to work out k-space integration weights
 beta = 40  # inverse temperature
@@ -82,8 +78,8 @@ U = 10
 h_int = [U * n("up", 0) * n("dn", 0) for _ in range(n_clusters)]
 
 # Set up embedding solvers
-# Assuming all of the sites are equivalent it is sufficient to just solve for
-# one site and copy and paste onto the other sites
+# All of the sites are equivalent on the Gamma-centred mesh, so it is sufficient
+# to just solve for one site and copy and paste onto the other sites
 embedding_atom_diag = EmbeddingAtomDiag(h_int[0], gf_struct[0])
 embedding: list[Embedding] = [
     embedding_atom_diag,
