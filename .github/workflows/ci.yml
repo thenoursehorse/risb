@@ -54,7 +54,7 @@ jobs:
         run: pytest
 
       - name: Test docs
-        run: sphinx-build -b html -n -T docs docs/_build
+        run: sphinx-build -b html -n -T -W --keep-going docs docs/_build
 
   dist:
     name: Build package
