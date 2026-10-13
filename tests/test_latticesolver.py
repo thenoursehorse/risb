@@ -244,3 +244,31 @@ def test_scipy_root(
     do_assert(
         subtests, mu_calculated, S.Lambda, S.Z, mu_expected, Lambda_expected, Z_expected
     )
+
+
+def test_three_orbital_kanamori_is_mott_insulator(solver_name: str) -> None:
+    n_orb = 3
+    U = 3
+    J = 0.2 * U
+    Up = U - 2 * J
+    spin_names = ["up", "dn"]
+    gf_struct = [(bl, n_orb) for bl in spin_names]
+    off_diag = 1 - np.eye(n_orb)
+    h_int = h_int_kanamori(
+        spin_names,
+        n_orb,
+        U=(Up - J) * off_diag,
+        Uprime=U * np.eye(n_orb) + Up * off_diag,
+        J_hund=J,
+    )
+    S = LatticeSolver(
+        h0_k=build_cubic_h0_k(gf_struct=gf_struct, nkx=10, spatial_dim=3),
+        gf_struct=gf_struct,
+        impurity_solvers=make_impurity_solver(solver_name, h_int, gf_struct),
+        update_weights=SmearingKWeight(beta=40, n_target=n_orb).update_weights,
+        symmetrizers=[symmetrize_blocks],
+    )
+    S.solve(tol=1e-8)
+    assert S.optimize.success
+    for bl in S.Z[0]:
+        assert S.Z[0][bl] == pytest.approx(np.zeros((n_orb, n_orb)), abs=1e-6)

@@ -236,7 +236,9 @@ class FockitImpuritySolver(ImpuritySolver):
             energies, states = np.linalg.eigh(H.toarray())
         else:
             v0 = np.random.default_rng(0).normal(size=self.basis.dim)
-            energies, states = eigsh(H, k=1, which="SA", v0=v0)
+            energies, states = eigsh(
+                H, k=1, which="SA", v0=v0, ncv=min(self.basis.dim, 40)
+            )
         self.gs_energy = float(energies[0])
         self.gs_vector = np.asarray(states[:, 0], dtype=complex)
         for bl, bl_size in self.gf_struct:
