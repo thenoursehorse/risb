@@ -29,6 +29,7 @@ from risb import helpers
 from risb.optimize import DIIS
 from risb.types import (
     BlockMatrix,
+    BlockMatrixLike,
     BlockRealArray,
     Embedding,
     GfStruct,
@@ -95,12 +96,12 @@ class LatticeSolver:
 
     def __init__(
         self,
-        h0_k: BlockMatrix,
+        h0_k: BlockMatrixLike,
         gf_struct: GfStruct | list[GfStruct],
         embedding: Embedding | list[Embedding],
         update_weights: UpdateWeights,
         root: RootFinder | None = None,
-        projectors: Sequence[BlockMatrix] | None = None,
+        projectors: Sequence[BlockMatrixLike] | None = None,
         gf_struct_mapping: Sequence[Mapping[str, str]] | None = None,
         symmetrizers: Sequence[Symmetrize] = (),
         force_real: bool = False,

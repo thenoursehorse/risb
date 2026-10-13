@@ -26,7 +26,7 @@ from triqs.atom_diag import AtomDiag, act
 from triqs.operators import Operator, c, c_dag, dagger
 
 from risb.helpers_triqs import get_C_Op
-from risb.types import BlockMatrix, Embedding, GfStruct
+from risb.types import BlockMatrix, BlockMatrixLike, Embedding, GfStruct
 
 
 class EmbeddingAtomDiag(Embedding):
@@ -124,7 +124,7 @@ class EmbeddingAtomDiag(Embedding):
     def _dict_gf_struct(gf_struct: GfStruct) -> dict[str, int]:
         return dict(gf_struct)
 
-    def set_h0_loc(self, h0_loc_matrix: BlockMatrix) -> None:
+    def set_h0_loc(self, h0_loc_matrix: BlockMatrixLike) -> None:
         """
         Set the single-particle quadratic couplings of the c-electrons in the embedding Hamiltonian.
 
@@ -153,7 +153,7 @@ class EmbeddingAtomDiag(Embedding):
         """
         self.h_int = h_int
 
-    def set_h_bath(self, Lambda_c: BlockMatrix) -> None:
+    def set_h_bath(self, Lambda_c: BlockMatrixLike) -> None:
         """
         Set the bath terms in the impurity Hamiltonian.
 
@@ -171,7 +171,7 @@ class EmbeddingAtomDiag(Embedding):
             bl = self._bl_bath_to_loc(bl_bath)
             self.h_bath += C_Op[bl_bath] @ Lambda_c[bl] @ C_dag_Op[bl_bath]
 
-    def set_h_hybr(self, D: BlockMatrix) -> None:
+    def set_h_hybr(self, D: BlockMatrixLike) -> None:
         """
         Set the hybridization terms in the impurity Hamiltonian.
 
@@ -193,9 +193,9 @@ class EmbeddingAtomDiag(Embedding):
     @override
     def set_h_emb(
         self,
-        Lambda_c: BlockMatrix,
-        D: BlockMatrix,
-        h0_loc_matrix: BlockMatrix | None = None,
+        Lambda_c: BlockMatrixLike,
+        D: BlockMatrixLike,
+        h0_loc_matrix: BlockMatrixLike | None = None,
         mu: float | None = None,
     ) -> None:
         """

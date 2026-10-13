@@ -1,6 +1,6 @@
 """Type aliases and interfaces used across risb."""
 
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from typing import Protocol
 
 import numpy as np
@@ -12,6 +12,9 @@ type GfStruct = list[tuple[str, int]]
 
 type BlockMatrix = dict[str, NDArray[np.inexact]]
 """Real or complex array for each block, e.g. R, Lambda, densities, h0_k."""
+
+type BlockMatrixLike = Mapping[str, NDArray[np.inexact]]
+"""Read-only input form of :data:`BlockMatrix`. Accepts any mapping of real or complex arrays, e.g. a dict of float64 arrays."""
 
 type BlockRealArray = dict[str, NDArray[np.float64]]
 """Real array for each block, e.g. band energies, k-weights."""
@@ -51,9 +54,9 @@ class Embedding(Protocol):
 
     def set_h_emb(
         self,
-        Lambda_c: BlockMatrix,
-        D: BlockMatrix,
-        h0_loc_matrix: BlockMatrix | None = None,
+        Lambda_c: BlockMatrixLike,
+        D: BlockMatrixLike,
+        h0_loc_matrix: BlockMatrixLike | None = None,
     ) -> None:
         """Set the embedding Hamiltonian."""
 

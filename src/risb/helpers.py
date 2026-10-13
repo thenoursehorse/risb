@@ -27,7 +27,7 @@ from numpy.linalg import inv
 from numpy.typing import NDArray
 from scipy.linalg import sqrtm
 
-from risb.types import BlockMatrix
+from risb.types import BlockMatrix, BlockMatrixLike
 
 ## Formula is (1-A)^{-1/2} = sum_r=0^{infty} (-1)^r * 1/2 choose r * A^r
 # def one_sqrtm_inv(A, tol=np.finfo(float).eps, N=10000):
@@ -622,8 +622,8 @@ def get_h0_kin_k_mat(
 
 
 def get_h0_kin_k(
-    h0_k: BlockMatrix,
-    projectors: Sequence[BlockMatrix] | None = None,
+    h0_k: BlockMatrixLike,
+    projectors: Sequence[BlockMatrixLike] | None = None,
     gf_struct_mapping: Sequence[Mapping[str, str]] | None = None,
 ) -> BlockMatrix:
     """

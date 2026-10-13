@@ -24,7 +24,7 @@ from triqs.gfs import BlockGf, MeshImFreq, MeshProduct, MeshReFreq, inverse
 from triqs.operators import Operator, c, c_dag
 
 from risb.helpers import get_h0_loc_matrix, get_h_qp
-from risb.types import BlockMatrix, GfStruct
+from risb.types import BlockMatrixLike, GfStruct
 
 
 def get_C_Op(gf_struct: GfStruct, dagger: bool = False) -> dict[str, list[Operator]]:
@@ -57,7 +57,7 @@ def get_C_Op(gf_struct: GfStruct, dagger: bool = False) -> dict[str, list[Operat
     return C_Op
 
 
-def matrix_to_Op(A: BlockMatrix, gf_struct: GfStruct) -> dict[str, Operator]:
+def matrix_to_Op(A: BlockMatrixLike, gf_struct: GfStruct) -> dict[str, Operator]:
     """
     Return a TRIQS operator from a matrix representation of quadratic operators.
 
@@ -86,8 +86,8 @@ def matrix_to_Op(A: BlockMatrix, gf_struct: GfStruct) -> dict[str, Operator]:
 
 
 def get_h0_loc_blocks(
-    h0_k: BlockMatrix,
-    P: BlockMatrix,
+    h0_k: BlockMatrixLike,
+    P: BlockMatrixLike,
     gf_struct: GfStruct | None = None,
     gf_struct_mapping: Mapping[str, str] | None = None,
     force_real: bool = True,
@@ -140,8 +140,8 @@ def get_h0_loc_blocks(
 
 
 def get_h0_loc(
-    h0_k: BlockMatrix,
-    P: BlockMatrix,
+    h0_k: BlockMatrixLike,
+    P: BlockMatrixLike,
     gf_struct: GfStruct | None = None,
     gf_struct_mapping: Mapping[str, str] | None = None,
     force_real: bool = True,
@@ -212,7 +212,7 @@ def get_gf_struct_from_g(block_gf: BlockGf) -> GfStruct:
 def get_g0_k_w(
     gf_struct: GfStruct,
     mesh: MeshProduct,
-    h0_k: BlockMatrix | None = None,
+    h0_k: BlockMatrixLike | None = None,
     h0_k_gf: BlockGf | None = None,
     mu: float = 0,
     use_broadcasting: bool = True,
@@ -289,10 +289,10 @@ def get_g0_k_w(
 def get_sigma_w(
     gf_struct: GfStruct,
     mesh: MeshReFreq | MeshImFreq,
-    Lambda: BlockMatrix,
-    R: BlockMatrix,
+    Lambda: BlockMatrixLike,
+    R: BlockMatrixLike,
     mu: float = 0,
-    h0_loc: BlockMatrix | None = None,
+    h0_loc: BlockMatrixLike | None = None,
     use_broadcasting: bool = True,
 ) -> BlockGf:
     r"""
@@ -369,9 +369,9 @@ def get_sigma_w(
 def get_g_qp_k_w(
     gf_struct: GfStruct,
     mesh: MeshProduct,
-    h0_kin_k: BlockMatrix,
-    Lambda: BlockMatrix,
-    R: BlockMatrix,
+    h0_kin_k: BlockMatrixLike,
+    Lambda: BlockMatrixLike,
+    R: BlockMatrixLike,
     mu: float = 0,
     use_broadcasting: bool = True,
 ) -> BlockGf:
@@ -434,7 +434,7 @@ def get_g_k_w(
     g0_k_w: BlockGf | None = None,
     sigma_w: BlockGf | None = None,
     g_qp_k_w: BlockGf | None = None,
-    R: BlockMatrix | None = None,
+    R: BlockMatrixLike | None = None,
     use_broadcasting: bool = True,
 ) -> BlockGf:
     r"""

@@ -23,7 +23,7 @@ from typing import override
 import numpy as np
 from numpy.typing import NDArray
 
-from risb.types import BlockMatrix, Embedding
+from risb.types import BlockMatrix, BlockMatrixLike, Embedding
 
 
 class EmbeddingDummy(Embedding):
@@ -62,9 +62,9 @@ class EmbeddingDummy(Embedding):
     @override
     def set_h_emb(
         self,
-        Lambda_c: BlockMatrix,
-        D: BlockMatrix,
-        h0_loc_matrix: BlockMatrix | None = None,
+        Lambda_c: BlockMatrixLike,
+        D: BlockMatrixLike,
+        h0_loc_matrix: BlockMatrixLike | None = None,
     ) -> None:
         """Do nothing, because the referenced embedding solver is the one solved."""
 
