@@ -4,13 +4,14 @@ import pytest
 from triqs.operators import n
 
 from risb.embedding import EmbeddingAtomDiag, EmbeddingDummy
+from risb.types import BlockMatrix
 
 
-def swap_spin(A):
+def swap_spin(A: BlockMatrix) -> BlockMatrix:
     return {"up": A["dn"], "dn": A["up"]}
 
 
-def test_dummy_returns_rotated_copy_of_referenced_solver():
+def test_dummy_returns_rotated_copy_of_referenced_solver() -> None:
     gf_struct = [("up", 1), ("dn", 1)]
     embedding = EmbeddingAtomDiag(n("up", 0) * n("dn", 0), gf_struct)
     dummy = EmbeddingDummy(embedding, rotations=[swap_spin])

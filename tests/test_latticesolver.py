@@ -3,6 +3,8 @@
 
 import numpy as np
 import pytest
+from numpy.typing import NDArray
+from scipy.optimize import OptimizeResult
 from scipy.optimize import root as root_fun
 from test_common import build_cubic_h0_k, symmetrize_blocks
 from triqs.operators import Operator, n
@@ -12,11 +14,30 @@ from triqs.operators.util.op_struct import set_operator_structure
 from risb import LatticeSolver
 from risb.embedding import EmbeddingAtomDiag
 from risb.kweight import SmearingKWeight
+from risb.types import BlockMatrix, GfStruct
 
 # FIXME add one_shot test
 
+type Model = tuple[
+    GfStruct,
+    dict[str, NDArray[np.float64]],
+    EmbeddingAtomDiag,
+    SmearingKWeight,
+    float,
+    NDArray[np.float64],
+    NDArray[np.float64],
+]
 
-def do_assert(subtests, mu, Lambda, Z, mu_expected, Lambda_expected, Z_expected):
+
+def do_assert(
+    subtests: pytest.Subtests,
+    mu: float | None,
+    Lambda: list[BlockMatrix],
+    Z: list[BlockMatrix],
+    mu_expected: float,
+    Lambda_expected: NDArray[np.float64],
+    Z_expected: NDArray[np.float64],
+) -> None:
     n_clusters = len(Lambda)
     abs = 1e-10
     with subtests.test(msg="mu"):
@@ -32,7 +53,7 @@ def do_assert(subtests, mu, Lambda, Z, mu_expected, Lambda_expected, Z_expected)
 
 
 @pytest.fixture
-def one_band():
+def one_band() -> Model:
     n_orb = 1
     spatial_dim = 3
     nkx = 10
@@ -52,7 +73,7 @@ def one_band():
 
 
 @pytest.fixture
-def bilayer():
+def bilayer() -> Model:
     U = 4
     V = 0.25
     mu = U / 2.0  # half-filling
@@ -79,7 +100,7 @@ def bilayer():
 
 
 @pytest.fixture
-def kanamori():
+def kanamori() -> Model:
     coeff = 0.2
     U = 3
     J = coeff * U
@@ -111,10 +132,11 @@ def kanamori():
 
 
 @pytest.mark.parametrize("model", ["one_band", "bilayer", "kanamori"])
-def test_diis_symmetrize(subtests, request, model):
-    model = request.getfixturevalue(model)
+def test_diis_symmetrize(
+    subtests: pytest.Subtests, request: pytest.FixtureRequest, model: str
+) -> None:
     gf_struct, h0_k, embedding, kweight, mu_expected, Lambda_expected, Z_expected = (
-        model
+        request.getfixturevalue(model)
     )
     S = LatticeSolver(
         h0_k=h0_k,
@@ -134,10 +156,11 @@ def test_diis_symmetrize(subtests, request, model):
 
 
 @pytest.mark.parametrize("model", ["one_band", "bilayer", "kanamori"])
-def test_diis_nosymmetrize(subtests, request, model):
-    model = request.getfixturevalue(model)
+def test_diis_nosymmetrize(
+    subtests: pytest.Subtests, request: pytest.FixtureRequest, model: str
+) -> None:
     gf_struct, h0_k, embedding, kweight, mu_expected, Lambda_expected, Z_expected = (
-        model
+        request.getfixturevalue(model)
     )
     S = LatticeSolver(
         h0_k=h0_k,
@@ -163,10 +186,14 @@ def test_diis_nosymmetrize(subtests, request, model):
         ("kanamori", "krylov"),
     ],
 )
-def test_scipy_root(subtests, request, model, root_method):
-    model = request.getfixturevalue(model)
+def test_scipy_root(
+    subtests: pytest.Subtests,
+    request: pytest.FixtureRequest,
+    model: str,
+    root_method: str,
+) -> None:
     gf_struct, h0_k, embedding, kweight, mu_expected, Lambda_expected, Z_expected = (
-        model
+        request.getfixturevalue(model)
     )
 
     S = LatticeSolver(
@@ -182,6 +209,7 @@ def test_scipy_root(subtests, request, model, root_method):
         for bl, _ in S.gf_struct[i]:
             np.fill_diagonal(S.Lambda[i][bl], mu_expected)
     result = S.solve(method=root_method, tol=1e-10)
+    assert isinstance(result, OptimizeResult)
     assert result.success, result.message
     mu_calculated = kweight.mu
     do_assert(

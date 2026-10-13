@@ -1,6 +1,7 @@
 # ruff: noqa: D100, D103
 import runpy
 from pathlib import Path
+from typing import Any
 
 import matplotlib as mpl
 import numpy as np
@@ -15,16 +16,16 @@ examples_dir = Path(__file__).parent.parent / "examples"
 # looser than the tolerance each example solves to.
 
 
-def run_example(name):
+def run_example(name: str) -> dict[str, Any]:
     return runpy.run_path(str(examples_dir / f"{name}.py"))
 
 
-def assert_g_constructions_agree(g):
+def assert_g_constructions_agree(g: dict[str, Any]) -> None:
     for bl, gf in g["G_iw_loc"]:
         assert gf.data == pytest.approx(g["G_iw_loc2"][bl].data, abs=1e-10)
 
 
-def test_bilayer_hubbard_example():
+def test_bilayer_hubbard_example() -> None:
     g = run_example("bilayer_hubbard")
     S = g["S"]
     abs = 1e-5
@@ -43,7 +44,7 @@ def test_bilayer_hubbard_example():
 
 
 @pytest.mark.filterwarnings("ignore:FigureCanvasAgg is non-interactive")
-def test_hubbard_example():
+def test_hubbard_example() -> None:
     g = run_example("hubbard")
     Z = np.array(g["Z"])
     abs = 1e-5
@@ -69,7 +70,7 @@ def test_hubbard_example():
     assert pytest.approx(Z_expected, abs=abs) == Z
 
 
-def test_kagome_hubbard_example():
+def test_kagome_hubbard_example() -> None:
     g = run_example("kagome_hubbard")
     S = g["S"]
     embedding = g["embedding"]
@@ -96,7 +97,7 @@ def test_kagome_hubbard_example():
             assert S.Lambda[i][bl] == pytest.approx(Lambda_expected[i], abs=abs)
 
 
-def test_decorated_honeycomb_example():
+def test_decorated_honeycomb_example() -> None:
     g = run_example("decorated_honeycomb")
     S = g["S"]
     abs = 1e-3

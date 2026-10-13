@@ -2,24 +2,29 @@
 from itertools import product
 
 import numpy as np
+from numpy.typing import NDArray
+
+from risb.types import BlockMatrix, GfStruct
 
 
-def symmetrize_blocks(A: list[dict[np.ndarray]]):
-    n_clusters = len(A)
-    A_sym = [0 for i in range(n_clusters)]
-    for i in range(n_clusters):
-        for bl in A[i]:
-            A_sym[i] += A[i][bl] / len(A[i])
-        for bl in A[i]:
-            A[i][bl] = A_sym[i]
+def symmetrize_blocks(A: list[BlockMatrix]) -> list[BlockMatrix]:
+    for A_i in A:
+        A_sym = np.mean(list(A_i.values()), axis=0)
+        for bl in A_i:
+            A_i[bl] = A_sym
     return A
 
 
-def build_cubic_h0_k(gf_struct=None, nkx=6, spatial_dim=2, t=1, a=1):
+def build_cubic_h0_k(
+    gf_struct: GfStruct | None = None,
+    nkx: int = 6,
+    spatial_dim: int = 2,
+    t: float = 1,
+    a: float = 1,
+) -> dict[str, NDArray[np.float64]]:
     if gf_struct is None:
         gf_struct = [("up", 1), ("dn", 1)]
-    for _, bsize in gf_struct:
-        n_orb = bsize
+    n_orb = gf_struct[0][1]
     for _, bsize in gf_struct:
         if bsize != n_orb:
             msg = "Each block must have the same number of orbitals !"
@@ -36,7 +41,7 @@ def build_cubic_h0_k(gf_struct=None, nkx=6, spatial_dim=2, t=1, a=1):
             mesh[idx, i] = coord[i] / float(nkx)
 
     # Make hopping matrix
-    h0_k = {}
+    h0_k: dict[str, NDArray[np.float64]] = {}
     for bl, n_orb in gf_struct:
         di = np.diag_indices(n_orb)
         h0_k[bl] = np.zeros([n_k, n_orb, n_orb])
@@ -47,11 +52,13 @@ def build_cubic_h0_k(gf_struct=None, nkx=6, spatial_dim=2, t=1, a=1):
     return h0_k
 
 
-def build_block_mf_matrices(gf_struct=None):
+def build_block_mf_matrices(
+    gf_struct: GfStruct | None = None,
+) -> tuple[dict[str, NDArray[np.float64]], dict[str, NDArray[np.float64]]]:
     if gf_struct is None:
         gf_struct = [("up", 1), ("dn", 1)]
-    R = {}
-    Lambda = {}
+    R: dict[str, NDArray[np.float64]] = {}
+    Lambda: dict[str, NDArray[np.float64]] = {}
     for bl, bsize in gf_struct:
         R[bl] = np.zeros((bsize, bsize))
         Lambda[bl] = np.zeros((bsize, bsize))

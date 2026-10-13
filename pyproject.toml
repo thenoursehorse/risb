@@ -77,7 +77,7 @@ testpaths = [
 ]
 
 [tool.mypy]
-files = "src"
+files = ["src", "tests"]
 python_version = "3.14"
 strict = true
 enable_error_code = [
@@ -90,7 +90,7 @@ enable_error_code = [
 warn_unreachable = true
 
 [[tool.mypy.overrides]]
-module = ["triqs.*"]
+module = ["triqs.*", "h5py.*"]
 ignore_missing_imports = true
 
 [tool.ruff]

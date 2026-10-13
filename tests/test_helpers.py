@@ -14,7 +14,7 @@ abs = 1e-12
 helpers_filename = Path(__file__).parent / Path("data_helpers.h5")
 
 
-def test_get_h_qp(subtests):
+def test_get_h_qp(subtests: pytest.Subtests) -> None:
     with h5py.File(helpers_filename, "r") as f:
         h0_k = f["h0_k"][:]
         eig_expected = f["eig"][:]
@@ -31,7 +31,7 @@ def test_get_h_qp(subtests):
         assert vec == pytest.approx(vec_expected, abs=abs)
 
 
-def test_get_h0_kin_k_R():
+def test_get_h0_kin_k_R() -> None:
     R = np.zeros(shape=(2, 2))
     np.fill_diagonal(R, 1)
     with h5py.File(helpers_filename, "r") as f:
@@ -42,7 +42,7 @@ def test_get_h0_kin_k_R():
     assert h0_k_R == pytest.approx(h0_k_R_expected, abs=abs)
 
 
-def test_get_ke():
+def test_get_ke() -> None:
     with h5py.File(helpers_filename, "r") as f:
         h0_k_R = f["h0_R"][:]
         vec = f["vec"][:]
@@ -52,7 +52,7 @@ def test_get_ke():
     assert ke == pytest.approx(ke_expected, abs=abs)
 
 
-def test_get_rho_qp():
+def test_get_rho_qp() -> None:
     with h5py.File(helpers_filename, "r") as f:
         vec = f["vec"][:]
         wks = f["wks"][:]
@@ -61,7 +61,7 @@ def test_get_rho_qp():
     assert rho_qp == pytest.approx(rho_qp_expected, abs=abs)
 
 
-def test_get_d():
+def test_get_d() -> None:
     rho_qp = np.array([[0.19618454, 0.0], [0.0, 0.19618454]])
     ke = np.array([[-0.13447044, 0.0], [0.0, -0.13447044]])
     D = helpers.get_d(rho_qp, ke)
@@ -69,7 +69,7 @@ def test_get_d():
     assert pytest.approx(D_expected, abs=abs) == D
 
 
-def test_get_lambda_c():
+def test_get_lambda_c() -> None:
     Lambda = np.array([[0.5, 0.0], [0.0, 0.5]])
     R = np.array([[1.0, 0.0], [0.0, 1.0]])
     rho_qp = np.array([[0.19618454, 0.0], [0.0, 0.19618454]])
@@ -81,31 +81,31 @@ def test_get_lambda_c():
     assert Lambda_c == pytest.approx(Lambda_c_expected, abs=abs)
 
 
-def test_get_lambda():
+def test_get_lambda() -> None:
     # R = np.zeros(shape=(2,2))
     # np.fill_diagonal(R, 1.0)
     # Lambda = helpers.get_lambda(R, D, Lambda_c, rho_f)
     pass
 
 
-def test_get_R():
+def test_get_R() -> None:
     # R = helpers.get_r(rho_cf, rho_f)
     pass
 
 
-def test_get_f1():
+def test_get_f1() -> None:
     # R = np.zeros(shape=(2,2))
     # np.fill_diagonal(R, 1.0)
     # f1 = helpers.get_f1(rho_cf, rho_qp, R)
     pass
 
 
-def test_get_f2():
+def test_get_f2() -> None:
     # f2 = helpers.get_f2(rho_f, rho_qp)
     pass
 
 
-def test_get_h0_kin_k_removes_local_terms_with_complex_projector():
+def test_get_h0_kin_k_removes_local_terms_with_complex_projector() -> None:
     rng = np.random.default_rng(0)
     h0_k = {"up": rng.random((4, 2, 2))}
     P = np.array([[1j, 0]])

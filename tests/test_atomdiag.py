@@ -3,27 +3,41 @@ from itertools import product
 
 import numpy as np
 import pytest
+from numpy.typing import NDArray
 from triqs.operators import Operator, c, c_dag, n
 from triqs.operators.util.observables import N_op, S2_op
 
 from risb.embedding import EmbeddingAtomDiag
+from risb.types import BlockMatrix
+
+type Model = tuple[
+    list[str],
+    int,
+    dict[str, NDArray[np.float64]],
+    dict[str, NDArray[np.float64]],
+    dict[str, NDArray[np.float64]],
+    Operator,
+]
+type Expected = tuple[
+    NDArray[np.float64], NDArray[np.float64], NDArray[np.float64], float, float, float
+]
 
 
 def do_assert(
-    subtests,
-    rho_f,
-    rho_cf,
-    rho_c,
-    gs_energy,
-    N,
-    S2,
-    rho_f_expected,
-    rho_cf_expected,
-    rho_c_expected,
-    gs_energy_expected,
-    N_expected,
-    S2_expected,
-):
+    subtests: pytest.Subtests,
+    rho_f: BlockMatrix,
+    rho_cf: BlockMatrix,
+    rho_c: BlockMatrix,
+    gs_energy: float,
+    N: complex,
+    S2: complex,
+    rho_f_expected: NDArray[np.float64],
+    rho_cf_expected: NDArray[np.float64],
+    rho_c_expected: NDArray[np.float64],
+    gs_energy_expected: float,
+    N_expected: float,
+    S2_expected: float,
+) -> None:
     abs = 1e-12
     with subtests.test(msg="rho_f"):
         for bl in rho_f:
@@ -43,15 +57,15 @@ def do_assert(
 
 
 @pytest.fixture
-def one_band():
+def one_band() -> Model:
     U = 1
     mu = U / 2.0  # half-filling
     n_orb = 1
     spin_names = ["up", "dn"]
     h_int = U * n("up", 0) * n("dn", 0)
-    Lambda_c = {}
-    D = {}
-    h0_loc_mat = {}
+    Lambda_c: dict[str, NDArray[np.float64]] = {}
+    D: dict[str, NDArray[np.float64]] = {}
+    h0_loc_mat: dict[str, NDArray[np.float64]] = {}
     for bl in spin_names:
         Lambda_c[bl] = np.array([[-mu]])
         D[bl] = np.array([[-0.3333]])
@@ -60,7 +74,7 @@ def one_band():
 
 
 @pytest.fixture
-def one_band_expected():
+def one_band_expected() -> Expected:
     rho_f_expected = np.array([[0.5]])
     rho_cf_expected = np.array([[0.4681588161332029]])
     rho_c_expected = np.array([[0.5]])
@@ -78,7 +92,7 @@ def one_band_expected():
 
 
 @pytest.fixture
-def bilayer():
+def bilayer() -> Model:
     U = 1
     V = 0.25
     J = 0
@@ -90,9 +104,9 @@ def bilayer():
         h_int += U * n("up", o) * n("dn", o)
     for s1, s2 in product(spin_names, spin_names):
         h_int += 0.5 * J * c_dag(s1, 0) * c(s2, 0) * c_dag(s2, 1) * c(s1, 1)
-    Lambda_c = {}
-    D = {}
-    h0_loc_mat = {}
+    Lambda_c: dict[str, NDArray[np.float64]] = {}
+    D: dict[str, NDArray[np.float64]] = {}
+    h0_loc_mat: dict[str, NDArray[np.float64]] = {}
     for bl in spin_names:
         Lambda_c[bl] = np.array([[-mu, -0.00460398], [-0.00460398, -mu]])
         D[bl] = np.array([[-2.59694448e-01, 0], [0, -2.59694448e-01]])
@@ -101,7 +115,7 @@ def bilayer():
 
 
 @pytest.fixture
-def bilayer_expected():
+def bilayer_expected() -> Expected:
     rho_f_expected = np.array([[0.5, -0.1999913941210893], [-0.1999913941210893, 0.5]])
     rho_cf_expected = np.array([[0.42326519677453511, 0], [0, 0.42326519677453511]])
     rho_c_expected = np.array([[0.5, -0.1836332097072352], [-0.1836332097072352, 0.5]])
@@ -119,14 +133,14 @@ def bilayer_expected():
 
 
 @pytest.fixture
-def dh_trimer():
+def dh_trimer() -> Model:
     # At two-thirds filling
     U = 1
     tk = 1
     n_orb = 3
     spin_names = ["up", "dn"]
 
-    def hubb_N(tk, U, n_orb, spin_names):  # noqa: ARG001
+    def hubb_N(tk: float, U: float, n_orb: int, spin_names: list[str]) -> Operator:  # noqa: ARG001
         # hopping
         # phi = 2.0 * np.pi / n_orb
         # for a,m,mm,s in product(range(n_orb),range(n_orb),range(n_orb), spin_names):
@@ -145,8 +159,8 @@ def dh_trimer():
         return h_int.real
 
     h_int = hubb_N(tk, U, n_orb, spin_names)
-    Lambda_c = {}
-    D = {}
+    Lambda_c: dict[str, NDArray[np.float64]] = {}
+    D: dict[str, NDArray[np.float64]] = {}
     h0_loc_mat = {bl: np.zeros([n_orb, n_orb]) for bl in spin_names}
     for bl in spin_names:
         Lambda_c[bl] = np.array(
@@ -166,7 +180,7 @@ def dh_trimer():
 
 
 @pytest.fixture
-def dh_trimer_expected():
+def dh_trimer_expected() -> Expected:
     rho_f_expected = np.array(
         [
             [0.9932309740187902, 0.0, 0.0],
@@ -209,10 +223,13 @@ def dh_trimer_expected():
         ("dh_trimer", "dh_trimer_expected"),
     ],
 )
-def test_solve(subtests, request, model, model_expected):
-    model = request.getfixturevalue(model)
-    model_expected = request.getfixturevalue(model_expected)
-    spin_names, n_orb, Lambda_c, D, h0_loc_mat, h_int = model
+def test_solve(
+    subtests: pytest.Subtests,
+    request: pytest.FixtureRequest,
+    model: str,
+    model_expected: str,
+) -> None:
+    spin_names, n_orb, Lambda_c, D, h0_loc_mat, h_int = request.getfixturevalue(model)
     (
         rho_f_expected,
         rho_cf_expected,
@@ -220,14 +237,14 @@ def test_solve(subtests, request, model, model_expected):
         gs_energy_expected,
         N_expected,
         S2_expected,
-    ) = model_expected
+    ) = request.getfixturevalue(model_expected)
     gf_struct = [(bl, n_orb) for bl in spin_names]
     embedding = EmbeddingAtomDiag(h_int, gf_struct)
     embedding.set_h_emb(Lambda_c, D, h0_loc_mat)
     embedding.solve()
-    rho_f = {}
-    rho_cf = {}
-    rho_c = {}
+    rho_f: BlockMatrix = {}
+    rho_cf: BlockMatrix = {}
+    rho_c: BlockMatrix = {}
     for bl, _bl_size in gf_struct:
         rho_f[bl] = embedding.get_rho_f(bl)
         rho_cf[bl] = embedding.get_rho_cf(bl)
