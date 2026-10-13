@@ -579,7 +579,7 @@ def get_h0_loc_matrix(
     ----------
     h0_k : numpy.ndarray
         Single-particle dispersion.
-    P : numpy.ndarray | None, optional
+    P : numpy.ndarray, optional
         The projector onto a local cluster within the supercell.
 
     Returns
@@ -631,19 +631,19 @@ def get_h0_kin_k(
 
     Parameters
     ----------
-    h0_k : dict[numpy.ndarray]
+    h0_k : risb.types.BlockMatrixLike
         Single-particle dispersion in each block.
-    projectors : list[dict[numpy.ndarray]] | None, optional
+    projectors : sequence of risb.types.BlockMatrixLike, optional
         The projectors onto each subspace of a local cluster within
         the supercell organized into single-particle symmetry blocks.
-    gf_struct_mapping : list[dict[str, str]] | None, optional
+    gf_struct_mapping : sequence of mapping, optional
         The mapping from the symmetry blocks in the subspace to the
         symmetry blocks of h0_k. Default assumes the keys in `projectors`
         are the same as the keys in `h0_k`.
 
     Returns
     -------
-    dict[numpy.ndarray]
+    risb.types.BlockMatrix
         The single-particle hopping with only the kinetic contribution,
         without the single-particle terms from the clusters defined by
         the projectors.

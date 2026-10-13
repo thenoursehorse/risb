@@ -38,6 +38,15 @@ extensions = [
 # Don't show typehints/annotations
 autodoc_typehints = "none"
 
+# Parse numpydoc types (e.g. "int, optional") instead of linking every word
+napoleon_preprocess_types = True
+napoleon_type_aliases = {
+    "callable": ":term:`callable`",
+    "mapping": ":class:`~collections.abc.Mapping`",
+    "ndarray": "numpy.ndarray",
+    "sequence": ":class:`~collections.abc.Sequence`",
+}
+
 source_suffix = [".rst", ".md"]
 exclude_patterns = [
     "_build",

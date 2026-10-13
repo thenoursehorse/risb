@@ -47,10 +47,10 @@ class LatticeSolver:
 
     Parameters
     ----------
-    h0_k : dict[numpy.ndarray]
+    h0_k : risb.types.BlockMatrixLike
         Single-particle dispersion between local clusters. Each key
         represents a single-particle symmetry.
-    gf_struct : list of pairs [ (str,int), ...] or a list of these
+    gf_struct : risb.types.GfStruct or list of risb.types.GfStruct
         Structure of the matrices. For each cluster, it must be a
         list of pairs, each containing the name of the
         matrix block as a string and the size of that block.
@@ -60,34 +60,34 @@ class LatticeSolver:
         already store the interacting Hamiltonian ``h_int`` on a cluster,
         and implement :class:`risb.types.Embedding`.
         See class :class:`.EmbeddingAtomDiag`.
-    update_weights : callable
+    update_weights : risb.types.UpdateWeights
         The function that gives the integral weights at each k-point on the
         lattice. It is called as ``update_weights(energies)``,
         where the energies are a dictionary with each key a list.
         See class :class:`.SmearingKWeight`.
-    root : callable, optional
+    root : risb.types.RootFinder, optional
         The function that drives the self-consistent procedure. It is called
-        as ``root(fun, x0, args=, tol=, **kwargs)``, where ``x0`` is the initial
+        as ``root(fun, x0, **kwargs)``, where ``x0`` is the initial
         guess vector, and ``fun`` is the function to minimize,
         where ``fun = self._target_function``.
         Defaults to :meth:`.DIIS.solve` method of :class:`.DIIS`.
-    projectors : list[dict[numpy.ndarray]], optional
+    projectors : sequence of risb.types.BlockMatrixLike, optional
         The projectors onto each subspace of an `embedding` cluster.
-    gf_struct_mapping : list[dict[str,str]], optional
+    gf_struct_mapping : sequence of mapping, optional
         The mapping from the symmetry blocks of each cluster in `embedding`
         to the symmetry blocks of `h0_k`. Default assumes the keys in
         all clusters are the same as the keys in `h0_k`.
-    symmetrizers : list[callable], optional
+    symmetrizers : sequence of risb.types.Symmetrize, optional
         Functions that symmetrize the mean-field matrices. The argument of
         each function must take a list of all clusters.
         E.g., ``[R_cluster1, R_cluster2, ...]``.
     force_real : bool, optional
         True if the mean-field matrices are forced to be real
-    error_fun : str, optional
+    error_fun : {'root', 'recursion'}, optional
         At each self-consistent cycle, whether the returned error function is
-            - 'root' : f1 and f2 root functions
-            - 'recursion' : the difference between consecutive :attr:`Lambda` and :attr:`R`.
-        Defaults to 'recursion'.
+        the f1 and f2 root functions (``'root'``) or the difference between
+        consecutive :attr:`Lambda` and :attr:`R` (``'recursion'``).
+        Defaults to ``'recursion'``.
     return_x_new : bool, optional
         Whether to return a new guess for ``x`` and the ``error`` at each iteration or
         only the ``error``. :func:`scipy.optimize.root` should only use the ``error``.
@@ -108,7 +108,7 @@ class LatticeSolver:
         error_fun: Literal["root", "recursion"] = "recursion",
         return_x_new: bool = True,
     ) -> None:
-        #: dict[numpy.ndarray] : Non-interacting Hamiltonian in k-space.
+        #: risb.types.BlockMatrixLike : Non-interacting Hamiltonian in k-space.
         self.h0_k = h0_k
 
         # FIXME is this the best way to make sure gf_struct is a list of gf_struct?
@@ -171,15 +171,15 @@ class LatticeSolver:
             for i in range(self.n_clusters)
         ]
 
-        #: dict[numpy.ndarray] : :attr:`h0_k` with the local couplings from
+        #: risb.types.BlockMatrix : :attr:`h0_k` with the local couplings from
         # ; each correlated subspace removed.
         self.h0_kin_k = helpers.get_h0_kin_k(h0_k, projectors, gf_struct_mapping)
 
-        #: list[dict(numpy.ndarray)] : Matrices of non-interacting local hopping
+        #: list of risb.types.BlockMatrix : Matrices of non-interacting local hopping
         #: terms and energies in :attr:`h0_k`.
         self.h0_loc_matrix = self._get_h0_loc_matrix()
 
-        #: list[dict[numpy.ndarray]] : Renormalization matrix
+        #: list of risb.types.BlockMatrix : Renormalization matrix
         #: from c- to f-electrons at the mean-field level for each cluster.
         self.R = self._initialize_block_mf_matrix(self.gf_struct, self.force_real)
 
@@ -187,49 +187,49 @@ class LatticeSolver:
             for bl_sub, _ in self.gf_struct[i]:
                 np.fill_diagonal(self.R[i][bl_sub], 1)
 
-        #: list[dict[numpy.ndarray]] : Correlation potential matrix of the quasiparticles
+        #: list of risb.types.BlockMatrix : Correlation potential matrix of the quasiparticles
         #: for each cluster.
         self.Lambda = self._initialize_block_mf_matrix(self.gf_struct, self.force_real)
 
-        #: list[dict[numpy.ndarray]] : Bath coupling of impurity for each cluster.
+        #: list of risb.types.BlockMatrix : Bath coupling of impurity for each cluster.
         self.Lambda_c: list[BlockMatrix] = [{} for i in range(self.n_clusters)]
 
-        #: list[dict[numpy.ndarray]] : Hybridization of impurity for each cluster.
+        #: list of risb.types.BlockMatrix : Hybridization of impurity for each cluster.
         self.D: list[BlockMatrix] = [{} for i in range(self.n_clusters)]
 
-        #: list[dict[numpy.ndarray]] : Density matrix of quasiparticles for each cluster.
+        #: list of risb.types.BlockMatrix : Density matrix of quasiparticles for each cluster.
         self.rho_qp: list[BlockMatrix] = [{} for i in range(self.n_clusters)]
 
-        #: list[dict[numpy.ndarray]] : Lopsided kinetic energy of quasiparticles for each cluster.
+        #: list of risb.types.BlockMatrix : Lopsided kinetic energy of quasiparticles for each cluster.
         self.lopsided_ke_qp: list[BlockMatrix] = [{} for i in range(self.n_clusters)]
 
-        #: list[dict[numpy.ndarray]] : Kinetic energy of quasiparticles for each cluster.
+        #: list of risb.types.BlockMatrix : Kinetic energy of quasiparticles for each cluster.
         self.ke_qp: list[BlockMatrix] = [{} for i in range(self.n_clusters)]
 
-        #: list[dict[numpy.ndarray]] : Density matrix of cluster for each cluster.
+        #: list of risb.types.BlockMatrix : Density matrix of cluster for each cluster.
         self.rho_c: list[BlockMatrix] = [{} for i in range(self.n_clusters)]
 
-        #: list[dict[numpy.ndarray]] : Density matrix of f-electrons in the impurity of each cluster.
+        #: list of risb.types.BlockMatrix : Density matrix of f-electrons in the impurity of each cluster.
         self.rho_f: list[BlockMatrix] = [{} for i in range(self.n_clusters)]
 
-        #: list[dict[numpy.ndarray]] : Hybridization density matrix between the c-
+        #: list of risb.types.BlockMatrix : Hybridization density matrix between the c-
         #: and f-electrons in the impurity for each cluster.
         self.rho_cf: list[BlockMatrix] = [{} for i in range(self.n_clusters)]
 
-        #: list[dict[numpy.ndarray]] : The first root function of the self-consistent loop.
+        #: list of risb.types.BlockMatrix : The first root function of the self-consistent loop.
         self.f1: list[BlockMatrix] = [{} for i in range(self.n_clusters)]
 
-        #: list[dict[numpy.ndarray]] : The second root function of the self-consistent loop.
+        #: list of risb.types.BlockMatrix : The second root function of the self-consistent loop.
         self.f2: list[BlockMatrix] = [{} for i in range(self.n_clusters)]
 
-        #: dict[numpy.ndarray] : k-space integration weights of the
+        #: risb.types.BlockRealArray : k-space integration weights of the
         #: quasiparticles in each band.
         self.kweights: BlockRealArray = {}
 
-        #: dict[numpy.ndarray] : Band energy of quasiparticles.
+        #: risb.types.BlockRealArray : Band energy of quasiparticles.
         self.energies_qp: BlockRealArray = {}
 
-        #: dict[numpy.ndarray] : Bloch band vectors of quasiparticles.
+        #: risb.types.BlockMatrix : Bloch band vectors of quasiparticles.
         self.bloch_vector_qp: BlockMatrix = {}
 
         self.iteration = 0
@@ -253,12 +253,12 @@ class LatticeSolver:
 
         Parameters
         ----------
-        energies : dict[numpy.ndarray]
+        energies : risb.types.BlockRealArray
             Energies at each k-point in each block.
 
         Returns
         -------
-        dict[numpy.ndarray]
+        risb.types.BlockRealArray
             Integration weights at each k-point in each block.
 
         """
@@ -278,7 +278,7 @@ class LatticeSolver:
 
         Returns
         -------
-        list[numpy.ndarray]
+        list of numpy.ndarray
             A list of matrices that define an orthonormal basis that spans all
             Hermitian matrices of dimension `N`.
 
@@ -431,14 +431,14 @@ class LatticeSolver:
 
         Returns
         -------
-        Lambda : list[dict[numpy.ndarray]]
+        Lambda : list of risb.types.BlockMatrix
             The new guess for the correlation potential matrix on each cluster.
-        R : list[dict[numpy.ndarray]]
+        R : list of risb.types.BlockMatrix
             The new guess for the renormalization matrix on each cluster.
-        f1 : list[dict[numpy.ndarray]]
+        f1 : list of risb.types.BlockMatrix
             The return of the fixed-point function that matches the
             quasiparticle density matrices on each cluster.
-        f2 : list[dict[numpy.ndarray]]
+        f2 : list of risb.types.BlockMatrix
             The return of the fixed-point function that matches the
             hybridzation density matrices on each cluster.
 
@@ -648,6 +648,8 @@ class LatticeSolver:
         """
         Solve for the renormalization matrix :attr:`R` and correlation potential matrix :attr:`Lambda`.
 
+        Sets the self-consistent solutions :attr:`Lambda` and :attr:`R`.
+
         Parameters
         ----------
         one_shot : bool, optional
@@ -658,11 +660,10 @@ class LatticeSolver:
 
         Returns
         -------
-        x
+        numpy.ndarray or scipy.optimize.OptimizeResult
             The flattened x vector of :attr:`Lambda` and :attr:`R`. If using
             :func:`scipy.optimize.root` the :class:`scipy.optimize.OptimizeResult`
             object will be returned.
-        Also sets the self-consistent solutions :attr:`Lambda` and :attr:`R`.
 
         """
         x: NDArray[np.float64] | OptimizeResult
@@ -683,7 +684,7 @@ class LatticeSolver:
 
     @property
     def Z(self) -> list[BlockMatrix]:
-        """Returns the quasiparticle weight matrix Z of each cluster as a list[dict[numpy.ndarray]]."""
+        """Returns the quasiparticle weight matrix Z of each cluster as a list of block matrices."""
         Z: list[BlockMatrix] = [{} for i in range(self.n_clusters)]
         for i in range(self.n_clusters):
             for bl, _ in self.gf_struct[i]:

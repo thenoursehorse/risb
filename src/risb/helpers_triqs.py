@@ -33,7 +33,7 @@ def get_C_Op(gf_struct: GfStruct, dagger: bool = False) -> dict[str, list[Operat
 
     Parameters
     ----------
-    gf_struct : list of pairs [ (str,int), ...]
+    gf_struct : risb.types.GfStruct
         Structure of the matrices. It must be a
         list of pairs, each containing the name of the
         matrix block as a string and the size of that block.
@@ -43,7 +43,7 @@ def get_C_Op(gf_struct: GfStruct, dagger: bool = False) -> dict[str, list[Operat
 
     Returns
     -------
-    dict[list[triqs.operators.Operator]]
+    dict of list of triqs.operators.Operator
         For each block in `gf_struct`, a vector of all creation/annihilation
         operators in its subspace.
 
@@ -63,9 +63,9 @@ def matrix_to_Op(A: BlockMatrixLike, gf_struct: GfStruct) -> dict[str, Operator]
 
     Parameters
     ----------
-    A : dict[numpy.ndarray]
+    A : risb.types.BlockMatrixLike
         Single-particle matrix, where each key is a different block.
-    gf_struct : list of pairs [ (str,int), ...]
+    gf_struct : risb.types.GfStruct
         Structure of the matrices. It must be a
         list of pairs, each containing the name of the
         matrix block as a string and the size of that block.
@@ -73,7 +73,7 @@ def matrix_to_Op(A: BlockMatrixLike, gf_struct: GfStruct) -> dict[str, Operator]
 
     Returns
     -------
-    dict[triqs.operators.Operator]
+    dict of triqs.operators.Operator
         The single-particle matrix as a quadratic TRIQS operator.
 
     """
@@ -99,17 +99,17 @@ def get_h0_loc_blocks(
 
     Parameters
     ----------
-    h0_k : dict[numpy.ndarray]
+    h0_k : risb.types.BlockMatrixLike
         Single-particle dispersion in each block.
-    P : dict[numpy.ndarray]
+    P : risb.types.BlockMatrixLike
         The projector onto a local cluster within the supercell.
-    gf_struct : list of pairs [ (str,int), ...] | None, optional
+    gf_struct : risb.types.GfStruct, optional
         Structure of the matrices. It must be a
         list of pairs, each containing the name of the
         matrix block as a string and the size of that block.
         For example: ``[ ('up', 3), ('down', 3) ]``. Default is
         structure worked out from the projector P.
-    gf_struct_mapping : dict[str, str] | None, optional
+    gf_struct_mapping : mapping, optional
         The mapping from the symmetry blocks in the subspace of P to the
         symmetry blocks of h0_k. Default assumes the keys in `P`
         are the same as the keys in `h0_k`.
@@ -118,7 +118,7 @@ def get_h0_loc_blocks(
 
     Returns
     -------
-    dict[triqs.operators.Operator]
+    dict of triqs.operators.Operator
         For each single-particle symmetry block the non-interacting
         terms in the cluster defined by the projector `P`.
 
@@ -151,17 +151,17 @@ def get_h0_loc(
 
     Parameters
     ----------
-    h0_k : dict[numpy.ndarray]
+    h0_k : risb.types.BlockMatrixLike
         Single-particle dispersion in each block.
-    P : dict[numpy.ndarray]
+    P : risb.types.BlockMatrixLike
         The projector onto a local cluster within the supercell.
-    gf_struct : list of pairs [ (str,int), ...] | None, optional
+    gf_struct : risb.types.GfStruct, optional
         Structure of the matrices. It must be a
         list of pairs, each containing the name of the
         matrix block as a string and the size of that block.
         For example: ``[ ('up', 3), ('down', 3) ]``. Default is
         structure worked out from the projector P.
-    gf_struct_mapping : dict[str, str] | None, optional
+    gf_struct_mapping : mapping, optional
         The mapping from the symmetry blocks in the subspace of P to the
         symmetry blocks of h0_k. Default assumes the keys in `P`
         are the same as the keys in `h0_k`.
@@ -198,7 +198,7 @@ def get_gf_struct_from_g(block_gf: BlockGf) -> GfStruct:
 
     Returns
     -------
-    list[tuple[str,int]]
+    risb.types.GfStruct
         Green's function's structure.
 
     """
@@ -222,7 +222,7 @@ def get_g0_k_w(
 
     Parameters
     ----------
-    gf_struct : list of pairs [ (str,int), ...]
+    gf_struct : risb.types.GfStruct
         Structure of the matrices. It must be a
         list of pairs, each containing the name of the
         matrix block as a string and the size of that block.
@@ -231,7 +231,7 @@ def get_g0_k_w(
         A meshproduct where first index is a triqs.gfs.MeshBrZone mesh and
         the second index is a triqs.gfs.MeshReFreq or triqs.gfs.MeshImFreq
         mesh. MeshProduct is a fancy list.
-    h0_k : dict[numpy.ndarray], optional
+    h0_k : risb.types.BlockMatrixLike, optional
         Non-interacting dispersion indexed as k, orb_i, orb_j.
         Each key in dictionary must follow :attr:`gf_struct`.
     h0_k_gf : triqs.gfs.BlockGf, optional
@@ -300,22 +300,22 @@ def get_sigma_w(
 
     Parameters
     ----------
-    gf_struct : list of pairs [ (str,int), ...]
+    gf_struct : risb.types.GfStruct
         Structure of the matrices. It must be a
         list of pairs, each containing the name of the
         matrix block as a string and the size of that block.
         For example: ``[ ('up', 3), ('down', 3) ]``.
-    mesh : triqs.gfs.meshes.MeshReFreq | triqs.gfs.meshes.MeshImFreq
+    mesh : triqs.gfs.MeshReFreq or triqs.gfs.MeshImFreq
         Frequency mesh of the returned self-energy.
-    Lambda : dict[numpy.ndarray]
+    Lambda : risb.types.BlockMatrixLike
         Correlation potential of quasiparticles.
         Each key in dictionary must follow :attr:`gf_struct`.
-    R : dict[numpy.ndarray]
+    R : risb.types.BlockMatrixLike
         Rormalization matrix from electrons to quasiparticles.
         Each key in dictionary must follow :attr:`gf_struct`.
     mu : float, optional
         Chemical potential.
-    h0_loc : dict[numpy.ndarray], optional
+    h0_loc : risb.types.BlockMatrixLike, optional
         Matrix of non-interacting hopping terms in each local subspace.
         Each key in dictionary must follow :attr:`gf_struct`.
     use_broadcasting : bool, optional
@@ -380,7 +380,7 @@ def get_g_qp_k_w(
 
     Parameters
     ----------
-    gf_struct : list of pairs [ (str,int), ...]
+    gf_struct : risb.types.GfStruct
         Structure of the matrices. It must be a
         list of pairs, each containing the name of the
         matrix block as a string and the size of that block.
@@ -389,13 +389,13 @@ def get_g_qp_k_w(
         A meshproduct where first index is a triqs.gfs.MeshBrZone mesh and
         the second index is a triqs.gfs.MeshReFreq or triqs.gfs.MeshImFreq
         mesh. MeshProduct is a fancy list.
-    h0_kin_k : dict[numpy.ndarray]
+    h0_kin_k : risb.types.BlockMatrixLike
         Single-particle dispersion between local clusters. Indexed as
         k, orb_i, orb_j. Each key in dictionary must follow :attr:`gf_struct`.
-    Lambda : dict[numpy.ndarray]
+    Lambda : risb.types.BlockMatrixLike
         Correlation potential of quasiparticles.
         Each key in dictionary must follow :attr:`gf_struct`.
-    R : dict[numpy.ndarray]
+    R : risb.types.BlockMatrixLike
         Rormalization matrix from electrons to quasiparticles.
         Each key in dictionary must follow :attr:`gf_struct`.
     mu : float, optional
@@ -456,7 +456,7 @@ def get_g_k_w(
         Quasiparticle Green's function on a meshproduct where
         the first index is a triqs.gfs.MeshBrZone mesh and
         the second index is a triqs.gfs.MeshReFreq or triqs.gfs.MeshImFreq mesh.
-    R : dict[numpy.ndarray], optional
+    R : risb.types.BlockMatrixLike, optional
         Rormalization matrix from electrons to quasiparticles.
         Each key in dictionary must follow the gf_struct in
         :attr:`g0_k_w` and :attr:`sigma_w`.

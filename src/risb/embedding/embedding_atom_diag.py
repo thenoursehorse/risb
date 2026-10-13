@@ -37,7 +37,7 @@ class EmbeddingAtomDiag(Embedding):
     ----------
     h_int : triqs.operators.Operator
         Interaction Hamiltonian in the embedding space.
-    gf_struct : list of pairs [ (str,int), ...]
+    gf_struct : risb.types.GfStruct
         Structure of the matrices. It must be a
         list of pairs, each containing the name of the
         matrix block as a string and the size of that block.
@@ -49,18 +49,18 @@ class EmbeddingAtomDiag(Embedding):
         #: triqs.operators.Operator : Interaction Hamiltonian.
         self.h_int = h_int
 
-        #: dict[tuple[str,int]] : Block matrix structure of c-electrons.
+        #: risb.types.GfStruct : Block matrix structure of c-electrons.
         self.gf_struct = gf_struct
 
         # Set structure of bath and embedding space
         # FIXME if doing ghost bath and loc are not the same size
 
-        #: dict[tuple[str,int]] : Block matrix structure of f-electrons.
+        #: risb.types.GfStruct : Block matrix structure of f-electrons.
         self.gf_struct_bath = [
             (self._bl_loc_to_bath(bl), bl_size) for bl, bl_size in self.gf_struct
         ]
 
-        #: dict[tuple[str,int]] : Block matrix structure entire embedding
+        #: risb.types.GfStruct : Block matrix structure entire embedding
         #: space.
         self.gf_struct_emb = self.gf_struct + self.gf_struct_bath
 
@@ -96,15 +96,15 @@ class EmbeddingAtomDiag(Embedding):
         #: triqs.operators.Operator : Hybridization terms in :attr:`h_emb`.
         self.h_hybr: Operator = Operator()
 
-        #: dict[numpy.ndarray] : f-electron density matrix, set by
+        #: risb.types.BlockMatrix : f-electron density matrix, set by
         #: :meth:`solve`.
         self.rho_f: BlockMatrix = {}
 
-        #: dict[numpy.ndarray] : c-electron density matrix, set by
+        #: risb.types.BlockMatrix : c-electron density matrix, set by
         #: :meth:`solve`.
         self.rho_c: BlockMatrix = {}
 
-        #: dict[numpy.ndarray] : Density matrix of hybridization terms
+        #: risb.types.BlockMatrix : Density matrix of hybridization terms
         #: (c- and f-electrons), set by :meth:`solve`.
         self.rho_cf: BlockMatrix = {}
 
@@ -130,7 +130,7 @@ class EmbeddingAtomDiag(Embedding):
 
         Parameters
         ----------
-        h0_loc_matrix : dict of ndarray, optional
+        h0_loc_matrix : risb.types.BlockMatrixLike
             Quadratic terms as a matrix. Each key in dictionary must follow
             :attr:`gf_struct`.
 
@@ -159,7 +159,7 @@ class EmbeddingAtomDiag(Embedding):
 
         Parameters
         ----------
-        Lambda_c : dict of ndarray, optional
+        Lambda_c : risb.types.BlockMatrixLike
             Bath coupling. Each key in dictionary must follow
             :attr:`gf_struct`.
 
@@ -177,7 +177,7 @@ class EmbeddingAtomDiag(Embedding):
 
         Parameters
         ----------
-        D : dict[numpy.ndarray]
+        D : risb.types.BlockMatrixLike
             Hybridization coupling. Each key in dictionary must follow
             :attr:`gf_struct`.
 
@@ -203,13 +203,13 @@ class EmbeddingAtomDiag(Embedding):
 
         Parameters
         ----------
-        Lambda_c : dict[numpy.ndarray]
+        Lambda_c : risb.types.BlockMatrixLike
             Bath coupling. Each key in dictionary must follow
             :attr:`gf_struct`.
-        D : dict[numpy.ndarray]
+        D : risb.types.BlockMatrixLike
             Hybridization coupling. Each key in dictionary must follow
             :attr:`gf_struct`.
-        h0_loc_matrix : dict[numpy.ndarray], optional
+        h0_loc_matrix : risb.types.BlockMatrixLike, optional
             Single-particle quadratic couplings of the c-electrons. Each key
             in dictionary must follow :attr:`gf_struct`.
 

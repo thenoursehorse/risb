@@ -58,7 +58,7 @@ def update_mu(
     ----------
     n_target : float
         Filling target
-    energies : dict[str, numpy.ndarray]
+    energies : risb.types.BlockRealArray
         Eigenenergies of each block
     beta : float
         Inverse temperature

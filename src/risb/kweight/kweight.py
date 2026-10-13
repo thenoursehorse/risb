@@ -41,7 +41,7 @@ class SmearingKWeight:
     n_target : float or None, optional
         Target lattice filling per unit cell. One of :attr:`mu` or :attr:`n_target`
         needs to be provided.
-    method : str, 'fermi' | 'gaussian' | 'methfessel-paxton'
+    method : {'fermi', 'gaussian', 'methfessel-paxton'}, optional
         Smearing method.
 
     """
@@ -62,16 +62,16 @@ class SmearingKWeight:
         #: float : Target lattice filling per unit cell.
         self.n_target = n_target
 
-        #: dict[numpy.ndarray] : Energies in each band at each k-point.
+        #: risb.types.BlockRealArray : Energies in each band at each k-point.
         self.energies: BlockRealArray
 
-        #: dict[numpy.ndarray] : Integration weights at each k-point in the same shape as energies.
+        #: risb.types.BlockRealArray : Integration weights at each k-point in the same shape as energies.
         self.weights: BlockRealArray
 
         #: int : Number of k-points.
         self.n_k: int
 
-        #: callable : Smearing function called as
+        #: risb.types.SmearFunction : Smearing function called as
         #: ``smear_function(energies, beta, mu)``.
         self.smear_function: SmearFunction
         smear_functions: dict[str, SmearFunction] = {
@@ -129,13 +129,13 @@ class SmearingKWeight:
 
         Parameters
         ----------
-        energies : dict[numpy.ndarray]
+        energies : risb.types.BlockRealArray
             Energies at each k-point. Each key in dictionary is a different
             symmetry block, and its associated value is a list of energies.
 
         Returns
         -------
-        dict[numpy.ndarray]
+        risb.types.BlockRealArray
             Integration weights at each k-point in each band.
 
         """

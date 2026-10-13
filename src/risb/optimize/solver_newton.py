@@ -52,13 +52,13 @@ class NewtonSolver(ABC):
         self.n_restart = n_restart
         self.initialized = False
 
-        #: list[numpy.ndarray] : History of guesses to the root problem.
+        #: list of numpy.ndarray : History of guesses to the root problem.
         self.x: list[NDArray[np.float64]] = []
 
-        #: list[numpy.ndarray] : History of fixed point function with ``x`` as the input.
+        #: list of numpy.ndarray : History of fixed point function with ``x`` as the input.
         self.g_x: list[NDArray[np.float64]] = []
 
-        #: list[numpy.ndarray] : History of error vector of ``x``.
+        #: list of numpy.ndarray : History of error vector of ``x``.
         self.error: list[NDArray[np.float64]] = []
 
         #: int : Iteration counter for solver.
