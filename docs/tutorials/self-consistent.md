@@ -168,8 +168,8 @@ def make_h0_kin_k(mesh, gf_struct, t=1, a=1):
     return h0_kin_k
 ```
 
-Note that the structure of the matrices is given in the same way as {{TRIQS}}
-Green's functions as
+Note that the structure of the matrices is given as a list of pairs, each the
+name of a block and its size
 
 ```python
 gf_struct = [("up", 2), ("dn", 2)]
@@ -181,15 +181,16 @@ Next, construct the local Hamiltonian on each cluster (site) $i$. It has to
 include all of the many-body interactions on each cluster as well as the
 non-interacting quadratic terms that describe orbital energies and
 hopping between orbitals on site $i$. In this case, we use the
-second-quantized operators that the {{TRIQS}} library provides.
+second-quantized operators that the
+[fockit](https://github.com/thenoursehorse/fockit) library provides.
 
 ```python
-from triqs.operators import *
+from fockit.algebra import c, cdag, nc, zero
 
 
 def make_h_loc(V=0.25, U=4):
     """
-    Return the local terms of the bilayer Hubbad model as a TRIQS operator.
+    Return the local terms of the bilayer Hubbad model as a fockit operator.
 
     Parameters
     ----------
@@ -200,14 +201,14 @@ def make_h_loc(V=0.25, U=4):
 
     Returns
     -------
-    h_loc : triqs.operators.Operator
+    h_loc : fockit.algebra.OpSum
     """
 
-    h_loc = Operator()
+    h_loc = zero()
     for o in range(2):
-        h_loc += U * n("up", o) * n("dn", o)
+        h_loc += U * nc("up", o) * nc("dn", o)
     for bl in ["up", "dn"]:
-        h_loc += V * (c_dag(bl, 0) * c(bl, 1) + c_dag(bl, 1) * c(bl, 0))
+        h_loc += V * (cdag(bl, 0) * c(bl, 1) + cdag(bl, 1) * c(bl, 0))
 
     return h_loc
 ```
@@ -417,13 +418,13 @@ single-particle density matrices of $\hat{H}^{\mathrm{imp}}$.
 :::
 
 Now we have to solve the impurity problem defined by the impurity Hamiltonian
-$\hat{H}^{\mathrm{imp}}$. There is a simple (but poorly scaled to large
-problems) implementation that only uses {{TRIQS}}.
+$\hat{H}^{\mathrm{imp}}$. Use the exact diagonalization solver built on
+fockit.
 
 ```python
-from risb.impurity_solvers import AtomDiagImpuritySolver
+from risb.impurity_solvers import FockitImpuritySolver
 
-impurity_solver = AtomDiagImpuritySolver(h_loc, gf_struct)
+impurity_solver = FockitImpuritySolver(h_loc, gf_struct)
 ```
 
 Setting the impurity Hamiltonian $\hat{H}^{\mathrm{imp}}$ is done with
@@ -486,8 +487,8 @@ for bl, bl_size in gf_struct:
 1. What is the evolution of the electron filling in the
    bonding/anti-bonding ($\pm$) basis?
 1. Implement a method to solve for the chemical potential $\mu$ at a fixed
-   electron density $n$ (you may find :py:func:`scipy.optimize.brentq`
-   or :py:func:`scipy.optimize.bisect` from :py:mod:`scipy.optimize` useful).
+   electron density $n$ (you may find {py:func}`scipy.optimize.brentq`
+   or {py:func}`scipy.optimize.bisect` from {py:mod}`scipy.optimize` useful).
 1. What is the evolution of the quasiparticle weight at electron filling
    $n = 1.88$ (Fig. 10)?
 
@@ -495,7 +496,7 @@ for bl, bl_size in gf_struct:
 
 You have built the self-consistent loop for
 {{RISB}} and solved a (not so simple)
-interacting fermion problem. The code in :py:class:`risb.solve_lattice.LatticeSolver`
+interacting fermion problem. The code in {py:class}`~risb.LatticeSolver`
 is not much more complicated than what you have done. You should now easily be
 able to mofify, implement, and contribute to any parts in the library.
 You also now understand the basic ingredients needed for most self-consistent

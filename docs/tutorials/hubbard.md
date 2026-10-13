@@ -1,6 +1,6 @@
 # Brinkman-Rice metal-insulator transition
 
-In this tutorial you will use `LatticeSolver` and `AtomDiagImpuritySolver` to solve
+In this tutorial you will use `LatticeSolver` and `FockitImpuritySolver` to solve
 the half-filled Hubbard model. This is one of the simplest strongly correlated
 electron models, yet in general does not have an exact solution. Using this
 model, you will learn about the Brinkman-Rice [^Brinkman1970] description of
@@ -124,8 +124,8 @@ for bl in ["up", "dn"]:
 
 ## Local structure on a site
 
-Now set up how the local structure looks like. This follows the same
-conventions as Green's functions in {{TRIQS}}
+Now set up how the local structure looks like. It is a list of pairs, each the
+name of a block and its size
 
 ```python
 gf_struct = [("up", n_orb), ("dn", n_orb)]
@@ -141,8 +141,9 @@ on a cluster (a site) that you will use in the next section.
 
 ## Construct the interactions $\hat{H}_i^{\mathrm{int}}$
 
-Since you are using `AtomDiagImpuritySolver`, you might as well use all of the great
-second-quantized operator tools provided by {{TRIQS}}.
+The interactions are written with the second-quantized operators of
+[fockit](https://github.com/thenoursehorse/fockit), using the blocks and indices
+of `gf_struct`.
 
 Because {{RISB}} will make all equivalent clusters homogenous, you only need to
 construct the interactions for a single site.
@@ -151,20 +152,24 @@ Now construct the interaction terms. The Hubbard interaction is simply given
 as
 
 ```python
-from triqs.operators import n
+from fockit.algebra import nc
 
 # Hubbard U
 U = 5
 
-h_int = U * n("up", 0) * n("dn", 0)
+h_int = U * nc("up", 0) * nc("dn", 0)
 ```
 
-There are also some great helper tools for constructing interactions
-in the `triqs.operators.util.hamiltonians` module provided by {{TRIQS}}. It
-is completely overkill for this interaction, but let's do it anyway.
+A general density-density interaction between all orbitals and spins can be
+written out the same way. It is completely overkill for this interaction, but
+let's do it anyway.
 
 ```python
-from triqs.operators.util.hamiltonians import h_int_density
+from itertools import product
+
+from fockit.algebra import zero
+
+spin_names = ["up", "dn"]
 
 # 2D matrix of U_ij^{sigma sigma} (same spins)
 U = np.zeros(shape=[n_orb, n_orb])
@@ -172,9 +177,11 @@ U = np.zeros(shape=[n_orb, n_orb])
 # 2D matrix of U_ij^{sigma nu} (different spins)
 Uprime = np.full(shape=[n_orb, n_orb], fill_value=5)
 
-h_int = h_int_density(
-    spin_names=["up", "dn"], n_orb=n_orb, U=U, Uprime=Uprime, off_diag=True
-)
+h_int = zero()
+for s1, s2 in product(spin_names, spin_names):
+    for a1, a2 in product(range(n_orb), range(n_orb)):
+        U_val = U[a1, a2] if s1 == s2 else Uprime[a1, a2]
+        h_int += 0.5 * U_val * nc(s1, a1) * nc(s2, a2)
 ```
 
 ## Enforce paramagnetism
@@ -229,11 +236,13 @@ kweight = SmearingKWeight(beta=beta, n_target=n_target)
 :::
 
 You need a class that solves the
-[impurity Hamiltonian](../explanations/impurity.md). A simple one is
-:py:class:`risb.impurity_solvers.AtomDiagImpuritySolver`
+[impurity Hamiltonian](../explanations/impurity.md). Use
+{py:class}`~risb.impurity_solvers.FockitImpuritySolver`
 
 ```python
-impurity_solver = ImpuritySolverClass(h_int, gf_struct)
+from risb.impurity_solvers import FockitImpuritySolver
+
+impurity_solver = FockitImpuritySolver(h_int, gf_struct)
 ```
 
 Next setup the {{RISB}} solver for the self-consistent loop. This will make a
@@ -264,8 +273,8 @@ S.solve(tol=tol)
 ## Observables on a site
 
 In {{RISB}} it is very simple to calculate local quantities on a cluster
-(a site). Using {{TRIQS}} there are some simple helper functions to construct
-some common observables. The main one we are interested in is the total spin
+(a site). {py:mod}`risb.helpers_fockit` has some simple helper functions to
+construct some common observables. The main one we are interested in is the total spin
 on a site.
 
 The average total spin per cluster $S$ is
@@ -279,12 +288,12 @@ where $\hat{S}_i$ is the total spin operator on a cluster (a site). Because
 the homogenous assumption is used in {{RISB}}, the spin per site is the same
 on every site, so you only have to (and only can) calculate it on one site.
 
-In {{TRIQS}} the total spin $\hat{S}^2$ is given by
+The total spin $\hat{S}^2$ is given by
 
 ```python
-from triqs.operators.util.observables import S2_op
+from risb.helpers_fockit import S2_op
 
-total_spin_Op = S2_op(spin_names, n_orb, off_diag=True)
+total_spin_Op = S2_op(spin_names, n_orb)
 ```
 
 To calculate the overlap with the solution {{RISB}} finds
