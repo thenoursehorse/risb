@@ -103,7 +103,7 @@ from itertools import product
 
 def make_kmesh(n_kx=6, d=3):
     """
-    Return a shifted Monkhorst-Pack k-space mesh on a hypercubic Bravais
+    Return a Gamma-centred Monkhorst-Pack k-space mesh on a hypercubic Bravais
     lattice.
 
     Parameters
@@ -126,7 +126,7 @@ def make_kmesh(n_kx=6, d=3):
     coords = [range(n_kx) for _ in range(d)]
     for idx, coord in enumerate(product(*coords)):
         for i in range(len(coord)):
-            mesh[idx, i] = coord[i] / float(n_kx) + 0.5 / float(n_kx)
+            mesh[idx, i] = coord[i] / float(n_kx)
 
     return mesh
 ```
