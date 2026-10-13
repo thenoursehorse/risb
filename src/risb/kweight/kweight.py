@@ -17,9 +17,13 @@
 
 """k-space integrator on a grid using smearing functions."""
 
+from typing import Literal
+
 import numpy as np
-from numpy.typing import ArrayLike
+from numpy.typing import NDArray
 from scipy.special import erfc, factorial, hermite
+
+from risb.types import BlockRealArray, SmearFunction
 
 from .from_triqs_hartree import fermi, update_mu
 
@@ -47,7 +51,7 @@ class SmearingKWeight:
         beta: float,
         mu: float | None = None,
         n_target: float | None = None,
-        method: str = "fermi",
+        method: Literal["fermi", "gaussian", "methfessel-paxton"] = "fermi",
     ) -> None:
         #: float : Inverse temperature
         self.beta = beta
@@ -59,62 +63,67 @@ class SmearingKWeight:
         self.n_target = n_target
 
         #: dict[numpy.ndarray] : Energies in each band at each k-point.
-        self.energies: dict[ArrayLike]
+        self.energies: BlockRealArray
 
         #: dict[numpy.ndarray] : Integration weights at each k-point in the same shape as energies.
-        self.weight: dict[ArrayLike]
+        self.weights: BlockRealArray
 
         #: int : Number of k-points.
         self.n_k: int
 
-        if method == "fermi":
-            self.smear_function = self._fermi
-        elif method == "gaussian":
-            self.smear_function = self._gaussian
-        elif method == "methfessel-paxton":
-            self.smear_function = self._methfessel_paxton
-        else:
+        #: callable : Smearing function called as
+        #: ``smear_function(energies, beta, mu)``.
+        self.smear_function: SmearFunction
+        smear_functions: dict[str, SmearFunction] = {
+            "fermi": self._fermi,
+            "gaussian": self._gaussian,
+            "methfessel-paxton": self._methfessel_paxton,
+        }
+        if method not in smear_functions:
             msg = "Unrecognized smearing function !"
             raise ValueError(msg)
+        self.smear_function = smear_functions[method]
 
     @staticmethod
-    def _fermi(energies: ArrayLike, beta: float, mu: float) -> ArrayLike:
+    def _fermi(
+        energies: NDArray[np.float64], beta: float, mu: float
+    ) -> NDArray[np.float64]:
         e = energies - mu
         return fermi(e, beta)
 
     @staticmethod
-    def _gaussian(energies: ArrayLike, beta: float, mu: float) -> ArrayLike:
-        return 0.5 * erfc(beta * (energies - mu))
+    def _gaussian(
+        energies: NDArray[np.float64], beta: float, mu: float
+    ) -> NDArray[np.float64]:
+        occupation: NDArray[np.float64] = 0.5 * erfc(beta * (energies - mu))
+        return occupation
 
     @staticmethod
     def _methfessel_paxton(
-        energies: ArrayLike, beta: float, mu: float, N: int = 1
-    ) -> ArrayLike:
-        def A_n(n):
-            return (-1) ** n / (factorial(n) * 4**n * np.sqrt(np.pi))
+        energies: NDArray[np.float64], beta: float, mu: float, N: int = 1
+    ) -> NDArray[np.float64]:
+        def A_n(n: int) -> float:
+            return float((-1) ** n / (factorial(n) * 4**n * np.sqrt(np.pi)))
 
         x = beta * (energies - mu)
 
-        S = 0.5 * erfc(x)  # S_0
+        S: NDArray[np.float64] = 0.5 * erfc(x)  # S_0
         for n in range(1, N + 1):
             H_n = hermite(2 * n - 1)
             S += A_n(n) * H_n(x) * np.exp(-(x**2))
         return S
 
     def _update_n_k(self) -> int:
-        if isinstance(self.energies, dict):
-            first_key = next(iter(self.energies))
-            self.n_k = self.energies[first_key].shape[0]
-            for en in self.energies.values():
-                if self.n_k != en.shape[0]:
-                    # FIXME Must they? I don't see why, but its weird to not
-                    msg = "Blocks must be on the same sized grid !"
-                    raise ValueError(msg)
-        else:
-            self.n_k = self.energies.shape[0]
+        first_key = next(iter(self.energies))
+        self.n_k = self.energies[first_key].shape[0]
+        for en in self.energies.values():
+            if self.n_k != en.shape[0]:
+                # FIXME Must they? I don't see why, but its weird to not
+                msg = "Blocks must be on the same sized grid !"
+                raise ValueError(msg)
         return self.n_k
 
-    def update_weights(self, energies: dict[ArrayLike]) -> dict[ArrayLike]:
+    def update_weights(self, energies: BlockRealArray) -> BlockRealArray:
         """
         Update the integral weighting factors at each k-point.
 
@@ -136,6 +145,9 @@ class SmearingKWeight:
             self.mu = update_mu(
                 self.n_target, self.energies, self.beta, self.n_k, self.smear_function
             )
+        elif self.mu is None:
+            msg = "One of mu or n_target must be provided !"
+            raise ValueError(msg)
 
         self.weights = {}
         for bl in self.energies:
