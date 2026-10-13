@@ -19,12 +19,13 @@ user to review. Update this file as steps finish. Delete it when done.
    the default (see Step 6 notes).
 7. [x] Swap docs (tutorials, how-to, explanations, README) to fockit (see Step 7
    notes).
-8. [ ] Solver options and degenerate ground states. The user picks eigh or eigsh
-   and can pass settings to eigsh (or other solvers); never an automatic
-   fallback. Also degenerate ground states (see Findings and Open questions).
-   Until then `solve` uses eigsh with `k=1`, `ncv=40` and a fixed random start
-   vector, which, like AtomDiag, picks an arbitrary state when the ground state
-   is degenerate.
+8. [x] Solver options (see Step 8 notes): `method` ("eigsh" or "eigh"),
+   `method_options` (passed to that method), `diagonal_symmetries`,
+   `permutation_symmetries`, `onsite_symmetries` (passed to fockit's
+   `build_basis`; the solver adds half filling; diagonal symmetries checked
+   against `h_imp`; density matrices via `expand_state` into the
+   diagonal-restricted basis), `degenerate` ("ignore" default, "warn") and
+   `degenerate_tol`. Never an automatic fallback. "average" is item 13.
 9. [ ] Explore pinning RISB's gauge redundancy. At the bilayer solution the root
    function's Jacobian has 3 zero singular values out of 24 (condition number
    1e16, null directions in the R parameters), so roots are not isolated and
@@ -32,6 +33,24 @@ user to review. Update this file as steps finish. Delete it when done.
    a parametrization of R or the f-orbital basis that removes the redundant
    directions), or a root finder that projects out the null space. Check first
    that the null directions really are the gauge.
+10. [ ] Investigate the claim in `docs/how-to/green_functions.md`: "The
+   interacting Green's function from RISB only has the quasiparticle part, so its
+   filling is reduced by Z." It implies RISB's G(k, w) = R^dag G_qp R is missing
+   a (local/incoherent) part. Checked so far (bilayer example only): G filling =
+   n Z to 1e-8 and G_qp filling = n. Find out what the correct statement is (and
+   whether the filling of G should be n), then fix the docs sentence.
+11. [ ] Investigate why fockit's `build_basis` is slow (> 10 min, stopped) for the
+   decorated honeycomb impurity (924-state N sector) with C3 as an onsite
+   symmetry, factors `c c^dag + w^q c^dag c` (q = 0, 1, 2 for A, E1, E2). Is it
+   fockit, or the setup? See Step 8 notes.
+12. [ ] Add the impurity symmetries to the examples to show users how to use
+   them: Sz and spin swap (hubbard, kagome), plus layer swap (bilayer), plus C3
+   (decorated honeycomb, once item 11 is resolved).
+13. [ ] `degenerate="average"`: the equal-weight mixture over the degenerate
+   level (eigsh doubling + `scipy.linalg.orth`; tested exact, see Step 8
+   notes). First check the finite-temperature RISB/gGA literature on whether a
+   mixed embedding state is the right prescription, and find a case that
+   `symmetrizers` cannot handle.
 
 ## Commits
 
@@ -48,6 +67,8 @@ list its files and suggest a commit message; the user commits.
   `tests/test_examples.py`, this file. Committed (`2f1c55c`, `56219dd`,
   `0def080`), plus the `green_functions.py` TRIQS argument fix.
 - Step 6: committed.
+- Step 8: `src/risb/impurity_solvers/fockit.py`,
+  `tests/test_impurity_solvers.py`, `docs/how-to/impurity_solvers.md`, this file.
 - Step 7: (a) `README.md`, `docs/about.md`; (b) `docs/how-to/impurity_solvers.md`,
   `docs/how-to/lattice_solver.md`, `docs/how-to/quadratic_terms.md`;
   (c) `docs/tutorials/hubbard.md`, `docs/tutorials/self-consistent.md`;
@@ -288,6 +309,140 @@ Follow-ups (user):
   the code; its code run on the `examples/green_functions.py` setup reproduces
   the example (G_qp filling n, G filling n Z, both G constructions agree).
 - Write "Green's function(s)", never "green functions".
+
+## Step 8 notes
+
+User's idea: compute 2 states; if E1 - E0 < tol, warn. Then find ways to resolve
+the degeneracy. Solver options must live on the instance (constructor), because
+`LatticeSolver` calls `solve()` with no arguments.
+
+Detection (eigsh with k=2, fixed and 29 random v0, tol 1e-8): every degenerate
+case was flagged 30/30 with E0 right (hubbard1 D=0 4-fold, kanamori3 generic
+3-fold, kanamori3 D=0 3-fold, complex kanamori3 D=0 3-fold, step-4 matrix 12
+within 1e-8); non-degenerate controls never flagged; no convergence failures.
+Note: a generic 3-orbital Kanamori impurity with D != 0 has a 3-fold (triplet)
+ground state, so degeneracy is not only a D = 0 (Mott) issue.
+
+Cost of k=2 vs k=1 (hubbard, random couplings, `ncv=40`):
+
+| orbitals | whole solve (k=1) | eigsh k=1 | eigsh k=2 | extra per solve |
+| --- | --- | --- | --- | --- |
+| 3 | 12 ms | 3 ms | 4 ms | ~+10% |
+| 4 | 0.24 s | 0.074 s | 0.15 s | ~+30% |
+| 5 | 7.1 s | 2.6 s | 5.1 s (4.2 s with ncv=60) | ~+25-35% |
+
+Dense eigh on the sector: 0.17 s (3 orbitals), 173 s (4 orbitals).
+
+Resolving (equal-weight mixture over the degenerate level vs exact from dense
+eigh, 5 random starts each, 3 orbitals unless stated):
+- eigsh with doubling k until the top returned eigenvalue is above E0 + tol:
+  finds the right count; exact for real H; for complex H the returned
+  degenerate eigenvectors are not orthogonal (Gram error up to 5e-2, ARPACK's
+  complex path), so rho was off by 5e-3. With `scipy.linalg.orth` on the
+  returned vectors: exact (2e-14).
+- LOBPCG with doubling block size: right count, but ~10x slower than eigsh and
+  rho only good to 1e-8 to 1e-11 (convergence warnings). Not worth it.
+- Splitting by total Sz (fockit `diagonal_symmetries`), ground states of every
+  sector at E0: exact (<3e-15) in every case, ~0.03-0.04 s. Only valid when
+  `h_imp` conserves Sz, and the solver must be told which blocks are up/down.
+- Dense eigh: exact, impractical from 4 orbitals.
+
+Real case: the 3-orbital Kanamori Mott lattice run (U=3, J=0.6) had 9 impurity
+solves flagged by k=2, each an 80-fold exactly degenerate level (gap 1.6 to the
+next). eigsh doubling + orth: all 80, exact (1e-15), 1.2-2.8 s. Sz sectors: all
+80 in 7 sectors (1, 10, 19, 20, 19, 10, 1), exact, 0.23 s.
+Hard case: the step-4 matrix (a near-degenerate cluster, 72 levels within 1e-8)
+makes eigsh doubling raise `ArpackNoConvergence` at k=32 (28/32 converged).
+4 orbitals, generic Kanamori (dim 12870): 3-fold; eigsh doubling + orth 0.47 s,
+Sz sectors 0.35 s, dense 168 s; both exact (1.6e-15).
+Note for tests: risb warnings are errors under pytest (`error:::risb`), so a
+degeneracy warning would fail `test_three_orbital_kanamori_is_mott_insulator`.
+
+Decisions (user): default "ignore" (k=1, no check); "average" uses eigsh doubling
++ orthonormalization; options are `method` ("eigsh" or "eigh") and
+`method_options` (not `eigsh_options`). Also pass fockit symmetry constraints
+(diagonal, permutation, onsite) to the impurity basis.
+
+Symmetries (bilayer, spin-symmetric couplings; one band for particle-hole):
+- Diagonal (Sz = 0): dim 70 -> 36, same E0, density matrices built in that
+  basis exact (8e-15).
+- Permutation (spin flip incl. bath): fockit refuses to build the single
+  density-matrix operators in the symmetric basis (`ValueError`, not
+  symmetric); `expand_state` to the plain basis then measuring is exact (1e-15)
+  in the sector holding the ground state. The other sector is a higher state.
+- Onsite (particle-hole, physical c + cdag, bath c - cdag, one band with
+  h0_loc = -U/2, Lambda_c = 0): exact via `expand_state` in the right sector;
+  fockit raises `ValueError` if `h_imp` is not symmetric (wrong signs).
+
+Correction: only density-matrix elements that a symmetry moves to a different
+operator (rho_up <-> rho_dn under spin swap; c^dag c <-> c c^dag under
+particle-hole) cannot be built in the symmetric basis; invariant operators can.
+Since the ground state of a sector is an eigenstate of every symmetry operation
+g (|character| = 1), <O> = <(1/|G|) sum_g g^dag O g>, and that symmetrized
+operator can be built in the symmetric basis. Checked: spin swap (+1 sector)
+1.6e-15; particle-hole (-1 sector, O -> P O P^dag, P the product of the
+factors) 2.8e-16. So two exact routes: expand the state into the plain basis
+(generic, little code, measurement in the full-size basis), or symmetrize the
+operators (stays in the small basis, but risb must build the whole group's
+action on operators).
+
+Diagonal symmetries are not checked by fockit: restricting an `h_imp` that does
+not conserve Sz to Sz = 0 silently gave E0 -2.2806 instead of -2.4573. The
+solver should check `[h_imp, Q] = 0` for each diagonal symmetry and raise.
+
+Symmetries of the converged `h_imp` in the examples (fockit's own checks for
+permutation/onsite; commutator for Sz):
+- hubbard, kagome: Sz, spin swap.
+- bilayer: Sz, spin swap, layer swap (0 <-> 1).
+- decorated honeycomb: Sz, spin swap, and C3 (sum of q n with q = 0, 1, 2 for
+  A, E1, E2 is conserved mod 3: every term changes it by -3, 0 or 3). C3 is
+  not a fockit diagonal symmetry (not additive). As an onsite symmetry with
+  factors `c c^dag + w^q c^dag c`, `build_basis` ran > 10 min on the 924-state
+  sector without finishing (stopped; not investigated: fockit performance or
+  my setup?). Factors written as `1 + (w^q - 1) n` are rejected by fockit.
+- No example had particle-hole symmetry (all sign patterns tried).
+
+Decisions (user): three explicit constructor arguments mirroring fockit's names
+(`diagonal_symmetries`, `permutation_symmetries`, `onsite_symmetries`);
+degeneracy option `degenerate="ignore" | "warn" | "average"` with
+`degenerate_tol=1e-8`.
+
+Questions answered (user asked):
+- Permutation/onsite symmetries: expand the state into the basis with all
+  diagonal symmetries (N and e.g. Sz), i.e. the same `build_basis` call without
+  permutation/onsite symmetries (what `expand_state` expects); not just the N
+  sector.
+- Does degeneracy matter? Expectation values differ between degenerate states
+  for operators the symmetry does not leave alone (step 1: rho_c up 0.35, 0.37,
+  0.97, 0.84 across eigsh runs, one band, D = 0). The spin-summed rho_up + rho_dn
+  was 1.00 every time (for an SU(2) multiplet it is the same for every state and
+  superposition). risb's `symmetrizers` act on rho_f, rho_cf, rho_c, so a
+  paramagnetic symmetrizer already averages spin-multiplet degeneracy away
+  (why the Mott test converges with "ignore"). It matters only when no
+  symmetrizer covers it (magnetism allowed, orbital or accidental degeneracy).
+- "average" is the mixed state P0 / g = (1/g) sum_i |i><i| (average of
+  expectation values), not a sum of state vectors. It is the T -> 0 limit of
+  exp(-beta H) / Z and basis independent; for spin multiplets it equals a
+  paramagnetic symmetrizer. Not verified as the correct RISB prescription (T = 0
+  RISB is a pure-state variational theory): check the literature (finite-T
+  RISB/gGA) before implementing "average". Open: is "average" needed at all,
+  given symmetrizers?
+
+Done (step 8):
+- `FockitImpuritySolver(..., method, method_options, diagonal_symmetries,
+  permutation_symmetries, onsite_symmetries, degenerate, degenerate_tol)`.
+  Unknown `method`/`degenerate` raise `ValueError`. Diagonal symmetries are
+  checked with `normal_order(commutator(h_imp, Q))` (coefficients > 1e-10
+  raise; ~7-82 ms per solve at 2-5 orbitals). With permutation/onsite
+  symmetries the ground state is found in a symmetric basis and
+  `expand_state`d into `basis` (N + diagonal symmetries). "warn" uses k=2 and
+  `warnings.warn(RuntimeWarning)`. User `method_options` override the eigsh
+  defaults (`which="SA"`, fixed `v0`, `ncv=min(dim, 40)`).
+- Tests: eigh, Sz, and Sz + spin swap reproduce the three impurity fixtures
+  (spin-swap eigenvalue of the ground state: one_band -1, bilayer +1,
+  dh_trimer -1); particle-hole sector reproduces the plain solve; missing
+  symmetries raise; "warn" warns at D = 0 and not with hybridization.
+- How-to: "Choosing the eigensolver", "Symmetries", "Degenerate ground states".
 
 ## Findings (step 1)
 

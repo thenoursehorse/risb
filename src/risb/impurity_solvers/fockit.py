@@ -17,12 +17,22 @@
 
 """Impurity solver using exact diagonalization from fockit."""
 
-from collections.abc import Sequence
-from typing import override
+import warnings
+from collections.abc import Mapping, Sequence
+from typing import Any, Literal, override
 
 import numpy as np
-from fockit.algebra import OpSum, c, cdag, hc, nc, zero
-from fockit.hilbert import Basis, FermionSpace, build_basis, expectation, to_matrix
+import scipy.linalg
+from fockit.algebra import OpSum, c, cdag, commutator, hc, nc, normal_order, zero
+from fockit.hilbert import (
+    Basis,
+    FermionSpace,
+    build_basis,
+    expand_state,
+    expectation,
+    to_matrix,
+)
+from fockit.hilbert.symmetries import OnsiteSymmetry, PermutationSymmetry
 from numpy.typing import NDArray
 from scipy.sparse.linalg import eigsh
 
@@ -43,10 +53,61 @@ class FockitImpuritySolver(ImpuritySolver):
         list of pairs, each containing the name of the
         matrix block as a string and the size of that block.
         For example: ``[ ('up', 3), ('down', 3) ]``.
+    method : {"eigsh", "eigh"}, optional
+        Find the ground state with :func:`scipy.sparse.linalg.eigsh` or with
+        :func:`scipy.linalg.eigh` on the dense matrix. Default is ``"eigsh"``.
+    method_options : mapping, optional
+        Keyword arguments passed to ``method``, e.g. ``{"ncv": 60}``.
+    diagonal_symmetries : mapping, optional
+        Passed to ``fockit.hilbert.build_basis``, e.g. ``{Sz: 0}``. The
+        half-filled particle number is always added. Modes of the bath orbitals
+        are ``("bath_" + block, index)``.
+    permutation_symmetries : sequence, optional
+        Passed to ``fockit.hilbert.build_basis``.
+    onsite_symmetries : sequence, optional
+        Passed to ``fockit.hilbert.build_basis``.
+    degenerate : {"ignore", "warn"}, optional
+        With ``"warn"``, find two states and warn if their energies are within
+        ``degenerate_tol``. Default is ``"ignore"``.
+    degenerate_tol : float, optional
+        Energy difference below which the ground state is degenerate.
 
     """
 
-    def __init__(self, h_int: OpSum, gf_struct: GfStruct) -> None:
+    def __init__(
+        self,
+        h_int: OpSum,
+        gf_struct: GfStruct,
+        method: Literal["eigsh", "eigh"] = "eigsh",
+        method_options: Mapping[str, Any] | None = None,
+        diagonal_symmetries: Mapping[OpSum, complex] | None = None,
+        permutation_symmetries: Sequence[PermutationSymmetry] = (),
+        onsite_symmetries: Sequence[OnsiteSymmetry] = (),
+        degenerate: Literal["ignore", "warn"] = "ignore",
+        degenerate_tol: float = 1e-8,
+    ) -> None:
+        if method not in ("eigsh", "eigh"):
+            msg = f"Unknown method {method!r}."
+            raise ValueError(msg)
+        if degenerate not in ("ignore", "warn"):
+            msg = f"Unknown degenerate {degenerate!r}."
+            raise ValueError(msg)
+
+        #: str : Method that finds the ground state.
+        self.method = method
+
+        #: dict : Keyword arguments passed to :attr:`method`.
+        self.method_options = dict(method_options or {})
+
+        #: dict : Diagonal symmetries of the basis, without the particle number.
+        self.diagonal_symmetries = dict(diagonal_symmetries or {})
+
+        #: str : What to do when the ground state is degenerate.
+        self.degenerate = degenerate
+
+        #: float : Energy difference below which the ground state is degenerate.
+        self.degenerate_tol = degenerate_tol
+
         #: fockit.algebra.OpSum : Interaction Hamiltonian.
         self.h_int = h_int
 
@@ -67,11 +128,23 @@ class FockitImpuritySolver(ImpuritySolver):
         for mode in modes:
             N += nc(*mode)
 
+        diagonal = {N: len(modes) // 2, **self.diagonal_symmetries}
+
         #: fockit.hilbert.Basis : Half-filled particle sector of the impurity
-        #: problem.
+        #: problem, restricted by :attr:`diagonal_symmetries`.
         self.basis: Basis = build_basis(
-            {FermionSpace(): modes}, diagonal_symmetries={N: len(modes) // 2}
+            {FermionSpace(): modes}, diagonal_symmetries=diagonal
         )
+
+        # The ground state is found in this basis, then written in basis
+        self._symmetric_basis = self.basis
+        if permutation_symmetries or onsite_symmetries:
+            self._symmetric_basis = build_basis(
+                {FermionSpace(): modes},
+                diagonal_symmetries=diagonal,
+                permutation_symmetries=permutation_symmetries,
+                onsite_symmetries=onsite_symmetries,
+            )
 
         #: numpy.ndarray : Ground state of the impurity problem in
         #: :attr:`basis`, set by :meth:`solve`.
@@ -225,22 +298,59 @@ class FockitImpuritySolver(ImpuritySolver):
         Raises
         ------
         ValueError
-            If :attr:`h_imp` is not Hermitian.
+            If :attr:`h_imp` is not Hermitian, or does not have the symmetries
+            of the basis.
+
+        Warns
+        -----
+        RuntimeWarning
+            If :attr:`degenerate` is ``"warn"`` and the ground state is
+            degenerate.
 
         """
-        H = to_matrix(self.h_imp, self.basis)
+        H = to_matrix(self.h_imp, self._symmetric_basis)
         if abs(H - H.conj().T).max() > 1e-10:
             msg = "h_imp is not Hermitian."
             raise ValueError(msg)
-        if self.basis.dim < 3:
+        for Q in self.diagonal_symmetries:
+            terms = normal_order(commutator(self.h_imp, Q)).terms.values()
+            if any(abs(complex(coeff)) > 1e-10 for coeff in terms):
+                msg = "h_imp does not conserve a diagonal symmetry."
+                raise ValueError(msg)
+
+        k = 2 if self.degenerate == "warn" else 1
+        dim = H.shape[0]
+        if self.method == "eigh":
+            energies, states = scipy.linalg.eigh(H.toarray(), **self.method_options)
+        elif dim <= k + 1:
             energies, states = np.linalg.eigh(H.toarray())
         else:
-            v0 = np.random.default_rng(0).normal(size=self.basis.dim)
-            energies, states = eigsh(
-                H, k=1, which="SA", v0=v0, ncv=min(self.basis.dim, 40)
+            options: dict[str, Any] = {
+                "which": "SA",
+                "v0": np.random.default_rng(0).normal(size=dim),
+                "ncv": min(dim, 40),
+            } | self.method_options
+            energies, states = eigsh(H, k=k, **options)
+            order = np.argsort(energies)
+            energies, states = energies[order], states[:, order]
+
+        if (
+            self.degenerate == "warn"
+            and len(energies) > 1
+            and energies[1] - energies[0] < self.degenerate_tol
+        ):
+            msg = (
+                "The ground state of h_imp is degenerate (E1 - E0 = "
+                f"{energies[1] - energies[0]:.1e}). The density matrices are from "
+                "one state in the degenerate subspace."
             )
+            warnings.warn(msg, RuntimeWarning, stacklevel=2)
+
         self.gs_energy = float(energies[0])
-        self.gs_vector = np.asarray(states[:, 0], dtype=complex)
+        gs_vector = states[:, 0]
+        if self._symmetric_basis is not self.basis:
+            gs_vector = expand_state(gs_vector, self._symmetric_basis, self.basis)
+        self.gs_vector = np.asarray(gs_vector, dtype=complex)
         for bl, bl_size in self.gf_struct:
             bl_bath = _bath(bl)
             sites = range(bl_size)

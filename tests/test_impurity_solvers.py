@@ -1,5 +1,6 @@
 # ruff: noqa: D100, D103
 from itertools import product
+from typing import Any
 
 import numpy as np
 import pytest
@@ -279,3 +280,130 @@ def test_fockit_solver_rejects_non_hermitian_hamiltonian() -> None:
     impurity_solver.set_h_imp(one, one)
     with pytest.raises(ValueError, match="not Hermitian"):
         impurity_solver.solve()
+
+
+def sz_op(n_orb: int) -> OpSum:
+    Sz = zero()
+    for o in range(n_orb):
+        for up, dn in [("up", "dn"), ("bath_up", "bath_dn")]:
+            Sz += 0.5 * (nc(up, o) - nc(dn, o))
+    return Sz
+
+
+def spin_swap(n_orb: int) -> dict[tuple[str, int], tuple[str, int]]:
+    swap = {"up": "dn", "dn": "up", "bath_up": "bath_dn", "bath_dn": "bath_up"}
+    return {(bl, o): (swap[bl], o) for bl in swap for o in range(n_orb)}
+
+
+@pytest.mark.parametrize("option", ["eigh", "Sz", "Sz and spin swap"])
+@pytest.mark.parametrize(
+    ("model", "model_expected", "swap_eigenvalue"),
+    [
+        ("one_band", "one_band_expected", -1),
+        ("bilayer", "bilayer_expected", 1),
+        ("dh_trimer", "dh_trimer_expected", -1),
+    ],
+)
+def test_fockit_options_give_the_same_ground_state(
+    subtests: pytest.Subtests,
+    request: pytest.FixtureRequest,
+    option: str,
+    model: str,
+    model_expected: str,
+    swap_eigenvalue: int,
+) -> None:
+    spin_names, n_orb, Lambda_c, D, h0_loc_mat, h_int = request.getfixturevalue(model)
+    expected = request.getfixturevalue(model_expected)
+    gf_struct = [(bl, n_orb) for bl in spin_names]
+    all_options: dict[str, dict[str, Any]] = {
+        "eigh": {"method": "eigh"},
+        "Sz": {"diagonal_symmetries": {sz_op(n_orb): 0}},
+        "Sz and spin swap": {
+            "diagonal_symmetries": {sz_op(n_orb): 0},
+            "permutation_symmetries": [(spin_swap(n_orb), swap_eigenvalue)],
+        },
+    }
+    impurity_solver = FockitImpuritySolver(h_int, gf_struct, **all_options[option])
+    impurity_solver.set_h_imp(Lambda_c, D, h0_loc_mat)
+    impurity_solver.solve()
+    do_assert(
+        subtests,
+        impurity_solver.rho_f,
+        impurity_solver.rho_cf,
+        impurity_solver.rho_c,
+        impurity_solver.gs_energy,
+        impurity_solver.overlap(N_op(spin_names, n_orb)),
+        impurity_solver.overlap(S2_op(spin_names, n_orb)),
+        *expected,
+    )
+
+
+def test_particle_hole_sector_gives_the_same_ground_state() -> None:
+    U = 4.0
+    gf_struct = [("up", 1), ("dn", 1)]
+    h_int = U * nc("up", 0) * nc("dn", 0)
+    # Particle-hole symmetric at half-filling
+    Lambda_c = {bl: np.array([[0.0]]) for bl, _ in gf_struct}
+    D = {bl: np.array([[-0.4]]) for bl, _ in gf_struct}
+    h0_loc_mat = {bl: np.array([[-U / 2]]) for bl, _ in gf_struct}
+    particle_hole = [c(bl, 0) + cdag(bl, 0) for bl in ["up", "dn"]] + [
+        c(bl, 0) - cdag(bl, 0) for bl in ["bath_up", "bath_dn"]
+    ]
+    plain = FockitImpuritySolver(h_int, gf_struct)
+    symmetric = FockitImpuritySolver(
+        h_int, gf_struct, onsite_symmetries=[(particle_hole, -1)]
+    )
+    for impurity_solver in [plain, symmetric]:
+        impurity_solver.set_h_imp(Lambda_c, D, h0_loc_mat)
+        impurity_solver.solve()
+    assert symmetric.gs_energy == pytest.approx(plain.gs_energy, abs=1e-12)
+    for bl, _ in gf_struct:
+        assert symmetric.rho_f[bl] == pytest.approx(plain.rho_f[bl], abs=1e-12)
+        assert symmetric.rho_cf[bl] == pytest.approx(plain.rho_cf[bl], abs=1e-12)
+        assert symmetric.rho_c[bl] == pytest.approx(plain.rho_c[bl], abs=1e-12)
+
+
+def test_fockit_solver_rejects_symmetries_h_imp_does_not_have() -> None:
+    gf_struct = [("up", 1), ("dn", 1)]
+    Lambda_c = {bl: np.array([[-0.5]]) for bl, _ in gf_struct}
+    D = {bl: np.array([[-0.3]]) for bl, _ in gf_struct}
+
+    # A magnetic field breaks the spin swap
+    field = {"up": np.array([[-0.2]]), "dn": np.array([[0.2]])}
+    impurity_solver = FockitImpuritySolver(
+        nc("up", 0) * nc("dn", 0),
+        gf_struct,
+        diagonal_symmetries={sz_op(1): 0},
+        permutation_symmetries=[(spin_swap(1), -1)],
+    )
+    impurity_solver.set_h_imp(Lambda_c, D, field)
+    with pytest.raises(ValueError, match="not symmetric"):
+        impurity_solver.solve()
+
+    # A spin flip breaks Sz conservation
+    spin_flip = cdag("up", 0) * c("dn", 0) + cdag("dn", 0) * c("up", 0)
+    impurity_solver = FockitImpuritySolver(
+        nc("up", 0) * nc("dn", 0) + 0.3 * spin_flip,
+        gf_struct,
+        diagonal_symmetries={sz_op(1): 0},
+    )
+    impurity_solver.set_h_imp(Lambda_c, D)
+    with pytest.raises(ValueError, match="does not conserve"):
+        impurity_solver.solve()
+
+
+def test_fockit_solver_warns_about_a_degenerate_ground_state() -> None:
+    gf_struct = [("up", 1), ("dn", 1)]
+    impurity_solver = FockitImpuritySolver(
+        nc("up", 0) * nc("dn", 0), gf_struct, degenerate="warn"
+    )
+    Lambda_c = {bl: np.array([[-0.5]]) for bl, _ in gf_struct}
+
+    # Without hybridization the ground state is degenerate
+    impurity_solver.set_h_imp(Lambda_c, {bl: np.array([[0.0]]) for bl, _ in gf_struct})
+    with pytest.warns(RuntimeWarning, match="degenerate"):
+        impurity_solver.solve()
+
+    # With hybridization it is not
+    impurity_solver.set_h_imp(Lambda_c, {bl: np.array([[-0.3]]) for bl, _ in gf_struct})
+    impurity_solver.solve()

@@ -119,6 +119,74 @@ calculates the density matrices described below for every block.
 converge. If the ground state is degenerate, the solver returns one state in
 the degenerate subspace, and which one is not specified.
 
+### Choosing the eigensolver
+
+If you want to use the dense eigensolver {py:func}`scipy.linalg.eigh` instead
+
+```python
+impurity_solver = FockitImpuritySolver(h_int, gf_struct, method="eigh")
+```
+
+It is exact, but only practical for small impurity problems. Keyword arguments
+to the eigensolver are passed as
+
+```python
+impurity_solver = FockitImpuritySolver(h_int, gf_struct, method_options={"ncv": 60})
+```
+
+### Symmetries
+
+If the impurity Hamiltonian has symmetries, you can restrict the basis to one
+symmetry sector with `diagonal_symmetries`, `permutation_symmetries` and
+`onsite_symmetries`. They are passed to `build_basis` from fockit, which
+describes each kind. The modes of the bath orbitals are
+`("bath_" + block, index)`. For example, to keep only the states with total
+$S_z = 0$ that are even under swapping the spins
+
+```python
+from fockit.algebra import nc, zero
+
+Sz = zero()
+for o in range(n_orb):
+    for up, dn in [("up", "dn"), ("bath_up", "bath_dn")]:
+        Sz += 0.5 * (nc(up, o) - nc(dn, o))
+
+swap = {"up": "dn", "dn": "up", "bath_up": "bath_dn", "bath_dn": "bath_up"}
+spin_swap = {(bl, o): (swap[bl], o) for bl in swap for o in range(n_orb)}
+
+impurity_solver = FockitImpuritySolver(
+    h_int,
+    gf_struct,
+    diagonal_symmetries={Sz: 0},
+    permutation_symmetries=[(spin_swap, 1)],
+)
+```
+
+With permutation or onsite symmetries, the ground state is written in
+`impurity_solver.basis`, which only has the diagonal symmetries, to calculate
+the density matrices.
+
+:::{warning}
+You have to choose the sector with the ground state. The eigenvalue of the
+ground state also depends on the order of the fermion modes, so it can be $+1$
+for one model and $-1$ for another. The impurity Hamiltonian must have the
+symmetries at every step of the self-consistent loop, e.g., enforced with
+`symmetrizers` in `LatticeSolver`. `solve()` raises a `ValueError` if it does
+not.
+:::
+
+### Degenerate ground states
+
+If you want a warning when the ground state is degenerate
+
+```python
+impurity_solver = FockitImpuritySolver(
+    h_int, gf_struct, degenerate="warn", degenerate_tol=1e-8
+)
+```
+
+This finds two states instead of one, so it is slower.
+
 ### Getting the density matrices
 
 The single-particle density matrix of the $f$ electrons in the impurity
