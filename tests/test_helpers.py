@@ -103,3 +103,12 @@ def test_get_f1():
 def test_get_f2():
     # f2 = helpers.get_f2(rho_f, rho_qp)
     pass
+
+
+def test_get_h0_kin_k_removes_local_terms_with_complex_projector():
+    rng = np.random.default_rng(0)
+    h0_k = {"up": rng.random((4, 2, 2))}
+    P = np.array([[1j, 0]])
+    h0_kin_k = helpers.get_h0_kin_k(h0_k, [{"up": P}])
+    h0_loc = (P @ h0_k["up"] @ P.conj().T).mean(axis=0)
+    assert h0_kin_k["up"] == pytest.approx(h0_k["up"] - P.conj().T @ h0_loc @ P)

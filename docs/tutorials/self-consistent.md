@@ -544,7 +544,8 @@ for cycle in range(n_cycles):
 
     # Step C: construct H^qp
     for bl, bl_size in gf_struct:
-        energies_qp[bl], bloch_vector_qp[bl] = helpers.get_h_qp(R[bl], Lambda[bl], h0_kin_k[bl])
+        h_qp = helpers.get_h_qp(R[bl], Lambda[bl], h0_kin_k[bl])
+        energies_qp[bl], bloch_vector_qp[bl] = np.linalg.eigh(h_qp)
 
     # k-space integration weights
     kweights = update_weights(energies_qp, beta = , mu = )
