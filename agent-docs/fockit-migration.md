@@ -10,15 +10,20 @@ user to review. Update this file as steps finish. Delete it when done.
 2. [x] Implement a fockit impurity solver, modelled after `AtomDiagImpuritySolver`.
 3. [x] Test it on the same things AtomDiag is tested on (`tests/test_atomdiag.py`,
    `tests/test_latticesolver.py`, `tests/test_dummy_impurity_solver.py`).
-4. [ ] Benchmark fockit vs AtomDiag. **Stop**: user decides the defaults.
+4. [x] Benchmark fockit vs AtomDiag (see Step 4 notes). Decided: **fockit is the
+   default**. eigsh gets a larger Krylov space (`ncv=40`); **no automatic dense
+   fallback** (impossible at large sizes; the user chooses, step 8).
 5. [ ] Swap all examples to fockit, with fockit's own syntax for building operators
    and solving.
 6. [ ] Make TRIQS an optional dependency. Keep `AtomDiagImpuritySolver`; fockit is
    the default.
 7. [ ] Swap docs (tutorials, how-to, explanations, README) to fockit.
-8. [ ] Handle degenerate ground states (see Findings and Open questions). Until
-   then `solve` uses eigsh with `k=1` and a fixed random start vector, which,
-   like AtomDiag, picks an arbitrary state when the ground state is degenerate.
+8. [ ] Solver options and degenerate ground states. The user picks eigh or eigsh
+   and can pass settings to eigsh (or other solvers); never an automatic
+   fallback. Also degenerate ground states (see Findings and Open questions).
+   Until then `solve` uses eigsh with `k=1`, `ncv=40` and a fixed random start
+   vector, which, like AtomDiag, picks an arbitrary state when the ground state
+   is degenerate.
 9. [ ] Explore pinning RISB's gauge redundancy. At the bilayer solution the root
    function's Jacobian has 3 zero singular values out of 24 (condition number
    1e16, null directions in the R parameters), so roots are not isolated and
@@ -34,11 +39,11 @@ list its files and suggest a commit message; the user commits.
 
 - Step 1: committed (`9f62a29`).
 - Step 2: committed (`aa53926`).
-- Step 3: `src/risb/helpers_fockit.py`, `docs/api/risb.helpers_fockit.rst`,
-  `docs/index.md`, `src/risb/impurity_solvers/fockit.py`,
-  `src/risb/impurity_solvers/__init__.py`, `tests/test_common.py`,
-  `tests/test_atomdiag.py` -> `tests/test_impurity_solvers.py`,
-  `tests/test_latticesolver.py`, `tests/test_dummy_impurity_solver.py`, this file.
+- Step 3: committed (`e811380`).
+- Step 4: `benchmarks/impurity_solvers.py`, `pyproject.toml` (mypy `files`),
+  `src/risb/impurity_solvers/fockit.py` (`ncv`),
+  `src/risb/impurity_solvers/__init__.py` (`__dir__`),
+  `tests/test_latticesolver.py` (Mott test), this file.
 
 ## Step 2 notes
 
@@ -97,6 +102,63 @@ list its files and suggest a commit message; the user commits.
   field, energy off by 0.026); mixing in >= 1e-8 of a fixed random vector fixes
   that. Its only possible benefit now is speed (fewer Lanczos iterations): measure
   in step 4 and add back if it pays.
+
+## Step 4 notes
+
+Script: `benchmarks/impurity_solvers.py` (`uv run python benchmarks/impurity_solvers.py`;
+not in the wheel or sdist; in mypy `files`). Logs with `logging`.
+
+Impurity solve (`set_h_imp` + `solve`, including density matrices), seconds. Run
+with U=4, J=0.8 (the script now uses U=3, J=0.6; timings hardly depend on U).
+Generic random Lambda_c, D, h0 (seed 0). |dE| between solvers <= 2.5e-14.
+
+| model | orbitals | dim | fockit | AtomDiag | AtomDiag largest block |
+| --- | --- | --- | --- | --- | --- |
+| hubbard / kanamori / complex | 1 | 6 | 0.0007 | 0.0001 | 4 |
+| hubbard / kanamori / complex | 2 | 70 | 0.003-0.004 | 0.001-0.002 | 36 |
+| hubbard | 3 | 924 | 0.012 | 0.27 | 400 |
+| kanamori / complex | 3 | 924 | 0.018 / 0.020 | 0.30 / 0.72 | 400 |
+| hubbard | 4 | 12870 | 0.26 | 477 | 4900 |
+| kanamori / complex | 4 | 12870 | 0.39 / 0.41 | 593 / 1742 | 4900 |
+| hubbard | 5 | 184756 | 7.5 | not run | 63504 (~32 GB dense) |
+| kanamori / complex | 5 | 184756 | 13.2 / 12.6 | not run | 63504 |
+
+fockit breakdown at 5 orbitals (kanamori real): building `h_imp` 0.001 s, basis
+(once) 0.02 s, `to_matrix` 5.4 s, eigsh 5.4 s, density matrices 2.5 s. At 4
+orbitals: matrix 0.21 s, eigsh 0.13 s, density matrices 0.05 s. Operator algebra
+in Python is not a bottleneck.
+
+LatticeSolver, cubic lattice, DIIS, `tol=1e-8`, paramagnetic, U=3 J=0.6 (Hubbard
+U=3):
+
+| model | fockit | AtomDiag | iterations (f / AD) | Z (both) |
+| --- | --- | --- | --- | --- |
+| hubbard 1 orbital | 0.02 s | 0.01 s | 16 / 16 | 0.68698322 |
+| bilayer 2 | 0.10 s | 0.07 s | 17 / 17 | 0.69566633 |
+| kanamori 2 | 0.09 s | 0.05 s | 17 / 17 | 0.57494032 |
+| kanamori 3 | 0.91 s (`ncv=40`) | 2.84 s | 42 / 39 | 0 (Mott) |
+
+- **Robustness problem:** kanamori 3 with the current solver raises
+  `ArpackNoConvergence` (9241 iterations) at solve 37: a DIIS iterate near the
+  Mott point (D ~ 0) has an 8-fold degenerate ground state plus more levels
+  within 5e-4. On that matrix: default eigsh (`ncv=20`) fails in 3.4 s;
+  `ncv=40` works (0.005 s); `ncv=60` works; k=2 works; k=10 fails;
+  `maxiter=1e6` works in 79 s; dense `eigh` 0.34 s. AtomDiag is unaffected
+  (dense). U=4 J=0.8 is Mott on this lattice too; neither solver converged in 999
+  DIIS iterations there (degenerate impurity, step 8).
+- Warm start (scratchpad, `ncv=40`): no real gain (kanamori 3: 0.78 s vs 0.91 s;
+  others identical). Not worth adding.
+- Done: `ncv=min(dim, 40)` in `solve`. No measurable cost at 3-5 orbitals (dim
+  184756: 5.0 s vs 5.4 s default). New test
+  `test_three_orbital_kanamori_is_mott_insulator` (cubic, U=3, J=0.6, Z -> 0,
+  both solvers) failed with `ArpackNoConvergence` before the fix. Simple
+  degenerate inputs (D=0, 135-fold) did not break default eigsh; it needs the
+  near-degenerate cluster.
+- Bug from step 3 (in `e811380`): the lazy import hid `AtomDiagImpuritySolver`
+  from autodoc, so the API page lost it and the strict docs build failed
+  (`LatticeSolver` docstring link). Fixed with a module `__dir__` returning
+  `__all__`. My earlier docs checks piped through `tail`, which hid Sphinx's exit
+  code.
 
 ## Findings (step 1)
 
@@ -164,10 +226,14 @@ Problems:
   over the states within tol of E0 (equal-weight mixture).
 - Step 7: docs should say to stop scipy root finders on the residual (`fatol`),
   not the step size, because RISB roots are not isolated.
-- Step 8: eigsh can fail by not converging (small gap, `ArpackNoConvergence`), and
-  silently gives garbage if `h_imp` is not Hermitian. Catch and fall back to dense?
+- `ArpackNoConvergence` with k=1 has no result to return, so "warn and continue"
+  is not possible (stale or NaN density matrices would corrupt the iteration).
+  Proposed: keep raising, with a message saying what the user can change; warn
+  only where a partial result exists (k > 1, step 8). Not yet agreed.
 - Resolved (step 3): the `N`/`S2`/Kanamori helpers live in `risb.helpers_fockit`.
 - Step 5: hubbard and bilayer examples need TRIQS for Green's functions. Keep TRIQS
   for that part only, or drop it?
+- Step 5: examples use `print`; the user wants `logging` everywhere eventually.
+  Switch while rewriting them?
 - Step 5/6: should `AtomDiagImpuritySolver` accept fockit operators (fockit has
   `to_triqs`) so there is one operator syntax?
