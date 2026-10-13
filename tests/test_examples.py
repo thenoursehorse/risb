@@ -34,13 +34,21 @@ def test_bilayer_hubbard_example() -> None:
 
     assert S.optimize.success
     assert g["total_number"] == pytest.approx(g["n_target"], abs=abs)
+    for bl in ["up", "dn"]:
+        assert S.Z[0][bl] == pytest.approx(Z_expected, abs=abs)
+        assert S.Lambda[0][bl] == pytest.approx(Lambda_expected, abs=abs)
+
+
+def test_green_functions_example() -> None:
+    pytest.importorskip("triqs")
+    g = run_example("green_functions")
+    abs = 1e-5
+
+    assert g["S"].optimize.success
     assert g["G_qp_iw_loc"].total_density().real == pytest.approx(
         g["n_target"], abs=abs
     )
     assert_g_constructions_agree(g)
-    for bl in ["up", "dn"]:
-        assert S.Z[0][bl] == pytest.approx(Z_expected, abs=abs)
-        assert S.Lambda[0][bl] == pytest.approx(Lambda_expected, abs=abs)
 
 
 @pytest.mark.filterwarnings("ignore:FigureCanvasAgg is non-interactive")
@@ -59,14 +67,9 @@ def test_hubbard_example() -> None:
     assert g["total_number"] == pytest.approx(
         [g["n_target"]] * len(g["U_arr"]), abs=abs
     )
-    # Green's functions are constructed at U = 3.5
-    assert g["G_qp_iw_loc"].total_density().real == pytest.approx(
-        g["n_target"], abs=abs
-    )
-    assert_g_constructions_agree(g)
     assert Z[0] == pytest.approx(1.0)
-    assert np.all(np.diff(Z) <= 0)
-    assert np.all((Z >= 0) & (Z <= 1))
+    assert np.all(np.diff(Z) <= 1e-12)
+    assert np.all((Z >= -1e-12) & (Z <= 1 + 1e-12))
     assert pytest.approx(Z_expected, abs=abs) == Z
 
 

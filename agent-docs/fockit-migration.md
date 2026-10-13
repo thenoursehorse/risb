@@ -13,8 +13,8 @@ user to review. Update this file as steps finish. Delete it when done.
 4. [x] Benchmark fockit vs AtomDiag (see Step 4 notes). Decided: **fockit is the
    default**. eigsh gets a larger Krylov space (`ncv=40`); **no automatic dense
    fallback** (impossible at large sizes; the user chooses, step 8).
-5. [ ] Swap all examples to fockit, with fockit's own syntax for building operators
-   and solving.
+5. [x] Swap all examples to fockit, with fockit's own syntax for building operators
+   and solving (see Step 5 notes).
 6. [ ] Make TRIQS an optional dependency. Keep `AtomDiagImpuritySolver`; fockit is
    the default.
 7. [ ] Swap docs (tutorials, how-to, explanations, README) to fockit.
@@ -40,10 +40,11 @@ list its files and suggest a commit message; the user commits.
 - Step 1: committed (`9f62a29`).
 - Step 2: committed (`aa53926`).
 - Step 3: committed (`e811380`).
-- Step 4: `benchmarks/impurity_solvers.py`, `pyproject.toml` (mypy `files`),
-  `src/risb/impurity_solvers/fockit.py` (`ncv`),
-  `src/risb/impurity_solvers/__init__.py` (`__dir__`),
-  `tests/test_latticesolver.py` (Mott test), this file.
+- Step 4: committed (`ccdb042`, `5de4190`, `ff2bb5e`).
+- Step 5: (a) `examples/kagome_hubbard.py`; (b) `src/risb/helpers_fockit.py`,
+  `examples/decorated_honeycomb.py`; (c) `examples/hubbard.py`,
+  `examples/bilayer_hubbard.py`, `examples/green_functions.py`,
+  `tests/test_examples.py`, this file.
 
 ## Step 2 notes
 
@@ -160,6 +161,47 @@ U=3):
   `__all__`. My earlier docs checks piped through `tail`, which hid Sphinx's exit
   code.
 
+## Step 5 notes
+
+Decisions:
+- D1: `hubbard.py` and `bilayer_hubbard.py` become TRIQS-free (numpy cubic h0_k,
+  fockit impurity). The Green's-function construction moves to a new TRIQS-only
+  `examples/green_functions.py` (based on the bilayer); its test skips without
+  TRIQS.
+- D2: port `get_h0_loc` to `risb.helpers_fockit` (with a matrix-to-operator
+  helper), and keep the decorated honeycomb's structure.
+- D3: examples switch from `print` to `logging` (results at INFO, plain format;
+  `logging.getLogger("risb")` set to WARNING to hide per-iteration DIIS logs).
+- One example per commit; `tests/test_examples.py` reference values must not
+  change.
+
+Done:
+- `kagome_hubbard.py`, `decorated_honeycomb.py`, `hubbard.py`,
+  `bilayer_hubbard.py` use fockit operators, `FockitImpuritySolver`,
+  `risb.helpers_fockit`, and `logging`; none needs TRIQS. New
+  `examples/green_functions.py` (bilayer + TRIQS `TBLattice`/Green's functions,
+  fockit impurity); its test does `importorskip("triqs")`.
+- `risb.helpers_fockit`: new `matrix_to_Op(A)` and `get_h0_loc(h0_k, P,
+  gf_struct_mapping, force_real)` (fockit versions of the `helpers_triqs` ones,
+  without the `gf_struct` argument, which fockit does not need).
+- Hubbard/bilayer h0_k is now numpy on a Gamma-centred mesh (same k-points as
+  TRIQS `MeshBrZone`).
+- Reference values unchanged. Decorated honeycomb differs from its references by
+  2e-7 to 1e-6 (the example solves to `tol=1e-4`; the test checks 1e-3).
+- `test_hubbard_example`: the monotonic-Z and 0 <= Z <= 1 checks now allow 1e-12.
+  fockit gives Z ~ 1e-33 noise in the Mott region and Z(U=0) = 1 + 4e-16; all Z
+  still match their references to 1e-5.
+- Decorated honeycomb: removed the unused `NOp = N_op(...)` line and the
+  commented-out N/S2 code (its modes `("up", o)` never matched the example's
+  blocks `"up_A"`, ...). `get_hubb_trimer` no longer calls `.real` (fockit has no
+  equivalent; with `tk=0` all coefficients are real).
+- Without TRIQS: `test_examples.py` gives 4 passed, 1 skipped, but needs
+  `matplotlib` (hubbard plots), which is not in the `test` dependency group (CI
+  gets it from conda). Step 6.
+- Step 7: `docs/tutorials/self-consistent.md` points to
+  `examples/bilayer_hubbard.py` for Green's functions; now
+  `examples/green_functions.py`.
+
 ## Findings (step 1)
 
 fockit 0.4.0: pure Python, numpy + scipy only, Python >= 3.14, MIT (fine with GPL-3).
@@ -231,9 +273,5 @@ Problems:
   Proposed: keep raising, with a message saying what the user can change; warn
   only where a partial result exists (k > 1, step 8). Not yet agreed.
 - Resolved (step 3): the `N`/`S2`/Kanamori helpers live in `risb.helpers_fockit`.
-- Step 5: hubbard and bilayer examples need TRIQS for Green's functions. Keep TRIQS
-  for that part only, or drop it?
-- Step 5: examples use `print`; the user wants `logging` everywhere eventually.
-  Switch while rewriting them?
 - Step 5/6: should `AtomDiagImpuritySolver` accept fockit operators (fockit has
   `to_triqs`) so there is one operator syntax?
