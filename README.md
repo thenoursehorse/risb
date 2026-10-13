@@ -33,10 +33,6 @@ We kindly request that you cite the following paper if your project uses our cod
 
 [H. L. Nourse, Ross H. McKenzie, and B. J. Powell Phys. Rev. B **103**, L081114 (2021)](https://doi.org/10.1103/PhysRevB.103.L081114)
 
-The [TRIQS](https://triqs.github.io/triqs) library should also be cited if any of their library is used:
-
-[O. Parcollet, M. Ferrero, T. Ayral, H. Hafermann, I. Krivenko, L. Messio, and P. Seth, Comp. Phys. Comm. 196, 398-415 (2015)](https://doi.org/10.1016/j.cpc.2015.04.023)
-
 If the default root DIIS method is used in the `Solver` classes you should also cite:
 
 [M. Chupin, M.-S. Dupuy, G. Legendre and É. Séré, ESAIM: M2AN **55**, 6, 2785-2825 (2021)](https://doi.org/10.1051/m2an/2021069)
@@ -52,7 +48,7 @@ Lastly, the appropriate original theory outlined in the [documentation](https://
 - [python](https://www.python.org/) version `>= 3.14`
 - [numpy](https://numpy.org/)
 - [scipy](https://scipy.org/)
-- [TRIQS](https://triqs.github.io/) version `4.x` if using :class:`AtomDiagImpuritySolver`
+- [fockit](https://github.com/thenoursehorse/fockit)
 
 ## Installation
 
@@ -73,8 +69,6 @@ pip uninstall risb
 
 ## Tests
 
-The tests require a working [TRIQS](https://triqs.github.io/) installation.
-
 Clone source
 
 ```shell
@@ -82,27 +76,22 @@ git clone https://github.com/thenoursehorse/risb
 cd risb
 ```
 
-Create a [conda](https://docs.conda.io/) environment with TRIQS, then
-install risb and the test prerequisites with [uv](https://docs.astral.sh/uv)
+Install risb and the test prerequisites with [uv](https://docs.astral.sh/uv)
 
 ```shell
-conda env create --prefix ./.venv --file environment.yml
-conda activate ./.venv
-uv sync --inexact
+uv sync
 ```
-
-The `--inexact` flag stops uv from removing TRIQS from the environment.
 
 Tests are run with
 
 ```shell
-pytest
+uv run pytest
 ```
 
 Type checks are run with
 
 ```shell
-mypy
+uv run mypy
 ```
 
 ## Documentation
@@ -114,18 +103,16 @@ git clone https://github.com/thenoursehorse/risb
 cd risb
 ```
 
-Create the conda environment as in Tests above, then install the
-documentation prerequisites
+Install the documentation prerequisites
 
 ```shell
-conda activate ./.venv
-uv sync --inexact --group docs
+uv sync --group docs
 ```
 
 Build the documentation and set up a local server
 
 ```shell
-sphinx-autobuild -b html docs docs/_build
+uv run sphinx-autobuild -b html docs docs/_build
 ```
 
 Access through a browser at `http://127.0.0.1:8000`.

@@ -47,7 +47,7 @@ appropriately cited.
 
 % Fix class links
 
-1. `AtomDiagImpuritySolver` uses the [TRIQS](https://triqs.github.io/)[^Parcolett2015] library.
+1. `FockitImpuritySolver` uses the [fockit](https://github.com/thenoursehorse/fockit) library.
 
 ## License
 
@@ -75,8 +75,3 @@ appropriately cited.
     _Slave Boson Theory of Orbital Differentiation with Crystal Field Effects:
     Application to UO<sub>2</sub>_,
     Phys. Rev. Lett. **118**, 126401 (2017)](https://doi.org/10.1103/PhysRevLett.118.126401)
-
-[^Parcolett2015]:
-    [O. Parcollet, M. Ferrero, T. Ayral, H. Hafermann, I. Krivenko,
-    L. Messio, and P. Seth, _TRIQS: A toolbox for research on interacting quantum systems_,
-    Comp. Phys. Comm. **196**, 398-415 (2015)](https://doi.org/10.1016/j.cpc.2015.04.023)
