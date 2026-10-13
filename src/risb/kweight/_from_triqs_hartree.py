@@ -1,5 +1,3 @@
-# noqa: D100
-#
 # Copyright (c) 2022 Simons Foundation
 #
 # This program is free software: you can redistribute it and/or modify

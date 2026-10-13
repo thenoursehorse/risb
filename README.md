@@ -122,12 +122,6 @@ conda activate ./.venv
 uv sync --inexact --group docs
 ```
 
-Build the API
-
-```shell
-sphinx-apidoc -o docs/api --module-first --no-toc --force --separate src/risb
-```
-
 Build the documentation and set up a local server
 
 ```shell

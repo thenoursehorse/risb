@@ -42,12 +42,6 @@ autodoc_typehints = "none"
 
 # Parse numpydoc types (e.g. "int, optional") instead of linking every word
 napoleon_preprocess_types = True
-napoleon_type_aliases = {
-    "callable": ":term:`callable`",
-    "mapping": ":class:`~collections.abc.Mapping`",
-    "ndarray": "numpy.ndarray",
-    "sequence": ":class:`~collections.abc.Sequence`",
-}
 
 source_suffix = [".rst", ".md"]
 exclude_patterns = [
@@ -109,9 +103,13 @@ myst_substitutions = {
 }
 
 
-# Public names we write that numpy and TRIQS document under another path or
-# object type: (role, target in their inventory)
+# Names in docstring types that are plain words, or that numpy and TRIQS
+# document under another path or object type: (role, target in an inventory)
 _external_targets = {
+    "callable": ("class", "collections.abc.Callable"),
+    "mapping": ("class", "collections.abc.Mapping"),
+    "ndarray": ("class", "numpy.ndarray"),
+    "sequence": ("class", "collections.abc.Sequence"),
     "numpy._typing._array_like.NDArray": ("data", "numpy.typing.NDArray"),
     "numpy.float64": ("attr", "numpy.float64"),
     "triqs.atom_diag.AtomDiag": ("func", "triqs.atom_diag.AtomDiag"),

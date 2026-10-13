@@ -72,7 +72,7 @@ class DIIS(NewtonSolver):
         g_x: Sequence[NDArray[np.float64]],
         error: Sequence[NDArray[np.float64]],
     ) -> NDArray[np.float64]:
-        """DIIS extrapolation algorithm for the new guess for :attr:`x`."""
+        """DIIS extrapolation algorithm for the new guess for :attr:`.NewtonSolver.x`."""
         # Construct the B matrix
         m = len(error)
         B = np.empty(shape=(m, m))

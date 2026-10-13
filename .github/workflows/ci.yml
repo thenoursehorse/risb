@@ -54,9 +54,7 @@ jobs:
         run: pytest
 
       - name: Test docs
-        run: |
-          sphinx-apidoc -o docs/api --module-first --no-toc --force --separate src/risb
-          sphinx-build -b html -n -T docs docs/_build
+        run: sphinx-build -b html -n -T docs docs/_build
 
   dist:
     name: Build package

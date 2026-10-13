@@ -93,9 +93,9 @@ def get_h0_loc_blocks(
     force_real: bool = True,
 ) -> dict[str, Operator]:
     """
-    Return a TRIQS operator of the non-interacting terms in the subspace given by :attr:`P`.
+    Return a TRIQS operator of the non-interacting terms in the subspace given by ``P``.
 
-    This function splits the terms into the symmetry blocks given by :attr:`gf_struct`.
+    This function splits the terms into the symmetry blocks given by ``gf_struct``.
 
     Parameters
     ----------
@@ -147,7 +147,7 @@ def get_h0_loc(
     force_real: bool = True,
 ) -> Operator:
     """
-    Return a TRIQS operator of the non-interacting terms in the subspace given by :attr:`P`.
+    Return a TRIQS operator of the non-interacting terms in the subspace given by ``P``.
 
     Parameters
     ----------
@@ -233,11 +233,11 @@ def get_g0_k_w(
         mesh. MeshProduct is a fancy list.
     h0_k : risb.types.BlockMatrixLike, optional
         Non-interacting dispersion indexed as k, orb_i, orb_j.
-        Each key in dictionary must follow :attr:`gf_struct`.
+        Each key in dictionary must follow ``gf_struct``.
     h0_k_gf : triqs.gfs.BlockGf, optional
         Non-interacting dispersion as a triqs.gfs.BlockGf.
-        Must follow the structure given by :attr:`gf_struct`, on
-        the mesh given by :attr:`mesh`.
+        Must follow the structure given by ``gf_struct``, on
+        the mesh given by ``mesh``.
     mu : float, optional
         Chemical potential.
     use_broadcasting : bool, optional
@@ -249,7 +249,7 @@ def get_g0_k_w(
     -------
     triqs.gfs.BlockGf
         Non-interacting Green's function from a non-interacting dispersion
-        relation :attr:`h0_k`.
+        relation ``h0_k``.
 
     """
     g0_k_w = BlockGf(mesh=mesh, gf_struct=gf_struct)
@@ -309,15 +309,15 @@ def get_sigma_w(
         Frequency mesh of the returned self-energy.
     Lambda : risb.types.BlockMatrixLike
         Correlation potential of quasiparticles.
-        Each key in dictionary must follow :attr:`gf_struct`.
+        Each key in dictionary must follow ``gf_struct``.
     R : risb.types.BlockMatrixLike
         Rormalization matrix from electrons to quasiparticles.
-        Each key in dictionary must follow :attr:`gf_struct`.
+        Each key in dictionary must follow ``gf_struct``.
     mu : float, optional
         Chemical potential.
     h0_loc : risb.types.BlockMatrixLike, optional
         Matrix of non-interacting hopping terms in each local subspace.
-        Each key in dictionary must follow :attr:`gf_struct`.
+        Each key in dictionary must follow ``gf_struct``.
     use_broadcasting : bool, optional
         Whether to treat triqs.gfs.Gf with its underlying numpy.ndarray
         data structure, or to use iterators over for loops and lazy
@@ -391,13 +391,13 @@ def get_g_qp_k_w(
         mesh. MeshProduct is a fancy list.
     h0_kin_k : risb.types.BlockMatrixLike
         Single-particle dispersion between local clusters. Indexed as
-        k, orb_i, orb_j. Each key in dictionary must follow :attr:`gf_struct`.
+        k, orb_i, orb_j. Each key in dictionary must follow ``gf_struct``.
     Lambda : risb.types.BlockMatrixLike
         Correlation potential of quasiparticles.
-        Each key in dictionary must follow :attr:`gf_struct`.
+        Each key in dictionary must follow ``gf_struct``.
     R : risb.types.BlockMatrixLike
         Rormalization matrix from electrons to quasiparticles.
-        Each key in dictionary must follow :attr:`gf_struct`.
+        Each key in dictionary must follow ``gf_struct``.
     mu : float, optional
         Chemical potential.
     use_broadcasting : bool, optional
@@ -459,7 +459,7 @@ def get_g_k_w(
     R : risb.types.BlockMatrixLike, optional
         Rormalization matrix from electrons to quasiparticles.
         Each key in dictionary must follow the gf_struct in
-        :attr:`g0_k_w` and :attr:`sigma_w`.
+        ``g0_k_w`` and ``sigma_w``.
     use_broadcasting : bool, optional
         Whether to treat triqs.gfs.Gf with its underlying numpy.ndarray
         data structure, or to use iterators over for loops and lazy

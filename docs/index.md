@@ -22,6 +22,12 @@ explanations/index
 :hidden:
 
 api/risb
+api/risb.embedding
+api/risb.kweight
+api/risb.optimize
+api/risb.helpers
+api/risb.helpers_triqs
+api/risb.types
 ```
 
 ## Indices and tables

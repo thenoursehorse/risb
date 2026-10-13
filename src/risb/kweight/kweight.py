@@ -25,7 +25,7 @@ from scipy.special import erfc, factorial, hermite
 
 from risb.types import BlockRealArray, SmearFunction
 
-from .from_triqs_hartree import fermi, update_mu
+from ._from_triqs_hartree import fermi, update_mu
 
 
 class SmearingKWeight:

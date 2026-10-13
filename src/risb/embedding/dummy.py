@@ -53,7 +53,10 @@ class EmbeddingDummy(Embedding):
         rotations: Sequence[Callable[[BlockMatrix], BlockMatrix]] = (),
     ) -> None:
         self.embedding = embedding
+
+        #: sequence of callable : Rotations applied in :meth:`solve`.
         self.rotations = rotations
+
         self.gf_struct = embedding.gf_struct
         self.rho_f: BlockMatrix = {}
         self.rho_cf: BlockMatrix = {}

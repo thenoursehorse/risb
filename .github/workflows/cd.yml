@@ -80,9 +80,7 @@ jobs:
         run: UV_PROJECT_ENVIRONMENT=$CONDA_PREFIX uv sync --inexact --locked --no-dev --group docs
 
       - name: Build docs
-        run: |
-          sphinx-apidoc -o docs/api --module-first --no-toc --force --separate src/risb
-          sphinx-build -b html -n -T docs docs/_build
+        run: sphinx-build -b html -n -T docs docs/_build
 
       - name: Upload docs artifact
         uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0

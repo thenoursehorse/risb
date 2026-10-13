@@ -573,7 +573,7 @@ def get_h0_loc_matrix(
     """
     Return a matrix representation of the local terms in a non-interacting dispersion.
 
-    If a projector :attr:`P` onto a local subspace is given the local terms are only in that subspace.
+    If a projector ``P`` onto a local subspace is given the local terms are only in that subspace.
 
     Parameters
     ----------
@@ -601,7 +601,7 @@ def get_h0_kin_k_mat(
     """
     Return a matrix representation of the kinetic terms between clusters/local subspaces of a non-interacting dispersion.
 
-    This function only subtracts off the local terms in a single subspace given by :attr:`P`.
+    This function only subtracts off the local terms in a single subspace given by ``P``.
 
     Parameters
     ----------
