@@ -8,9 +8,9 @@ from triqs.operators.util.observables import N_op, S2_op
 from triqs.operators.util.op_struct import set_operator_structure
 
 from risb import LatticeSolver
-from risb.embedding import EmbeddingAtomDiag, EmbeddingDummy
+from risb.impurity_solvers import AtomDiagImpuritySolver, DummyImpuritySolver
 from risb.kweight import SmearingKWeight
-from risb.types import BlockMatrix, Embedding
+from risb.types import BlockMatrix, ImpuritySolver
 
 
 def get_h0_k(
@@ -77,14 +77,14 @@ kweight = SmearingKWeight(beta=beta, n_target=n_target)
 U = 10
 h_int = [U * n("up", 0) * n("dn", 0) for _ in range(n_clusters)]
 
-# Set up embedding solvers
+# Set up impurity solvers
 # All of the sites are equivalent on the Gamma-centred mesh, so it is sufficient
 # to just solve for one site and copy and paste onto the other sites
-embedding_atom_diag = EmbeddingAtomDiag(h_int[0], gf_struct[0])
-embedding: list[Embedding] = [
-    embedding_atom_diag,
-    EmbeddingDummy(embedding_atom_diag),
-    EmbeddingDummy(embedding_atom_diag),
+atom_diag_solver = AtomDiagImpuritySolver(h_int[0], gf_struct[0])
+impurity_solvers: list[ImpuritySolver] = [
+    atom_diag_solver,
+    DummyImpuritySolver(atom_diag_solver),
+    DummyImpuritySolver(atom_diag_solver),
 ]
 
 # Setup projectors onto the three correlated spaces in a unit cell
@@ -110,7 +110,7 @@ def force_paramagnetic(A: list[BlockMatrix]) -> list[BlockMatrix]:
 S = LatticeSolver(
     h0_k=h0_k,
     gf_struct=gf_struct,
-    embedding=embedding,
+    impurity_solvers=impurity_solvers,
     update_weights=kweight.update_weights,
     projectors=projectors,
     symmetrizers=[force_paramagnetic],
@@ -121,11 +121,11 @@ S.solve(tol=1e-8)
 
 # Average number of particles on a cluster
 total_number_Op = N_op(spin_names, n_orb, off_diag=True)
-total_number = embedding_atom_diag.overlap(total_number_Op)
+total_number = atom_diag_solver.overlap(total_number_Op)
 
 # Effective total spin of a cluster
 total_spin_Op = S2_op(spin_names, n_orb, off_diag=True)
-total_spin = embedding_atom_diag.overlap(total_spin_Op)
+total_spin = atom_diag_solver.overlap(total_spin_Op)
 
 # Print out some interesting observables
 with np.printoptions(formatter={"float": "{: 0.4f}".format}):
@@ -133,9 +133,9 @@ with np.printoptions(formatter={"float": "{: 0.4f}".format}):
     print(f"Quasiaprticle weight Z = \n{S.Z[0]['up']}")
     print(f"Correlation potential Lambda = \n{S.Lambda[0]['up']}")
     print(f"Density matrix rho_qp = \n{S.rho_qp[0]['up']}")
-    print(f"Density matrix rho_f = \n{embedding[0].rho_f['up']}")
-    print(f"Density matrix rho_c = \n{embedding[0].get_rho_c('up')}")
-    print(f"Density matrix rho_cf = \n{embedding[0].rho_cf['up']}")
+    print(f"Density matrix rho_f = \n{impurity_solvers[0].rho_f['up']}")
+    print(f"Density matrix rho_c = \n{impurity_solvers[0].get_rho_c('up')}")
+    print(f"Density matrix rho_cf = \n{impurity_solvers[0].rho_cf['up']}")
     print(f"Bath coupling matrix Lambda_c = \n{S.Lambda_c[0]['up']}")
     print(f"Hybridization matrix D = \n{S.D[0]['up']}")
     print(f"Number of partices on cluster N = \n{total_number: 0.4f}")

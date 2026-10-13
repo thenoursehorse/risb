@@ -73,7 +73,7 @@ def test_hubbard_example() -> None:
 def test_kagome_hubbard_example() -> None:
     g = run_example("kagome_hubbard")
     S = g["S"]
-    embedding = g["embedding"]
+    impurity_solvers = g["impurity_solvers"]
     abs = 1e-7
     Z_expected = 0.4767757344
     Lambda_expected = 5.0000000047
@@ -82,14 +82,14 @@ def test_kagome_hubbard_example() -> None:
     assert g["total_number"] == pytest.approx(1.0, abs=abs)
     for i in [1, 2]:
         for bl in ["up", "dn"]:
-            assert embedding[i].get_rho_f(bl) == pytest.approx(
-                embedding[0].get_rho_f(bl)
+            assert impurity_solvers[i].get_rho_f(bl) == pytest.approx(
+                impurity_solvers[0].get_rho_f(bl)
             )
-            assert embedding[i].get_rho_cf(bl) == pytest.approx(
-                embedding[0].get_rho_cf(bl)
+            assert impurity_solvers[i].get_rho_cf(bl) == pytest.approx(
+                impurity_solvers[0].get_rho_cf(bl)
             )
-            assert embedding[i].get_rho_c(bl) == pytest.approx(
-                embedding[0].get_rho_c(bl)
+            assert impurity_solvers[i].get_rho_c(bl) == pytest.approx(
+                impurity_solvers[0].get_rho_c(bl)
             )
     for i in range(3):
         for bl in ["up", "dn"]:

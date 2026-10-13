@@ -18,7 +18,7 @@ h0_k = {'up' : k by N by N ndarray, 'dn' : k by N by N ndarray}
 :::{tip}
 :class: dropdown
 `h0_k` can contain any local hopping terms `h0_loc` that are in the subspace
-$\mathcal{C}_i$. In {{RISB}} these terms are included in the embedding
+$\mathcal{C}_i$. In {{RISB}} these terms are included in the impurity
 Hamiltonian and are typically separated out from `h0_k`. `LatticeSolver` works
 these terms out automatically. But they can be included in
 the interactions `h_int` by hand if you want. It makes no difference to
@@ -56,7 +56,7 @@ h_int = ...
 :::{tip}
 :class: dropdown
 The {{TRIQS}} library makes it very simple to define
-`h_int` as second-quantized operators. All of the `Embedding` classes we
+`h_int` as second-quantized operators. All of the impurity solvers we
 provide assume that `h_int` is a {{TRIQS}} operator.
 :::
 
@@ -64,7 +64,7 @@ Next define the class that solves in the correlated subspace $\mathcal{C}_i$
 the impurity problem for {{RISB}}.
 
 ```python
-embedding = EmbeddingClass(h_int, gf_struct)
+impurity_solver = ImpuritySolverClass(h_int, gf_struct)
 ```
 
 Finally, set up the solver class and solve
@@ -73,7 +73,7 @@ Finally, set up the solver class and solve
 S = LatticeSolver(
     h0_k=h0_k,
     gf_struct=gf_struct,
-    embedding=embedding,
+    impurity_solvers=impurity_solver,
     update_weights=kweight.update_weights,
 )
 S.solve(tol=...)
@@ -93,11 +93,11 @@ must construct a `gf_struct` for each subspace as a list
 gf_struct = [gf_struct_1, gf_struct_2, ...]
 ```
 
-You must construct an embedding solver for each subspace $\mathcal{C}_i$ as
+You must construct an impurity solver for each subspace $\mathcal{C}_i$ as
 a list
 
 ```python
-embedding = [embedding_1, embedding_2, ...]
+impurity_solvers = [impurity_solver_1, impurity_solver_2, ...]
 ```
 
 You must construct a projector from the larger space of `h0_k` to each
@@ -124,7 +124,7 @@ These lists are passed to the solver as
 ```python
 S = LatticeSolver(...
                   gf_struct = gf_struct,
-                  embedding = embedding,
+                  impurity_solvers = impurity_solvers,
                   projectors = projectors,
                   gf_struct_mapping = gf_struct_mapping,
                   ...
@@ -247,5 +247,5 @@ S = LatticeSolver(...
 )
 ```
 
-This will make most `EmbeddingClass` solvers faster, and the other matrix
+This will make most impurity solvers faster, and the other matrix
 operations faster. For many systems forcing the matrices to be real is fine.

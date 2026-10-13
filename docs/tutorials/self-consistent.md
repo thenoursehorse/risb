@@ -317,18 +317,25 @@ The single-particle quasiparticle density
 matrix of $\hat{H}^{\mathrm{qp}}$ is $\Delta^{\mathrm{qp}}$ and the lopsided
 quasiparticle kinetic energy is $E^{c,\mathrm{qp}}$.
 
-The non-interacting quadratic parts of the embedding Hamiltonian
-$\hat{H}^{\mathrm{emb}}$ are described by the hybridization matrix
+:::{note}
+In the {{RISB}} literature $\hat{H}^{\mathrm{imp}}$ is called the embedding
+Hamiltonian $\hat{H}^{\mathrm{emb}}$. We call it the impurity Hamiltonian to
+match the terminology of {{DMFT}}. See
+[About the impurity problem](../explanations/impurity.md).
+:::
+
+The non-interacting quadratic parts of the impurity Hamiltonian
+$\hat{H}^{\mathrm{imp}}$ are described by the hybridization matrix
 $\mathcal{D}$, and the matrix that describes the couplings in the bath
 $\lambda^c$.
 
-The single-particle density matrices of $\hat{H}^{\mathrm{emb}}$ are the
+The single-particle density matrices of $\hat{H}^{\mathrm{imp}}$ are the
 density matrix of the f-electrons (the bath, these are quasiparticles)
 $\Delta^{f}$,
-the density matrix of the c-electrons (the impurity, these are physical
-electrons) $\Delta^{c}$,
+the density matrix of the c-electrons (the physical orbitals of the
+impurity) $\Delta^{c}$,
 and the off-diagonal density matrix between the c- and f- electrons
-(the impurity and the bath) $\Delta^{cf}$.
+(the physical orbitals and the bath) $\Delta^{cf}$.
 
 ```python
 # H^qp parameters R and Lambda
@@ -345,14 +352,14 @@ for bl, bl_size in gf_struct:
     rho_qp[bl] = np.zeros((bl_size, bl_size))
     kinetic_energy_qp[bl] = np.zeros((bl_size, bl_size))
 
-# H^emb hybridization and bath terms
+# H^imp hybridization and bath terms
 D = dict()
 Lambda_c = dict()
 for bl, bl_size in gf_struct:
     D[bl] = np.zeros((bl_size, bl_size))
     Lambda_c[bl] = np.zeros((bl_size, bl_size))
 
-# H^emb single-particle density matrices
+# H^imp single-particle density matrices
 rho_f = dict()
 rho_cf = dict()
 rho_c = dict()
@@ -387,64 +394,64 @@ for bl, bl_size in gf_struct:
         h0_kin_k_R, bloch_vector_qp[bl], kweights[bl]
     )
 
-# H^emb hybridization
+# H^imp hybridization
 for bl, bl_size in gf_struct:
     D[bl] = helpers.get_d(rho_qp[bl], kinetic_energy_qp[bl])
 
-# H^emb bath
+# H^imp bath
 for bl, bl_size in gf_struct:
     Lambda_c[bl] = helpers.get_lambda_c(rho_qp[bl], R[bl], Lambda[bl], D[bl])
 ```
 
-See [Solving $\hat{H}^{\mathrm{emb}}$](#solving-h-emb) for the
-single-particle density matrices of $\hat{H}^{\mathrm{emb}}$.
+See [Solving the impurity problem](#solving-impurity-problem) for the
+single-particle density matrices of $\hat{H}^{\mathrm{imp}}$.
 
-(solving-h-emb)=
+(solving-impurity-problem)=
 
-## F: Solving $\hat{H}^{\mathrm{emb}}$
+## F: Solving the impurity problem
 
 :::{seealso}
-[About the embedding Hamiltonian](../explanations/embedding.md).
+[About the impurity problem](../explanations/impurity.md).
 
-[Using embedding classes](../how-to/embedding.md).
+[Using impurity solvers](../how-to/impurity_solvers.md).
 :::
 
-Now we have to solve the impurity problem defined by the embedding Hamiltonian
-$\hat{H}^{\mathrm{emb}}$. There is a simple (but poorly scaled to large
+Now we have to solve the impurity problem defined by the impurity Hamiltonian
+$\hat{H}^{\mathrm{imp}}$. There is a simple (but poorly scaled to large
 problems) implementation that only uses {{TRIQS}}.
 
 ```python
-from risb.embedding import EmbeddingAtomDiag
+from risb.impurity_solvers import AtomDiagImpuritySolver
 
-embedding = EmbeddingAtomDiag(h_loc, gf_struct)
+impurity_solver = AtomDiagImpuritySolver(h_loc, gf_struct)
 ```
 
-Setting the embedding Hamiltonian $\hat{H}^{\mathrm{emb}}$ is done with
+Setting the impurity Hamiltonian $\hat{H}^{\mathrm{imp}}$ is done with
 
 ```python
-embedding.set_h_emb(Lambda_c, D)
+impurity_solver.set_h_imp(Lambda_c, D)
 ```
 
 Solving for the ground state in the $n_{\mathrm{orb}}$ particle sector, which
-corresponds to the embedding problem being half-filled, is done with
+corresponds to the impurity problem being half-filled, is done with
 
 ```python
-embedding.solve()
+impurity_solver.solve()
 ```
 
 The methods to calculate the single-particle density matrices are
 
 ```python
 for bl, bl_size in gf_struct:
-    rho_f[bl] = embedding.get_rho_f(bl)
-    rho_cf[bl] = embedding.get_rho_cf(bl)
-    rho_c[bl] = embedding.get_rho_c(bl)
+    rho_f[bl] = impurity_solver.get_rho_f(bl)
+    rho_cf[bl] = impurity_solver.get_rho_cf(bl)
+    rho_c[bl] = impurity_solver.get_rho_c(bl)
 ```
 
 ## G: Closing the loop
 
-After the embedding Hamiltonian is solved and the single-particle density
-matrices of the embedding Hamiltonian are obtained, there are two ways to do
+After the impurity Hamiltonian is solved and the single-particle density
+matrices of the impurity Hamiltonian are obtained, there are two ways to do
 the self-consistency loop. The first is to calculate a new guess for
 $\mathcal{R}$ and $\lambda$ which re-parameterizes $H^{\mathrm{qp}}$.
 The helper functions to do this are
@@ -459,7 +466,7 @@ for bl, bl_size in gf_struct:
 
 The second is as a root problem, adjusting $\mathcal{R}$ and $\lambda$ to
 ensure that the density matrices from $\hat{H}^{\mathrm{qp}}$ match the
-density matrices from $\hat{H}^{\mathrm{emb}}$.
+density matrices from $\hat{H}^{\mathrm{imp}}$.
 
 ```python
 for bl, bl_size in gf_struct:
@@ -531,7 +538,7 @@ initialized_mean_field_matrices =
 ...
 
 # Implement step F
-embedding =
+impurity_solver =
 
 # H^qp parameters R and Lambda initialized to the non-interacting values
 for bl, bl_size in gf_struct:
@@ -560,20 +567,20 @@ for cycle in range(n_cycles):
         h0_kin_k_R[bl] = helpers.get_h0_kin_k_R(R[bl], h0_kin_k[bl], bloch_vector_qp[bl])
         lopsided_kinetic_energy_qp[bl] = helpers.get_ke(h0_kin_k_R, bloch_vector_qp[bl], kweights[bl])
 
-    # H^emb parameters
+    # H^imp parameters
     for bl, bl_size in gf_struct:
         D[bl] = helpers.get_d(rho_qp[bl], kinetic_energy_bl[bl])
         Lambda_c[bl] = helpers.get_lambda_c(rho_qp[bl], R[bl], Lambda[bl], D[bl])
 
-    # Solve H^emb
-    embedding.set_h_emb(Lambda_c, D)
-    embedding.solve()
+    # Solve H^imp
+    impurity_solver.set_h_imp(Lambda_c, D)
+    impurity_solver.solve()
 
-    # H^emb density matrices
+    # H^imp density matrices
     for bl, bl_size in gf_struct:
-        rho_f[bl] = embedding.get_rho_f(bl)
-        rho_cf[bl] = embedding.get_rho_cf(bl)
-        rho_c[bl] = embedding.get_rho_c(bl)
+        rho_f[bl] = impurity_solver.get_rho_f(bl)
+        rho_cf[bl] = impurity_solver.get_rho_cf(bl)
+        rho_c[bl] = impurity_solver.get_rho_c(bl)
 
     # Step G: New guess for H^qp parameters
     for bl, bl_size in gf_struct:

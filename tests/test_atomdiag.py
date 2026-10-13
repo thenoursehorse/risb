@@ -7,7 +7,7 @@ from numpy.typing import NDArray
 from triqs.operators import Operator, c, c_dag, n
 from triqs.operators.util.observables import N_op, S2_op
 
-from risb.embedding import EmbeddingAtomDiag
+from risb.impurity_solvers import AtomDiagImpuritySolver
 from risb.types import BlockMatrix
 
 type Model = tuple[
@@ -239,21 +239,21 @@ def test_solve(
         S2_expected,
     ) = request.getfixturevalue(model_expected)
     gf_struct = [(bl, n_orb) for bl in spin_names]
-    embedding = EmbeddingAtomDiag(h_int, gf_struct)
-    embedding.set_h_emb(Lambda_c, D, h0_loc_mat)
-    embedding.solve()
+    impurity_solver = AtomDiagImpuritySolver(h_int, gf_struct)
+    impurity_solver.set_h_imp(Lambda_c, D, h0_loc_mat)
+    impurity_solver.solve()
     rho_f: BlockMatrix = {}
     rho_cf: BlockMatrix = {}
     rho_c: BlockMatrix = {}
     for bl, _bl_size in gf_struct:
-        rho_f[bl] = embedding.get_rho_f(bl)
-        rho_cf[bl] = embedding.get_rho_cf(bl)
-        rho_c[bl] = embedding.get_rho_c(bl)
-    gs_energy = embedding.gs_energy
+        rho_f[bl] = impurity_solver.get_rho_f(bl)
+        rho_cf[bl] = impurity_solver.get_rho_cf(bl)
+        rho_c[bl] = impurity_solver.get_rho_c(bl)
+    gs_energy = impurity_solver.gs_energy
     NOp = N_op(spin_names, n_orb, off_diag=True)
     S2Op = S2_op(spin_names, n_orb, off_diag=True)
-    N = embedding.overlap(NOp)
-    S2 = embedding.overlap(S2Op)
+    N = impurity_solver.overlap(NOp)
+    S2 = impurity_solver.overlap(S2Op)
     do_assert(
         subtests,
         rho_f,

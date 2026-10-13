@@ -7,11 +7,11 @@ from triqs.operators import Operator, c, c_dag
 from triqs.operators.util.observables import N_op
 
 from risb import LatticeSolver
-from risb.embedding import EmbeddingAtomDiag, EmbeddingDummy
 from risb.helpers import block_to_full, get_h0_kin_k
 from risb.helpers_triqs import get_h0_loc
+from risb.impurity_solvers import AtomDiagImpuritySolver, DummyImpuritySolver
 from risb.kweight import SmearingKWeight
-from risb.types import BlockMatrix, Embedding
+from risb.types import BlockMatrix, ImpuritySolver
 
 
 def get_h0_k(
@@ -197,11 +197,13 @@ h_int = [get_hubb_trimer(spin_names=spin_names, U=U) for i in range(n_clusters)]
 # Define the local Hamiltonian
 h_loc = [h0_loc[i] + h_int[i] for i in range(n_clusters)]
 
-# Set up embedding solvers
-# embedding = [EmbeddingAtomDiag(h_loc[i], gf_struct[i]) for i in range(n_clusters)]
-embedding: list[Embedding] = [EmbeddingAtomDiag(h_loc[0], gf_struct[0])]
+# Set up impurity solvers
+# impurity_solvers = [AtomDiagImpuritySolver(h_loc[i], gf_struct[i]) for i in range(n_clusters)]
+impurity_solvers: list[ImpuritySolver] = [
+    AtomDiagImpuritySolver(h_loc[0], gf_struct[0])
+]
 for _ in range(n_clusters - 1):
-    embedding.append(EmbeddingDummy(embedding[0]))
+    impurity_solvers.append(DummyImpuritySolver(impurity_solvers[0]))
 
 
 def symmetries(A: list[BlockMatrix]) -> list[BlockMatrix]:
@@ -225,7 +227,7 @@ def symmetries(A: list[BlockMatrix]) -> list[BlockMatrix]:
 S = LatticeSolver(
     h0_k=h0_kin_k,
     gf_struct=gf_struct,
-    embedding=embedding,
+    impurity_solvers=impurity_solvers,
     update_weights=kweight.update_weights,
     projectors=projectors,
     symmetrizers=[symmetries],
@@ -239,11 +241,11 @@ S.solve(tol=1e-4)
 
 # Average number of particles on a cluster
 NOp = N_op(spin_names, n_orb, off_diag=True)
-# N = [e.overlap(NOp) for e in embedding]
+# N = [e.overlap(NOp) for e in impurity_solvers]
 #
 ## Effective total spin of a cluster
 # S2Op = S2_op(spin_names, n_orb, off_diag=True)
-# S2 = [e.overlap(S2Op) for e in embedding]
+# S2 = [e.overlap(S2Op) for e in impurity_solvers]
 #
 # Print out some interesting observables
 with np.printoptions(formatter={"float": "{: 0.4f}".format}):

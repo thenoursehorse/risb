@@ -15,7 +15,7 @@
 #
 # Authors: H. L. Nourse
 
-"""Embedding solver using TRIQS AtomDiag."""
+"""Impurity solver using TRIQS AtomDiag."""
 
 from itertools import product
 from typing import override
@@ -26,17 +26,17 @@ from triqs.atom_diag import AtomDiag, act
 from triqs.operators import Operator, c, c_dag, dagger
 
 from risb.helpers_triqs import get_C_Op
-from risb.types import BlockMatrix, BlockMatrixLike, Embedding, GfStruct
+from risb.types import BlockMatrix, BlockMatrixLike, GfStruct, ImpuritySolver
 
 
-class EmbeddingAtomDiag(Embedding):
+class AtomDiagImpuritySolver(ImpuritySolver):
     """
-    Impurity solver of embedding space using :class:`triqs.atom_diag.AtomDiag` from TRIQS.
+    Impurity solver using :class:`triqs.atom_diag.AtomDiag` from TRIQS.
 
     Parameters
     ----------
     h_int : triqs.operators.Operator
-        Interaction Hamiltonian in the embedding space.
+        Interaction Hamiltonian of the physical orbitals.
     gf_struct : risb.types.GfStruct
         Structure of the matrices. It must be a
         list of pairs, each containing the name of the
@@ -49,32 +49,34 @@ class EmbeddingAtomDiag(Embedding):
         #: triqs.operators.Operator : Interaction Hamiltonian.
         self.h_int = h_int
 
-        #: risb.types.GfStruct : Block matrix structure of c-electrons.
+        #: risb.types.GfStruct : Block matrix structure of the physical orbitals
+        #: (c-electrons).
         self.gf_struct = gf_struct
 
-        # Set structure of bath and embedding space
+        # Set structure of bath and impurity problem
         # FIXME if doing ghost bath and loc are not the same size
 
-        #: risb.types.GfStruct : Block matrix structure of f-electrons.
+        #: risb.types.GfStruct : Block matrix structure of the bath orbitals
+        #: (f-electrons).
         self.gf_struct_bath = [
             (self._bl_loc_to_bath(bl), bl_size) for bl, bl_size in self.gf_struct
         ]
 
-        #: risb.types.GfStruct : Block matrix structure entire embedding
-        #: space.
-        self.gf_struct_emb = self.gf_struct + self.gf_struct_bath
+        #: risb.types.GfStruct : Block matrix structure of the entire impurity
+        #: problem (physical and bath orbitals).
+        self.gf_struct_imp = self.gf_struct + self.gf_struct_bath
 
         # Set of fundamental operators
         self.fops = self._fops_from_gf_struct(self.gf_struct)
         self.fops_bath = self._fops_from_gf_struct(self.gf_struct_bath)
-        self.fops_emb = self._fops_from_gf_struct(self.gf_struct_emb)
+        self.fops_imp = self._fops_from_gf_struct(self.gf_struct_imp)
 
         # Do gf_struct as a map
         self.gf_struct_dict = self._dict_gf_struct(self.gf_struct)
         self.gf_struct_bath_dict = self._dict_gf_struct(self.gf_struct_bath)
-        self.gf_struct_emb_dict = self._dict_gf_struct(self.gf_struct_emb)
+        self.gf_struct_imp_dict = self._dict_gf_struct(self.gf_struct_imp)
 
-        #: numpy.ndarray : Ground state of the embedding problem in the
+        #: numpy.ndarray : Ground state of the impurity problem in the
         #: eigenbasis of :attr:`ad`, set by :meth:`solve`.
         self.gs_vector: NDArray[np.inexact]
 
@@ -82,18 +84,18 @@ class EmbeddingAtomDiag(Embedding):
         #: :class:`triqs.atom_diag.AtomDiag` in the TRIQS manual.
         self.ad: AtomDiag
 
-        #: triqs.operators.Operator : Embedding Hamiltonian. It is the sum of
+        #: triqs.operators.Operator : Impurity Hamiltonian. It is the sum of
         #: :attr:`h0_loc`, :attr:`h_int`, :attr:`h_hybr`, and :attr:`h_bath`.
-        self.h_emb: Operator = Operator()
+        self.h_imp: Operator = Operator()
 
         #: triqs.operators.Operator : Single-particle quadratic couplings of
-        #: c-electron terms in ::attr:`h_emb`.
+        #: c-electron terms in ::attr:`h_imp`.
         self.h0_loc: Operator = Operator()
 
-        #: triqs.operators.Operator : Bath terms in :attr:`h_emb`.
+        #: triqs.operators.Operator : Bath terms in :attr:`h_imp`.
         self.h_bath: Operator = Operator()
 
-        #: triqs.operators.Operator : Hybridization terms in :attr:`h_emb`.
+        #: triqs.operators.Operator : Hybridization terms in :attr:`h_imp`.
         self.h_hybr: Operator = Operator()
 
         #: risb.types.BlockMatrix : f-electron density matrix, set by
@@ -126,7 +128,7 @@ class EmbeddingAtomDiag(Embedding):
 
     def set_h0_loc(self, h0_loc_matrix: BlockMatrixLike) -> None:
         """
-        Set the single-particle quadratic couplings of the c-electrons in the embedding Hamiltonian.
+        Set the single-particle quadratic couplings of the physical orbitals in the impurity Hamiltonian.
 
         Parameters
         ----------
@@ -143,12 +145,12 @@ class EmbeddingAtomDiag(Embedding):
 
     def set_h_int(self, h_int: Operator) -> None:
         """
-        Set the interaction terms of the c-electrons in the embedding Hamiltonian.
+        Set the interaction terms of the physical orbitals in the impurity Hamiltonian.
 
         Parameters
         ----------
         h_int : triqs.operators.Operator
-            Interaction Hamiltonian in the embedding space.
+            Interaction Hamiltonian of the physical orbitals.
 
         """
         self.h_int = h_int
@@ -191,7 +193,7 @@ class EmbeddingAtomDiag(Embedding):
             self.h_hybr += tmp + dagger(tmp)
 
     @override
-    def set_h_emb(
+    def set_h_imp(
         self,
         Lambda_c: BlockMatrixLike,
         D: BlockMatrixLike,
@@ -199,7 +201,7 @@ class EmbeddingAtomDiag(Embedding):
         mu: float | None = None,
     ) -> None:
         """
-        Set the terms in the impurity Hamiltonian to solve the embedding problem.
+        Set the terms of the impurity Hamiltonian.
 
         Parameters
         ----------
@@ -220,33 +222,33 @@ class EmbeddingAtomDiag(Embedding):
         self.set_h_hybr(D)
 
         # For operators equal is copy, not a view
-        self.h_emb = self.h0_loc + self.h_int + self.h_bath + self.h_hybr
+        self.h_imp = self.h0_loc + self.h_int + self.h_bath + self.h_hybr
 
         # NOTE h_bath must have + mu*np.eye()*f_a*f_a^dag to remove mu's
         # contribution
         if mu is not None:
             for bl, bl_size in self.gf_struct:
                 for alpha in range(bl_size):
-                    self.h_emb -= mu * c_dag(bl, alpha) * c(bl, alpha)
+                    self.h_imp -= mu * c_dag(bl, alpha) * c(bl, alpha)
 
     # TODO other restrictions, like none, for testing
-    # but it has been tested against sparse embedding and is the same answer
+    # but it has been tested against sparse exact diagonalization and is the same answer
     # TODO what about superconductivity, ghosts?
     @override
     def solve(self) -> None:
         """
-        Solve for the groundstate in the half-filled number sector of the embedding problem.
+        Solve for the groundstate in the half-filled number sector of the impurity problem.
 
         Sets the density matrices :attr:`rho_f`, :attr:`rho_cf`, and
         :attr:`rho_c` of every block.
 
         """
-        M = int(len(self.fops_emb) / 2)
+        M = int(len(self.fops_imp) / 2)
         # term is an array holding info of term as monomial, last index is its value
-        if any(np.iscomplex(term[-1]) for term in self.h_emb):
-            self.ad = AtomDiag(self.h_emb, self.fops_emb, n_min=M, n_max=M)
+        if any(np.iscomplex(term[-1]) for term in self.h_imp):
+            self.ad = AtomDiag(self.h_imp, self.fops_imp, n_min=M, n_max=M)
         else:
-            self.ad = AtomDiag(self.h_emb.real, self.fops_emb, n_min=M, n_max=M)
+            self.ad = AtomDiag(self.h_imp.real, self.fops_imp, n_min=M, n_max=M)
         self.gs_vector = self.ad.vacuum_state.copy()
         self.gs_vector[0] = 1
 
@@ -282,7 +284,7 @@ class EmbeddingAtomDiag(Embedding):
         Returns
         -------
         numpy.ndarray
-            The f-electron density matrix :attr:`rho_f` from impurity.
+            The f-electron density matrix :attr:`rho_f` from the impurity problem.
 
         """
         return self.rho_f[bl]
@@ -300,7 +302,7 @@ class EmbeddingAtomDiag(Embedding):
         Returns
         -------
         numpy.ndarray
-            The c-electron density matrix :attr:`rho_c` from impurity.
+            The c-electron density matrix :attr:`rho_c` from the impurity problem.
 
         """
         return self.rho_c[bl]
@@ -319,14 +321,14 @@ class EmbeddingAtomDiag(Embedding):
         -------
         numpy.ndarray
             The c,f-electron hybridization density matrix :attr:`rho_cf` from
-            impurity.
+            the impurity problem.
 
         """
         return self.rho_cf[bl]
 
     def overlap(self, Op: Operator, force_real: bool = True) -> float | complex:
         """
-        Calculate the expectation value of an operator against the ground state of the embedding problem.
+        Calculate the expectation value of an operator against the ground state of the impurity problem.
 
         Parameters
         ----------

@@ -15,7 +15,7 @@
 #
 # Authors: H. L. Nourse
 
-"""Embedding solver that acts as a copy of another solver without calculating anything."""
+"""Impurity solver that acts as a copy of another solver without calculating anything."""
 
 from collections.abc import Callable, Sequence
 from typing import override
@@ -23,60 +23,60 @@ from typing import override
 import numpy as np
 from numpy.typing import NDArray
 
-from risb.types import BlockMatrix, BlockMatrixLike, Embedding
+from risb.types import BlockMatrix, BlockMatrixLike, ImpuritySolver
 
 
-class EmbeddingDummy(Embedding):
+class DummyImpuritySolver(ImpuritySolver):
     """
     Dummy impurity solver.
 
     Does not solve anything and instead references
-    variables of another embedding solver. This is useful when
+    variables of another impurity solver. This is useful when
     some inequivalent clusters are the same up to rotations, so only
     a single impurity problem has to be solved and then the single-particle
     matrices are rotated into the relevant basis.
 
     Parameters
     ----------
-    embedding : risb.types.Embedding
-        The embedding solver to reference. It must be solved before this one.
+    impurity_solver : risb.types.ImpuritySolver
+        The impurity solver to reference. It must be solved before this one.
     rotations : sequence of callable, optional
-        Functions applied in order to the density matrices of ``embedding``.
+        Functions applied in order to the density matrices of ``impurity_solver``.
         Each takes and returns a dictionary of block matrices with the
-        blocks of ``embedding.gf_struct``.
+        blocks of ``impurity_solver.gf_struct``.
 
     """
 
     def __init__(
         self,
-        embedding: Embedding,
+        impurity_solver: ImpuritySolver,
         rotations: Sequence[Callable[[BlockMatrix], BlockMatrix]] = (),
     ) -> None:
-        self.embedding = embedding
+        self.impurity_solver = impurity_solver
 
         #: sequence of callable : Rotations applied in :meth:`solve`.
         self.rotations = rotations
 
-        self.gf_struct = embedding.gf_struct
+        self.gf_struct = impurity_solver.gf_struct
         self.rho_f: BlockMatrix = {}
         self.rho_cf: BlockMatrix = {}
         self.rho_c: BlockMatrix = {}
 
     @override
-    def set_h_emb(
+    def set_h_imp(
         self,
         Lambda_c: BlockMatrixLike,
         D: BlockMatrixLike,
         h0_loc_matrix: BlockMatrixLike | None = None,
     ) -> None:
-        """Do nothing, because the referenced embedding solver is the one solved."""
+        """Do nothing, because the referenced impurity solver is the one solved."""
 
     @override
     def solve(self) -> None:
-        """Copy the density matrices of the referenced embedding solver and apply :attr:`rotations`."""
-        rho_f = dict(self.embedding.rho_f)
-        rho_cf = dict(self.embedding.rho_cf)
-        rho_c = dict(self.embedding.rho_c)
+        """Copy the density matrices of the referenced impurity solver and apply :attr:`rotations`."""
+        rho_f = dict(self.impurity_solver.rho_f)
+        rho_cf = dict(self.impurity_solver.rho_cf)
+        rho_c = dict(self.impurity_solver.rho_c)
         for rotate in self.rotations:
             rho_f = rotate(rho_f)
             rho_cf = rotate(rho_cf)

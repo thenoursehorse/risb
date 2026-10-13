@@ -13,7 +13,6 @@ from triqs.operators.util.observables import N_op, S2_op
 from triqs.operators.util.op_struct import set_operator_structure
 
 from risb import LatticeSolver
-from risb.embedding import EmbeddingAtomDiag
 from risb.helpers_triqs import (
     get_g0_k_w,
     get_g_k_w,
@@ -21,6 +20,7 @@ from risb.helpers_triqs import (
     get_g_w_loc,
     get_sigma_w,
 )
+from risb.impurity_solvers import AtomDiagImpuritySolver
 from risb.kweight import SmearingKWeight
 
 # Number of orbitals and spin structure
@@ -69,16 +69,16 @@ kweight = SmearingKWeight(beta=beta, n_target=n_target)
 #            A[i][bl] = A_sym[i]
 #    return A
 
-# Set up class to solve embedding problem
-embedding = EmbeddingAtomDiag(h_int, gf_struct)
+# Set up the impurity solver
+impurity_solver = AtomDiagImpuritySolver(h_int, gf_struct)
 
 # Setup RISB solver class
-# gf_struct and embedding must be for each cluster. In this case
-# there is only one cluster, so a list with one cluster is passed.
+# gf_struct and the impurity solvers are given for each cluster. In this case
+# there is only one cluster, so they are passed directly instead of as lists.
 S = LatticeSolver(
     h0_k=h0_k,
     gf_struct=gf_struct,
-    embedding=embedding,
+    impurity_solvers=impurity_solver,
     update_weights=kweight.update_weights,
 )
 # symmetrizers=[symmetries])
@@ -93,11 +93,11 @@ S.solve(tol=1e-6)
 
 # Average number of particles on a cluster
 total_number_Op = N_op(spin_names, n_orb, off_diag=True)
-total_number = embedding.overlap(total_number_Op)
+total_number = impurity_solver.overlap(total_number_Op)
 
 # Effective total spin of a cluster
 total_spin_Op = S2_op(spin_names, n_orb, off_diag=True)
-total_spin = embedding.overlap(total_spin_Op)
+total_spin = impurity_solver.overlap(total_spin_Op)
 
 # Some different ways to construct some Green's functions
 

@@ -13,7 +13,6 @@ from triqs.operators.util.observables import N_op, S2_op
 from triqs.operators.util.op_struct import set_operator_structure
 
 from risb import LatticeSolver
-from risb.embedding import EmbeddingAtomDiag
 from risb.helpers_triqs import (
     get_g0_k_w,
     get_g_k_w,
@@ -21,6 +20,7 @@ from risb.helpers_triqs import (
     get_g_w_loc,
     get_sigma_w,
 )
+from risb.impurity_solvers import AtomDiagImpuritySolver
 from risb.kweight import SmearingKWeight
 from risb.types import BlockMatrix
 
@@ -70,14 +70,14 @@ def force_paramagnetic(A: list[BlockMatrix]) -> list[BlockMatrix]:
     return A
 
 
-# Set up class to solve embedding problem
-embedding = EmbeddingAtomDiag(h_int, gf_struct)
+# Set up the impurity solver
+impurity_solver = AtomDiagImpuritySolver(h_int, gf_struct)
 
 # Setup RISB solver class
 S = LatticeSolver(
     h0_k=h0_k,
     gf_struct=gf_struct,
-    embedding=embedding,
+    impurity_solvers=impurity_solver,
     update_weights=kweight.update_weights,
     symmetrizers=[force_paramagnetic],
     force_real=True,
@@ -92,13 +92,13 @@ total_spin = []  # Total spin per site
 
 U_arr = np.arange(0, 10 + 0.1, 0.5)
 for U in U_arr:
-    embedding.set_h_int(hubbard(U=U, n_orb=n_orb))
+    impurity_solver.set_h_int(hubbard(U=U, n_orb=n_orb))
 
     # Solve
     S.solve(tol=1e-6)
 
-    total_number.append(embedding.overlap(total_number_Op))
-    total_spin.append(embedding.overlap(total_spin_Op))
+    total_number.append(impurity_solver.overlap(total_number_Op))
+    total_spin.append(impurity_solver.overlap(total_spin_Op))
     Z.append(S.Z[0]["up"][0, 0])
 
     if np.abs(U - 3.5) < 1e-10:

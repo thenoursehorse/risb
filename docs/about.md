@@ -43,15 +43,11 @@ embedding construction as introduced by
 Lanatà, et al.[^Lanata2015] [^Lanata2017]. The above papers should also be
 appropriately cited.
 
-## Embedding solvers
+## Impurity solvers
 
 % Fix class links
 
-1. `EmbeddingAtomDiag` uses the [TRIQS](https://triqs.github.io/)[^Parcolett2015] library.
-
-%1. `EmbeddingED` uses [TRIQS](https://triqs.github.io/)[^Parcolett2015] and
-%[arpack-ng](https://github.com/opencollab/arpack-ng) with the
-%[ezARPACK](https://krivenko.github.io/ezARPACK/) wrapper[^Krivenko2022].
+1. `AtomDiagImpuritySolver` uses the [TRIQS](https://triqs.github.io/)[^Parcolett2015] library.
 
 ## License
 
@@ -84,8 +80,3 @@ appropriately cited.
     [O. Parcollet, M. Ferrero, T. Ayral, H. Hafermann, I. Krivenko,
     L. Messio, and P. Seth, _TRIQS: A toolbox for research on interacting quantum systems_,
     Comp. Phys. Comm. **196**, 398-415 (2015)](https://doi.org/10.1016/j.cpc.2015.04.023)
-
-%[^Krivenko2022]:
-%    [I. Krivenko, _ezARPACK - ezARPACK - a C++ ARPACK-NG wrapper
-%    compatible with multiple matrix/vector algebra libraries: Release 1.0_,
-%    10.5281/zenodo.3930203 (2022).](https://doi.org/10.5281/zenodo.3930202)

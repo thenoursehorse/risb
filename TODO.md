@@ -15,7 +15,7 @@ Rotationally invariant slave-bosons.
 - Add verbose output to `DIIS`
 - Maybe? Refactor `DIIS` and `NewtonSolver`
 - Explanation for why the root finders kind of suck.
-- Remove h_emb to real if real in `EmbeddingAtom` when TRIQS bumps from
+- Remove h_imp to real if real in `AtomDiagImpuritySolver` when TRIQS bumps from
   version 3.2.0
 - Sort out intersphinx linking in docs
 - Helper plot functions

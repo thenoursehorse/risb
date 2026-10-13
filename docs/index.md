@@ -22,7 +22,7 @@ explanations/index
 :hidden:
 
 api/risb
-api/risb.embedding
+api/risb.impurity_solvers
 api/risb.kweight
 api/risb.optimize
 api/risb.helpers

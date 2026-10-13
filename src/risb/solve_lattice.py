@@ -31,8 +31,8 @@ from risb.types import (
     BlockMatrix,
     BlockMatrixLike,
     BlockRealArray,
-    Embedding,
     GfStruct,
+    ImpuritySolver,
     RootFinder,
     Symmetrize,
     UpdateWeights,
@@ -55,11 +55,11 @@ class LatticeSolver:
         list of pairs, each containing the name of the
         matrix block as a string and the size of that block.
         For example for a single cluster: ``[ ('up', 3), ('down', 3) ]``.
-    embedding : risb.types.Embedding or sequence of risb.types.Embedding
-        The solver of the embedding problem for each cluster. It must
-        already store the interacting Hamiltonian ``h_int`` on a cluster,
-        and implement :class:`risb.types.Embedding`.
-        See class :class:`.EmbeddingAtomDiag`.
+    impurity_solvers : risb.types.ImpuritySolver or sequence of risb.types.ImpuritySolver
+        The solver of the impurity problem for each cluster. It must
+        already store the interacting Hamiltonian ``h_int`` of the physical
+        orbitals on a cluster, and implement :class:`risb.types.ImpuritySolver`.
+        See class :class:`.AtomDiagImpuritySolver`.
     update_weights : risb.types.UpdateWeights
         The function that gives the integral weights at each k-point on the
         lattice. It is called as ``update_weights(energies)``,
@@ -72,9 +72,9 @@ class LatticeSolver:
         where ``fun = self._target_function``.
         Defaults to :meth:`.DIIS.solve` method of :class:`.DIIS`.
     projectors : sequence of risb.types.BlockMatrixLike, optional
-        The projectors onto each subspace of an `embedding` cluster.
+        The projectors onto the subspace of each cluster.
     gf_struct_mapping : sequence of mapping, optional
-        The mapping from the symmetry blocks of each cluster in `embedding`
+        The mapping from the symmetry blocks of each cluster
         to the symmetry blocks of `h0_k`. Default assumes the keys in
         all clusters are the same as the keys in `h0_k`.
     symmetrizers : sequence of risb.types.Symmetrize, optional
@@ -98,7 +98,7 @@ class LatticeSolver:
         self,
         h0_k: BlockMatrixLike,
         gf_struct: GfStruct | list[GfStruct],
-        embedding: Embedding | Sequence[Embedding],
+        impurity_solvers: ImpuritySolver | Sequence[ImpuritySolver],
         update_weights: UpdateWeights,
         root: RootFinder | None = None,
         projectors: Sequence[BlockMatrixLike] | None = None,
@@ -121,13 +121,15 @@ class LatticeSolver:
         #: int : Number of correlated clusters per supercell on the lattice.
         self.n_clusters = len(self.gf_struct)
 
-        self.embedding: list[Embedding]
-        if isinstance(embedding, Sequence):
-            self.embedding = list(embedding)
+        #: list of risb.types.ImpuritySolver : Solver of the impurity problem
+        #: for each cluster.
+        self.impurity_solvers: list[ImpuritySolver]
+        if isinstance(impurity_solvers, Sequence):
+            self.impurity_solvers = list(impurity_solvers)
         else:
-            self.embedding = [embedding]
-        if len(self.embedding) != self.n_clusters:
-            msg = f"Need embedded space (got {len(self.embedding)} for each cluster (got {self.n_clusters}) !"
+            self.impurity_solvers = [impurity_solvers]
+        if len(self.impurity_solvers) != self.n_clusters:
+            msg = f"Need an impurity solver (got {len(self.impurity_solvers)}) for each cluster (got {self.n_clusters}) !"
             raise ValueError(msg)
 
         self._update_weights = update_weights
@@ -191,10 +193,10 @@ class LatticeSolver:
         #: for each cluster.
         self.Lambda = self._initialize_block_mf_matrix(self.gf_struct, self.force_real)
 
-        #: list of risb.types.BlockMatrix : Bath coupling of impurity for each cluster.
+        #: list of risb.types.BlockMatrix : Bath coupling of the impurity problem for each cluster.
         self.Lambda_c: list[BlockMatrix] = [{} for i in range(self.n_clusters)]
 
-        #: list of risb.types.BlockMatrix : Hybridization of impurity for each cluster.
+        #: list of risb.types.BlockMatrix : Hybridization of the impurity problem for each cluster.
         self.D: list[BlockMatrix] = [{} for i in range(self.n_clusters)]
 
         #: list of risb.types.BlockMatrix : Density matrix of quasiparticles for each cluster.
@@ -209,11 +211,11 @@ class LatticeSolver:
         #: list of risb.types.BlockMatrix : Density matrix of cluster for each cluster.
         self.rho_c: list[BlockMatrix] = [{} for i in range(self.n_clusters)]
 
-        #: list of risb.types.BlockMatrix : Density matrix of f-electrons in the impurity of each cluster.
+        #: list of risb.types.BlockMatrix : Density matrix of f-electrons in the impurity problem of each cluster.
         self.rho_f: list[BlockMatrix] = [{} for i in range(self.n_clusters)]
 
         #: list of risb.types.BlockMatrix : Hybridization density matrix between the c-
-        #: and f-electrons in the impurity for each cluster.
+        #: and f-electrons in the impurity problem for each cluster.
         self.rho_cf: list[BlockMatrix] = [{} for i in range(self.n_clusters)]
 
         #: list of risb.types.BlockMatrix : The first root function of the self-consistent loop.
@@ -521,7 +523,7 @@ class LatticeSolver:
                 # self.ke_qp[i][bl] = helpers.get_ke(R_h0_k_R[bl_full], self.bloch_vector_qp[bl_full], self.kweights[bl_full], self.projectors[i][bl])
 
         # FIXME More expensive to do this than just storing and working with the coefficients, but
-        # nothing compared to solving the embedding problem so this is likely fine
+        # nothing compared to solving the impurity problem so this is likely fine
         # Enforce matrix structure from symmetries
         self.rho_qp, _ = self._unflatten_matrix(
             self._flatten_matrix(self.rho_qp, is_coeff_real=True), is_coeff_real=True
@@ -569,13 +571,13 @@ class LatticeSolver:
             self.D = symmetrize(self.D)
 
         for i in range(self.n_clusters):
-            self.embedding[i].set_h_emb(
+            self.impurity_solvers[i].set_h_imp(
                 self.Lambda_c[i], self.D[i], self.h0_loc_matrix[i]
             )
-            self.embedding[i].solve()
+            self.impurity_solvers[i].solve()
             for bl, _ in self.gf_struct[i]:
-                self.rho_f[i][bl] = self.embedding[i].get_rho_f(bl)
-                self.rho_cf[i][bl] = self.embedding[i].get_rho_cf(bl)
+                self.rho_f[i][bl] = self.impurity_solvers[i].get_rho_f(bl)
+                self.rho_cf[i][bl] = self.impurity_solvers[i].get_rho_cf(bl)
 
         ## Enforce matrix structure from symmetries
         self.rho_f, _ = self._unflatten_matrix(

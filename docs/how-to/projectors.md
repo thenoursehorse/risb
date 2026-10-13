@@ -54,15 +54,17 @@ projectors = [P_A, P_B, P_C]
 ```
 
 You do not need to define the projector for all $k$ because at each $k$ they
-are equivalent. Next define an embedding solver for each inequivalent cluster
+are equivalent. Next define an impurity solver for each inequivalent cluster
 
 ```python
-from ... import EmbeddingClass
+from ... import ImpuritySolverClass
 
 # Define h_int for each cluster as a list
 ...
 
-embedding = [EmbeddingClass(h_int[i], gf_struct[i]) for i in range(n_clusters)]
+impurity_solvers = [
+    ImpuritySolverClass(h_int[i], gf_struct[i]) for i in range(n_clusters)
+]
 ```
 
 The solvers are initialized as
@@ -72,7 +74,7 @@ from risb import SomeSolver
 
 S = SomeSolver(...
                gf_struct = gf_struct,
-               embedding = embedding,
+               impurity_solvers = impurity_solvers,
                projectors = projectors,
                ...
 )

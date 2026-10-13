@@ -32,9 +32,9 @@ type RootFinder = Callable[..., NDArray[np.float64] | OptimizeResult]
 """Root finder called as ``root(fun, x0, args=..., **kwargs)``, e.g. DIIS.solve or scipy.optimize.root."""
 
 
-class Embedding(Protocol):
+class ImpuritySolver(Protocol):
     """
-    Impurity solver for the embedding problem of one cluster.
+    Solver for the impurity problem of one cluster.
 
     Subclass this to write your own solver, so that type checkers verify it
     implements everything below.
@@ -52,16 +52,16 @@ class Embedding(Protocol):
     rho_c: BlockMatrix
     """c-electron density matrix of each block in :attr:`gf_struct`, set by :meth:`solve`."""
 
-    def set_h_emb(
+    def set_h_imp(
         self,
         Lambda_c: BlockMatrixLike,
         D: BlockMatrixLike,
         h0_loc_matrix: BlockMatrixLike | None = None,
     ) -> None:
-        """Set the embedding Hamiltonian."""
+        """Set the impurity Hamiltonian."""
 
     def solve(self) -> None:
-        """Solve the embedding problem and set :attr:`rho_f`, :attr:`rho_cf`, and :attr:`rho_c` for every block."""
+        """Solve the impurity problem and set :attr:`rho_f`, :attr:`rho_cf`, and :attr:`rho_c` for every block."""
 
     def get_rho_f(self, bl: str) -> NDArray[np.inexact]:
         """Return the f-electron density matrix of block ``bl``."""

@@ -175,7 +175,7 @@ def get_lambda(
     Lambda_c : numpy.ndarray
         Bath coupling.
     rho_f : numpy.ndarray
-        f-electron density matrix from impurity.
+        f-electron density matrix from the impurity problem.
 
     Returns
     -------
@@ -210,9 +210,9 @@ def get_r(
     Parameters
     ----------
     rho_cf : numpy.ndarray
-        c,f-electron hybridization density matrix from impurity.
+        c,f-electron hybridization density matrix from the impurity problem.
     rho_f : numpy.ndarray
-        f-electron density matrix from impurity.
+        f-electron density matrix from the impurity problem.
 
     Returns
     -------
@@ -244,7 +244,7 @@ def get_f1(
     Parameters
     ----------
     rho_cf : numpy.ndarray
-        c,f-electron hybridization density matrix from impurity.
+        c,f-electron hybridization density matrix from the impurity problem.
     rho_qp : numpy.ndarray
         Quasiparticle density matrix obtained from the mean-field.
     R : numpy.ndarray
@@ -277,7 +277,7 @@ def get_f2(
     Parameters
     ----------
     rho_f : numpy.ndarray
-        f-electron density matrix from impurity.
+        f-electron density matrix from the impurity problem.
     rho_qp : numpy.ndarray
         Quasiparticle density matrix obtained from the mean-field.
 

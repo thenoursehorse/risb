@@ -12,7 +12,7 @@ from triqs.operators.util.hamiltonians import h_int_kanamori
 from triqs.operators.util.op_struct import set_operator_structure
 
 from risb import LatticeSolver
-from risb.embedding import EmbeddingAtomDiag
+from risb.impurity_solvers import AtomDiagImpuritySolver
 from risb.kweight import SmearingKWeight
 from risb.types import BlockMatrix, GfStruct
 
@@ -21,7 +21,7 @@ from risb.types import BlockMatrix, GfStruct
 type Model = tuple[
     GfStruct,
     dict[str, NDArray[np.float64]],
-    EmbeddingAtomDiag,
+    AtomDiagImpuritySolver,
     SmearingKWeight,
     float,
     NDArray[np.float64],
@@ -64,12 +64,12 @@ def one_band() -> Model:
     gf_struct = [(bl, n_orb) for bl in ["up", "dn"]]
     h0_k = build_cubic_h0_k(gf_struct=gf_struct, nkx=nkx, spatial_dim=spatial_dim)
     h_int = U * n("up", 0) * n("dn", 0)
-    embedding = EmbeddingAtomDiag(h_int, gf_struct)
+    impurity_solver = AtomDiagImpuritySolver(h_int, gf_struct)
     # kweight = SmearingKWeight(beta=beta, mu=mu)
     kweight = SmearingKWeight(beta=beta, n_target=n_target)
     Lambda_expected = np.array([[2.0]])
     Z_expected = np.array([[0.437828801025]])
-    return gf_struct, h0_k, embedding, kweight, mu, Lambda_expected, Z_expected
+    return gf_struct, h0_k, impurity_solver, kweight, mu, Lambda_expected, Z_expected
 
 
 @pytest.fixture
@@ -91,12 +91,12 @@ def bilayer() -> Model:
     h_int = Operator()
     for o in range(n_orb):
         h_int += U * n("up", o) * n("dn", o)
-    embedding = EmbeddingAtomDiag(h_int, gf_struct)
+    impurity_solver = AtomDiagImpuritySolver(h_int, gf_struct)
     # kweight = SmearingKWeight(beta=beta, mu=mu)
     kweight = SmearingKWeight(beta=beta, n_target=n_target)
     Lambda_expected = np.array([[2.0, 0.114569681915], [0.114569681915, 2.0]])
     Z_expected = np.array([[0.452846149446, 0], [0, 0.452846149446]])
-    return gf_struct, h0_k, embedding, kweight, mu, Lambda_expected, Z_expected
+    return gf_struct, h0_k, impurity_solver, kweight, mu, Lambda_expected, Z_expected
 
 
 @pytest.fixture
@@ -123,25 +123,31 @@ def kanamori() -> Model:
         J_hund=J,
         off_diag=True,
     )
-    embedding = EmbeddingAtomDiag(h_int, gf_struct)
+    impurity_solver = AtomDiagImpuritySolver(h_int, gf_struct)
     kweight = SmearingKWeight(beta=beta, mu=mu)
     kweight = SmearingKWeight(beta=beta, n_target=n_target)
     Lambda_expected = np.array([[3.0, 0.0], [0.0, 3.0]])
     Z_expected = np.array([[0.574940323948, 0.0], [0.0, 0.574940323948]])
-    return gf_struct, h0_k, embedding, kweight, mu, Lambda_expected, Z_expected
+    return gf_struct, h0_k, impurity_solver, kweight, mu, Lambda_expected, Z_expected
 
 
 @pytest.mark.parametrize("model", ["one_band", "bilayer", "kanamori"])
 def test_diis_symmetrize(
     subtests: pytest.Subtests, request: pytest.FixtureRequest, model: str
 ) -> None:
-    gf_struct, h0_k, embedding, kweight, mu_expected, Lambda_expected, Z_expected = (
-        request.getfixturevalue(model)
-    )
+    (
+        gf_struct,
+        h0_k,
+        impurity_solver,
+        kweight,
+        mu_expected,
+        Lambda_expected,
+        Z_expected,
+    ) = request.getfixturevalue(model)
     S = LatticeSolver(
         h0_k=h0_k,
         gf_struct=[gf_struct],
-        embedding=[embedding],
+        impurity_solvers=[impurity_solver],
         update_weights=kweight.update_weights,
         symmetrizers=[symmetrize_blocks],
     )
@@ -159,13 +165,19 @@ def test_diis_symmetrize(
 def test_diis_nosymmetrize(
     subtests: pytest.Subtests, request: pytest.FixtureRequest, model: str
 ) -> None:
-    gf_struct, h0_k, embedding, kweight, mu_expected, Lambda_expected, Z_expected = (
-        request.getfixturevalue(model)
-    )
+    (
+        gf_struct,
+        h0_k,
+        impurity_solver,
+        kweight,
+        mu_expected,
+        Lambda_expected,
+        Z_expected,
+    ) = request.getfixturevalue(model)
     S = LatticeSolver(
         h0_k=h0_k,
         gf_struct=[gf_struct],
-        embedding=[embedding],
+        impurity_solvers=[impurity_solver],
         update_weights=kweight.update_weights,
     )
     for i in range(S.n_clusters):
@@ -192,14 +204,20 @@ def test_scipy_root(
     model: str,
     root_method: str,
 ) -> None:
-    gf_struct, h0_k, embedding, kweight, mu_expected, Lambda_expected, Z_expected = (
-        request.getfixturevalue(model)
-    )
+    (
+        gf_struct,
+        h0_k,
+        impurity_solver,
+        kweight,
+        mu_expected,
+        Lambda_expected,
+        Z_expected,
+    ) = request.getfixturevalue(model)
 
     S = LatticeSolver(
         h0_k=h0_k,
         gf_struct=[gf_struct],
-        embedding=[embedding],
+        impurity_solvers=[impurity_solver],
         update_weights=kweight.update_weights,
         symmetrizers=[symmetrize_blocks],
         root=root_fun,

@@ -1,14 +1,14 @@
-# Using embedding classes
+# Using impurity solvers
 
-This guide shows you how to use the embedding classes and describes a little
+This guide shows you how to use the impurity solvers and describes a little
 bit about how they do things.
 
 :::{seealso}
 :class: dropdown
-[About the embedding Hamiltonian](../explanations/embedding.md).
+[About the impurity problem](../explanations/impurity.md).
 :::
 
-## `EmbeddingAtomDiag`
+## `AtomDiagImpuritySolver`
 
 First a `gf_struct` object has to be created that describes the correlated
 subspace $\mathcal{C}_i$. This object should be constructed in the same way
@@ -49,49 +49,49 @@ for o in range(n_orb):
 The solver is instantiated as
 
 ```python
-from risb.embedding import EmbeddingAtomDiag
+from risb.impurity_solvers import AtomDiagImpuritySolver
 
-embedding = EmbeddingAtomDiag(h_int, gf_struct)
+impurity_solver = AtomDiagImpuritySolver(h_int, gf_struct)
 ```
 
-The interaction Hamiltonian is stored in `embedding.h_int` and the block
-matrix structure is stored in `embedding.gf_struct`.
+The interaction Hamiltonian is stored in `impurity_solver.h_int` and the block
+matrix structure is stored in `impurity_solver.gf_struct`.
 
-### Setting `h_emb`
+### Setting `h_imp`
 
-Next the embedding Hamiltonian `h_emb` has to be set with
+Next the impurity Hamiltonian `h_imp` has to be set with
 
 ```python
-embedding.set_h_emb(Lambda_c, D)
+impurity_solver.set_h_imp(Lambda_c, D)
 ```
 
 where `Lambda_c` and `D` are block matrices that describe the impurity problem
 with the structure of `gf_struct`.
-:py:meth:`EmbeddingAtomDiag.set_h_emb` is internally called from within
+:py:meth:`AtomDiagImpuritySolver.set_h_imp` is internally called from within
 the self-consistent loop in the {{RISB}} `Solver` classes. The hybridzation
-term from `D` is stored as `embedding.h_hybr` and the bath hopping from
-`Lambda_c` stored as `embedding.h_bath` as {{TRIQS}} operators.
+term from `D` is stored as `impurity_solver.h_hybr` and the bath hopping from
+`Lambda_c` stored as `impurity_solver.h_bath` as {{TRIQS}} operators.
 
 If the non-interacting quadratic couplings are not included in `h_int`, then
 they must be passed as
 
 ```python
-embedding.set_h_emb(Lambda_c, D, h0_loc_matrix)
+impurity_solver.set_h_imp(Lambda_c, D, h0_loc_matrix)
 ```
 
 where `h0_loc_matrix` is a matrix that describes the couplings, with the same
 block matrix structure as `Lambda_c` and `D`. This is stored in
-`embedding.h0_loc` as a {{TRIQS}} operator.
+`impurity_solver.h0_loc` as a {{TRIQS}} operator.
 
 ### Setting `h_int`
 
-If you want to update the interaction terms on the impurity
+If you want to update the interaction terms of the physical orbitals
 
 ```python
 # A new h_int
 h_int = ...
 
-embedding.set_h_int(h_int)
+impurity_solver.set_h_int(h_int)
 ```
 
 ### Solving
@@ -99,49 +99,49 @@ embedding.set_h_int(h_int)
 It is solved as
 
 ```python
-embedding.solve()
+impurity_solver.solve()
 ```
 
 There are no arguments. `solve()` calls
-:py:class:`triqs.atom_diag.AtomDiag`, passes it `h_emb`
+:py:class:`triqs.atom_diag.AtomDiag`, passes it `h_imp`
 and restricts the Hilbert space to the half-filled particle sector. The
-instance of this class is stored in `embedding.ad`. See the {{TRIQS}}
+instance of this class is stored in `impurity_solver.ad`. See the {{TRIQS}}
 documentation for its function. It then calculates the density matrices
 described below for every block.
 
 ### Getting the density matrices
 
-The single-particle density matrix of the $f$ electrons in the embedding
-space in one of the blocks specified by `gf_struct` is obtained as
+The single-particle density matrix of the $f$ electrons in the impurity
+problem in one of the blocks specified by `gf_struct` is obtained as
 
 ```python
-embedding.get_rho_f(block)
+impurity_solver.get_rho_f(block)
 ```
 
 The off-diagonal density matrix between the $c$ and $f$ electrons is obtained
 as
 
 ```python
-embedding.get_rho_cf(block)
+impurity_solver.get_rho_cf(block)
 ```
 
 The density matrix of the $c$ electrons is obtained as
 
 ```python
-embedding.get_rho_c(block)
+impurity_solver.get_rho_c(block)
 ```
 
 The three terms above give the full single-particle density matrix in the
-embedding space. They are also stored for every block as the dictionaries
-`embedding.rho_f`, `embedding.rho_cf`, and `embedding.rho_c`.
+impurity problem. They are also stored for every block as the dictionaries
+`impurity_solver.rho_f`, `impurity_solver.rho_cf`, and `impurity_solver.rho_c`.
 
 ### Local expectation values
 
-Any local expectation value of an operator `Op` in the embedding space is
+Any local expectation value of an operator `Op` in the impurity problem is
 obtained as
 
 ```python
-embedding.overlap(Op)
+impurity_solver.overlap(Op)
 ```
 
 `Op` must be a {{TRIQS}} operator. See the {{TRIQS}} manual for helper
@@ -149,36 +149,37 @@ functions to construct some common observables. To get observables
 in the $f$ electrons, the structure is obtained as
 
 ```python
-embedding.gf_struct_bath
+impurity_solver.gf_struct_bath
 ```
 
-The whole embedding space structure is obtained as
+The structure of the whole impurity problem (physical and bath orbitals) is
+obtained as
 
 ```python
-embedding.gf_struct_emb
+impurity_solver.gf_struct_imp
 ```
 
-## `EmbeddingDummy`
+## `DummyImpuritySolver`
 
 If you want to have some correlated subspaces $\mathcal{C}_i$ as inequivalent,
 but they are related by some symmetry, it is not necessary to solve for the
 ground state in each subspace separately.
 
 This class is a copy of another
-`Embedding` class. For example, to create a copy of
-:py:class:`EmbeddingAtomDiag` it is instantiated as
+impurity solver. For example, to create a copy of
+:py:class:`AtomDiagImpuritySolver` it is instantiated as
 
 ```python
-from risb.embedding import EmbeddingDummy
+from risb.impurity_solvers import DummyImpuritySolver
 
-embedding = EmbeddingDummy(embedding=embedding_atom_diag_instance)
+impurity_solver = DummyImpuritySolver(impurity_solver=atom_diag_solver)
 ```
 
 ### Rotations
 
 If the copy is related by symmetry, you can pass `rotations` as a list of
 functions that operate in sequence on the dictionaries of block matrices that
-:py:class:`EmbeddingDummy` copies. Each function must return a dictionary with
+:py:class:`DummyImpuritySolver` copies. Each function must return a dictionary with
 the same blocks as `gf_struct`, so a rotation that mixes orbitals in different
 blocks needs a `gf_struct` with those orbitals in the same block. For example, if the
 correlated subspace is equivalent except that the spin is rotated,
@@ -195,18 +196,18 @@ def rotate_spin(A):
     return B
 
 
-embedding = EmbeddingDummy(embedding=..., rotations=[rotate_spin])
+impurity_solver = DummyImpuritySolver(impurity_solver=..., rotations=[rotate_spin])
 ```
 
 :::{note}
-`set_h_emb()` does nothing. `solve()` copies the density matrices stored in
-the referenced embedding class and rotates them according to the list of
-functions in `rotations`. The referenced embedding class must therefore be
-solved first, i.e., come before the `EmbeddingDummy` in the list of embedding
-classes passed to the `Solver` classes.
+`set_h_imp()` does nothing. `solve()` copies the density matrices stored in
+the referenced impurity solver and rotates them according to the list of
+functions in `rotations`. The referenced impurity solver must therefore be
+solved first, i.e., come before the `DummyImpuritySolver` in the list of
+impurity solvers passed to `LatticeSolver`.
 :::
 
 :::{warning}
-`EmbeddingDummy` has no `overlap` method. Rotationally invariant expectation
-values can be obtained from the embedding class that `EmbeddingDummy` copies.
+`DummyImpuritySolver` has no `overlap` method. Rotationally invariant expectation
+values can be obtained from the impurity solver that `DummyImpuritySolver` copies.
 :::

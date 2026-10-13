@@ -52,7 +52,7 @@ Lastly, the appropriate original theory outlined in the [documentation](https://
 - [python](https://www.python.org/) version `>= 3.14`
 - [numpy](https://numpy.org/)
 - [scipy](https://scipy.org/)
-- [TRIQS](https://triqs.github.io/) version `4.x` if using :class:`EmbeddingAtomDiag`
+- [TRIQS](https://triqs.github.io/) version `4.x` if using :class:`AtomDiagImpuritySolver`
 
 ## Installation
 

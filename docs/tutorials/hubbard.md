@@ -1,6 +1,6 @@
 # Brinkman-Rice metal-insulator transition
 
-In this tutorial you will use `LatticeSolver` and `EmbeddingAtomDiag` to solve
+In this tutorial you will use `LatticeSolver` and `AtomDiagImpuritySolver` to solve
 the half-filled Hubbard model. This is one of the simplest strongly correlated
 electron models, yet in general does not have an exact solution. Using this
 model, you will learn about the Brinkman-Rice [^Brinkman1970] description of
@@ -141,7 +141,7 @@ on a cluster (a site) that you will use in the next section.
 
 ## Construct the interactions $\hat{H}_i^{\mathrm{int}}$
 
-Since you are using `EmbeddingAtomDiag`, you might as well use all of the great
+Since you are using `AtomDiagImpuritySolver`, you might as well use all of the great
 second-quantized operator tools provided by {{TRIQS}}.
 
 Because {{RISB}} will make all equivalent clusters homogenous, you only need to
@@ -221,7 +221,7 @@ kweight = SmearingKWeight(beta=beta, n_target=n_target)
 ## Setup the solvers and find a self-consistent solution
 
 :::{seealso}
-[Using embedding classes](../how-to/embedding.md).
+[Using impurity solvers](../how-to/impurity_solvers.md).
 
 [Using `LatticeSolver`](../how-to/lattice_solver.md).
 
@@ -229,11 +229,11 @@ kweight = SmearingKWeight(beta=beta, n_target=n_target)
 :::
 
 You need a class that solves the
-[embedding Hamiltonian](../explanations/embedding.md). A simple one is
-:py:class:`risb.embedding.EmbeddingAtomDiag`
+[impurity Hamiltonian](../explanations/impurity.md). A simple one is
+:py:class:`risb.impurity_solvers.AtomDiagImpuritySolver`
 
 ```python
-embedding = EmbeddingClass(h_int, gf_struct)
+impurity_solver = ImpuritySolverClass(h_int, gf_struct)
 ```
 
 Next setup the {{RISB}} solver for the self-consistent loop. This will make a
@@ -246,7 +246,7 @@ the solver is setup as
 S = LatticeSolver(
     h0_k=h0_k,
     gf_struct=gf_struct,
-    embedding=embedding,
+    impurity_solvers=impurity_solver,
     update_weights=kweight.update_weights,
     symmetrizers=[force_paramagnetic],
 )
@@ -290,22 +290,22 @@ total_spin_Op = S2_op(spin_names, n_orb, off_diag=True)
 To calculate the overlap with the solution {{RISB}} finds
 
 ```python
-total_spin = embedding.overlap(total_spin_Op)
+total_spin = impurity_solver.overlap(total_spin_Op)
 ```
 
 ## Exercises
 
 1.  Solve for a range of $U$ values from $U = 0$ to $U = 12$. You may find
-    `embedding.set_h_int()` useful.
+    `impurity_solver.set_h_int()` useful.
 
 1.  Plot the average spin $S$ on a site versus $U$. Plot the quasiparticle
     weight $Z$ (accessed by `S.Z`) versus $U$. What happens to $S$ and
     $Z$ for large $U$?
 
-1.  Plot the hybridization coupling $D$ (accessed by `embedding.D`) of the
-    [embedding Hamiltonian](../explanations/embedding.md). What happens to $D$
+1.  Plot the hybridization coupling $D$ (accessed by `S.D`) of the
+    [impurity Hamiltonian](../explanations/impurity.md). What happens to $D$
     for large $U$? What does this imply about the impurity and the bath coupling
-    in the embedding Hamiltonian $\hat{H}^{\mathrm{emb}}$?
+    in the impurity Hamiltonian $\hat{H}^{\mathrm{imp}}$?
 
 1.  You will notice that $Z$, $S$, and $D$ both have an abrupt change, and then
     plateau, at some critical interaction strength $U_c$. What is the phase of
@@ -372,7 +372,7 @@ can describe.
 
 In this tutorial you only considered solutions where every site was the same.
 Construct a two-site super cell of the cubic lattice, and treat the
-two sites as separate embedding spaces $\mathcal{C}_i$ (see
+two sites as separate correlated subspaces $\mathcal{C}_i$ (see
 [Using projectors](../how-to/projectors.md)). You will also find a
 metal-insulator transition (of the Slater type).
 

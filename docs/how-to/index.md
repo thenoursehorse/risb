@@ -7,6 +7,6 @@ quadratic_terms
 kweight
 diis
 projectors
-embedding
+impurity_solvers
 lattice_solver
 ```
