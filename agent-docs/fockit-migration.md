@@ -173,7 +173,7 @@ U=3):
 
 Decisions:
 - D1: `hubbard.py` and `bilayer_hubbard.py` become TRIQS-free (numpy cubic h0_k,
-  fockit impurity). The Green's-function construction moves to a new TRIQS-only
+  fockit impurity). The Green's function construction moves to a new TRIQS-only
   `examples/green_functions.py` (based on the bilayer); its test skips without
   TRIQS.
 - D2: port `get_h0_loc` to `risb.helpers_fockit` (with a matrix-to-operator
@@ -262,7 +262,8 @@ Done:
   the residual (`options={"fatol": ...}`).
 - `how-to/quadratic_terms.md`: removed "Using TRIQS lattice tools"; "As a fockit
   operator" with `helpers_fockit.matrix_to_Op`.
-- `explanations/impurity.md`, `about.md`, `README.md`: fockit; no TRIQS. README
+- `explanations/impurity.md`, `about.md`, `README.md`: fockit. README lists TRIQS
+  4.x as optional for Green's functions (`risb.helpers_triqs`; user request). README
   tests and docs use plain `uv sync` (docs build without TRIQS warns that it
   cannot import `risb.helpers_triqs`; CI builds with TRIQS).
 - Found: MyST does not parse `:py:class:`-style roles (they rendered as text, or
@@ -274,6 +275,19 @@ Done:
   pre-commit clean.
 - Open: `how-to/lattice_solver.md` still credits TRIQS/hartree_fock for the
   symmetrizer idea.
+
+Follow-ups (user):
+- `about.md` lists both solvers again (AtomDiag with the TRIQS reference).
+- `explanations/impurity.md`: "we use the same `gf_struct` convention as TRIQS"
+  (checked: TRIQS 4.0.2 `BlockGf` takes risb's `gf_struct` as is;
+  `set_operator_structure` gives the same pairs).
+- `how-to/quadratic_terms.md`: a tip that TRIQS can construct tight-binding
+  models, linking only to TRIQS (no walkthrough, no API links).
+- New `how-to/green_functions.md` ("Constructing Green's functions",
+  `risb.helpers_triqs`, says TRIQS must be installed). Formulas checked against
+  the code; its code run on the `examples/green_functions.py` setup reproduces
+  the example (G_qp filling n, G filling n Z, both G constructions agree).
+- Write "Green's function(s)", never "green functions".
 
 ## Findings (step 1)
 

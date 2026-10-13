@@ -9,4 +9,5 @@ diis
 projectors
 impurity_solvers
 lattice_solver
+green_functions
 ```
