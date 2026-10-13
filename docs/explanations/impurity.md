@@ -60,8 +60,8 @@ solve, and is the biggest advantage of {{RISB}}.
 
 The simplest way to solve $\hat{H}^{\mathrm{imp}}$ is to use
 exact diagonalization in the half-filled particle sector. This is what
-`AtomDiagImpuritySolver` does, and orbital sizes up to $M_i = 5$ are possible, but
-will take a very long time.
+`FockitImpuritySolver` does, with a sparse eigensolver, and orbital sizes up to
+$M_i = 5$ are possible.
 One can also construct a specialized sparse exact diagonalization solver that
 takes into account the specific symmetries that the impurity Hamiltonian is
 allowed to have. Succinctly, only symmetry allowed $\hat{c}$ and $\hat{f}$
@@ -102,19 +102,19 @@ to try.
 ## To interface with our code
 
 :::{seealso}
-Source code for `AtomDiagImpuritySolver` for more details. The code is very
+Source code for `FockitImpuritySolver` for more details. The code is very
 minimal and simple.
 :::
 
 Any impurity solver can be used with our code provided it implements
-:py:class:`risb.types.ImpuritySolver`. Subclass it so that type checkers
+{py:class}`risb.types.ImpuritySolver`. Subclass it so that type checkers
 verify your implementation. It needs
 
 - `gf_struct`, the block structure of the physical orbitals.
 - A method to set the impurity Hamiltonian, called as
   `set_h_imp(Lambda_c, D, h0_loc_matrix)`. `Lambda_c`, `D`, and
   `h0_loc_matrix` are block matrices: dictionaries of `numpy` arrays with the
-  blocks of `gf_struct` (see `gf_struct` from {{TRIQS}}). `h0_loc_matrix`
+  blocks of `gf_struct`. `h0_loc_matrix`
   defines the non-interacting quadratic terms in $\hat{H}^{\mathrm{loc}}$.
 - A method `solve()` that finds the ground state in the half-filled particle
   sector and stores the single-particle density matrices `rho_f` (of the
