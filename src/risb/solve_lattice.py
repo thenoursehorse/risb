@@ -141,7 +141,7 @@ class LatticeSolver:
 
         self.projectors = projectors
         if (self.projectors is not None) and (len(self.projectors) != self.n_clusters):
-            msg = f"Need a projector (got {len(self.projectors)} for each cluster (got {self.n_clusters}) !"
+            msg = f"Need a projector (got {len(self.projectors)}) for each cluster (got {self.n_clusters}) !"
             raise ValueError(msg)
 
         self.gf_struct_mapping: Sequence[Mapping[str, str]]
@@ -152,7 +152,7 @@ class LatticeSolver:
         else:
             self.gf_struct_mapping = gf_struct_mapping
         if len(self.gf_struct_mapping) != self.n_clusters:
-            msg = f"Need a a gf_struct_mapping (got {len(self.gf_struct_mapping)}) for each cluster (got {self.n_clusters}) !"
+            msg = f"Need a gf_struct_mapping (got {len(self.gf_struct_mapping)}) for each cluster (got {self.n_clusters}) !"
             raise ValueError(msg)
 
         self.symmetrizers = symmetrizers

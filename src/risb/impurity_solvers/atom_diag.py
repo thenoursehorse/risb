@@ -214,6 +214,9 @@ class AtomDiagImpuritySolver(ImpuritySolver):
         h0_loc_matrix : risb.types.BlockMatrixLike, optional
             Single-particle quadratic couplings of the c-electrons. Each key
             in dictionary must follow :attr:`gf_struct`.
+        mu : float, optional
+            Chemical potential, subtracted as ``mu * n`` on the physical
+            orbitals.
 
         """
         if h0_loc_matrix is not None:

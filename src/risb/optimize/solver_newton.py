@@ -50,7 +50,6 @@ class NewtonSolver(ABC):
     def __init__(self, history_size: int = 6, n_restart: int | None = None) -> None:
         self.history_size = history_size
         self.n_restart = n_restart
-        self.initialized = False
 
         #: list of numpy.ndarray : History of guesses to the root problem.
         self.x: list[NDArray[np.float64]] = []
@@ -126,7 +125,7 @@ class NewtonSolver(ABC):
         maxiter: int = 1000,
     ) -> NDArray[np.float64]:
         """
-        Find the root of a function. It is called similarly to :func:scipy.optimize.root.
+        Find the root of a function. It is called similarly to :func:`scipy.optimize.root`.
 
         Parameters
         ----------

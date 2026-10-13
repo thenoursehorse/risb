@@ -32,7 +32,7 @@ def fermi(e: NDArray[np.float64], beta: float) -> NDArray[np.float64]:
     ----------
     e : numpy.ndarray
         Energy minus chemical potential
-    beta: float
+    beta : float
         Inverse temperature
 
     """
@@ -62,7 +62,7 @@ def update_mu(
         Inverse temperature
     n_k : int
         Number of unit cells on lattice
-    smear_function:
+    smear_function : risb.types.SmearFunction
         The function that smears the energy at each k-point.
 
     """

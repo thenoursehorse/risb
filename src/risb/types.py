@@ -29,7 +29,7 @@ type SmearFunction = Callable[[NDArray[np.float64], float, float], NDArray[np.fl
 """Smears band energies at inverse temperature beta and chemical potential mu into occupations."""
 
 type RootFinder = Callable[..., NDArray[np.float64] | OptimizeResult]
-"""Root finder called as ``root(fun, x0, args=..., **kwargs)``, e.g. DIIS.solve or scipy.optimize.root."""
+"""Root finder called as ``root(fun, x0, **kwargs)``, e.g. DIIS.solve or scipy.optimize.root."""
 
 
 class ImpuritySolver(Protocol):
@@ -41,7 +41,7 @@ class ImpuritySolver(Protocol):
     """
 
     gf_struct: GfStruct
-    """Block structure of the c-electrons."""
+    """Block structure of the physical orbitals (c-electrons)."""
 
     rho_f: BlockMatrix
     """f-electron density matrix of each block in :attr:`gf_struct`, set by :meth:`solve`."""

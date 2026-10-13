@@ -190,8 +190,8 @@ S = LatticeSolver(...
 requires. It must be a callable function that takes as input
 `root(S._target_function, x0, **kwargs)`. Here `S._target_function`
 by default returns a `tuple[ndarray,ndarray]` of a flattened ndarray `x_new`
-of a new `Lambda` and `R` matrix and a flattened ndarray `x_err` of the error
-from the `f1` and `f2` root functions.
+of a new `Lambda` and `R` matrix and a flattened ndarray `x_err` of the error,
+which by default is the change `x_new - x` (see `error_fun` below).
 
 If you do not want `S._target_function` to return `x_new` and only return
 `x_err` then you can specify
