@@ -77,7 +77,7 @@ testpaths = [
 ]
 
 [tool.mypy]
-files = ["src", "tests"]
+files = ["src", "tests", "examples"]
 python_version = "3.14"
 strict = true
 enable_error_code = [

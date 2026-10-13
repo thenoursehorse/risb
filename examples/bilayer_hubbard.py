@@ -105,6 +105,7 @@ total_spin = embedding.overlap(total_spin_Op)
 iw_mesh = MeshImFreq(beta=beta, S="Fermion", n_max=64)
 k_iw_mesh = MeshProduct(mk, iw_mesh)
 
+assert kweight.mu is not None
 mu = kweight.mu
 
 # Gf constructed from local self-energy

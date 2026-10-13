@@ -22,9 +22,10 @@ from risb.helpers_triqs import (
     get_sigma_w,
 )
 from risb.kweight import SmearingKWeight
+from risb.types import BlockMatrix
 
 
-def hubbard(U, n_orb):
+def hubbard(U: float, n_orb: int) -> Operator:
     h_int = Operator()
     for o in range(n_orb):
         h_int += U * n("up", o) * n("dn", o)
@@ -62,7 +63,7 @@ kweight = SmearingKWeight(beta=beta, n_target=n_target)
 
 
 # Symmetrize spin blocks to be the same (paramagnetism)
-def force_paramagnetic(A):
+def force_paramagnetic(A: list[BlockMatrix]) -> list[BlockMatrix]:
     # Paramagnetic
     A[0]["up"] = 0.5 * (A[0]["up"] + A[0]["dn"])
     A[0]["dn"] = A[0]["up"]
@@ -102,13 +103,12 @@ for U in U_arr:
 
     if np.abs(U - 3.5) < 1e-10:
         # Some different ways to construct some Green's functions
+        assert kweight.mu is not None
         mu = kweight.mu
 
         # The k-space and frequency mesh of the problem
         iw_mesh = MeshImFreq(beta=beta, S="Fermion", n_max=64)
         k_iw_mesh = MeshProduct(mk, iw_mesh)
-
-        mu = kweight.mu
 
         # Gf constructed from local self-energy
         G0_k_iw = get_g0_k_w(gf_struct=gf_struct, mesh=k_iw_mesh, h0_k=h0_k, mu=mu)

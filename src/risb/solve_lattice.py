@@ -55,7 +55,7 @@ class LatticeSolver:
         list of pairs, each containing the name of the
         matrix block as a string and the size of that block.
         For example for a single cluster: ``[ ('up', 3), ('down', 3) ]``.
-    embedding : risb.types.Embedding or list[risb.types.Embedding]
+    embedding : risb.types.Embedding or sequence of risb.types.Embedding
         The solver of the embedding problem for each cluster. It must
         already store the interacting Hamiltonian ``h_int`` on a cluster,
         and implement :class:`risb.types.Embedding`.
@@ -98,7 +98,7 @@ class LatticeSolver:
         self,
         h0_k: BlockMatrixLike,
         gf_struct: GfStruct | list[GfStruct],
-        embedding: Embedding | list[Embedding],
+        embedding: Embedding | Sequence[Embedding],
         update_weights: UpdateWeights,
         root: RootFinder | None = None,
         projectors: Sequence[BlockMatrixLike] | None = None,
@@ -121,8 +121,9 @@ class LatticeSolver:
         #: int : Number of correlated clusters per supercell on the lattice.
         self.n_clusters = len(self.gf_struct)
 
-        if isinstance(embedding, list):
-            self.embedding = embedding
+        self.embedding: list[Embedding]
+        if isinstance(embedding, Sequence):
+            self.embedding = list(embedding)
         else:
             self.embedding = [embedding]
         if len(self.embedding) != self.n_clusters:

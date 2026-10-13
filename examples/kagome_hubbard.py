@@ -2,6 +2,7 @@
 from itertools import product
 
 import numpy as np
+from numpy.typing import NDArray
 from triqs.operators import n
 from triqs.operators.util.observables import N_op, S2_op
 from triqs.operators.util.op_struct import set_operator_structure
@@ -9,9 +10,12 @@ from triqs.operators.util.op_struct import set_operator_structure
 from risb import LatticeSolver
 from risb.embedding import EmbeddingAtomDiag, EmbeddingDummy
 from risb.kweight import SmearingKWeight
+from risb.types import BlockMatrix, Embedding
 
 
-def get_h0_k(t=1, nkx=18, spin_names=None):
+def get_h0_k(
+    t: float = 1, nkx: int = 18, spin_names: list[str] | None = None
+) -> dict[str, NDArray[np.complex128]]:
     if spin_names is None:
         spin_names = ["up", "dn"]
     n_orb = 3
@@ -46,7 +50,7 @@ def get_h0_k(t=1, nkx=18, spin_names=None):
             ]
         )
 
-    h0_k_out = {}
+    h0_k_out: dict[str, NDArray[np.complex128]] = {}
     for bl in spin_names:
         h0_k_out[bl] = h0_k
     return h0_k_out
@@ -80,9 +84,12 @@ h_int = [U * n("up", 0) * n("dn", 0) for _ in range(n_clusters)]
 # Set up embedding solvers
 # Assuming all of the sites are equivalent it is sufficient to just solve for
 # one site and copy and paste onto the other sites
-embedding = [EmbeddingAtomDiag(h_int[0], gf_struct[0])]
-embedding.append(EmbeddingDummy(embedding[0]))
-embedding.append(EmbeddingDummy(embedding[0]))
+embedding_atom_diag = EmbeddingAtomDiag(h_int[0], gf_struct[0])
+embedding: list[Embedding] = [
+    embedding_atom_diag,
+    EmbeddingDummy(embedding_atom_diag),
+    EmbeddingDummy(embedding_atom_diag),
+]
 
 # Setup projectors onto the three correlated spaces in a unit cell
 # Dictionaries of projectors onto each cluster
@@ -95,7 +102,7 @@ projectors = [P_A, P_B, P_C]
 # Enforce paramagnetism. This is not really necessary because the primitive
 # unit cell will not magnetically order. But it helps to stabalize the
 # solver in the insulating state
-def force_paramagnetic(A):
+def force_paramagnetic(A: list[BlockMatrix]) -> list[BlockMatrix]:
     n_clusters = len(A)
     for i in range(n_clusters):
         A[i]["up"] = 0.5 * (A[i]["up"] + A[i]["dn"])
@@ -118,11 +125,11 @@ S.solve(tol=1e-8)
 
 # Average number of particles on a cluster
 total_number_Op = N_op(spin_names, n_orb, off_diag=True)
-total_number = embedding[0].overlap(total_number_Op)
+total_number = embedding_atom_diag.overlap(total_number_Op)
 
 # Effective total spin of a cluster
 total_spin_Op = S2_op(spin_names, n_orb, off_diag=True)
-total_spin = embedding[0].overlap(total_spin_Op)
+total_spin = embedding_atom_diag.overlap(total_spin_Op)
 
 # Print out some interesting observables
 with np.printoptions(formatter={"float": "{: 0.4f}".format}):
