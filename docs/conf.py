@@ -1,7 +1,9 @@
-# ruff: noqa: D100
+# ruff: noqa: D100, D103
 from __future__ import annotations
 
 import importlib.metadata
+
+from sphinx.ext.intersphinx import missing_reference
 
 project = "risb"
 copyright = "2016-2023 H. L. Nourse and B. J. Powell, 2016-2022 R. H. McKenzie"
@@ -87,8 +89,7 @@ intersphinx_mapping = {
     "python": ("https://docs.python.org/3", None),
     "numpy": ("https://numpy.org/doc/stable/", None),
     "scipy": ("https://docs.scipy.org/doc/scipy/", None),
-    # I don't think TRIQS has intersphinx set up?
-    # "triqs": ('https://triqs.github.io/triqs/latest/documentation/', None),
+    "triqs": ("https://triqs.github.io/triqs/latest/", None),
 }
 
 nitpick_ignore = [
@@ -106,3 +107,28 @@ myst_substitutions = {
     "DIIS": r"{abbr}`DIIS (direct inversion in the iterative subspace)`",
     "DMRG": r"{abbr}`DMRG (density matrix renormalization group)`",
 }
+
+
+# Public names we write that numpy and TRIQS document under another path or
+# object type: (role, target in their inventory)
+_external_targets = {
+    "numpy._typing._array_like.NDArray": ("data", "numpy.typing.NDArray"),
+    "numpy.float64": ("attr", "numpy.float64"),
+    "triqs.atom_diag.AtomDiag": ("func", "triqs.atom_diag.AtomDiag"),
+    "triqs.gfs.BlockGf": ("class", "triqs.gfs.block_gf.BlockGf"),
+    "triqs.gfs.MeshImFreq": ("class", "triqs.mesh.meshes.MeshImFreq"),
+    "triqs.gfs.MeshProduct": ("class", "triqs.mesh.mesh_product.MeshProduct"),
+    "triqs.gfs.MeshReFreq": ("class", "triqs.mesh.meshes.MeshReFreq"),
+    "triqs.operators.Operator": ("class", "triqs.operators.operators.Operator"),
+}
+
+
+def _resolve_external_reference(app, env, node, contnode):
+    if node.get("refdomain") != "py" or node["reftarget"] not in _external_targets:
+        return None
+    node["reftype"], node["reftarget"] = _external_targets[node["reftarget"]]
+    return missing_reference(app, env, node, contnode)
+
+
+def setup(app):
+    app.connect("missing-reference", _resolve_external_reference)
