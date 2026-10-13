@@ -20,6 +20,7 @@ classifiers = [
     "Operating System :: OS Independent",
     "Intended Audience :: Science/Research",
     "Topic :: Scientific/Engineering :: Physics",
+    "Typing :: Typed",
 ]
 
 [project.urls]
