@@ -114,8 +114,9 @@ verify your implementation. It needs
 - A method to set the impurity Hamiltonian, called as
   `set_h_imp(Lambda_c, D, h0_loc_matrix)`. `Lambda_c`, `D`, and
   `h0_loc_matrix` are block matrices: dictionaries of `numpy` arrays with the
-  blocks of `gf_struct`. `h0_loc_matrix`
-  defines the non-interacting quadratic terms in $\hat{H}^{\mathrm{loc}}$.
+  blocks of `gf_struct` (we use the same `gf_struct` convention as
+  [TRIQS](https://triqs.github.io/): a list of (block name, block size) pairs).
+  `h0_loc_matrix` defines the non-interacting quadratic terms in $\hat{H}^{\mathrm{loc}}$.
 - A method `solve()` that finds the ground state in the half-filled particle
   sector and stores the single-particle density matrices `rho_f` (of the
   $\hat{f}$ degrees of freedom), `rho_cf` (between the $\hat{c}$ and

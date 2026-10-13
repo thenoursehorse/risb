@@ -120,6 +120,11 @@ for k in range(n_k):
     h0_k[bl_name][k][...] = n_orb by n_orb array that is the function for h0_k in symmetry block bl_name
 ```
 
+:::{tip}
+The [TRIQS](https://triqs.github.io/) library can also construct tight-binding
+models.
+:::
+
 ### Using [TBmodels](https://github.com/Z2PackDev/TBmodels)
 
 Work in progress.
