@@ -16,8 +16,35 @@ permissions:
   contents: read
 
 jobs:
-  build:
-    name: Test
+  test:
+    name: Test (no TRIQS)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Setup uv
+        uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+        with:
+          enable-cache: true
+
+      - name: Install risb
+        run: uv sync --locked
+
+      - name: Lint
+        run: SKIP=no-commit-to-branch uv run pre-commit run --all-files --show-diff-on-failure
+
+      - name: Type check
+        run: uv run mypy
+
+      - name: Test risb
+        run: uv run pytest
+
+  test-triqs:
+    name: Test (TRIQS)
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -43,12 +70,6 @@ jobs:
 
       - name: Install risb
         run: UV_PROJECT_ENVIRONMENT=$CONDA_PREFIX uv sync --inexact --locked --group docs
-
-      - name: Lint
-        run: SKIP=no-commit-to-branch pre-commit run --all-files --show-diff-on-failure
-
-      - name: Type check
-        run: mypy
 
       - name: Test risb
         run: pytest

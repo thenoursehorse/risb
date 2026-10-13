@@ -15,8 +15,8 @@ user to review. Update this file as steps finish. Delete it when done.
    fallback** (impossible at large sizes; the user chooses, step 8).
 5. [x] Swap all examples to fockit, with fockit's own syntax for building operators
    and solving (see Step 5 notes).
-6. [ ] Make TRIQS an optional dependency. Keep `AtomDiagImpuritySolver`; fockit is
-   the default.
+6. [x] Make TRIQS an optional dependency. Keep `AtomDiagImpuritySolver`; fockit is
+   the default (see Step 6 notes).
 7. [ ] Swap docs (tutorials, how-to, explanations, README) to fockit.
 8. [ ] Solver options and degenerate ground states. The user picks eigh or eigsh
    and can pass settings to eigsh (or other solvers); never an automatic
@@ -44,7 +44,10 @@ list its files and suggest a commit message; the user commits.
 - Step 5: (a) `examples/kagome_hubbard.py`; (b) `src/risb/helpers_fockit.py`,
   `examples/decorated_honeycomb.py`; (c) `examples/hubbard.py`,
   `examples/bilayer_hubbard.py`, `examples/green_functions.py`,
-  `tests/test_examples.py`, this file.
+  `tests/test_examples.py`, this file. Committed (`2f1c55c`, `56219dd`,
+  `0def080`), plus the `green_functions.py` TRIQS argument fix.
+- Step 6: `pyproject.toml`, `uv.lock`, `tests/test_docs.py`,
+  `.github/workflows/ci.yml`, this file.
 
 ## Step 2 notes
 
@@ -201,6 +204,37 @@ Done:
 - Step 7: `docs/tutorials/self-consistent.md` points to
   `examples/bilayer_hubbard.py` for Green's functions; now
   `examples/green_functions.py`.
+
+## Step 6 notes
+
+Without TRIQS (before step 6): pytest failed only in `test_docs.py` (imports
+`risb.helpers_triqs`) and `test_examples.py` (needs matplotlib); mypy needed
+matplotlib; the strict docs build failed (autodoc imports `helpers_triqs` and
+`atom_diag`).
+
+Decisions:
+- matplotlib goes in the `test` dependency group; `test_docs.py` skips modules
+  that need the missing TRIQS.
+- D1: CI has two jobs: "Test (no TRIQS)" (uv only: lint, mypy, pytest) and
+  "Test (TRIQS)" (conda, as before: pytest and the strict docs build).
+- D2: docs keep building with TRIQS installed (CI and CD); `docs/conf.py`
+  unchanged.
+- D3: no custom error message; without TRIQS users get Python's
+  `No module named 'triqs'`.
+
+Done:
+- `pyproject.toml`: `matplotlib>=3.11.2` in the `test` group (`uv add`; it also
+  swapped a few conda packages in the local `.venv`, e.g. six, for PyPI builds;
+  TRIQS 4.0.2 still works there).
+- `tests/test_docs.py`: skips modules and `__all__` names whose import fails
+  because `triqs` is missing.
+- `.github/workflows/ci.yml`: jobs `test` "Test (no TRIQS)" (`uv sync --locked`;
+  lint, mypy, pytest) and `test-triqs` "Test (TRIQS)" (conda; pytest, strict docs
+  build). `cd.yml` unchanged (calls `ci.yml`; builds docs with TRIQS). actionlint
+  clean.
+- Checked: fresh `uv sync --locked` env without TRIQS: lint, mypy, pytest
+  (42 passed, 15 skipped). TRIQS env: pytest 57 passed, strict docs build exit 0.
+- Step 7: README "Dependencies"/"Tests" sections still say the tests need TRIQS.
 
 ## Findings (step 1)
 
