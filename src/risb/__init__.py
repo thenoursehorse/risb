@@ -2,7 +2,9 @@
 
 from importlib.metadata import PackageNotFoundError, version
 
-from .solve_lattice import LatticeSolver  # noqa: F401
+from .solve_lattice import LatticeSolver
+
+__all__ = ["LatticeSolver"]
 
 try:
     __version__ = version("risb")

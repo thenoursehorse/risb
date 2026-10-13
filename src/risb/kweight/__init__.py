@@ -1,3 +1,5 @@
 """k-space integrators."""
 
-from .kweight import SmearingKWeight  # noqa: F401
+from .kweight import SmearingKWeight
+
+__all__ = ["SmearingKWeight"]
