@@ -17,11 +17,12 @@
 
 """DIIS optimizers."""
 
+from collections.abc import Sequence
 from typing import override
 
 import numpy as np
 import scipy
-from numpy.typing import ArrayLike, NDArray
+from numpy.typing import NDArray
 
 from .solver_newton import NewtonSolver
 
@@ -37,8 +38,8 @@ class DIIS(NewtonSolver):
     n_restart : int, optional
         Fully reset subspace after this many iterations.
     n_period : int, optional
-        Take a single linear mixing step afer this many iterations. Default
-        round(history_size / 2).
+        Take a single linear mixing step afer this many iterations. Defaults
+        to round(history_size / 2).
     alpha : float, optional
         Step size of the linear mixing step.
 
@@ -54,23 +55,23 @@ class DIIS(NewtonSolver):
         self,
         history_size: int = 6,
         n_restart: float = np.inf,
-        n_period: int = 0,
+        n_period: int | None = None,
         alpha: float = 1.0,
     ) -> None:
         super().__init__(history_size=history_size, n_restart=n_restart)
         self.alpha = alpha
 
-        if n_period == 0:
+        if n_period is None:
             self.n_period = int(np.round(self.history_size / 2.0))
         else:
             self.n_period = n_period
 
-        self.solve = super().solve
-
     @staticmethod
     def extrapolate(
-        x: list[ArrayLike], g_x: list[ArrayLike], error: list[ArrayLike]
-    ) -> np.ndarray:
+        x: Sequence[NDArray[np.float64]],
+        g_x: Sequence[NDArray[np.float64]],
+        error: Sequence[NDArray[np.float64]],
+    ) -> NDArray[np.float64]:
         """DIIS extrapolation algorithm for the new guess for :attr:`x`."""
         # Construct the B matrix
         m = len(error)
