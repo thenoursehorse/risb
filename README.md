@@ -99,6 +99,12 @@ Tests are run with
 pytest
 ```
 
+Type checks are run with
+
+```shell
+mypy
+```
+
 ## Documentation
 
 Clone source

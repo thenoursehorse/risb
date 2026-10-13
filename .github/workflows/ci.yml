@@ -47,6 +47,9 @@ jobs:
       - name: Lint
         run: SKIP=no-commit-to-branch pre-commit run --all-files --show-diff-on-failure
 
+      - name: Type check
+        run: mypy
+
       - name: Test risb
         run: pytest
 
