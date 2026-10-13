@@ -33,7 +33,7 @@ n_target = ...
 kweight = SmearingKWeight(beta=beta, n_target=n_target)
 ```
 
-The fixed electron filling method uses :py:func:`scipy.optimize.brentq` to
+The fixed electron filling method uses {py:func}`scipy.optimize.brentq` to
 find a $\mu$ that gives the correct $n$.
 
 ## Getting integration weights

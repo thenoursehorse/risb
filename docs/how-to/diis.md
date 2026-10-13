@@ -1,6 +1,6 @@
 # Using `DIIS`
 
-This guide shows you how to use and customize :py:class:`DIIS`. This is an
+This guide shows you how to use and customize {py:class}`~risb.optimize.DIIS`. This is an
 implementation of algorithms from Ref. [^Chupin2021].
 
 ## Truncating history

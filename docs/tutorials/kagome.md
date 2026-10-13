@@ -4,7 +4,7 @@
 Single-site case. Three-site cluster case.
 :::
 
-In this tutorial you will use :py:class:`LatticeSolver` to solve the
+In this tutorial you will use {py:class}`~risb.LatticeSolver` to solve the
 single-orbital Hubbard model on the kagome lattice. We will do this in two
 ways.
 

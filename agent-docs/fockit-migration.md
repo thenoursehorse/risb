@@ -17,7 +17,8 @@ user to review. Update this file as steps finish. Delete it when done.
    and solving (see Step 5 notes).
 6. [x] Make TRIQS an optional dependency. Keep `AtomDiagImpuritySolver`; fockit is
    the default (see Step 6 notes).
-7. [ ] Swap docs (tutorials, how-to, explanations, README) to fockit.
+7. [x] Swap docs (tutorials, how-to, explanations, README) to fockit (see Step 7
+   notes).
 8. [ ] Solver options and degenerate ground states. The user picks eigh or eigsh
    and can pass settings to eigsh (or other solvers); never an automatic
    fallback. Also degenerate ground states (see Findings and Open questions).
@@ -46,8 +47,12 @@ list its files and suggest a commit message; the user commits.
   `examples/bilayer_hubbard.py`, `examples/green_functions.py`,
   `tests/test_examples.py`, this file. Committed (`2f1c55c`, `56219dd`,
   `0def080`), plus the `green_functions.py` TRIQS argument fix.
-- Step 6: `pyproject.toml`, `uv.lock`, `tests/test_docs.py`,
-  `.github/workflows/ci.yml`, this file.
+- Step 6: committed.
+- Step 7: (a) `README.md`, `docs/about.md`; (b) `docs/how-to/impurity_solvers.md`,
+  `docs/how-to/lattice_solver.md`, `docs/how-to/quadratic_terms.md`;
+  (c) `docs/tutorials/hubbard.md`, `docs/tutorials/self-consistent.md`;
+  (d) `docs/explanations/impurity.md`; (e) roles only: `docs/how-to/diis.md`,
+  `docs/how-to/kweight.md`, `docs/tutorials/kagome.md`; this file.
 
 ## Step 2 notes
 
@@ -235,6 +240,40 @@ Done:
 - Checked: fresh `uv sync --locked` env without TRIQS: lint, mypy, pytest
   (42 passed, 15 skipped). TRIQS env: pytest 57 passed, strict docs build exit 0.
 - Step 7: README "Dependencies"/"Tests" sections still say the tests need TRIQS.
+
+## Step 7 notes
+
+Decisions (user): the docs use fockit only. TRIQS and `AtomDiagImpuritySolver` are
+mentioned once, in `docs/how-to/impurity_solvers.md`, saying it exists. "No one
+should be using the AtomDiag solver." No doubling up of fockit and TRIQS
+anywhere else (tutorials, how-tos, explanations, about). The hubbard tutorial's
+density-density example is written out by hand (no new helper). The docs do
+not mention the benchmarks.
+
+Done:
+- `how-to/impurity_solvers.md`: rewritten for `FockitImpuritySolver` (what
+  `solve` does and raises, `overlap` with `helpers_fockit`, bath modes); a short
+  `AtomDiagImpuritySolver` note (needs TRIQS, slower, use fockit, cite TRIQS).
+- Tutorials `hubbard.md`, `self-consistent.md`: fockit operators and solver.
+  The hand-written density-density interaction equals TRIQS `h_int_density`
+  exactly (checked with `to_triqs`, random U, U', 3 orbitals); with Uprime=5 it
+  gives the same Z and S2 as `5 * nc("up", 0) * nc("dn", 0)`.
+- `how-to/lattice_solver.md`: fockit tip; stop scipy's quasi-Newton methods on
+  the residual (`options={"fatol": ...}`).
+- `how-to/quadratic_terms.md`: removed "Using TRIQS lattice tools"; "As a fockit
+  operator" with `helpers_fockit.matrix_to_Op`.
+- `explanations/impurity.md`, `about.md`, `README.md`: fockit; no TRIQS. README
+  tests and docs use plain `uv sync` (docs build without TRIQS warns that it
+  cannot import `risb.helpers_triqs`; CI builds with TRIQS).
+- Found: MyST does not parse `:py:class:`-style roles (they rendered as text, or
+  as a broken field list at the start of a line). All 19 converted to
+  `{py:class}` etc. with full targets.
+- Checked: code blocks of the hubbard tutorial run end to end (it never imports
+  `LatticeSolver`/`SmearingKWeight`, pre-existing); the how-to, self-consistent
+  and quadratic-terms snippets run; strict docs build exit 0; pytest 57 passed;
+  pre-commit clean.
+- Open: `how-to/lattice_solver.md` still credits TRIQS/hartree_fock for the
+  symmetrizer idea.
 
 ## Findings (step 1)
 
