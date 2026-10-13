@@ -11,8 +11,9 @@ authors = [
   {name = "H. L. Nourse"}
 ]
 dependencies = [
+  "fockit>=0.4",
   "numpy",
-  "scipy"
+  "scipy",
 ]
 classifiers = [
     "Programming Language :: Python :: 3",

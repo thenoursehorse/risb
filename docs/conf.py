@@ -92,6 +92,9 @@ intersphinx_mapping = {
 nitpick_ignore = [
     ("py:class", "_io.StringIO"),
     ("py:class", "_io.BytesIO"),
+    # fockit has no hosted docs to link to
+    ("py:class", "fockit.algebra.OpSum"),
+    ("py:class", "fockit.hilbert.Basis"),
 ]
 
 always_document_param_types = True

@@ -7,7 +7,7 @@ user to review. Update this file as steps finish. Delete it when done.
 ## Steps
 
 1. [x] Check fockit works for risb (see Findings).
-2. [ ] Implement a fockit impurity solver, modelled after `AtomDiagImpuritySolver`.
+2. [x] Implement a fockit impurity solver, modelled after `AtomDiagImpuritySolver`.
 3. [ ] Test it on the same things AtomDiag is tested on (`tests/test_atomdiag.py`,
    `tests/test_latticesolver.py`, `tests/test_dummy_impurity_solver.py`).
 4. [ ] Benchmark fockit vs AtomDiag. **Stop**: user decides the defaults.
@@ -19,6 +19,26 @@ user to review. Update this file as steps finish. Delete it when done.
 8. [ ] Handle degenerate ground states (see Findings and Open questions). Until
    then `solve` uses plain eigsh with `k=1`, which, like AtomDiag, picks an
    arbitrary state when the ground state is degenerate.
+
+## Commits
+
+One commit per step (or smaller), not one at the end. At the end of each step,
+list its files and suggest a commit message; the user commits.
+
+- Step 1: committed (`9f62a29`).
+- Step 2: `pyproject.toml`, `uv.lock`, `src/risb/impurity_solvers/fockit.py`,
+  `src/risb/impurity_solvers/__init__.py`, `docs/conf.py`, this file.
+
+## Step 2 notes
+
+- `FockitImpuritySolver` in `src/risb/impurity_solvers/fockit.py`. Same public API
+  as `AtomDiagImpuritySolver` (`set_h0_loc/h_int/h_bath/h_hybr/h_imp(mu=)`, `solve`,
+  `get_rho_*`, `overlap`, `gs_energy`, `gf_struct_bath`). `basis` (built once in
+  `__init__`) replaces `ad`. Operators are fockit `OpSum`s; bath modes are
+  `("bath_" + block, i)`.
+- Checked by hand against AtomDiag on the step-1 models: max diff about 1e-14.
+- `docs/conf.py`: fockit types in `nitpick_ignore` (fockit has no hosted docs or
+  intersphinx inventory).
 
 ## Findings (step 1)
 

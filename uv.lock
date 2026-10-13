@@ -284,6 +284,19 @@ wheels = [
 ]
 
 [[package]]
+name = "fockit"
+version = "0.4.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "numpy" },
+    { name = "scipy" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/a3/4a/afd4ac5596292e394aa9cee34f749750565e4c96580213870364b58ee000/fockit-0.4.0.tar.gz", hash = "sha256:462780c88e531d1fa725d424ebc8076e30c085521e385f4a8c49912ab7949575", size = 50306, upload-time = "2026-10-13T03:45:10.941Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/bb/8b/d36c086cecb63aa030f4521ee972f10391f02465090e10427de45c4b24ab/fockit-0.4.0-py3-none-any.whl", hash = "sha256:77da40e3c8a42607217faf3a81d8dc993002c2b620a8138f36dd6df9c8ec3992", size = 37670, upload-time = "2026-10-13T03:45:09.544Z" },
+]
+
+[[package]]
 name = "furo"
 version = "2025.12.19"
 source = { registry = "https://pypi.org/simple" }
@@ -867,6 +880,7 @@ wheels = [
 name = "risb"
 source = { editable = "." }
 dependencies = [
+    { name = "fockit" },
     { name = "numpy" },
     { name = "scipy" },
 ]
@@ -894,6 +908,7 @@ test = [
 
 [package.metadata]
 requires-dist = [
+    { name = "fockit", specifier = ">=0.4" },
     { name = "numpy" },
     { name = "scipy" },
 ]
