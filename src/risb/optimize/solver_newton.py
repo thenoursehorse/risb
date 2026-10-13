@@ -39,7 +39,7 @@ class NewtonSolver(ABC):
     history_size : int, optional
         Maximum size of subspace.
     n_restart : int, optional
-        Fully reset subspace after this many iterations.
+        Fully reset subspace after this many iterations. Defaults to never.
 
     Notes
     -----
@@ -47,7 +47,7 @@ class NewtonSolver(ABC):
 
     """
 
-    def __init__(self, history_size: int = 6, n_restart: float = np.inf) -> None:
+    def __init__(self, history_size: int = 6, n_restart: int | None = None) -> None:
         self.history_size = history_size
         self.n_restart = n_restart
         self.initialized = False
@@ -171,7 +171,7 @@ class NewtonSolver(ABC):
 
             x = self.update_x()
 
-            if (self.n % self.n_restart) == 0:
+            if self.n_restart is not None and (self.n + 1) % self.n_restart == 0:
                 self.x = []
                 self.g_x = []
                 self.error = []

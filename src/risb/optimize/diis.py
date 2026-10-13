@@ -36,7 +36,7 @@ class DIIS(NewtonSolver):
     history_size : int, optional
         Maximum size of subspace.
     n_restart : int, optional
-        Fully reset subspace after this many iterations.
+        Fully reset subspace after this many iterations. Defaults to never.
     n_period : int, optional
         Take a single linear mixing step afer this many iterations. Defaults
         to round(history_size / 2).
@@ -54,7 +54,7 @@ class DIIS(NewtonSolver):
     def __init__(
         self,
         history_size: int = 6,
-        n_restart: float = np.inf,
+        n_restart: int | None = None,
         n_period: int | None = None,
         alpha: float = 1.0,
     ) -> None:
