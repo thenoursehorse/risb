@@ -17,16 +17,17 @@
 
 """Functions used in RISB based on the TRIQS library."""
 
+from collections.abc import Mapping
+
 import numpy as np
 from triqs.gfs import BlockGf, MeshImFreq, MeshProduct, MeshReFreq, inverse
 from triqs.operators import Operator, c, c_dag
 
 from risb.helpers import get_h0_loc_matrix, get_h_qp
+from risb.types import BlockMatrix, GfStruct
 
 
-def get_C_Op(
-    gf_struct: list[tuple[str, int]], dagger: bool = False
-) -> dict[list[Operator]]:
+def get_C_Op(gf_struct: GfStruct, dagger: bool = False) -> dict[str, list[Operator]]:
     """
     Return all creation operators in Hilbert space.
 
@@ -56,9 +57,7 @@ def get_C_Op(
     return C_Op
 
 
-def matrix_to_Op(
-    A: dict[np.ndarray], gf_struct: list[tuple[str, int]]
-) -> dict[Operator]:
+def matrix_to_Op(A: BlockMatrix, gf_struct: GfStruct) -> dict[str, Operator]:
     """
     Return a TRIQS operator from a matrix representation of quadratic operators.
 
@@ -87,12 +86,12 @@ def matrix_to_Op(
 
 
 def get_h0_loc_blocks(
-    h0_k: dict[np.ndarray],
-    P: dict[np.ndarray],
-    gf_struct: list[tuple[str, int]] | None = None,
-    gf_struct_mapping: dict[str, str] | None = None,
+    h0_k: BlockMatrix,
+    P: BlockMatrix,
+    gf_struct: GfStruct | None = None,
+    gf_struct_mapping: Mapping[str, str] | None = None,
     force_real: bool = True,
-) -> dict[Operator]:
+) -> dict[str, Operator]:
     """
     Return a TRIQS operator of the non-interacting terms in the subspace given by :attr:`P`.
 
@@ -141,10 +140,10 @@ def get_h0_loc_blocks(
 
 
 def get_h0_loc(
-    h0_k: dict[np.ndarray],
-    P: dict[np.ndarray],
-    gf_struct: list[tuple[str, int]] | None = None,
-    gf_struct_mapping: dict[str, str] | None = None,
+    h0_k: BlockMatrix,
+    P: BlockMatrix,
+    gf_struct: GfStruct | None = None,
+    gf_struct_mapping: Mapping[str, str] | None = None,
     force_real: bool = True,
 ) -> Operator:
     """
@@ -188,7 +187,7 @@ def get_h0_loc(
     return h0_loc
 
 
-def get_gf_struct_from_g(block_gf: BlockGf) -> list[tuple[str, int]]:
+def get_gf_struct_from_g(block_gf: BlockGf) -> GfStruct:
     """
     Return the block structure of a TRIQS Green's function.
 
@@ -203,18 +202,18 @@ def get_gf_struct_from_g(block_gf: BlockGf) -> list[tuple[str, int]]:
         Green's function's structure.
 
     """
-    gf_struct = []
+    gf_struct: GfStruct = []
     for bl, gf in block_gf:
-        gf_struct.append([bl, gf.data.shape[-1]])
+        gf_struct.append((bl, gf.data.shape[-1]))
     return gf_struct
 
 
 # FIXME have to check h0_k shares the same mesh as Gf
 def get_g0_k_w(
-    gf_struct: list[tuple[str, int]],
+    gf_struct: GfStruct,
     mesh: MeshProduct,
-    h0_k: dict[np.ndarray] | None = None,
-    h0_k_gf=None,
+    h0_k: BlockMatrix | None = None,
+    h0_k_gf: BlockGf | None = None,
     mu: float = 0,
     use_broadcasting: bool = True,
 ) -> BlockGf:
@@ -235,7 +234,7 @@ def get_g0_k_w(
     h0_k : dict[numpy.ndarray], optional
         Non-interacting dispersion indexed as k, orb_i, orb_j.
         Each key in dictionary must follow :attr:`gf_struct`.
-    h0_k : triqs.gfs.BlockGf
+    h0_k_gf : triqs.gfs.BlockGf, optional
         Non-interacting dispersion as a triqs.gfs.BlockGf.
         Must follow the structure given by :attr:`gf_struct`, on
         the mesh given by :attr:`mesh`.
@@ -288,12 +287,12 @@ def get_g0_k_w(
 
 
 def get_sigma_w(
-    gf_struct: list[tuple[str, int]],
+    gf_struct: GfStruct,
     mesh: MeshReFreq | MeshImFreq,
-    Lambda: dict[np.ndarray],
-    R: dict[np.ndarray],
+    Lambda: BlockMatrix,
+    R: BlockMatrix,
     mu: float = 0,
-    h0_loc: dict[np.ndarray] | None = None,
+    h0_loc: BlockMatrix | None = None,
     use_broadcasting: bool = True,
 ) -> BlockGf:
     r"""
@@ -368,11 +367,11 @@ def get_sigma_w(
 # FIXME have to check h0_kin_k shares the same mesh
 # FIXME allow h0_kin_k_gf structure as well?
 def get_g_qp_k_w(
-    gf_struct: list[tuple[str, int]],
+    gf_struct: GfStruct,
     mesh: MeshProduct,
-    h0_kin_k: dict[np.ndarray],
-    Lambda: dict[np.ndarray],
-    R: dict[np.ndarray],
+    h0_kin_k: BlockMatrix,
+    Lambda: BlockMatrix,
+    R: BlockMatrix,
     mu: float = 0,
     use_broadcasting: bool = True,
 ) -> BlockGf:
@@ -435,7 +434,7 @@ def get_g_k_w(
     g0_k_w: BlockGf | None = None,
     sigma_w: BlockGf | None = None,
     g_qp_k_w: BlockGf | None = None,
-    R: dict[np.ndarray] | None = None,
+    R: BlockMatrix | None = None,
     use_broadcasting: bool = True,
 ) -> BlockGf:
     r"""
@@ -453,7 +452,7 @@ def get_g_k_w(
         the second index is a triqs.gfs.MeshReFreq or triqs.gfs.MeshImFreq mesh.
     sigma_w : triqs.gfs.BlockGf, optional
         Local self-energy on a triqs.gfs.MeshReFreq or triqs.gfs.MeshImFreq mesh.
-    gp_k_w : triqs.gfs.BlockGf, optional
+    g_qp_k_w : triqs.gfs.BlockGf, optional
         Quasiparticle Green's function on a meshproduct where
         the first index is a triqs.gfs.MeshBrZone mesh and
         the second index is a triqs.gfs.MeshReFreq or triqs.gfs.MeshImFreq mesh.

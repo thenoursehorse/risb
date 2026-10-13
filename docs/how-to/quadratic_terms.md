@@ -282,7 +282,7 @@ If you have a block matrix representation of a single-particle operator and
 you want it as a {{TRIQS}} operator
 
 ```python
-from risb.helpers_triqs get_C_Op
+from risb.helpers_triqs import get_C_Op
 
 # The block matrix
 A = ...
@@ -302,7 +302,7 @@ for bl, bl_size in gf_struct:
 Or you can simply use
 
 ```python
-from risb.helpers_triqs matrix_to_Op
+from risb.helpers_triqs import matrix_to_Op
 
 Op = matrix_to_Op(A, gf_struct)
 ```
