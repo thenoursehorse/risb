@@ -38,7 +38,7 @@ electron, and so the bath is the same size as the impurity. The local
 Hamiltonian $\hat{H}^{\mathrm{loc}}$ is defined by the problem being solved.
 The hybridization matrix $\mathbf{D}_i$ and bath coupling matrix
 $\mathbf{\lambda}^c_i$ are obtained from the mean-field equations in the
-[self-consistent cycle](../tutorial/self-consistent.md).
+[self-consistent cycle](../tutorials/self-consistent.md).
 
 In the normal phase (non-superconducting) {{RISB}} requires solving the ground
 state of the $M_i$ particle sector at each iteration of the self-consistent

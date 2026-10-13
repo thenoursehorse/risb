@@ -85,7 +85,7 @@ appropriately cited.
     L. Messio, and P. Seth, _TRIQS: A toolbox for research on interacting quantum systems_,
     Comp. Phys. Comm. **196**, 398-415 (2015)](https://doi.org/10.1016/j.cpc.2015.04.023)
 
-[^Krivenko2022]:
-    [I. Krivenko, _ezARPACK - ezARPACK - a C++ ARPACK-NG wrapper
-    compatible with multiple matrix/vector algebra libraries: Release 1.0_,
-    10.5281/zenodo.3930203 (2022).](https://doi.org/10.5281/zenodo.3930202)
+%[^Krivenko2022]:
+%    [I. Krivenko, _ezARPACK - ezARPACK - a C++ ARPACK-NG wrapper
+%    compatible with multiple matrix/vector algebra libraries: Release 1.0_,
+%    10.5281/zenodo.3930203 (2022).](https://doi.org/10.5281/zenodo.3930202)

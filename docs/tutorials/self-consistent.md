@@ -396,8 +396,10 @@ for bl, bl_size in gf_struct:
     Lambda_c[bl] = helpers.get_lambda_c(rho_qp[bl], R[bl], Lambda[bl], D[bl])
 ```
 
-See [Solving $\hat{H}^{\mathrm{emb}}$](#f-solving-hat-h-mathrm-emb) for the
+See [Solving $\hat{H}^{\mathrm{emb}}$](#solving-h-emb) for the
 single-particle density matrices of $\hat{H}^{\mathrm{emb}}$.
+
+(solving-h-emb)=
 
 ## F: Solving $\hat{H}^{\mathrm{emb}}$
 
