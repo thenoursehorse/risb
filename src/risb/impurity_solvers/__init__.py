@@ -19,3 +19,7 @@ def __getattr__(name: str) -> object:
         return AtomDiagImpuritySolver
     msg = f"module {__name__!r} has no attribute {name!r}"
     raise AttributeError(msg)
+
+
+def __dir__() -> list[str]:
+    return __all__
