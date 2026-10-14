@@ -54,8 +54,20 @@ kweight = SmearingKWeight(beta=beta, n_target=n_target)
 #            A[i][bl] = A_sym[i]
 #    return A
 
+# The impurity problem is symmetric under swapping the two layers, in every
+# block including the bath orbitals ("bath_" + block). The solver finds the
+# lowest state with the given eigenvalue of the swap, which here (+1) contains
+# the ground state.
+layer_swap = {
+    (bl, o): (bl, 1 - o)
+    for bl in spin_names + ["bath_" + bl for bl in spin_names]
+    for o in range(n_orb)
+}
+
 # Set up the impurity solver
-impurity_solver = FockitImpuritySolver(h_int, gf_struct)
+impurity_solver = FockitImpuritySolver(
+    h_int, gf_struct, permutation_symmetries=[(layer_swap, 1)]
+)
 
 # Setup RISB solver class
 # gf_struct and the impurity solvers are given for each cluster. In this case

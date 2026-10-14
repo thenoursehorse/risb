@@ -83,7 +83,18 @@ h_int = [U * nc("up", 0) * nc("dn", 0) for _ in range(n_clusters)]
 # Set up impurity solvers
 # All of the sites are equivalent on the Gamma-centred mesh, so it is sufficient
 # to just solve for one site and copy and paste onto the other sites
-impurity_solver = FockitImpuritySolver(h_int[0], gf_struct[0])
+# The impurity problem is symmetric under swapping up and down spins, in the
+# physical and the bath orbitals ("bath_" + block). The solver finds the lowest
+# state with the given eigenvalue of the swap, which here (-1, because of the
+# sign from reordering the fermions) contains the ground state.
+spin_swap = {}
+for o in range(n_orb):
+    for prefix in ["", "bath_"]:
+        spin_swap[(prefix + "up", o)] = (prefix + "dn", o)
+        spin_swap[(prefix + "dn", o)] = (prefix + "up", o)
+impurity_solver = FockitImpuritySolver(
+    h_int[0], gf_struct[0], permutation_symmetries=[(spin_swap, -1)]
+)
 impurity_solvers: list[ImpuritySolver] = [
     impurity_solver,
     DummyImpuritySolver(impurity_solver),

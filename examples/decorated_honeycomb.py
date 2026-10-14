@@ -202,9 +202,26 @@ h_int = [get_hubb_trimer(spin_names=spin_names, U=U) for i in range(n_clusters)]
 # Define the local Hamiltonian
 h_loc = [h0_loc[i] + h_int[i] for i in range(n_clusters)]
 
+# The trimer is symmetric under a C3 rotation. In the basis of the A, E1, E2
+# orbitals the rotation multiplies an orbital by w^q, with w = exp(2 pi i / 3)
+# and q = 0, 1, 2, so it is a product of on-site factors on every physical and
+# bath orbital ("bath_" + block). The solver finds the lowest state with the
+# given eigenvalue of the rotation, which here (w^0 = 1) contains the ground
+# state.
+w = np.exp(2j * np.pi / 3)
+charge = {"A": 0, "E1": 1, "E2": 2}
+c3_factors = []
+for bl, _ in gf_struct_molecule:
+    for mode in [(bl, 0), ("bath_" + bl, 0)]:
+        q = charge[bl.split("_")[1]]
+        if q != 0:
+            c3_factors.append(c(*mode) * cdag(*mode) + w**q * cdag(*mode) * c(*mode))
+
 # Set up impurity solvers
 # impurity_solvers = [FockitImpuritySolver(h_loc[i], gf_struct[i]) for i in range(n_clusters)]
-impurity_solvers: list[ImpuritySolver] = [FockitImpuritySolver(h_loc[0], gf_struct[0])]
+impurity_solvers: list[ImpuritySolver] = [
+    FockitImpuritySolver(h_loc[0], gf_struct[0], onsite_symmetries=[(c3_factors, 1)])
+]
 for _ in range(n_clusters - 1):
     impurity_solvers.append(DummyImpuritySolver(impurity_solvers[0]))
 

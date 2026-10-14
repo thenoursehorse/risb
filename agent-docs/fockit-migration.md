@@ -40,13 +40,18 @@ user to review. Update this file as steps finish. Delete it when done.
    a (local/incoherent) part. Checked so far (bilayer example only): G filling =
    n Z to 1e-8 and G_qp filling = n. Find out what the correct statement is (and
    whether the filling of G should be n), then fix the docs sentence.
-11. [ ] Investigate why fockit's `build_basis` is slow (> 10 min, stopped) for the
+11. [x] (done, see Item 11 notes: fockit `_conjugate` keeps float zeros) Investigate why fockit's `build_basis` is slow (> 10 min, stopped) for the
    decorated honeycomb impurity (924-state N sector) with C3 as an onsite
    symmetry, factors `c c^dag + w^q c^dag c` (q = 0, 1, 2 for A, E1, E2). Is it
    fockit, or the setup? See Step 8 notes.
-12. [ ] Add the impurity symmetries to the examples to show users how to use
+12. [x] (done, see Item 12 notes) Add the impurity symmetries to the examples to show users how to use
    them: Sz and spin swap (hubbard, kagome), plus layer swap (bilayer), plus C3
    (decorated honeycomb, once item 11 is resolved).
+   Decisions (user): hard-code sectors after verifying they hold the ground
+   state at every iteration; comments say the solver finds the lowest state in
+   the chosen sector (a sector can also target a higher state, not only speed);
+   one kind each: hubbard Sz (diagonal), bilayer layer swap (permutation),
+   kagome spin swap (permutation), decorated honeycomb C3 (onsite).
 13. [ ] `degenerate="average"`: the equal-weight mixture over the degenerate
    level (eigsh doubling + `scipy.linalg.orth`; tested exact, see Step 8
    notes). First check the finite-temperature RISB/gGA literature on whether a
@@ -468,6 +473,55 @@ Done (step 8):
   dh_trimer -1); particle-hole sector reproduces the plain solve; missing
   symmetries raise; "warn" warns at D = 0 and not with hybridization.
 - How-to: "Choosing the eigensolver", "Symmetries", "Degenerate ground states".
+
+## Item 12 notes (symmetries in the examples)
+
+- Ground-state sector at each example's converged solution (dense, all
+  sectors): hubbard U = 10 triplet (N_up - N_dn = -2, 0, 2 all hold it);
+  bilayer layer swap +1 (-1 is 0.33 higher); kagome spin swap -1 (+1 is 0.96
+  higher; the sign is from reordering fermions); decorated honeycomb C3 w^0
+  (w^1, w^2 0.35 higher). Spin swap with Sz = 0: bilayer +1, kagome -1.
+- Added: hubbard `diagonal_symmetries={N_up - N_dn: 0}`, bilayer layer swap
+  (+1), kagome spin swap (-1), decorated honeycomb C3 onsite factors (1).
+- Verified (scratchpad `item12_verify.py`): every impurity solve of every
+  example compared with the unrestricted ground energy: |difference| <=
+  1.1e-13 (hubbard 180 solves over the U scan, bilayer 21, kagome 20,
+  decorated honeycomb 17). Results vs the previous examples: bilayer 2.8e-11,
+  kagome 1.5e-12, decorated honeycomb 3.6e-10; hubbard Z, S2, N identical at
+  every U, but at U = 10 (Mott, R = 0) mu = lambda differ (2.826 vs 2.807):
+  mu is not fixed inside the Mott gap (item 15 regime), lambda - mu = 0 both.
+- `docs/how-to/impurity_solvers.md`: points to the examples; the warning now
+  says the solver finds the lowest state in the chosen sector (another sector
+  targets a higher state), with the bilayer/kagome spin-swap signs.
+
+## Item 11 notes (C3 slowness)
+
+- Cause is fockit, not the setup. `build_basis` with the C3 onsite factors
+  takes 0.0 s (dim 312 of 924). The time is in `to_matrix` ->
+  `check_symmetric` -> `_conjugate` (symmetries.py), which computes
+  U op U^dag symbolically: for each ladder operator, `normal_order(factor *
+  image * hc(factor))` over the 8 factors. Each factor commutes with c_k on
+  other modes (factor factor^dag = 1), but the exact cancellation (w w^* - 1)
+  leaves float coefficients down to 1e-80 that are never dropped: the image of
+  c(up_E1, 0) has 2, 2, 4, 6, 12, 18, 36, 50 terms after each factor instead of
+  1. Then `term * images[single]` multiplies up to 4 such images per monomial
+  of h_imp (~50^4 terms), unordered and undropped. cProfile: 11M monomials
+  built in 90 s, not finished.
+- Fix (tested by monkeypatching): `drop_zeros(..., tol=1e-12)` after each
+  conjugation step. Images stay 1 term; C3 sectors w^0, w^1, w^2: dims 312,
+  306, 306, build_basis + to_matrix 0.01 s; ground state in w^0, E0
+  -15.022185199237 = unsymmetrized. Upstream fockit main (ef4596d) has the
+  same `_conjugate`. A relative tolerance would be safer than an absolute one.
+- From reading `tabulate_onsite`: the factor form `1 + (w^q - 1) n` is
+  rejected because each monomial is tabulated as its own level map and a
+  level hit by two monomials (identity and n both act on level 1) fails the
+  "one level with a phase" check; summing the monomials per target level
+  would accept it.
+- Fixed upstream in fockit 0.4.1 (`0f1a17f`, drops terms below 1e-12 x
+  max|coeff| in `_conjugate`); risb requires `fockit>=0.4.1`. Reproducer:
+  0.01 s (10 s on 0.4.0).
+- For risb: no speed reason to use C3 here: the whole unsymmetrized
+  to_matrix + dense eigh on 924 states takes 0.07 s.
 
 ## Item 10 notes (physical Green's function)
 

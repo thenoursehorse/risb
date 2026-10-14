@@ -48,8 +48,18 @@ def force_paramagnetic(A: list[BlockMatrix]) -> list[BlockMatrix]:
     return A
 
 
+# The impurity problem conserves spin, so the solver can be restricted to the
+# states with as many up as down electrons, counting the bath orbitals
+# ("bath_" + block). The solver finds the lowest state in the chosen sector,
+# which here contains the ground state.
+spin_imbalance = zero()
+for o in range(n_orb):
+    spin_imbalance += nc("up", o) + nc("bath_up", o) - nc("dn", o) - nc("bath_dn", o)
+
 # Set up the impurity solver
-impurity_solver = FockitImpuritySolver(h_int, gf_struct)
+impurity_solver = FockitImpuritySolver(
+    h_int, gf_struct, diagonal_symmetries={spin_imbalance: 0}
+)
 
 # Setup RISB solver class
 S = LatticeSolver(

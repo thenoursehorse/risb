@@ -166,13 +166,20 @@ With permutation or onsite symmetries, the ground state is written in
 `impurity_solver.basis`, which only has the diagonal symmetries, to calculate
 the density matrices.
 
+The examples show each kind: $S_z$ in `examples/hubbard.py`, swapping the
+layers in `examples/bilayer_hubbard.py`, swapping the spins in
+`examples/kagome_hubbard.py`, and a $C_3$ rotation in
+`examples/decorated_honeycomb.py`.
+
 :::{warning}
-You have to choose the sector with the ground state. The eigenvalue of the
-ground state also depends on the order of the fermion modes, so it can be $+1$
-for one model and $-1$ for another. The impurity Hamiltonian must have the
-symmetries at every step of the self-consistent loop, e.g., enforced with
-`symmetrizers` in `LatticeSolver`. `solve()` raises a `ValueError` if it does
-not.
+The solver finds the lowest state in the chosen sector, so choose the sector
+with the state you want, usually the ground state. Choosing another sector
+targets a higher state. The eigenvalue of a state also depends on the order of
+the fermion modes: the ground state is even under swapping the spins in
+`examples/bilayer_hubbard.py` and odd in `examples/kagome_hubbard.py`. The
+impurity Hamiltonian must have the symmetries at every step of the
+self-consistent loop, e.g., enforced with `symmetrizers` in `LatticeSolver`.
+`solve()` raises a `ValueError` if it does not.
 :::
 
 ### Degenerate ground states
