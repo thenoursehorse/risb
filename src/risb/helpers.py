@@ -289,6 +289,99 @@ def get_f2(
     return f2
 
 
+def get_lagrangian(
+    h0_kin_k: BlockMatrixLike,
+    R: BlockMatrixLike,
+    Lambda: BlockMatrixLike,
+    D: BlockMatrixLike,
+    Lambda_c: BlockMatrixLike,
+    Delta_p: BlockMatrixLike,
+    rho_f: BlockMatrixLike,
+    rho_cf: BlockMatrixLike,
+    h_loc_energy: float,
+    beta: float,
+    mu: float,
+) -> float:
+    r"""
+    Return the RISB Lagrangian of a single cluster that is the whole unit cell.
+
+    Its stationary points are the solutions of RISB. It is written with the
+    expectation values of a fixed, normalized ground state of the impurity
+    problem, so its derivatives with respect to ``D`` and ``Lambda_c`` are taken
+    at fixed impurity ground state.
+
+    Parameters
+    ----------
+    h0_kin_k : risb.types.BlockMatrixLike
+        Single-particle dispersion, indexed as k, orb_i, orb_j.
+    R : risb.types.BlockMatrixLike
+        Renormalization matrix from electrons to quasiparticles.
+    Lambda : risb.types.BlockMatrixLike
+        Correlation potential of quasiparticles.
+    D : risb.types.BlockMatrixLike
+        Hybridization coupling of the impurity problem, indexed as
+        ``D[bl][a, alpha]`` with ``a`` a bath orbital.
+    Lambda_c : risb.types.BlockMatrixLike
+        Bath coupling of the impurity problem.
+    Delta_p : risb.types.BlockMatrixLike
+        Quasiparticle density matrix, as a variable of the Lagrangian.
+    rho_f : risb.types.BlockMatrixLike
+        f-electron density matrix of the impurity problem.
+    rho_cf : risb.types.BlockMatrixLike
+        c,f-electron density matrix of the impurity problem.
+    h_loc_energy : float
+        Expectation value of the local Hamiltonian of the physical orbitals in
+        the impurity problem.
+    beta : float
+        Inverse temperature of the Fermi-Dirac smearing of the quasiparticles.
+    mu : float
+        Chemical potential.
+
+    Returns
+    -------
+    float
+        The Lagrangian.
+
+    Notes
+    -----
+    Eq. 40 in the supplemental of `10.1103/PhysRevLett.118.126401
+    <PRL126401_>`__, with the zero-temperature limit replaced by Fermi-Dirac
+    smearing, written in the conventions of risb:
+
+    .. math::
+
+        L = -\frac{1}{\beta N_k} \sum_k \mathrm{Tr} \log \left( 1 +
+        e^{-\beta (\mathcal{R} \epsilon_k \mathcal{R}^{\dagger} + \lambda - \mu)}
+        \right)
+        + \langle \hat{H}^{\mathrm{loc}} \rangle
+        + 2 \, \mathrm{Re} \, \mathrm{Tr} (\mathcal{D} \rho^{cf})
+        + \mathrm{Tr} (\lambda^c \rho^f)
+        - \mathrm{Tr} (\lambda^T \Delta^p)
+        - \mathrm{Tr} (\lambda^c \Delta^p)
+        - 2 \, \mathrm{Re} \, \mathrm{Tr} \left( \mathcal{D}
+        \mathcal{R}^T \sqrt{\Delta^p (1 - \Delta^p)} \right),
+
+    summed over blocks. The term with the normalization of the impurity ground
+    state is zero and left out.
+
+    .. _PRL126401: https://doi.org/10.1103/PhysRevLett.118.126401
+
+    """
+    lagrangian = h_loc_energy
+    for bl in R:
+        energies = np.linalg.eigvalsh(get_h_qp(R[bl], Lambda[bl], h0_kin_k[bl], mu))
+        n_k = energies.shape[0]
+        lagrangian -= np.sum(np.logaddexp(0, -beta * energies)) / (beta * n_k)
+        Dp = Delta_p[bl]
+        sqrt_term = sqrtm(Dp - Dp @ Dp)
+        lagrangian += 2 * np.real(np.trace(D[bl] @ rho_cf[bl]))
+        lagrangian += np.real(np.trace(Lambda_c[bl] @ rho_f[bl]))
+        lagrangian -= np.real(np.trace(Lambda[bl].T @ Dp))
+        lagrangian -= np.real(np.trace(Lambda_c[bl] @ Dp))
+        lagrangian -= 2 * np.real(np.trace(D[bl] @ R[bl].T @ sqrt_term))
+    return float(lagrangian)
+
+
 def get_h_qp(
     R: NDArray[np.inexact],
     Lambda: NDArray[np.inexact],

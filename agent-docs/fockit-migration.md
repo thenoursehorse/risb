@@ -668,7 +668,24 @@ Results so far (bilayer, U=4, V=0.25, `method="eigh"`, DIIS tol 1e-13):
   sc. -> helpers., break outside the block loop). The tutorial's functions and
   skeleton, with its blanks filled from the tutorial, run: bilayer converges
   in 9 cycles, Z = 0.7526.
-- Still to do for (iii): the independent variational check on M2.
+- Independent check (user chose stationarity of the Lagrangian over a full
+  minimization): new public `helpers.get_lagrangian` (single cluster = unit
+  cell, no projectors; Fermi-Dirac smearing; embedding terms through the
+  impurity's expectation values at fixed ground state; Eq. 40 of the PRL
+  126401 supplement in risb's conventions). Its partial derivatives vanish
+  exactly where risb's equations hold (lambda: rho_qp = Delta_p; Lambda_c:
+  f2; D: f1; Delta_p: fix 2's formula; R: the D equation).
+  Finite-difference derivatives (step 1e-6, floor ~1e-9) along every
+  direction of R, D (real and imaginary parts) and lambda, Lambda_c, Delta_p
+  (Hermitian basis), complex 2-orbital model, Kanamori U = 3, J = 0.6:
+  fixed code's solution: all <= 9e-10 (stationary). Controls: R perturbed by
+  0.01: 1e-3 to 1e-2 (the check is sensitive); U = 0: <= 2e-10. Original
+  code (git worktree at e47aa26^, verified loaded): from R = 1 it stalls at
+  error 4e-9 but that point is stationary to 5e-9 (same physics); from a
+  rotated start (M2, 8^3 mesh) it does not converge in 20000 it and ends at a
+  point with its own f1/f2-type derivatives 1e-6 / 1e-7 but the Delta_p
+  derivative 3.5e-2, Z 0.5712 vs 0.5742: not a RISB solution.
+- Item 14 independent check: done (above). Proposed: add the stationarity check as a test.
 - Unblocked: step 9 (gauge freedom and convergence speed; Lanata's claim).
 - Tests to add once the cycle is covariant (user, done above): through `S.R`, `S.Lambda`,
   `S.solve()`: U = 0, a gauge-rotated copy of the exact solution converges in
