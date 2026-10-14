@@ -161,6 +161,7 @@ def assert_lagrangian_is_stationary(
             mu=mu,
             projectors=S.projectors,
             gf_struct_mapping=S.gf_struct_mapping,
+            impurity_entropy=[s.entropy for s in impurity_solvers],
         )
 
     # R and D are general matrices, Lambda, Lambda_c and Delta_p Hermitian
@@ -213,6 +214,38 @@ def test_converged_solution_is_a_stationary_point_of_the_lagrangian() -> None:
         S.R[0][bl] = u.conj().T
     S.solve(tol=1e-8)
     assert S.optimize.success
+    assert_lagrangian_is_stationary(S, [impurity_solver], kweight)
+
+
+def test_converged_solution_with_a_thermal_impurity_is_a_stationary_point_of_the_lagrangian() -> (
+    None
+):
+    # At this temperature the excited states of the impurity problem change
+    # the solution
+    U, J = 3.0, 0.6
+    Up = U - 2 * J
+    h_int = h_int_kanamori(
+        ["up", "dn"],
+        2,
+        U=(Up - J) * (1 - np.eye(2)),
+        Uprime=U * np.eye(2) + Up * (1 - np.eye(2)),
+        J_hund=J,
+    )
+    gf_struct = [(bl, 2) for bl in ["up", "dn"]]
+    beta = 20
+    kweight = SmearingKWeight(beta=beta, n_target=2)
+    impurity_solver = FockitImpuritySolver(h_int, gf_struct, beta=beta)
+    S = LatticeSolver(
+        h0_k=build_two_orbital_complex_h0_k(),
+        gf_struct=gf_struct,
+        impurity_solvers=impurity_solver,
+        update_weights=kweight.update_weights,
+    )
+    for bl, _ in gf_struct:
+        S.Lambda[0][bl] = 1.5 * np.eye(2)
+    S.solve(tol=1e-8)
+    assert S.optimize.success
+    assert impurity_solver.entropy > 0.01
     assert_lagrangian_is_stationary(S, [impurity_solver], kweight)
 
 
@@ -286,3 +319,72 @@ def test_converged_solution_with_an_orbital_in_no_cluster_is_a_stationary_point_
     S.solve(tol=1e-8)
     assert S.optimize.success
     assert_lagrangian_is_stationary(S, impurity_solvers, kweight)
+
+
+@pytest.mark.parametrize(
+    "n_clusters", [2, 1], ids=["every site", "a site in no cluster"]
+)
+def test_entropy_is_minus_the_temperature_derivative_of_the_lagrangian(
+    n_clusters: int,
+) -> None:
+    # One band on a cell of two sites, a cluster on each site or on site 0
+    # only, with thermal impurity problems. At fixed chemical potential the
+    # Lagrangian at a solution is the grand potential
+    spin_names = ["up", "dn"]
+    U, mu = 2.0, 1.0
+    h0_k = dict.fromkeys(spin_names, one_band_cubic_h0_k(4, supercell=True))
+    sites = [
+        dict.fromkeys(spin_names, np.array([[1.0, 0.0]])),
+        dict.fromkeys(spin_names, np.array([[0.0, 1.0]])),
+    ]
+
+    def solve(beta: float) -> tuple[float, float]:
+        gf_struct = [[(bl, 1) for bl in spin_names]] * n_clusters
+        impurity_solvers = [
+            FockitImpuritySolver(U * nc("up", 0) * nc("dn", 0), gf, beta=beta)
+            for gf in gf_struct
+        ]
+        S = LatticeSolver(
+            h0_k=h0_k,
+            gf_struct=gf_struct,
+            impurity_solvers=impurity_solvers,
+            update_weights=SmearingKWeight(beta=beta, mu=mu).update_weights,
+            projectors=sites[:n_clusters],
+        )
+        for i in range(n_clusters):
+            for bl in spin_names:
+                S.Lambda[i][bl] = np.array([[mu]])
+        S.solve(tol=1e-12)
+        assert S.optimize.success
+        impurity_entropy = [s.entropy for s in impurity_solvers]
+        lagrangian = helpers.get_lagrangian(
+            h0_kin_k=S.h0_kin_k,
+            R=S.R,
+            Lambda=S.Lambda,
+            D=S.D,
+            Lambda_c=S.Lambda_c,
+            Delta_p=S.rho_qp,
+            rho_f=S.rho_f,
+            rho_cf=S.rho_cf,
+            h_loc_energy=[
+                float(np.real(s.overlap(s.h_int + s.h0_loc))) for s in impurity_solvers
+            ],
+            beta=beta,
+            mu=mu,
+            projectors=S.projectors,
+            gf_struct_mapping=S.gf_struct_mapping,
+            impurity_entropy=impurity_entropy,
+        )
+        entropy = helpers.get_entropy(
+            energies=S.energies_qp, beta=beta, mu=mu, impurity_entropy=impurity_entropy
+        )
+        return lagrangian, entropy
+
+    T = 0.1
+    dT = 1e-3 * T
+    lagrangian_minus, _ = solve(1 / (T - dT))
+    _, entropy = solve(1 / T)
+    lagrangian_plus, _ = solve(1 / (T + dT))
+    assert entropy == pytest.approx(
+        -(lagrangian_plus - lagrangian_minus) / (2 * dT), abs=1e-5
+    )

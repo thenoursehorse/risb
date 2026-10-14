@@ -76,7 +76,7 @@ user to review. Update this file as steps finish. Delete it when done.
    treat it consistently in all those helpers, re-run the U scan (DIIS and
    linear mixing), add a complex Mott test for both solvers. Step 9 may explain
    the large DIIS steps (lambda eigenvalues -51, 194) that reach these states.
-16. [ ] (several clusters done; finite T open) `helpers.get_lagrangian` for several clusters. It handles one cluster equal
+16. [x] (done: several clusters, and finite T via embedding_entropy; see Item 16 notes) `helpers.get_lagrangian` for several clusters. It handles one cluster equal
    to the unit cell only, but `LatticeSolver` allows several clusters with
    `projectors` and `gf_struct_mapping`; the helper should take the same
    arguments (upfolded R(k), lambda(k) in the quasiparticle term; embedding
@@ -124,7 +124,7 @@ user to review. Update this file as steps finish. Delete it when done.
    Check the up/down-folding maths for each, extend `check_projectors`, and
    test (the supercell test is a starting point; a partially covered cell
    with an uncorrelated orbital should reproduce the covered result).
-20. [ ] Investigate (R, Delta^p) as the input of the self-consistent cycle
+20. [x] (closed, not worth it: underdetermined by the overall lambda shift; the hybrid works for metals but costs more and fails at edges / Mott; see Item 20 notes) Investigate (R, Delta^p) as the input of the self-consistent cycle
    instead of (R, Lambda) (user). Initialising with R = 1 and Delta^p = the
    non-interacting density matrix is more natural than guessing Lambda;
    Lambda would then be found from Delta^p (e.g. a fit / inversion of
@@ -132,13 +132,26 @@ user to review. Update this file as steps finish. Delete it when done.
    worth it: how lambda is obtained and whether that is well posed, cost per
    cycle, effect on convergence and on the R = 0 / edge cases, gauge
    covariance, and what the literature does (Lanata's codes, ghost-GA).
-21. [ ] Investigate allowing non-orthonormal or overlapping projectors (user;
+21. [x] (dropped (user): it would only be Lowdin orthonormalization at each k, (P P^dag)^(-1/2) P over all clusters' projectors, which users can do themselves; check_projectors=True flags when needed) Investigate allowing non-orthonormal or overlapping projectors (user;
    after item 19), e.g. orthonormalizing internally, as DFT+DMFT codes do
    with raw projections onto local orbitals.
 22. [ ] Rename `h0_kin_k` (user: later; the proposed h0_qp_k / h0_lat_k "aren't
    great"; old-name aliases also decided later). It is h0_k minus the local
    terms of the correlated clusters, so it also holds the local terms outside
    all projectors (after item 19); until renamed, document that.
+23. [ ] DFT+RISB helpers (user; later): double-counting helpers, a helper for
+   the DFT+RISB total energy, a helper for the charge self-consistent (CSC)
+   update, and a test on real input (the user has NiO projectors and h_k, and
+   another workflow to point to). Not needed: k-point symmetrization and
+   projector conditions.
+24. [ ] Investigate adding ghost RISB (g-RISB / ghost-GA) to risb (user): from
+   Lanata's theory papers only, not other codes. What changes (bath larger
+   than the impurity, rectangular R, the ghost orbitals' Lambda, the
+   embedding sector), what it costs with fockit, and how it fits risb's
+   interfaces.
+25. [ ] Investigate overlapping fragments, as in bootstrap embedding (user):
+   clusters that share orbitals, how their overlapping parts are matched,
+   and what that would need beyond risb's non-overlapping projectors.
 
 ## Commits
 
@@ -532,6 +545,62 @@ Done (step 8):
   symmetries raise; "warn" warns at D = 0 and not with hybridization.
 - How-to: "Choosing the eigensolver", "Symmetries", "Degenerate ground states".
 
+## Item 20 notes ((R, Delta^p) as the input of the cycle)
+
+- Theory (mine): cycle (R, Delta^p) -> lambda from rho_qp(R, lambda) =
+  Delta^p (inversion), D, Lambda_c as now, impurity -> rho_f, rho_cf, new R
+  = get_r(rho_cf, rho_f), new Delta^p = rho_f. Fixed points are the RISB
+  solutions (lambda condition exact by the inversion, Lambda_c condition is
+  the update). Inversion well posed at T > 0 for Delta^p strictly in (0, 1)
+  (Delta^p = dOmega/dlambda^T, Omega concave in lambda: a Legendre
+  transform); not at an edge (lambda -> -+inf) or at T = 0 with a gap. Only
+  lambda - mu enters; with mu fixed by the filling an inconsistent Tr
+  Delta^p has no exact inverse, so the inner problem is a least-squares fit
+  (as in DMET). Covariant. At R = 0 lambda is set by Delta^p, removing the
+  lambda -> lambda degeneracy of the (R, lambda) cycle (untested).
+- Literature: Lanata et al. PRB 85, 035133 (2012), arXiv:1108.0180:
+  "minimization only in the variational density matrix, in the spirit of the
+  Levy and Lieb formulation of DFT", R "a fixpoint" at fixed density; their
+  2015-2017 papers use the (R, lambda) root problem. DMET fits its
+  correlation potential to density matrices by least squares; Wu et al. PRB
+  102, 085123 (2020), arXiv:2003.00873: the fit "is often hindered by the
+  numerical stability", worst "when the effective single-particle system is
+  gapless or nearly gapless".
+- Prototype (scratchpad `item20.py`, inner least-squares inversion for lambda
+  with mu fixed by n_target, DIIS on (R, Delta^p), start R = 1, Delta^p =
+  non-interacting, lambda = h0_loc): converges to non-solutions. Bilayer:
+  Z = 0, |rho_f - rho_qp| 1; complex U = 3: Z = 1, 0.5. (R, lambda) from
+  the same start: 20 / 21 cycles, correct.
+- Cause (trace `item20_trace.py`, bilayer): Tr rho_f is the impurity's
+  charge (N_c + N_f = M), and Tr Delta^p went 2.00 -> 1.16 -> ... -> 0.05,
+  fit error 0.2-0.5. On the lattice only lambda - mu enters and mu is fixed
+  by the filling, so a constant shift of lambda shifts mu and leaves
+  Delta^p unchanged: the inversion cannot fix lambda's overall shift. That
+  shift sets the bath levels relative to the impurity, i.e. the impurity's
+  charge; in (R, lambda) it comes from the stationarity update of lambda
+  (uses the impurity), in (R, Delta^p) nothing fixes it. So (R, Delta^p) is
+  underdetermined by one number (an embedding chemical potential) when the
+  clusters cover the lattice. Cost: 6730-19528 lattice evaluations (finite-
+  difference least squares) for ~110 impurity solves vs ~20 / ~20.
+- Fix options: carry the shift as an extra variable updated from the
+  stationarity condition (a hybrid close to (R, lambda)), or an inner root
+  on the impurity's charge (impurity solves inside the inversion).
+- Hybrid tested (user; scratchpad `item20_hybrid.py`): x = (R, Delta^p, s),
+  lambda = lambda'(R, Delta^p) + s with lambda' the exact inversion at
+  mu = 0 (hybr), Delta^p <- rho_f, s updated by the trace of the
+  stationarity lambda. Same start (R = 1, lambda = h0_loc). Impurity /
+  lattice evaluations, (R, lambda) vs hybrid: bilayer 20 / 20 vs 26 / 950;
+  complex U = 3 21 / 21 vs 23 / 994; 3-orbital Kanamori U = 2 19 / 19 vs
+  31 / 5255; all correct (|rho_f - rho_qp| <= 4e-10). Kanamori U = 3 Mott
+  and the frozen shell: inversion fails (fit error 1; Delta^p at an edge /
+  flat band at mu); complex Mott U = 5 with beta: no convergence in 500.
+- Side finding for item 18: the frozen-shell model from lambda = h0_loc =
+  diag(-2, 2) still ends at R = 0 (self-consistency 0.6) with the core
+  treatment; default lambda = 0 and diag(0, 4), (-2, 4), (0, 2), (2, 7)
+  converge. Different trigger: the half-filled orbital's bath level (~2) is
+  far below its impurity level (~6 = crystal field 2 + Hartree 4), so
+  cycle 0 empties it. Open.
+
 ## Item 19 notes (projectors that depend on k or leave orbitals uncovered)
 
 - Literature: PRL 118, 126401 supplement (arXiv:1606.09614): epsilon_k spans
@@ -619,6 +688,57 @@ Done (step 8):
   (the finite-T Lagrangian's stationary points are the thermal cycle's
   solutions), not that it gives the physical entropy (check the literature on
   the known issue). Multi-cluster first; finite T afterwards.
+- Known entropy issue (literature): Lanata, Deng, Kotliar PRB 92, 081108
+  (2015), arXiv:1505.01951: earlier finite-T GA (their Refs. 18, 19, Wang et
+  al. 2010; Sandri et al. 2013) is "underestimating the entropy using an
+  entropy inequality", which "generates a few pathologies of the theory, such
+  as giving a negative entropy at low temperatures"; they evaluate S not from
+  the variational parameters but from dS = dE/T with S(T = 0) = 0. A search
+  for a statement about Kotliar-Ruckenstein slave-boson mean field found only
+  leads (slave-fermion mean field overestimating the entropy; free-energy
+  fluctuation corrections that did not preserve the noninteracting limit).
+- Bose vs Gibbs (user asked): Ayral's Eq. C3 treats the embedding
+  eigenstates as bosonic modes with the one-boson constraint imposed on
+  average by E_c (grand canonical): weights 1 / (e^{beta (E_n - E_c)} - 1),
+  sum 1. Gibbs (what `beta` does) has exactly one boson: e^{-beta E_n} / Z.
+  Equal at high T (small fugacity); at low T Bose needs e^{beta (E0 - E_c)}
+  ~ 2 and gives excited states ~ (1/2) e^{-beta Delta} vs Gibbs e^{-beta
+  Delta}; both the ground level (equal split if degenerate) at T -> 0.
+- Implemented: `FockitImpuritySolver.entropy` (-sum w ln w of its weights;
+  0 for the ground state); `get_lagrangian(..., embedding_entropy=...)`
+  subtracts sum_i S_i / beta (Gibbs only; docstring Notes: the stationary
+  points are the solutions with that ensemble; S_i defined as -sum w ln w;
+  the summary says L's value at a solution is RISB's grand potential, -dL/dT
+  at fixed mu RISB's entropy). Bug found in item 15's code: the k doubling for the thermal sum
+  reached k = 32 on a 70-state sector and ARPACK failed (error 3); now dense
+  once 2k + 1 >= dim. Tests: a 4-fold degenerate impurity at beta 1000 has
+  entropy ln 4; the Lagrangian is stationary at a thermal metallic solution
+  (complex 2-orbital U = 3, beta 20: Z 0.5367 / 0.6801 vs ground 0.5402 /
+  0.6810, entropy 0.016, |f2| 2e-9). The entropy term is constant at fixed
+  ensemble, so stationarity does not test it (passes without it too).
+- Entropy helpers (user): `get_entropy_qp(energies, beta, mu)` (Fermi-Dirac,
+  per unit cell, as the quasiparticle term of get_lagrangian),
+  `get_entropy_impurity(weights)` (-sum w log w; FockitImpuritySolver.entropy
+  uses it), `get_entropy(*, energies, beta, mu, impurity_entropy)` (their
+  sum). get_lagrangian's argument renamed embedding_entropy ->
+  impurity_entropy (user: "impurity"; a flat list, one float per cluster's
+  impurity problem). Docstring summary: L at a solution is RISB's grand
+  potential, minus its T-derivative at fixed mu RISB's entropy.
+  DummyImpuritySolver has no entropy (use the referenced solver's).
+- Thermodynamic test (user: small, fast, with partial coverage): one band,
+  2-site cell, 4^3, U = 2, fixed mu = 1, thermal impurities at T = 0.1, a
+  cluster on every site and on site 0 only: get_entropy = -dL/dT (central
+  difference, dT = 1e-3 T) to 3e-7 (abs 1e-5 in the test); 0.05-0.11 s
+  each; fails if the Lagrangian drops the impurity entropy. (Check of the
+  check: complex 2-orbital U = 3 beta 20, F = L + mu N: -dF/dT 0.574883 vs
+  0.574816.) U = 4 and U = 2 at T >= 0.2 collapse to Z = 0 or do not
+  converge on this cell.
+- Thermal solutions at beta 10 and 5 collapse to Z = 0 (|f2| 0.4 / 0.02,
+  entropy 2.6 / 3.0); the ground-state impurity at beta 5 does not converge
+  (999 it).
+- Thermal Mott (complex U = 5, beta 40): max |dL| R 0, lambda 0, D 0,
+  Delta_p 9e-10, Lambda_c 0.25 (= f2, the traceless atomic-limit residual;
+  self-consistency 0.13). Reported, not asserted (user).
 - Multi-cluster `get_lagrangian` done: keyword-only, per-cluster lists (as
   LatticeSolver stores them), `projectors`, `gf_struct_mapping`; R and lambda
   upfolded as in LatticeSolver. Stationarity test made a helper; new test on

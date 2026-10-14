@@ -36,6 +36,7 @@ from fockit.hilbert.symmetries import OnsiteSymmetry, PermutationSymmetry
 from numpy.typing import NDArray
 from scipy.sparse.linalg import eigsh
 
+from risb.helpers import get_entropy_impurity
 from risb.types import BlockMatrix, BlockMatrixLike, GfStruct, ImpuritySolver
 
 # Boltzmann weight, relative to the ground state, below which a state is dropped
@@ -176,6 +177,11 @@ class FockitImpuritySolver(ImpuritySolver):
         #: numpy.ndarray : Weights of :attr:`states` in the expectation values,
         #: set by :meth:`solve`.
         self.weights: NDArray[np.float64]
+
+        #: float : Entropy ``-sum(weights * log(weights))`` of the states of
+        #: the impurity problem, set by :meth:`solve`. It is zero for the
+        #: ground state.
+        self.entropy: float
 
         #: fockit.algebra.OpSum : Impurity Hamiltonian. It is the sum of
         #: :attr:`h0_loc`, :attr:`h_int`, :attr:`h_hybr`, and :attr:`h_bath`.
@@ -357,7 +363,8 @@ class FockitImpuritySolver(ImpuritySolver):
                 self.beta is not None and _weight(energies, self.beta)[-1] > _WEIGHT_TOL
             ):
                 k *= 2
-                if dim <= k + 1:
+                # Once the Krylov space of eigsh would be most of the sector
+                if dim <= 2 * k + 1:
                     energies, states = np.linalg.eigh(H.toarray())
                     break
                 energies, states = _eigsh(H, k, self.method_options)
@@ -392,6 +399,7 @@ class FockitImpuritySolver(ImpuritySolver):
                 [expand_state(v, self._symmetric_basis, self.basis) for v in states.T]
             )
         self.states = np.asarray(states, dtype=complex)
+        self.entropy = get_entropy_impurity(self.weights)
         self.gs_energy = float(energies[0])
         self.gs_vector = self.states[:, 0]
         for bl, bl_size in self.gf_struct:

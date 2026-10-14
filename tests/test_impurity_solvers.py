@@ -428,6 +428,7 @@ def test_thermal_density_matrices_average_a_degenerate_ground_state() -> None:
         {bl: np.array([[0.0]]) for bl, _ in gf_struct},
     )
     impurity_solver.solve()
+    assert impurity_solver.entropy == pytest.approx(np.log(4), abs=1e-12)
     for bl, _ in gf_struct:
         assert impurity_solver.rho_c[bl] == pytest.approx(np.array([[0.5]]), abs=1e-12)
         assert impurity_solver.rho_f[bl] == pytest.approx(np.array([[0.5]]), abs=1e-12)

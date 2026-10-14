@@ -26,8 +26,9 @@ import numpy as np
 from numpy.linalg import inv
 from numpy.typing import NDArray
 from scipy.linalg import sqrtm
+from scipy.special import expit
 
-from risb.types import BlockMatrix, BlockMatrixLike
+from risb.types import BlockMatrix, BlockMatrixLike, BlockRealArray
 
 # Eigenvalues of rho (1 - rho) below this are a completely full or empty orbital
 EDGE_TOL = 1e-12
@@ -301,16 +302,19 @@ def get_lagrangian(
     mu: float,
     projectors: Sequence[BlockMatrixLike] | None = None,
     gf_struct_mapping: Sequence[Mapping[str, str]] | None = None,
+    impurity_entropy: Sequence[float] | None = None,
 ) -> float:
     r"""
     Return the RISB Lagrangian.
 
-    Its stationary points are the solutions of RISB. It is written with the
-    expectation values of a fixed, normalized ground state of each impurity
-    problem, so its derivatives with respect to ``D`` and ``Lambda_c`` are taken
-    at fixed impurity ground state. All arguments are keyword-only, and the
-    matrices are lists with an entry for each cluster, as stored by
-    :class:`risb.LatticeSolver`.
+    Its stationary points are the solutions of RISB, and its value at a
+    solution is the grand potential of RISB, so minus its derivative with
+    respect to the temperature at fixed chemical potential is the entropy of
+    RISB. It is written with the expectation
+    values of a fixed state (or thermal ensemble) of each impurity problem, so
+    its derivatives with respect to ``D`` and ``Lambda_c`` are taken at fixed
+    state. All arguments are keyword-only, and the matrices are lists with an
+    entry for each cluster, as stored by :class:`risb.LatticeSolver`.
 
     Parameters
     ----------
@@ -346,6 +350,13 @@ def get_lagrangian(
         The mapping from the blocks of each cluster to the blocks of
         ``h0_kin_k``, as in :class:`risb.LatticeSolver`. Default assumes the
         blocks of every cluster are the blocks of ``h0_kin_k``.
+    impurity_entropy : list of float, optional
+        Entropy of the impurity problem of each cluster, in the order of the
+        clusters, when its states are a thermal ensemble at the inverse
+        temperature ``beta``, e.g.,
+        :attr:`risb.impurity_solvers.FockitImpuritySolver.entropy`. The
+        Lagrangian then has the free energy of each impurity problem instead of
+        its energy. Default is zero, the ground state.
 
     Returns
     -------
@@ -376,6 +387,13 @@ def get_lagrangian(
     :class:`risb.LatticeSolver`. The terms with the
     normalization of the impurity ground states are zero and left out.
 
+    With a thermal ensemble of each impurity problem (Gibbs weights at
+    ``beta``) the expectation values are thermal averages and
+    :math:`-S_i / \beta` is added for each cluster, with
+    :math:`S_i = -\sum_n w_n \log w_n` over the Gibbs weights :math:`w_n` of
+    the states of impurity problem :math:`i`, so the stationary points are
+    the solutions with that ensemble.
+
     .. _PRL126401: https://doi.org/10.1103/PhysRevLett.118.126401
 
     """
@@ -391,6 +409,8 @@ def get_lagrangian(
 
     for i in range(n_clusters):
         lagrangian += h_loc_energy[i]
+        if impurity_entropy is not None:
+            lagrangian -= impurity_entropy[i] / beta
         for bl in R[i]:
             Dp = Delta_p[i][bl]
             sqrt_term = sqrtm(Dp - Dp @ Dp)
@@ -400,6 +420,93 @@ def get_lagrangian(
             lagrangian -= np.real(np.trace(Lambda_c[i][bl] @ Dp))
             lagrangian -= 2 * np.real(np.trace(D[i][bl] @ R[i][bl].T @ sqrt_term))
     return float(lagrangian)
+
+
+def get_entropy_qp(energies: BlockRealArray, beta: float, mu: float) -> float:
+    """
+    Return the entropy of the quasiparticles per unit cell.
+
+    Parameters
+    ----------
+    energies : risb.types.BlockRealArray
+        Energies of the quasiparticle bands in each block, indexed as k, band,
+        e.g., :attr:`risb.LatticeSolver.energies_qp`.
+    beta : float
+        Inverse temperature of the Fermi-Dirac occupations.
+    mu : float
+        Chemical potential.
+
+    Returns
+    -------
+    float
+        ``-sum(f log f + (1 - f) log(1 - f)) / n_k`` over every band and
+        k-point, with ``f`` the Fermi-Dirac occupations, as in the
+        quasiparticle term of :func:`get_lagrangian`.
+
+    """
+    entropy = 0.0
+    for e in energies.values():
+        x = beta * (np.asarray(e) - mu)
+        entropy += np.sum(np.logaddexp(0, -x) + x * expit(-x)) / x.shape[0]
+    return float(entropy)
+
+
+def get_entropy_impurity(weights: NDArray[np.float64]) -> float:
+    """
+    Return the entropy of the states of the impurity problem of a cluster.
+
+    Parameters
+    ----------
+    weights : numpy.ndarray
+        Weights of the states of the impurity problem, e.g., the Gibbs
+        weights :attr:`risb.impurity_solvers.FockitImpuritySolver.weights`.
+
+    Returns
+    -------
+    float
+        ``-sum(weights * log(weights))``, zero for a single state.
+
+    """
+    w = np.asarray(weights)
+    w = w[w > 0]
+    return float(-np.sum(w * np.log(w)))
+
+
+def get_entropy(
+    *,
+    energies: BlockRealArray,
+    beta: float,
+    mu: float,
+    impurity_entropy: Sequence[float],
+) -> float:
+    """
+    Return the entropy of RISB per unit cell.
+
+    It is minus the derivative of :func:`get_lagrangian` at a solution with
+    respect to the temperature at fixed chemical potential. All arguments are
+    keyword-only.
+
+    Parameters
+    ----------
+    energies : risb.types.BlockRealArray
+        Energies of the quasiparticle bands in each block, indexed as k, band,
+        e.g., :attr:`risb.LatticeSolver.energies_qp`.
+    beta : float
+        Inverse temperature.
+    mu : float
+        Chemical potential.
+    impurity_entropy : list of float
+        Entropy of the impurity problem of each cluster, in the order of the
+        clusters, from :func:`get_entropy_impurity`, e.g.,
+        :attr:`risb.impurity_solvers.FockitImpuritySolver.entropy`.
+
+    Returns
+    -------
+    float
+        :func:`get_entropy_qp` plus the sum of ``impurity_entropy``.
+
+    """
+    return get_entropy_qp(energies, beta, mu) + float(np.sum(impurity_entropy))
 
 
 def upfold(
