@@ -63,7 +63,7 @@ $$
 + \mathcal{R}^{-1} \lambda \mathcal{R}^{-\dagger} - H_0^{\mathrm{loc}},
 $$
 
-where $Z = \mathcal{R} \mathcal{R}^{\dagger}$. It is constructed as
+where $Z = \mathcal{R}^{\dagger} \mathcal{R}$. It is constructed as
 
 ```python
 from risb.helpers_triqs import get_sigma_w

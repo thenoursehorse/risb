@@ -334,7 +334,7 @@ def get_sigma_w(
         identity = np.eye(
             *gf.data.shape[-2::]
         )  # Last two indices are the orbital structure
-        Z_inv = np.linalg.inv(R[bl] @ R[bl].conj().T)
+        Z_inv = np.linalg.inv(R[bl].conj().T @ R[bl])
         hf = np.linalg.inv(R[bl]) @ Lambda[bl] @ np.linalg.inv(R[bl].conj().T)
         if use_broadcasting:
             w = np.fromiter(gf.mesh.values(), dtype=complex)
