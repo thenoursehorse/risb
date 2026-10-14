@@ -34,7 +34,7 @@ $$
 + \sum^{M_i}_{\alpha} \sum^{M_i}_{a} \left( [\mathcal{D}_i]_{a\alpha}
 \hat{c}^{\dagger}_{i\alpha} \hat{f}^{}_{ia} + \mathrm{H.c.} \right)
 + \sum^{M_i}_{a} \sum^{M_i}_{b} [\lambda^c_i]_{ab}
-\hat{f}^{}_{ib} \hat{f}^{\dagger}_{ia},
+\hat{f}^{}_{ia} \hat{f}^{\dagger}_{ib},
 $$
 
 where $\hat{c}_{i\alpha}$ is a physical (electron) orbital and
@@ -116,11 +116,14 @@ verify your implementation. It needs
   `h0_loc_matrix` are block matrices: dictionaries of `numpy` arrays with the
   blocks of `gf_struct` (we use the same `gf_struct` convention as
   [TRIQS](https://triqs.github.io/): a list of (block name, block size) pairs).
+  `D[bl][a, alpha]` is $[\mathcal{D}_i]_{a\alpha}$ and `Lambda_c[bl][a, b]` is
+  $[\lambda^c_i]_{ab}$ in the impurity Hamiltonian above, with $a$, $b$ bath
+  orbitals and $\alpha$ a physical orbital.
   `h0_loc_matrix` defines the non-interacting quadratic terms in $\hat{H}^{\mathrm{loc}}$.
 - A method `solve()` that finds the ground state in the half-filled particle
-  sector and stores the single-particle density matrices `rho_f` (of the
-  $\hat{f}$ degrees of freedom), `rho_cf` (between the $\hat{c}$ and
-  $\hat{f}$ degrees of freedom), and `rho_c` (of the $\hat{c}$ degrees of
-  freedom) for every block.
+  sector and stores the single-particle density matrices for every block:
+  `rho_f[bl][a, b]` $= \langle \hat{f}^{}_{ib} \hat{f}^{\dagger}_{ia} \rangle$,
+  `rho_cf[bl][alpha, a]` $= \langle \hat{c}^{\dagger}_{i\alpha} \hat{f}^{}_{ia} \rangle$,
+  and `rho_c[bl][alpha, beta]` $= \langle \hat{c}^{\dagger}_{i\alpha} \hat{c}^{}_{i\beta} \rangle$.
 - Methods `get_rho_f(block)`, `get_rho_cf(block)`, and `get_rho_c(block)` that
   return them.

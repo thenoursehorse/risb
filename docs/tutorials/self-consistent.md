@@ -244,7 +244,7 @@ from risb import helpers
 
 energies_qp = dict()
 bloch_vector_qp = dict()
-for bl, bl_size in gf_struct
+for bl, bl_size in gf_struct:
     h_qp = helpers.get_h_qp(R[bl], Lambda[bl], h0_kin_k[bl])
     energies_qp[bl], bloch_vector_qp[bl] = np.linalg.eigh(h_qp)
 ```
@@ -293,10 +293,9 @@ def update_weights(energies, mu=0, beta=10):
     -------
     weights : dict[numpy.ndarray]
     """
-    n_k = energies.shape[0]
     return {
-        bl: 1.0 / (np.exp(beta * (energies[bl] - mu)) + 1.0) / n_k
-        for bl in energies.keys()
+        bl: 1.0 / (np.exp(beta * (energy - mu)) + 1.0) / energy.shape[0]
+        for bl, energy in energies.items()
     }
 ```
 
@@ -390,8 +389,8 @@ for bl, bl_size in gf_struct:
 
 # H^qp (lopsided) quasiparticle kinetic energy
 for bl, bl_size in gf_struct:
-    h0_kin_k_R[bl] = helpers.get_h0_kin_k_R(R[bl], h0_kin_k[bl], bloch_vector_qp[bl])
-    lopsided_kinetic_energy_qp[bl] = helpers.get_ke(
+    h0_kin_k_R = helpers.get_h0_kin_k_R(R[bl], h0_kin_k[bl], bloch_vector_qp[bl])
+    kinetic_energy_qp[bl] = helpers.get_ke(
         h0_kin_k_R, bloch_vector_qp[bl], kweights[bl]
     )
 
@@ -565,12 +564,12 @@ for cycle in range(n_cycles):
     # H^qp density matrices
     for bl, bl_size in gf_struct:
         rho_qp[bl] = helpers.get_rho_qp(bloch_vector_qp[bl], kweights[bl])
-        h0_kin_k_R[bl] = helpers.get_h0_kin_k_R(R[bl], h0_kin_k[bl], bloch_vector_qp[bl])
-        lopsided_kinetic_energy_qp[bl] = helpers.get_ke(h0_kin_k_R, bloch_vector_qp[bl], kweights[bl])
+        h0_kin_k_R = helpers.get_h0_kin_k_R(R[bl], h0_kin_k[bl], bloch_vector_qp[bl])
+        kinetic_energy_qp[bl] = helpers.get_ke(h0_kin_k_R, bloch_vector_qp[bl], kweights[bl])
 
     # H^imp parameters
     for bl, bl_size in gf_struct:
-        D[bl] = helpers.get_d(rho_qp[bl], kinetic_energy_bl[bl])
+        D[bl] = helpers.get_d(rho_qp[bl], kinetic_energy_qp[bl])
         Lambda_c[bl] = helpers.get_lambda_c(rho_qp[bl], R[bl], Lambda[bl], D[bl])
 
     # Solve H^imp
@@ -585,21 +584,21 @@ for cycle in range(n_cycles):
 
     # Step G: New guess for H^qp parameters
     for bl, bl_size in gf_struct:
-        Lambda[bl] = sc.get_lambda(R[bl], D[bl], Lambda_c[bl], rho_f[bl])
-        R[bl] = sc.get_r(rho_cf[bl], rho_f[bl])
+        Lambda[bl] = helpers.get_lambda(R[bl], D[bl], Lambda_c[bl], rho_f[bl])
+        R[bl] = helpers.get_r(rho_cf[bl], rho_f[bl])
 
     # Check how close the guess was
     for bl, bl_size in gf_struct:
         norm += np.linalg.norm(R[bl] - R_old[bl])
         norm += np.linalg.norm(Lambda[bl] - Lambda_old[bl])
 
-        if norm < 1e-6:
-            break
+    if norm < 1e-6:
+        break
 
 # Quasiparticle weight
 Z = dict()
 for bl, bl_size in gf_struct:
-    Z[bl] = R[bl] @ R[bl].conj().T
+    Z[bl] = R[bl].conj().T @ R[bl]
 ```
 
 [^Lechermann2007]:

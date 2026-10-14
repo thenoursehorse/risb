@@ -53,8 +53,9 @@ $\Delta^{\mathrm{qp}}$ of $\hat{H}^{\mathrm{qp}}$ into each correlated
 subspace $\mathcal{C}_i$ as
 
 $$
-\Delta^{\mathrm{qp}}_i = \frac{1}{\mathcal{N}} \sum_k
-\mathbf{P}_i(k)^{} f(\mathbf{H}^{\mathrm{qp}}(k)) \mathbf{P}^{\dagger}_i(k),
+\Delta^{\mathrm{qp}}_i = \left[ \frac{1}{\mathcal{N}} \sum_k
+\mathbf{P}_i(k)^{} f(\mathbf{H}^{\mathrm{qp}}(k)) \mathbf{P}^{\dagger}_i(k)
+\right]^{T},
 $$
 
 where $f(\xi)$ is the Fermi-Dirac function,

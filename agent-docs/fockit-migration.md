@@ -58,6 +58,16 @@ user to review. Update this file as steps finish. Delete it when done.
    result depended on the starting gauge and Sigma was wrong when R is not
    normal; all current examples were unaffected (R normal). Left: the
    independent variational check on M2.
+15. [ ] Robustness at rho_qp eigenvalues 0 or 1 (insulating regime). Every K^(-1/2)
+   formula (get_d, get_r, get_lambda_c, get_lambda, get_f1) is singular when a
+   quasiparticle band is completely full or empty; iterates reach that in the
+   Mott/transition regime of the complex 2-orbital model (U >= 4, J = 0.2 U):
+   the original code crashed at U = 5, 6 and reached Z = 0 at U = 7, 8 only via
+   a blow-up; after the covariance fixes it crashes at all U >= 4; with linear
+   mixing both crash (see Step 14 notes). Derive the R -> 0 / rho-edge limit,
+   treat it consistently in all those helpers, re-run the U scan (DIIS and
+   linear mixing), add a complex Mott test for both solvers. Step 9 may explain
+   the large DIIS steps (lambda eigenvalues -51, 194) that reach these states.
 
 ## Commits
 
@@ -648,6 +658,16 @@ Results so far (bilayer, U=4, V=0.25, `method="eigh"`, DIIS tol 1e-13):
   help (other helpers then hit a singular matrix). Starting exactly at R = 0
   is accepted as converged at once by both; the existing Mott tests (real,
   symmetric) pass.
+- Docs matched to the corrected code: `explanations/impurity.md` (bath term
+  sum lambda^c_ab f_a f^dag_b, the code's order; interface section states
+  D[bl][a, alpha], Lambda_c[bl][a, b], rho_f[a, b] = <f_b f^dag_a>,
+  rho_cf[alpha, a] = <c^dag_alpha f_a>, rho_c[alpha, beta] =
+  <c^dag_alpha c_beta>), `explanations/projectors.md` (Delta^qp transposed, as
+  get_rho_qp), `tutorials/self-consistent.md` (Z = R^dag R; code slips fixed:
+  missing colon, update_weights on a dict, h0_kin_k_R / kinetic_energy names,
+  sc. -> helpers., break outside the block loop). The tutorial's functions and
+  skeleton, with its blanks filled from the tutorial, run: bilayer converges
+  in 9 cycles, Z = 0.7526.
 - Still to do for (iii): the independent variational check on M2.
 - Unblocked: step 9 (gauge freedom and convergence speed; Lanata's claim).
 - Tests to add once the cycle is covariant (user, done above): through `S.R`, `S.Lambda`,
