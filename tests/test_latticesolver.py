@@ -253,6 +253,8 @@ def test_scipy_root(
     )
 
 
+# In the atomic limit the self-consistency equations need not be satisfied
+@pytest.mark.filterwarnings("ignore:The RISB self-consistency:RuntimeWarning")
 def test_three_orbital_kanamori_is_mott_insulator(solver_name: str) -> None:
     n_orb = 3
     U = 3
@@ -333,3 +335,30 @@ def test_rotated_copy_of_the_non_interacting_solution_is_converged(
     assert S.optimize.n <= 2
     for bl in ["up", "dn"]:
         assert S.Z[0][bl] == pytest.approx(np.eye(2), abs=1e-8)
+
+
+def test_warns_when_the_self_consistency_equations_are_not_satisfied(
+    solver_name: str,
+) -> None:
+    # A completely full orbital 0 decoupled from orbital 1. Starting with the
+    # bath of orbital 1 below its impurity level empties orbital 1 in the
+    # impurity problem, and the iterations stop at R = 0
+    gf_struct = [(bl, 2) for bl in ["up", "dn"]]
+    h_int = h_int_kanamori(
+        ["up", "dn"], 2, U=2 * (1 - np.eye(2)), Uprime=2 * np.ones((2, 2)), J_hund=0
+    )
+    h0_k = build_cubic_h0_k(gf_struct=gf_struct, nkx=10, spatial_dim=3)
+    for bl in h0_k:
+        h0_k[bl] = h0_k[bl] + np.diag([-2.0, 2.0])
+    S = LatticeSolver(
+        h0_k=h0_k,
+        gf_struct=gf_struct,
+        impurity_solvers=make_impurity_solver(solver_name, h_int, gf_struct),
+        update_weights=SmearingKWeight(beta=40, n_target=3).update_weights,
+        symmetrizers=[symmetrize_blocks],
+    )
+    for bl, _ in gf_struct:
+        S.Lambda[0][bl] = np.diag([0.0, 6.0])
+    with pytest.warns(RuntimeWarning, match="self-consistency"):
+        S.solve(tol=1e-10)
+    assert S.self_consistency_error > 0.1

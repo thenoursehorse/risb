@@ -209,7 +209,10 @@ Use the same inverse temperature as the quasiparticles, e.g., in
 insulator. There the bath orbitals decouple from the impurity, and in its
 ground state they are completely full or empty, while the quasiparticles they
 must match are smeared by the temperature, so the self-consistent loop does not
-converge. Away from a Mott insulator the gap of the impurity problem is much
+converge. With `beta` it converges to the atomic limit, where the
+self-consistency equations are still not satisfied, but the observables do not
+depend on them (see `self_consistency_tol` in `LatticeSolver.solve`). Away from
+a Mott insulator the gap of the impurity problem is much
 larger than the temperature, and the result is the same as the ground state.
 A degenerate ground state is averaged over.
 

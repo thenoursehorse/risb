@@ -65,7 +65,7 @@ user to review. Update this file as steps finish. Delete it when done.
    normal; all current examples were unaffected (R normal). Independent
    check: stationarity of `helpers.get_lagrangian` at risb's solutions (test
    added).
-15. [x] (done: thermal impurity `beta`, see Item 15 notes; includes `degenerate="average"` from item 13: the only exact
+15. [x] (done; the Mott states have a traceless f2 residual, harmless in the atomic limit, see Item 15 notes; includes `degenerate="average"` from item 13: the only exact
    impurity degeneracy found is the Mott state, D = 0) Robustness at rho_qp eigenvalues 0 or 1 (insulating regime). Every K^(-1/2)
    formula (get_d, get_r, get_lambda_c, get_lambda, get_f1) is singular when a
    quasiparticle band is completely full or empty; iterates reach that in the
@@ -81,7 +81,12 @@ user to review. Update this file as steps finish. Delete it when done.
    `projectors` and `gf_struct_mapping`; the helper should take the same
    arguments (upfolded R(k), lambda(k) in the quasiparticle term; embedding
    and Delta_p terms summed over clusters). Extend the stationarity test to a
-   multi-cluster model.
+   multi-cluster model. Also a finite-T version (user): with a thermal
+   embedding (`FockitImpuritySolver(beta=...)`) the embedding terms become
+   its free energy -(1/beta) ln Tr_{N=M} e^{-beta H_emb} (Gibbs, Giuli et al.
+   2026; Ayral et al. 2017 Eq. C3 has a Bose form T Tr log[1 - e^{-beta (H_emb
+   - E_c)}] instead: decide which), and add the stationarity check of the
+   thermal Mott solutions (complex 2-orbital, U = 5).
 17. [ ] Decorated honeycomb in the site basis. Rename
    `examples/decorated_honeycomb.py` to `decorated_honeycomb_trimer_basis.py`
    (update tests, docs, references) and add
@@ -96,6 +101,16 @@ user to review. Update this file as steps finish. Delete it when done.
    the ground state is in the chosen sector at every iteration; both examples
    give the same physics (Z eigenvalues, densities, energies); add to
    `test_examples.py`.
+18. [ ] Frozen quasiparticle orbitals (user): the analytic treatment of Delta
+   eigenvalues at 0 or 1 in the condensed-boson (pure embedding) functional,
+   e.g. with exact T = 0 k-integration. In the Mott state (R = 0, flat bands at
+   lambda) a band away from mu is exactly full or empty (Delta at an edge,
+   every K^(-1/2) helper singular), and a flat band at mu is fractionally
+   filled with the fraction fixed by n_target, so the bath needs a mixture
+   with those weights. Derive the limit (frozen rows of R and D, frozen bath,
+   the 0 x infinity terms in the gradient), check it against the literature
+   (ghost-GA has non-invertible R) and numerically (approach T -> 0), then
+   decide on an implementation.
 
 ## Commits
 
@@ -489,7 +504,130 @@ Done (step 8):
   symmetries raise; "warn" warns at D = 0 and not with hybridization.
 - How-to: "Choosing the eigensolver", "Symmetries", "Degenerate ground states".
 
+## Item 18 notes (frozen quasiparticle orbitals)
+
+- Derivation (mine, risb conventions, natural gauge Delta = diag(delta)):
+  D equation rho_cf[alpha, a] = R[a, alpha] f_a and R equation
+  Q[b, alpha] = f_b D*[b, alpha] with Q = avg_k n_k R eps_k. For a frozen b
+  (delta_b = 0 or 1): n_k[b, :] = delta_b e_b at every k (a projector with a
+  0 / 1 diagonal entry), so Q[b, :] = delta_b R[b, :] avg_k eps_k = 0 (the
+  local part is removed from h0_kin_k), and a sharp bath occupation gives
+  rho_cf[:, b] = 0. Both equations hold for any R[b, :], D[b, :]: they are
+  not fixed by stationarity. A frozen full band can even disperse at no
+  energy cost (sum over a full band of eps = 0). lambda_b is fixed only to a
+  half-line (full / empty). The gradient's frozen-frozen divided differences
+  (1 - d_i - d_j) / (f_i + f_j) diverge but multiply (D R^T) entries that are
+  0 when R_b = D_b = 0; active-frozen entries are finite times 0.
+  Natural choice: R_b = D_b = 0 (what a sharp impurity orbital forces).
+- Exact edges need an exactly decoupled orbital. Model: 2 orbitals, crystal
+  field -+2, cubic 10^3, Kanamori U = 2, J = 0.4, n = 3 (orbital 0 full).
+  With inter-orbital hopping 0.2: 1 - delta saturates at 9.7e-4 as beta ->
+  1280 (k-dependent orbital character of the full band), everything finite.
+  With hopping 0: current code raises at beta >= 4 (ground-state impurity:
+  rho_f eigenvalue -6e-18 in cycle 0, NaN in the gradient's sqrt).
+- At beta = 3 the deep orbital has R ~ 1e-10, D ~ 3e-11 and delta = n_F(lambda
+  - mu) = 0.76 of a flat level: same structure as the Mott state. In the
+  condensed functional at T > 0 a decoupled pure bath is 0 / 1 while the flat
+  level is a Fermi function, so f2 = 0 only as lambda_b -> -+infinity (a
+  solution at infinity; matches DIIS's runaway lambda steps).
+- Wrong reference check: Kanamori pair hopping (J) moves a pair from the full
+  orbital into the other: R_0 = 0 exactly (parity of n_0 conserved) but
+  delta_0 = 0.999, not frozen, and Z_1 0.92 vs one band 0.86. With J = 0 the
+  mapping to one band (U = 2, Z 0.8519 / 0.8612 / 0.8615 at beta 10 / 40 /
+  160) is exact.
+- Prototype (scratchpad `item18_projection.py`): pseudo-inverse of K^(1/2) in
+  get_d / get_r (frozen rows 0), sqrt K in get_f1, frozen-frozen divided
+  differences 0, frozen lambda pushed to mu -+ 40/beta. Needed a wider mu
+  bracket (brentq fails when mu sits on a flat level: SmearingKWeight brackets
+  with [e_min, e_max], no margin). J = 0, beta 40:
+  - linear mixing 0.2: a genuine solution (|f1| 5e-12, |f2| 3e-11) but not
+    the expected one: the deep orbital stays a dispersive nearly-full band
+    (Z 0.92, delta 0.999), the half-filled orbital collapses to Z = 0 (flat
+    at mu, delta 0.501) with its fractional rho_f from an arbitrary state of
+    a degenerate level (item 13).
+  - DIIS: recursion error 0 but |f2| = 0.25: not a solution. For frozen
+    orbitals the cycle maps lambda_b to itself, so the default recursion
+    error can report convergence when the RISB equations fail.
+  - The expected solution (orbital 0 frozen, orbital 1 = one band, Z 0.86)
+    was not found by either.
+- Literature: ghost DMET (Lanata 2023 supplement): natural orbitals with
+  occupation 0 / 1 are "core", "decoupled from the fragment A and its bath
+  B", so they have no bath partner. Giuli et al. 2026 App. B "assume that
+  rho(1 - rho) is invertible" (the edge is excluded, not treated). Ghost GA
+  (Lanata et al. 2017) solves the root problem in F1, F2 by quasi-Newton.
+- The 0 x infinity gradient entry is not 0 in the limit: it is finite and
+  sets the frozen bath level on the correct side (hybridized run, 1 - delta
+  = 1e-3: G = -(Lambda_c + lambda) = 2.70). With it set to 0, Lambda_c_00 =
+  -lambda_00 = -6 and the frozen orbital's bath came out half filled
+  (rho_f00 = 0.5), pulling orbital 1 off the one-band answer. For an exactly
+  decoupled orbital the condition is again an inequality (bath empty if
+  Delta = 1, full if 0), so the core treatment fixes it explicitly:
+  prototype sets Lambda_c = -+50 in frozen Delta directions (get_lambda_c).
+- With the core bath: J = 0 two-orbital model, the one-band-equivalent point
+  (R = diag(0, sqrt Z_one), lambda = diag(7 - 40/beta, 7)) is an exact fixed
+  point (|f1| 3e-14, |f2| 9e-16, Z = 0.86117659 = one band). From the generic
+  start DIIS finds it at beta 10 / 40 / 160 in 13-15 it (Z = one band to all
+  digits, |f1|, |f2| <= 1e-11); at 640 it stalls just above tol at the right
+  Z (k-mesh mu). Linear mixing 0.2 finds another solution.
+- The other solution is regular and lower in free energy (F = L + mu N via
+  get_lagrangian, beta 40): one-band-equivalent F 3.73510 (Z_1 0.8612,
+  Delta eig 1.0, 0.5); other F 3.73021 (Z_1 0.9199, Delta eig 0.999, 0.501,
+  rho_f not at edges, D != 0). In both orbital 0 has Z = 0, rho_c = 1. In the
+  lower one physical orbital 1 couples to both quasiparticle orbitals (R
+  column components 0.33, 0.90): the full orbital's spare quasiparticle
+  orbital acts as a ghost orbital for orbital 1, lowering F by 0.005 and
+  raising Z_1. (Earlier reading of this solution as "orbital 1 collapsed /
+  degenerate-state artifact" was a mislabeling of eigenvalues.) The exact
+  one-band mapping holds for the model, not for RISB's variational space.
+- The two-orbital J = 0 thermal run raised (not investigated).
+- Robustness (user chose; uncommitted in `src/risb/helpers.py`): `_sqrt_k`
+  (sqrt of rho (1 - rho) from clipped eigenvalues, or its pseudo-inverse with
+  0 for eigenvalues below `_EDGE_TOL` = 1e-12) in get_d, get_r, get_f1; the
+  gradient's divided differences are 0 between two edge orbitals. No core
+  bath, no lambda push. Suite: 78 passed.
+  Decoupled full-shell model (scratchpad `item18_robust.py`, start lambda =
+  diag(0, 4)): no more crashes. Linear mixing 0.2 reaches the regular
+  solution at beta 10 / 40 / 160, J = 0 and 0.4 (Z_1 0.91-0.92, |f1|, |f2|
+  ~ 1e-11). DIIS "converges" in 3 it to R = 0 with |f2| = 0.9 (with
+  error_fun="root" it reports failure instead).
+- Trap mechanism (`item18_trap.py`): the start puts orbital 1's bath (cost 4)
+  below orbital 1 on the impurity (~6), so cycle 0 empties impurity orbital
+  1 and returns R ~ 0; flat bands then give ke = 0, D = 0, rho_cf = 0, R = 0.
+  R = 0, D = 0, any lambda is a fixed point of the recursion in every RISB
+  problem (violating f2 unless the impurity is thermal / degenerate), and it
+  absorbs. From lambda = diag(0, 6) both DIIS and linear mixing fall into it
+  (|f2| = 1). Before the robustness change these paths crashed instead.
+- Self-consistency check (user: name `self_consistency_tol`, uncommitted in
+  `src/risb/solve_lattice.py`): after a self-consistent `solve`,
+  `S.self_consistency_error` = max |f1|, |f2| from the last cycle, and a
+  RuntimeWarning above `self_consistency_tol` (default 1e-6). User chose to
+  warn on the full residual and explain the atomic limit in the message,
+  docstring and how-tos (lattice_solver: after "Simple setup";
+  impurity_solvers: temperature section). Tests: completely full orbital
+  in the helpers (finite, decoupled rows, the rest unchanged), the warning on
+  the decoupled full-shell trap (both solvers), the thermal Mott test expects
+  the warning, the Kanamori Mott test ignores it (only fockit warns). Suite
+  81 passed (62 passed, 19 skipped without TRIQS).
+- Open for item 18: escaping the trivial fixed point R = 0 (the trap), the
+  frozen-orbital core treatment as an option (prototype works: exact
+  one-band-equivalent fixed point found by DIIS), and why ghost-like
+  solutions win (variational freedom of the spare quasiparticle orbital).
+
 ## Item 15 notes (Mott regime)
+
+- Residual at the thermal Mott states (found with the self-consistency check
+  of item 18): complex 2-orbital, U = 5, beta 40: max |f1| 4e-14, max |f2|
+  0.105, all in the traceless part (Tr f2 = 0: impurity filling 2 = n_target;
+  rho_f eig 0.440, 0.560 vs Delta eig 0.455, 0.545). At R = 0 (D = 0) the
+  cycle maps lambda to itself, so the recursion stops with f2 != 0; the
+  non-unique lambda - mu below is this. 3-orbital Kanamori Mott test with
+  fockit: 0.42, also traceless (filling 3 = n_target). User: RISB need not
+  "converge" onto the Mott state in the Lagrangian sense; the Mott state is
+  the decoupled bath (atomic limit, Z -> 0), where f1 / f2 do not change the
+  energy or observables. So "converge" means the numerical procedure, and
+  stationarity of the Lagrangian is a separate question. Contrast: the item
+  18 trap (R = 0 where a metal is expected) has Tr f2 = -1 (impurity filling
+  2 vs n_target 3), wrong observables.
 
 - Trace (scratchpad `item15_trace.py`, complex 2-orbital model 6^3,
   Kanamori J = 0.2 U, beta 40, method eigh, start R = 1, lambda = mu):

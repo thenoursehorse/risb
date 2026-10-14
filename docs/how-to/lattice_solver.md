@@ -79,6 +79,21 @@ S = LatticeSolver(
 S.solve(tol=...)
 ```
 
+By default `tol` is on how much $\mathcal{R}$ and $\lambda$ change in one
+iteration, which can stop changing before the {{RISB}} self-consistency
+equations are satisfied, e.g., at $\mathcal{R} = 0$. So after solving, the
+largest entry of the two self-consistency equations is
+`S.self_consistency_error`, and `solve` warns if it is above
+`self_consistency_tol` (default $10^{-6}$)
+
+```python
+S.solve(tol=..., self_consistency_tol=1e-6)
+```
+
+In the atomic limit ($\mathcal{R} = 0$, e.g., a Mott insulator) the equations
+are not satisfied, but there the bath of the impurity problem decouples and
+the observables do not depend on it.
+
 ## Multiple clusters
 
 :::{seealso}

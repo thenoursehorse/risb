@@ -17,6 +17,7 @@
 
 """Solvers for rotationally invariant slave-boson mean-field theory on a lattice."""
 
+import warnings
 from collections.abc import Mapping, Sequence
 from itertools import product
 from typing import Literal, TypeIs
@@ -223,6 +224,11 @@ class LatticeSolver:
 
         #: list of risb.types.BlockMatrix : The second root function of the self-consistent loop.
         self.f2: list[BlockMatrix] = [{} for i in range(self.n_clusters)]
+
+        #: float : Largest absolute entry of :attr:`f1` and :attr:`f2` after
+        #: :meth:`solve`. It is zero when the RISB self-consistency equations
+        #: are satisfied.
+        self.self_consistency_error: float
 
         #: risb.types.BlockRealArray : k-space integration weights of the
         #: quasiparticles in each band.
@@ -645,7 +651,10 @@ class LatticeSolver:
         return self.Lambda, self.R, self.f1, self.f2
 
     def solve(
-        self, one_shot: bool = False, **kwargs: object
+        self,
+        one_shot: bool = False,
+        self_consistency_tol: float = 1e-6,
+        **kwargs: object,
     ) -> NDArray[np.float64] | OptimizeResult:
         """
         Solve for the renormalization matrix :attr:`R` and correlation potential matrix :attr:`Lambda`.
@@ -657,6 +666,15 @@ class LatticeSolver:
         one_shot : bool, optional
             True if the calcualtion is just one shot and not self consistent.
             Default is False.
+        self_consistency_tol : float, optional
+            Warn if :attr:`self_consistency_error` is above this after a
+            self-consistent solve. The root finder can stop where the guess of
+            :attr:`Lambda` and :attr:`R` no longer changes but the
+            self-consistency equations are not satisfied, e.g., at
+            :attr:`R` = 0. In the atomic limit (:attr:`R` = 0 at a Mott
+            insulator) the equations are not satisfied either, but there the
+            bath of the impurity problem decouples and the observables do not
+            depend on it. Default is ``1e-6``.
         **kwargs
             kwarg options to pass to :meth:`root`.
 
@@ -682,6 +700,21 @@ class LatticeSolver:
                 + self._flatten_matrix(self.R, is_coeff_real=False)
             )
             x = self.root(fun=self._target_function, x0=x0, **kwargs)
+            self.self_consistency_error = max(
+                float(np.max(np.abs(f[i][bl])))
+                for f in (self.f1, self.f2)
+                for i in range(self.n_clusters)
+                for bl in f[i]
+            )
+            if self.self_consistency_error > self_consistency_tol:
+                msg = (
+                    "The RISB self-consistency equations are not satisfied: "
+                    f"max |f1|, |f2| = {self.self_consistency_error:.1e}. In the "
+                    "atomic limit (R = 0, e.g., a Mott insulator) the bath of the "
+                    "impurity problem decouples and this does not change the "
+                    "observables. Otherwise the result is not a solution."
+                )
+                warnings.warn(msg, RuntimeWarning, stacklevel=2)
         return x
 
     @property
