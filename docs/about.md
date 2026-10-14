@@ -40,7 +40,9 @@ Slave-bosons as introduced by Kotliar and Ruckenstein[^Kotliar1986] was
 extended to the {{RISB}} formalism by Lechermann,
 et al.[^Lechermann2007]. The implementation in this project uses the
 embedding construction as introduced by
-Lanatà, et al.[^Lanata2015] [^Lanata2017]. The above papers should also be
+Lanatà, et al.[^Lanata2015] [^Lanata2017]. Ghost quasiparticles were
+introduced by Lanatà, et al.[^LanataGhost2017] and formulated as ghost
+{{RISB}} by Lanatà[^Lanata2022]. The above papers should also be
 appropriately cited.
 
 ## Impurity solvers
@@ -76,6 +78,17 @@ appropriately cited.
     _Slave Boson Theory of Orbital Differentiation with Crystal Field Effects:
     Application to UO<sub>2</sub>_,
     Phys. Rev. Lett. **118**, 126401 (2017)](https://doi.org/10.1103/PhysRevLett.118.126401)
+
+[^LanataGhost2017]:
+    [N. Lanatà, T.-H. Lee, Y.-X. Yao, and V. Dobrosavljević,
+    _Emergent Bloch excitations in Mott matter_,
+    Phys. Rev. B **96**, 195126 (2017)](https://doi.org/10.1103/PhysRevB.96.195126)
+
+[^Lanata2022]:
+    [N. Lanatà,
+    _Operatorial formulation of the ghost rotationally invariant slave-boson
+    theory_,
+    Phys. Rev. B **105**, 045111 (2022)](https://doi.org/10.1103/PhysRevB.105.045111)
 
 [^Parcolett2015]:
     [O. Parcollet, M. Ferrero, T. Ayral, H. Hafermann, I. Krivenko,

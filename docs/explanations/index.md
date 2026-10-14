@@ -6,4 +6,5 @@ Some theory and justification for design choices.
 kweight
 projectors
 impurity
+self_energy
 ```

@@ -56,11 +56,13 @@ def test_hubbard_example() -> None:
     g = run_example("hubbard")
     Z = np.array(g["Z"])
     abs = 1e-5
-    # Z for U = 0, 0.5, ..., 4.5, then the Mott insulator (Z = 0) up to U = 10
+    # Z for U = 0, 0.25, ..., 4.5, then the Mott insulator (Z = 0) up to U = 10
     Z_expected = [
-        *[1.0, 0.9913303433, 0.9653170682, 0.9219446542, 0.8611766236],
-        *[0.7829278438, 0.6869832278, 0.5727149025, 0.4378282795, 0.2680755960],
-        *[0.0] * 11,
+        *[1.0, 0.9978326492, 0.9913303439, 0.9804922917, 0.9653170509],
+        *[0.9458023203, 0.9219445792, 0.8937387168, 0.8611766037, 0.8242460707],
+        *[0.7829278442, 0.7371909225, 0.6869832177, 0.6322137113, 0.5727147565],
+        *[0.5081565302, 0.4378278163, 0.3599486367, 0.2680772341],
+        *[0.0] * 22,
     ]
 
     assert g["S"].optimize.success
@@ -71,6 +73,31 @@ def test_hubbard_example() -> None:
     assert np.all(np.diff(Z) <= 1e-12)
     assert np.all((Z >= -1e-12) & (Z <= 1 + 1e-12))
     assert pytest.approx(Z_expected, abs=abs) == Z
+
+
+@pytest.mark.filterwarnings("ignore:FigureCanvasAgg is non-interactive")
+def test_ghost_hubbard_example() -> None:
+    g = run_example("ghost_hubbard")
+    abs = 1e-5
+    # Z and the double occupancy with ghosts (B = 3) for U = 0.25, 0.5, ..., 4.
+    # From U = 3 the Mott insulator has Z = 0 and a finite double occupancy
+    Z_expected = [
+        *[0.9828587257, 0.9335192175, 0.8576008216, 0.7626891499, 0.6565703649],
+        *[0.5459098687, 0.4356290090, 0.3288919206, 0.2274567441, 0.1321248421],
+        *[0.0427705197],
+        *[0.0] * 5,
+    ]
+    double_occupancy_expected = [
+        *[0.2291687023, 0.2083695887, 0.1876338643, 0.1669907041, 0.1464660719],
+        *[0.1260815425, 0.1058536780, 0.0857947282, 0.0659146729, 0.0462217009],
+        *[0.0266570860, 0.0153136203, 0.0128325000, 0.0109265580, 0.0094258480],
+        *[0.0082205005],
+    ]
+
+    assert pytest.approx(Z_expected, abs=abs) == np.real(g["Z"])
+    assert pytest.approx(double_occupancy_expected, abs=abs) == np.real(
+        g["double_occupancy"]
+    )
 
 
 def test_kagome_hubbard_example() -> None:

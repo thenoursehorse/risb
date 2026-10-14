@@ -9,6 +9,7 @@ from scipy.optimize import OptimizeResult
 from scipy.optimize import root as root_fun
 from test_common import (
     IMPURITY_SOLVERS,
+    bethe_h0_k,
     build_cubic_h0_k,
     build_two_orbital_complex_h0_k,
     make_impurity_solver,
@@ -17,8 +18,9 @@ from test_common import (
     symmetrize_blocks,
 )
 
-from risb import LatticeSolver
+from risb import LatticeSolver, helpers
 from risb.helpers_fockit import h_int_kanamori
+from risb.impurity_solvers import FockitImpuritySolver
 from risb.kweight import SmearingKWeight
 from risb.types import BlockMatrix, GfStruct, ImpuritySolver
 
@@ -256,7 +258,9 @@ def test_scipy_root(
 
 # In the atomic limit the self-consistency equations need not be satisfied
 @pytest.mark.filterwarnings("ignore:The RISB self-consistency:RuntimeWarning")
-def test_three_orbital_kanamori_is_mott_insulator(solver_name: str) -> None:
+def test_three_orbital_kanamori_is_a_paramagnetic_mott_insulator(
+    solver_name: str,
+) -> None:
     n_orb = 3
     U = 3
     J = 0.2 * U
@@ -282,6 +286,9 @@ def test_three_orbital_kanamori_is_mott_insulator(solver_name: str) -> None:
     assert S.optimize.success
     for bl in S.Z[0]:
         assert S.Z[0][bl] == pytest.approx(np.zeros((n_orb, n_orb)), abs=1e-6)
+    # The ground state of the impurity is a spin multiplet, and the symmetrizer
+    # averages it into the same density in each spin
+    assert S.rho_c[0]["up"] == pytest.approx(S.rho_c[0]["dn"], abs=1e-10)
 
 
 def two_orbital_complex_lattice(
@@ -617,3 +624,91 @@ def test_constant_double_counting_is_a_shift_of_the_local_energies(
     # Called every cycle with the cluster index and a matrix for each block
     assert len(calls) == hook.optimize.n + 1
     assert all(i == 0 and set(rho) == {"up", "dn"} for i, rho in calls)
+
+
+def test_ghost_risb_without_interactions_is_the_non_interacting_solution(
+    solver_name: str,
+) -> None:
+    if solver_name != "fockit":
+        pytest.skip("only FockitImpuritySolver has bath orbitals of their own size")
+    B = 3
+    gf_struct = [("up", 1), ("dn", 1)]
+    bath_size = [{bl: B for bl, _ in gf_struct}]
+    h0_k = {bl: bethe_h0_k(200) for bl, _ in gf_struct}
+    impurity_solver = FockitImpuritySolver(zero(), gf_struct, bath_size=bath_size[0])
+    kweight = SmearingKWeight(beta=200, n_target=1 + (B - 1))
+    S = LatticeSolver(
+        h0_k=h0_k,
+        gf_struct=gf_struct,
+        impurity_solvers=impurity_solver,
+        update_weights=kweight.update_weights,
+        symmetrizers=[symmetrize_blocks],
+        force_real=True,
+        bath_size=bath_size,
+    )
+    S.solve(tol=1e-10)
+    assert S.self_consistency_error < 1e-8
+    assert kweight.mu is not None
+    quasiparticle_weight = helpers.get_z(S.R[0]["up"], S.Lambda[0]["up"], kweight.mu)
+    assert quasiparticle_weight == pytest.approx(np.eye(1), abs=1e-8)
+    assert impurity_solver.overlap(nc("up", 0) * nc("dn", 0)) == pytest.approx(
+        0.25, abs=1e-8
+    )
+    # Kinetic energy sum_k eps_k R^dag f(H_qp) R of both spins, -4 / (3 pi) for
+    # the half-filled semicircular density of states
+    amplitude = np.einsum("a,kan->kn", S.R_full["up"][:, 0], S.bloch_vector_qp["up"])
+    kinetic = 2 * np.sum(
+        S.kweights["up"] * np.abs(amplitude) ** 2 * h0_k["up"][:, 0, 0, None]
+    )
+    assert kinetic == pytest.approx(-4 / (3 * np.pi), abs=1e-4)
+
+
+@pytest.mark.parametrize(
+    ("U", "energy", "double_occupancy", "Z"),
+    [(2.4, -0.061, 0.054, 0.17), (3.5, -0.037, 0.0108, 0.0)],
+)
+def test_ghost_risb_gives_the_published_energy_of_the_hubbard_model(
+    solver_name: str, U: float, energy: float, double_occupancy: float, Z: float
+) -> None:
+    # Half-filled Hubbard model on the Bethe lattice with three quasiparticles
+    # per spin, a metal and a Mott insulator. Values read off Figs. 3 and 4 of
+    # Lee, Lanata, and Kotliar, Phys. Rev. B 107, L121104 (2023)
+    if solver_name != "fockit":
+        pytest.skip("only FockitImpuritySolver has bath orbitals of their own size")
+    B = 3
+    gf_struct = [("up", 1), ("dn", 1)]
+    bath_size = [{bl: B for bl, _ in gf_struct}]
+    h0_k = {bl: bethe_h0_k(200) for bl, _ in gf_struct}
+    h_int = U * nc("up", 0) * nc("dn", 0) - U / 2 * (nc("up", 0) + nc("dn", 0))
+    Sz = nc("up", 0) - nc("dn", 0)
+    for a in range(B):
+        Sz += nc("bath_up", a) - nc("bath_dn", a)
+    # A thermal impurity averages the two ground states of the Mott insulator
+    impurity_solver = FockitImpuritySolver(
+        h_int, gf_struct, diagonal_symmetries={Sz: 0}, beta=200, bath_size=bath_size[0]
+    )
+    kweight = SmearingKWeight(beta=200, n_target=1 + (B - 1))
+    S = LatticeSolver(
+        h0_k=h0_k,
+        gf_struct=gf_struct,
+        impurity_solvers=impurity_solver,
+        update_weights=kweight.update_weights,
+        symmetrizers=[symmetrize_blocks],
+        force_real=True,
+        bath_size=bath_size,
+    )
+    S.solve(tol=1e-9)
+    assert S.n_ghost_electrons == pytest.approx(B - 1)
+    assert S.self_consistency_error < 1e-8
+    assert S.rho_c[0]["up"] == pytest.approx(np.array([[0.5]]), abs=1e-8)
+    # Kinetic energy sum_k eps_k R^dag f(H_qp) R of both spins
+    amplitude = np.einsum("a,kan->kn", S.R_full["up"][:, 0], S.bloch_vector_qp["up"])
+    kinetic = 2 * np.sum(
+        S.kweights["up"] * np.abs(amplitude) ** 2 * h0_k["up"][:, 0, 0, None]
+    )
+    docc = impurity_solver.overlap(nc("up", 0) * nc("dn", 0))
+    assert docc == pytest.approx(double_occupancy, abs=1e-3)
+    assert kinetic + U * docc == pytest.approx(energy, abs=1e-3)
+    assert kweight.mu is not None
+    quasiparticle_weight = helpers.get_z(S.R[0]["up"], S.Lambda[0]["up"], kweight.mu)
+    assert quasiparticle_weight == pytest.approx(np.array([[Z]]), abs=1e-2)

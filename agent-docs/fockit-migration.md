@@ -139,7 +139,7 @@ user to review. Update this file as steps finish. Delete it when done.
    great"; old-name aliases also decided later). It is h0_k minus the local
    terms of the correlated clusters, so it also holds the local terms outside
    all projectors (after item 19); until renamed, document that.
-23. [ ] DFT+RISB helpers (user; later): double-counting helpers, a helper for
+23. [x] (closed for now (user): helpers and hook done; checking DFT+RISB properly needs much more than the NiO run; see Item 23 notes) DFT+RISB helpers (user; later): double-counting helpers, a helper for
    the DFT+RISB total energy, a helper for the charge self-consistent (CSC)
    update, and a test on real input (the user has NiO projectors and h_k, and
    another workflow to point to). Not needed: k-point symmetrization and
@@ -152,6 +152,20 @@ user to review. Update this file as steps finish. Delete it when done.
 25. [ ] Investigate overlapping fragments, as in bootstrap embedding (user):
    clusters that share orbitals, how their overlapping parts are matched,
    and what that would need beyond risb's non-overlapping projectors.
+26. [ ] Investigate different numbers of ghost bath orbitals per block of an
+   impurity (user), e.g. B = 2 for t2g and B = 3 for eg. Questions: an even
+   B, or a mix, has no obvious half-filled sector ((B + 1) nu / 2 per block
+   need not be an integer); what Lanata's papers say about the embedding's
+   particle number then.
+27. [ ] Remove AtomDiag (user): AtomDiagImpuritySolver and what only it
+   needs.
+28. [ ] Investigate the benefit of having helpers_triqs and its Green's
+   function helpers at all (user). Should the Green's function helpers be in
+   helpers without TRIQS, like helpers.get_sigma_w?
+29. [ ] Review comments and docstrings (user): they have started to narrate
+   the conversation (e.g., "ARPACK can fail (error 3, no shifts could be
+   applied)") and to use phrases that do not make sense (e.g., "Renormalization
+   matrix in the blocks of the lattice, quasiparticles by orbitals").
 
 ## Commits
 
@@ -544,6 +558,297 @@ Done (step 8):
   dh_trimer -1); particle-hole sector reproduces the plain solve; missing
   symmetries raise; "warn" warns at D = 0 and not with hybridization.
 - How-to: "Choosing the eigensolver", "Symmetries", "Degenerate ground states".
+
+## Item 24 notes (ghost RISB: literature and how hard)
+
+Sources (papers only, no code read):
+- Lee, Lanata, Kotliar, PRB 107, L121104 (2023), arXiv:2212.07515: T = 0
+  g-RISB equations (their Eqs. 2-10) are RISB's with R (B nu x nu),
+  lambda, lambda_c (B nu x B nu), D (B nu x nu), bath of B nu orbitals.
+  B = 3 already gives energy and double occupancy within 1% of DMFT.
+- Giuli, Lee, Yao, Kotliar, Ruckenstein, Gingras, Lanata, arXiv:2603.20559
+  (2026): ghost-GA -> DMFT as B -> infinity. Embedding in the sector with
+  (B + 1) nu / 2 electrons (their Eq. 48; B odd). Finite T: L_beta = Omega_qp
+  + sum Omega_emb - sum Omega_0emb, grand-canonical traces, with a new
+  quadratic embedding H_0emb (ghost f coupled to bath b). Reduces to the
+  T = 0 functional as beta -> infinity.
+- GEM paper, arXiv:2609.32633 (2026): finite T done by fitting thermal
+  density matrices (with a movement penalty); at T = 0 no fitting, the
+  usual saddle-point equations. Linear mixing 0.05 in its examples. ED only.
+- Giuli et al., arXiv:2607.27156 (2026): the iterative (DMFT-like) scheme
+  is fragile in the paramagnetic Mott phase (ad-hoc recipes, fail in a
+  field); direct minimization of the energy functional is robust there.
+- arXiv:2608.00254 (2026): g-RISB for Sr2RuO4 t2g with SOC.
+
+risb against the T = 0 equations:
+- Helpers already rectangular-safe in the cycle: get_d uses the lopsided
+  h0 R^dagger (no inv(R)); get_r, get_f1 use _sqrt_k pseudo-inverses.
+  inv(R) only in get_d2 (unused) and helpers_triqs.get_sigma_w.
+- solve_lattice: qp space (sum B nu_i + uncovered) differs from the band
+  space, so R_full is rectangular and upfold (same space both sides) needs
+  a qp-side layout. Initial R = 1, Lambda = h0_loc must change: R = [1; 0]
+  with degenerate ghost levels is a fixed point equal to plain RISB, so
+  the start must split the ghost levels. Core treatment and edge orbitals
+  need revisiting.
+- Filling: from Eq. 10 (bath density = 1 - Delta) and Eq. 48,
+  <n_c> = Tr Delta - (B - 1) nu / 2 at self-consistency, so the qp
+  n_target shifts by (B - 1) nu_i / 2 per cluster (derived, not checked).
+- fockit solver: bath size = block size today; the half-filled sector
+  (len(modes) // 2) already gives (B + 1) nu / 2 once the bath is B nu.
+- Cost (B = 3, Sz = 0 half-filled): 1 orbital 36 states; 2 orbitals 4900;
+  3 orbitals 853,776; Ni d shell 3.4e10 (ED impossible; NiO plain RISB was
+  63,504).
+- Finite T: item 15's Gibbs sum in the half-filled sector is not Lanata's
+  finite-T functional (grand-canonical, with Omega_0emb).
+
+## Item 24 step notes (g-RISB, slowly, step by step)
+
+Steps: 1 prototype in the scratchpad; 2 bath size in the fockit solver; 3
+LatticeSolver quasiparticle space (rectangular R_full, ghost count, filling
+shift, ghost-splitting start); 4 tests, Sigma(w), core treatment, Lagrangian,
+docs, one at a time; 5 finite T decided later.
+
+Step 1 (scratchpad item24_ghost.py, nothing in risb changed): one band, Bethe
+D = 1 (energies at equal-probability points of the semicircle, 4000, smearing
+beta 200), half filling, risb helpers unchanged with R (B x 1), own 8-mode ED
+embedding in N = B + 1, Sz = 0 (36 states). DIIS from R = [0.9, 0.3, 0.3],
+ghost levels -1, 0, 1. Lee/Lanata/Kotliar Figs. 3-4 read off by eye:
+- U = 2.4, B = 1: d 0.0732, E -0.0364, Ekin -0.2120, Z 0.500 (Brinkman-Rice
+  0.500, d 0.0733).
+- U = 2.4, B = 3: d 0.0534, E -0.0615, Ekin -0.1896, Z 0.164 (paper ~0.054,
+  -0.061, -0.190, 0.17). 11 it.
+- U = 3.5, B = 3: d 0.0109, E -0.0365, Ekin -0.0748, Z 0, R != 0 (paper
+  ~0.0108, -0.037, -0.075). 18 it.
+- U = 0.1, 0.5, 1.5, B = 3 converge in ~11 it; f1, f2 ~1e-11 everywhere.
+- <n_c> = Tr Delta - (B - 1) / 2 holds to 4 decimals; Sigma(w) from Dyson is
+  k-independent (spread ~1e-11); B = 3 energy below B = 1.
+- U = 0 exactly, B = 3: no convergence (499 it, f2 0.1). The ghosts carry no
+  weight there: a family of solutions with ghost bands fully full or empty
+  (the core case, not handled for ghosts).
+
+Step 2: FockitImpuritySolver(..., *, bath_size={block: n}) (default the
+block size); gf_struct_bath holds the sizes and set_h_bath, set_h_hybr and
+the rho_f, rho_cf loops use them. Half-filled sector unchanged in code
+(len(modes) // 2). Test: two decoupled extra bath orbitals (levels +-10)
+leave rho_c, rho_cf, rho_f of the one-bath problem unchanged (1e-12). Against
+the step 1 prototype at U = 2.4, B = 3 (fed its converged D, Lambda_c):
+rho_f, rho_cf agree to 4e-15; sector 70 states without Sz. Suite 106 passed.
+
+Step 3a (layout "C, padding only R"): the quasiparticle space of a block of
+h0_k is its orbitals then the ghosts of the clusters (order of clusters and
+their blocks). helpers.get_ghost_projectors(h0_k, bath_size, projectors,
+gf_struct_mapping) gives P_qp,i = [P_i, 0; 0, 1] (M_i x n_qp, k-dependent if
+P_i is). upfold now sizes a block by the projectors (or A) mapped into it,
+else by h0_k. R padded to M x M with zero columns, upfolded with outside=1,
+then R_full[..., :n_bands] is the rectangular R of ghost RISB, used with the
+unpadded h0_kin_k (no padded eps stored: about 1.8x the lattice memory
+otherwise; padded matmuls ~15% slower on the NiO-like 8 bands, B = 3).
+Tests: no ghosts gives the projectors back (k-independent and k-dependent);
+two-site cell, site 0 with B = 3, site 1 uncovered: eigenvalues of H_qp equal
+the ghost form, also in a basis rotating with k. Moving the ghosts one slot
+fails it. Suite 109 passed.
+
+Step 3b: LatticeSolver(..., *, bath_size=[{block: M}]) (M a multiple of the
+block size, else ValueError; default no ghosts); S.n_ghost_electrons = sum
+(M - n) / 2, for the user's n_target. _projectors_qp from
+get_ghost_projectors when there are ghosts (else the projectors). R padded,
+upfolded with _projectors_qp, sliced to the bands; Lambda_full with
+_projectors_qp; get_rho_qp with P_qp; get_ke(h0R, vec, w, P, projector_qp)
+(new optional argument, right side). _flatten/_unflatten: square blocks keep
+the Hermitian basis (now cached by size), rectangular blocks by entries;
+_unflatten takes like= for shapes; round trips are _project. Start (own
+guess, not from a paper): R = [sqrt(1 - 0.18) 1; sqrt(0.18 / (B - 1)) 1;
+...] (B = 3: 0.906, 0.3, 0.3 as the prototype), Lambda = 0 on the orbitals
+(as without ghosts) and the B - 1 copies at levels linspace(-W, W) with W the
+kinetic half bandwidth. Not yet ghost-aware: Z (= R^dag R), Sigma(w),
+get_density_matrix_k, get_lagrangian, docs. Suite 109 passed (B = 1
+unchanged); one ghost cycle runs with the right shapes, Tr Delta 1.5.
+
+Step 3c (scratchpad item24_3c.py): LatticeSolver with bath_size, Bethe
+D = 1, 4000 k, smearing beta 200, Sz = 0 impurity sector, paramagnetic
+symmetrizer, impurity beta 200. Same E, d, Ekin as the step 1 prototype to
+5 decimals at U = 0.5 (-0.30977), 2.4 (-0.06153), 3.5 (-0.03651); R differs
+by a ghost rotation, Lambda eigenvalues equal. Start scan (ghost weight
+0.05, 0.18, 0.5 x level spread W/2, W, 2W x U = 0.5, 2.4, 3.5): all 27
+converge in 7-16 it to the same E, d (err <= 7e-11). 200 k changes E by
+1e-5.
+- Without Sz = 0 and the paramagnetic symmetrizer, U = 3.5 broke spin
+  symmetry (impurity n_c 0.989) and ended at R = 0 with the core treatment
+  pushing the ghost levels to +-10.96 (core moves started when two Delta
+  eigenvalues hit 1). Turning the core treatment off did not help (R = 0,
+  f2 = 1). With the symmetries it converges.
+- In the Mott phase the impurity ground state is doubly degenerate even in
+  Sz = 0 (a quasiparticle band sits at mu, the zero eigenvalue of Lambda):
+  the ground-state solver returns one of them (n_c 0.506 / 0.494, E and d
+  unchanged); beta = 200 averages them to 0.5000.
+Test test_ghost_risb_gives_the_published_energy_of_the_hubbard_model (fockit
+only, 200 k, U = 2.4 and 3.5): self-consistency < 1e-8, n_c = 0.5, d and E
+within 1e-3 of Lee/Lanata/Kotliar Figs. 3-4 (read by eye). tests/test_common
+bethe_h0_k(n_k). Suite 111 passed, 2 skipped.
+
+Answers after 3c (U = 3.5, B = 3, 1000 k): the paramagnetic symmetrizer is
+what makes it converge; Sz = 0 alone still ends at R = 0 (impurity polarized
+with the bath compensating). Symmetrizer alone: right solution (d 0.01093).
+The symmetrizer does not reach rho_c: one_cycle symmetrizes R, Lambda, D,
+Lambda_c, rho_qp, rho_f, rho_cf, f1, f2 but not rho_c, so S.rho_c is the one
+degenerate ground state the solver returned (n_c up/dn 0.013/0.987 without
+Sz = 0, 0.463/0.537 with). Not ghost specific; rho_c feeds double_counting
+and get_density_matrix_k. Fix proposed: symmetrize rho_c too (not done).
+
+Step 4a: S.Z kept as R^dag R, documented as the spectral weight of R^dag G_qp
+R over all frequencies (Lanata et al. PRB 96, 195126 (2017), supplemental
+Eq. 49): the quasiparticle weight without ghosts, the sum rule with ghosts (1
+if R is an isometry; "almost equal to 1 for all U" there). Here 0.969 at
+U = 2.4 and 0.982 at U = 3.5 against Z 0.164 and 0. The quasiparticle weight
+with ghosts goes with Sigma(w) in 4b. Docs build with -W passes.
+
+rho_c fix (user, before 4b): one_cycle now projects and symmetrizes rho_c
+with rho_f and rho_cf. Plain RISB showed it too: the three-orbital Kanamori
+Mott test with symmetrize_blocks had S.rho_c spin traces 3.0/0.0 (AtomDiag)
+and 1.15/1.85 (fockit). That test is now
+test_three_orbital_kanamori_is_a_paramagnetic_mott_insulator and asserts
+rho_c up = dn; it fails for both solvers without the fix.
+
+Step 4b: arXiv:2601.16401 (Makaresz, Gingras, Lee, Lanata, Powell, Nourse)
+Eq. 11 = Sigma(z) = z + mu - eps0 - [R^dag (z + mu - Lambda)^-1 R]^-1 (App. A,
+Woodbury). App. B pole form Eq. B7 has a sign slip in B3-B7: the R^dag
+Lambda R term and the pole term are + (numerically: printed - off by 0.6, +
+agrees with A7 to 2e-16; + also gives B10 and Lanata 2017 Eq. 51). Neither
+appendix gives Z; from B7, 1 - Sigma'(0) = S^-1 (S + B D B^dag) S^-1, D =
+diag(1/(mu - e_j)^2), so Z = S - B [D^-1 + B^dag S^-1 B]^-1 B^dag (local, no
+upfolding: Sigma is k-independent). Matches a finite difference to ~1e-10;
+Bethe B = 3: Z 0.1643 (U 2.4), 0 (U 3.5, both ghost poles at mu).
+helpers.get_sigma_w (was get_self_energy)(omega, R, Lambda, mu, h0_loc) in the pole form (Eq.
+11 directly is singular at every eigenvalue of Lambda, e.g., a real mesh
+point at w + mu = lambda gave 0.11 error without ghosts); helpers.
+get_z (was get_quasiparticle_weight)(R, Lambda, mu); private _self_energy_poles (ghost
+subspace from the SVD, as scipy null_space, whose stubs reject complex).
+helpers_triqs.get_sigma_w uses get_self_energy (old formula to 3e-14 on
+real and Matsubara meshes, both code paths). Tests: Green's function at
+every k with ghosts; no ghosts linear incl. w + mu at eigenvalues of Lambda;
+Z = slope of Sigma (with and without ghosts); the published ghost test also
+checks Z (0.17, 0). Flipping the pole sign fails 2 tests. S.Z docstring
+points to get_quasiparticle_weight. Suite 115 passed, 2 skipped; docs -W ok.
+
+After 4b (user): renamed to helpers.get_sigma_w and helpers.get_z (user's
+names; helpers_triqs imports the module to avoid the clash with its own
+get_sigma_w). Derivation recorded in docs/explanations/self_energy.md: G^-1
+= g^-1 - eps (Woodbury), the pole form by block inversion (Schur
+complement) in the basis of R's columns and the ghosts (gives B10, then B7
+gauge-free), Z by differentiating and Woodbury, R^dag R as the sum rule, and
+several clusters. Paper errors located (rendered page 11): step B2 -> B3
+keeps Woodbury's minus where Sigma = z - [..]^-1 flips it to plus (B3 as
+printed off by 0.61, with + 9e-16); B3 also lacks a dagger (F R S^-1 R F ->
+F R S^-1 R^dag F); B4-B6 carry the minus (off 0.61); B7 has - on S^-1 R^dag
+Lambda R S^-1 (should be +) but + on the pole term (off 1.1 as printed);
+A1 has H_qp = R eps R^dag - Lambda, but A3, A6, A7, Eq. 11 use + Lambda.
+Correct: A2-A7, B1, B2, B10 (3e-16). Lattice self-energy with several
+clusters is the upfold of each cluster's Sigma_i with the physical
+projectors: checked with two clusters (2 + 1 orbitals, B = 3), k-dependent
+projectors, an orbital in no cluster: Dyson vs R_full^dag G_qp R_full 8e-15.
+Pass S.h0_loc_matrix for Sigma_i - V_dc (lattice Dyson) or h0_loc - V_dc for
+Sigma_i. Eq. 11 directly vs the pole form only differs on real frequencies
+without broadening at or near eigenvalues of Lambda.
+
+Step 4c: helpers.upfold_r_lambda(R, Lambda, h0_kin_k, projectors_qp,
+gf_struct_mapping) -> (R_full, Lambda_full) (pad R, upfold, slice), used by
+LatticeSolver and get_lagrangian. get_lagrangian reads the bath sizes from
+R's shapes (no new argument) and adds mu * n_ghost_electrons: without it L =
+Omega - mu n_g (checked: mu 1.2, n_g 2, L - Omega = -2.400000).
+get_density_matrix_k and the entropy helpers needed no change (docstring:
+R_full may be quasiparticles by orbitals). Tests with ghosts (two-site cubic
+cell, site 0 B = 3, site 1 in no cluster): L stationary, density matrix
+local block = rho_c^T and trace, band + interaction = L + mu N + TS,
+entropy = -dL/dT. Removing the mu n_g term fails the energy test only.
+- Stationarity finite difference: a ghost Delta eigenvalue near 0 or 1
+  (0.0011, 0.9961) makes sqrt(Delta (1 - Delta)) steep; the derivative
+  scales with step^2 (-2.3e-3, -2.3e-5, -2.3e-7 for 1e-4, 1e-5, 1e-6; 6e-9 at
+  1e-7), so the helper's step is now 1e-7 (was 1e-6).
+- Thermal impurity solver bug (not ghost specific): the dense switch was
+  dim <= 2k + 1, so eigsh ran with ncv 65 of a 70-state sector and ARPACK
+  error 3 appeared; now dense once dim <= 2 (2k + 1) (Krylov space more
+  than half the sector), as the comment says.
+- Finite T with ghosts (for step 5): two-site cubic cell, U = 2, fixed mu =
+  1, B = 3 on site 0. beta 40 converges (err 8e-15, S_imp 0.007); from it,
+  beta 30, 20, 15, 12, 10 all stall (err 0.2 to 0.06) with the ghost levels
+  collapsed onto mu (0.98, 1.00, 1.03) and S_imp ~1.7 to 1.9; from the
+  default start beta 10 stalls too, also with a ground-state impurity
+  (Tr Delta 2.08 vs Tr rho_f 1.49). The (R, Lambda) recursion stops where the
+  sqrt-gradients at Delta and rho_f agree, which does not force Delta =
+  rho_f. So the ghost entropy test runs at T = 0.025. Our finite T (Gibbs
+  sum in the half-filled sector) is not Lanata's finite-T ghost functional.
+
+Step 4d: examples/ghost_hubbard.py: one band, Bethe D = 1,
+B = 1 and 3, U 0.25 to 4 in steps of 0.25, plots Z (helpers.get_z) and the
+double occupancy; Sz = 0 sector, paramagnetic symmetrizer,
+kweight.n_target = 1 + S.n_ghost_electrons after building S. With smearing
+beta 200 and 1000 k the B = 3 metal ended at U ~ 2.7 and B = 1 at 3.25
+(Brinkman-Rice Uc 3.39): the quasiparticle bandwidth ~ Z is then comparable
+to T = 0.005. With beta 2000 and 4000 k: B = 3 Z -> 0 at U ~ 2.86 to 2.88
+(Lanata 2017 ghost-GA Uc2 ~ 2.88, Uc1 ~ 2); B = 1 Z(3.25) = 0.0834
+(Brinkman-Rice 0.0836). Runs in 3 s.
+- DIIS bug (not ghost specific): NewtonSolver.solve did not clear the
+  history (x, g_x, error) of the previous call, so in a scan with one
+  LatticeSolver each solve extrapolated with iterates of the previous U. B =
+  3 at U = 3.0 took 999 iterations (residual 6e-4) after U = 2.75, against
+  25 from a fresh solver; the example took 18.6 s, now 3.0 s. Fixed: solve
+  clears it. Test: a second solve with the same solver does the same
+  iterations as a fresh one (failed for DIIS before).
+- After the fix tests/test_examples.py::test_hubbard_example fails at U =
+  4.5: the scan (steps of 0.5) now lands on Z = 0.1020 instead of the stored
+  0.2681. Both are solutions (residual ~1e-12, mu 2.25, N 1); Omega
+  -2.269989 (Z 0.2681, fresh start) < -2.267644 (Z 0.1020). With steps of
+  0.25 or 0.1 the scan stays on Z = 0.2681. User: steps of 0.25. Done:
+  examples/hubbard.py U steps 0.25; test reference regenerated (41 points,
+  Z = 0 from U = 4.75; old points agree to 2e-6).
+- tests/test_examples.py::test_ghost_hubbard_example: B = 3 Z and double
+  occupancy at U = 0.25 to 4 against the run (d 0.01093 at U = 3.5, Lee et
+  al. Fig. 4 ~0.0108).
+- How-to: "Ghost quasiparticles" section in docs/how-to/lattice_solver.md:
+  bath_size for the solver and LatticeSolver, the n_target shift with
+  S.n_ghost_electrons, symmetrizers in the Mott insulator (Sz = 0 alone is
+  not enough), a ghost with R = 0 stays decoupled (checked through
+  LatticeSolver: Z 0.5003, d 0.0733 at U = 2.4, the B = 1 values), S.Z vs
+  helpers.get_z, helpers.get_sigma_w, links to the explanation and the
+  example. No finite T, no cost (user). 4f dropped (item 27 removes
+  AtomDiag).
+
+Citations (user: these two only): Lanata, Lee, Yao, Dobrosavljevic, PRB 96,
+195126 (2017) (ghost-GA) and Lanata, PRB 105, 045111 (2022) (g-RISB), in
+the README citation block (included by docs/about.md), the about page's
+literature section, the how-to ghost section (footnotes), and LatticeSolver's
+bath_size docstring (inline links; named link targets after Parameters are
+not found by docutils). Makaresz et al. stays where it is used: the
+self-energy page and get_sigma_w/get_z, whose docstring now cites Eq. B7
+(B10) for the pole form it evaluates, and that B7's second term is printed
+with a minus.
+
+Step 4e: the step 1 non-convergence at U = 0 was the prototype (no core
+treatment). Through LatticeSolver (example setup, Bethe, beta 2000, 4000 k)
+B = 3 at U = 0 converges in 10 it (err 3e-14): the ghost bands are fully
+empty and full (Delta eigenvalues 0, 1), the core treatment puts their
+levels at +-10.96, and the result is exact (Z 1, d 0.25, E -0.4244125, as B =
+1). At U = 1e-4 and 1e-3 the default start also decouples the ghosts (the B
+= 1 solution, E -0.42416253 at 1e-3); warm-started from U = 0.01 the
+ordinary ghost solution (levels +-0.675) exists there too, E -0.42416254
+(lower by 1e-8, d 0.249917 vs 0.249926). From U = 0.01 the default start
+gives the ghost solution. Test (user):
+test_ghost_risb_without_interactions_is_the_non_interacting_solution (Bethe,
+200 k, U = 0, B = 3: Z = 1, d = 0.25, Ekin = -4 / (3 pi)). Step 4 done.
+
+## Item 29 notes (review comments and docstrings)
+
+Reviewed every comment and docstring in the uncommitted diff (ghost work).
+Rewritten: the ARPACK comment (debugging history) in fockit.py; _GHOST_WEIGHT
+and the ghost start comment (narrated a test) in solve_lattice.py; the
+"X by Y" shape shorthand in get_lagrangian, get_density_matrix_k, upfold,
+upfold_r_lambda, get_ghost_projectors, get_sigma_w, get_z ("with a row for
+each quasiparticle and a column for each orbital"); get_z's Notes and
+_self_energy_poles's comment; two test comments (one overclaimed: "no
+solution the cycle reaches" -> "does not converge"); a ragged paragraph in
+the how-to. Restored the commented-out lopsided_ke_qp line that the rename
+had rewritten. Not reviewed yet: the comments and docstrings of earlier
+items that are already committed.
 
 ## Item 23 notes (DFT+RISB helpers)
 

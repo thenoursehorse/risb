@@ -64,3 +64,22 @@ def test_diis_is_anderson_acceleration_on_a_linear_problem() -> None:
     solver = DIIS(history_size=3, n_period=10**9)
     solver.solve(linear, np.zeros(n), tol=1e-12, maxiter=100)
     assert solver.success
+
+
+@pytest.mark.parametrize("solver_class", [DIIS, LinearMixing])
+def test_solving_another_problem_does_not_depend_on_the_one_before(
+    solver_class: type[NewtonSolver],
+) -> None:
+    def other_fixed_point(
+        x: NDArray[np.float64],
+    ) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
+        g_x = -0.3 * x + np.array([1.0, -2.0, 0.5])
+        return g_x, g_x - x
+
+    fresh = solver_class()
+    x_fresh = fresh.solve(other_fixed_point, np.zeros(3), tol=1e-10)
+    reused = solver_class()
+    reused.solve(fixed_point, np.zeros(3), tol=1e-10)
+    x_reused = reused.solve(other_fixed_point, np.zeros(3), tol=1e-10)
+    assert reused.n == fresh.n
+    assert x_reused == pytest.approx(x_fresh, abs=1e-14)

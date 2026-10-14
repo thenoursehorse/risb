@@ -37,6 +37,12 @@ If the default root DIIS method is used in the `Solver` classes you should also 
 
 [M. Chupin, M.-S. Dupuy, G. Legendre and É. Séré, ESAIM: M2AN **55**, 6, 2785-2825 (2021)](https://doi.org/10.1051/m2an/2021069)
 
+If ghost quasiparticles (`bath_size`) are used you should also cite:
+
+[N. Lanatà, T.-H. Lee, Y.-X. Yao, and V. Dobrosavljević, Phys. Rev. B **96**, 195126 (2017)](https://doi.org/10.1103/PhysRevB.96.195126)
+
+[N. Lanatà, Phys. Rev. B **105**, 045111 (2022)](https://doi.org/10.1103/PhysRevB.105.045111)
+
 <!-- CITATION-END -->
 
 Lastly, the appropriate original theory outlined in the [documentation](https://thenoursehorse.github.io/risb/about.html#original-theory) should be cited.

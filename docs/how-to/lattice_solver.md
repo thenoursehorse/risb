@@ -157,6 +157,62 @@ $\mathcal{R} = 1$ and $\lambda = 0$, and their local terms are in
 S = LatticeSolver(..., projectors=projectors, check_projectors=True)
 ```
 
+## Ghost quasiparticles
+
+In ghost {{RISB}}[^LanataGhost2017] [^Lanata2022] each cluster has more
+quasiparticles than orbitals. The extra (ghost) quasiparticles describe the
+Hubbard bands, e.g., a Mott insulator that still has a finite double
+occupancy. Give the number of quasiparticles of each block of each cluster as
+`bath_size`, which is also the number of bath orbitals of its impurity
+problem. E.g., for three quasiparticles for the one orbital of each spin
+
+```python
+bath_size = {"up": 3, "dn": 3}
+impurity_solver = FockitImpuritySolver(h_int, gf_struct, bath_size=bath_size)
+S = LatticeSolver(...
+                  impurity_solvers = impurity_solver,
+                  bath_size = [bath_size],
+                  ...
+)
+```
+
+The `bath_size` of a block must be a multiple of the size of the block, and
+without `bath_size` there are no ghosts. The quasiparticle bands hold
+`S.n_ghost_electrons` more electrons than the physical ones, half the number
+of ghosts, so a filling `n_target` of the $k$-space integration weights must
+include them
+
+```python
+kweight = SmearingKWeight(beta=..., n_target=n_target)
+S = LatticeSolver(..., update_weights=kweight.update_weights, bath_size=...)
+kweight.n_target = n_target + S.n_ghost_electrons
+```
+
+In a Mott insulator the ground state of the impurity problem can break a
+symmetry of the solution, e.g., it can be spin polarized. Enforce the
+symmetry with the symmetrizers below. For a paramagnet it is not enough to
+restrict the impurity problem to $S_z = 0$, because the bath can make up the
+spin of the physical orbitals. If you set the starting `S.R` yourself, give
+the ghosts a non-zero entry, because a ghost with $\mathcal{R} = 0$ stays
+decoupled.
+
+With ghosts `S.Z` $= \mathcal{R}^{\dagger} \mathcal{R}$ is not the
+quasiparticle weight, but the spectral weight summed over all frequencies. The
+quasiparticle weight and the self-energy of block `bl` of cluster `i` are
+
+```python
+from risb import helpers
+
+Z = helpers.get_z(S.R[i][bl], S.Lambda[i][bl], kweight.mu)
+Sigma = helpers.get_sigma_w(
+    omega, S.R[i][bl], S.Lambda[i][bl], kweight.mu, S.h0_loc_matrix[i][bl]
+)
+```
+
+See [the self-energy and the quasiparticle weight](../explanations/self_energy.md)
+for how they are obtained, and `examples/ghost_hubbard.py` for the Hubbard
+model on the Bethe lattice with and without ghosts.
+
 ## Enforcing symmetries
 
 :::{admonition} Thanks <3
@@ -286,3 +342,14 @@ S = LatticeSolver(...
 
 This will make most impurity solvers faster, and the other matrix
 operations faster. For many systems forcing the matrices to be real is fine.
+
+[^LanataGhost2017]:
+    [N. Lanatà, T.-H. Lee, Y.-X. Yao, and V. Dobrosavljević,
+    _Emergent Bloch excitations in Mott matter_,
+    Phys. Rev. B **96**, 195126 (2017)](https://doi.org/10.1103/PhysRevB.96.195126)
+
+[^Lanata2022]:
+    [N. Lanatà,
+    _Operatorial formulation of the ghost rotationally invariant slave-boson
+    theory_,
+    Phys. Rev. B **105**, 045111 (2022)](https://doi.org/10.1103/PhysRevB.105.045111)

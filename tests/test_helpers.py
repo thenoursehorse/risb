@@ -1,6 +1,5 @@
 # ruff: noqa: D100, D103
 
-from itertools import product
 from pathlib import Path
 
 import h5py
@@ -164,14 +163,17 @@ def assert_lagrangian_is_stationary(
             impurity_entropy=[s.entropy for s in impurity_solvers],
         )
 
-    # R and D are general matrices, Lambda, Lambda_c and Delta_p Hermitian
-    step = 1e-6
+    # R and D are general matrices, Lambda, Lambda_c and Delta_p Hermitian.
+    # Ghost orbitals can be nearly full or empty, where sqrt(Delta_p (1 -
+    # Delta_p)) is steep, so the step is small
+    step = 1e-7
     for name in variables:
         for i in range(S.n_clusters):
-            for bl, n in S.gf_struct[i]:
-                for a, b in product(range(n), repeat=2):
+            for bl, _ in S.gf_struct[i]:
+                shape = variables[name][i][bl].shape
+                for a, b in np.ndindex(shape):
                     for phase in [1, 1j]:
-                        E = np.zeros((n, n), dtype=complex)
+                        E = np.zeros(shape, dtype=complex)
                         E[a, b] = phase
                         if name not in ("R", "D"):
                             E = E + E.conj().T
@@ -321,11 +323,42 @@ def test_converged_solution_with_an_orbital_in_no_cluster_is_a_stationary_point_
     assert_lagrangian_is_stationary(S, impurity_solvers, kweight)
 
 
+def test_converged_solution_with_ghosts_is_a_stationary_point_of_the_lagrangian() -> (
+    None
+):
+    # One band on a cell of two sites, with three quasiparticles per spin on
+    # site 0 and site 1 in no cluster
+    spin_names = ["up", "dn"]
+    gf_struct = [[(bl, 1) for bl in spin_names]]
+    bath_size = [dict.fromkeys(spin_names, 3)]
+    impurity_solvers = [
+        FockitImpuritySolver(
+            4 * nc("up", 0) * nc("dn", 0), gf_struct[0], bath_size=bath_size[0]
+        )
+    ]
+    kweight = SmearingKWeight(beta=40, n_target=2 + 2)
+    S = LatticeSolver(
+        h0_k=dict.fromkeys(spin_names, one_band_cubic_h0_k(6, supercell=True)),
+        gf_struct=gf_struct,
+        impurity_solvers=impurity_solvers,
+        update_weights=kweight.update_weights,
+        projectors=[dict.fromkeys(spin_names, np.array([[1.0, 0.0]]))],
+        bath_size=bath_size,
+    )
+    S.solve(tol=1e-8)
+    assert S.optimize.success
+    assert S.self_consistency_error < 1e-8
+    assert_lagrangian_is_stationary(S, impurity_solvers, kweight)
+
+
 @pytest.mark.parametrize(
-    "n_clusters", [2, 1], ids=["every site", "a site in no cluster"]
+    ("n_clusters", "n_qp", "T"),
+    # With ghosts the cycle does not converge in this model above T ~ 0.03
+    [(2, 1, 0.1), (1, 1, 0.1), (1, 3, 0.025)],
+    ids=["every site", "a site in no cluster", "ghosts on a site"],
 )
 def test_entropy_is_minus_the_temperature_derivative_of_the_lagrangian(
-    n_clusters: int,
+    n_clusters: int, n_qp: int, T: float
 ) -> None:
     # One band on a cell of two sites, a cluster on each site or on site 0
     # only, with thermal impurity problems. At fixed chemical potential the
@@ -340,8 +373,11 @@ def test_entropy_is_minus_the_temperature_derivative_of_the_lagrangian(
 
     def solve(beta: float) -> tuple[float, float]:
         gf_struct = [[(bl, 1) for bl in spin_names]] * n_clusters
+        bath_size = [dict.fromkeys(spin_names, n_qp)] * n_clusters
         impurity_solvers = [
-            FockitImpuritySolver(U * nc("up", 0) * nc("dn", 0), gf, beta=beta)
+            FockitImpuritySolver(
+                U * nc("up", 0) * nc("dn", 0), gf, beta=beta, bath_size=bath_size[0]
+            )
             for gf in gf_struct
         ]
         S = LatticeSolver(
@@ -350,10 +386,11 @@ def test_entropy_is_minus_the_temperature_derivative_of_the_lagrangian(
             impurity_solvers=impurity_solvers,
             update_weights=SmearingKWeight(beta=beta, mu=mu).update_weights,
             projectors=sites[:n_clusters],
+            bath_size=bath_size,
         )
         for i in range(n_clusters):
             for bl in spin_names:
-                S.Lambda[i][bl] = np.array([[mu]])
+                S.Lambda[i][bl] = S.Lambda[i][bl] + mu * np.eye(n_qp)
         S.solve(tol=1e-12)
         assert S.optimize.success
         impurity_entropy = [s.entropy for s in impurity_solvers]
@@ -380,7 +417,6 @@ def test_entropy_is_minus_the_temperature_derivative_of_the_lagrangian(
         )
         return lagrangian, entropy
 
-    T = 0.1
     dT = 1e-3 * T
     lagrangian_minus, _ = solve(1 / (T - dT))
     _, entropy = solve(1 / T)
@@ -409,31 +445,40 @@ def solved_lattice(
         h0_k = build_two_orbital_complex_h0_k()
         projectors = None
         n_target, start = 2, 1.5 * np.eye(2)
+        bath_size = None
+        n_ghost_electrons = 0
     else:
-        # One band on a cell of two sites, a cluster on site 0 only
+        # One band on a cell of two sites, with a cluster on site 0 only. The
+        # cluster has three quasiparticles per spin in the model "ghosts"
+        n_qp = 3 if model == "ghosts" else 1
         gf_struct = [[(bl, 1) for bl in spin_names]]
+        bath_size = [dict.fromkeys(spin_names, n_qp)]
         impurity_solvers = [
-            FockitImpuritySolver(2 * nc("up", 0) * nc("dn", 0), gf_struct[0])
+            FockitImpuritySolver(
+                2 * nc("up", 0) * nc("dn", 0), gf_struct[0], bath_size=bath_size[0]
+            )
         ]
         h0_k = dict.fromkeys(spin_names, one_band_cubic_h0_k(4, supercell=True))
         projectors = [dict.fromkeys(spin_names, np.array([[1.0, 0.0]]))]
-        n_target, start = 2, np.array([[1.0]])
-    kweight = SmearingKWeight(beta=40, n_target=n_target)
+        n_target, start = 2, np.eye(n_qp)
+        n_ghost_electrons = n_qp - 1
+    kweight = SmearingKWeight(beta=40, n_target=n_target + n_ghost_electrons)
     S = LatticeSolver(
         h0_k=h0_k,
         gf_struct=gf_struct,
         impurity_solvers=impurity_solvers,
         update_weights=kweight.update_weights,
         projectors=projectors,
+        bath_size=bath_size,
     )
     for bl in spin_names:
-        S.Lambda[0][bl] = start
+        S.Lambda[0][bl] = S.Lambda[0][bl] + start
     S.solve(tol=1e-12)
     assert S.optimize.success
     return S, impurity_solvers, kweight, n_target
 
 
-@pytest.mark.parametrize("model", ["complex", "a site in no cluster"])
+@pytest.mark.parametrize("model", ["complex", "a site in no cluster", "ghosts"])
 def test_density_matrix_k_has_the_local_density_of_each_impurity(model: str) -> None:
     S, _, _, n_target = solved_lattice(model)
     density = helpers.get_density_matrix_k(
@@ -454,7 +499,7 @@ def test_density_matrix_k_has_the_local_density_of_each_impurity(model: str) -> 
         assert local == pytest.approx(S.rho_c[0][bl].T, abs=1e-10)
 
 
-@pytest.mark.parametrize("model", ["complex", "a site in no cluster"])
+@pytest.mark.parametrize("model", ["complex", "a site in no cluster", "ghosts"])
 def test_band_and_interaction_energy_is_the_energy_of_risb(model: str) -> None:
     S, impurity_solvers, kweight, n_target = solved_lattice(model)
     assert kweight.mu is not None
@@ -494,3 +539,113 @@ def test_band_and_interaction_energy_is_the_energy_of_risb(model: str) -> None:
     assert energy == pytest.approx(
         lagrangian + kweight.mu * n_target + entropy / kweight.beta, abs=1e-8
     )
+
+
+def test_ghost_projectors_without_ghosts_are_the_projectors() -> None:
+    h0_k = {"up": np.zeros((4, 3, 3))}
+    U_k = np.linalg.qr(np.random.default_rng(1).normal(size=(4, 3, 3)) + 0j)[0]
+    for projectors in [
+        [{"up": np.array([[1.0, 0, 0]])}, {"up": np.array([[0, 1.0, 0]])}],
+        [{"up": U_k[:, :2, :]}],
+    ]:
+        bath_size = [{"up": P["up"].shape[-2]} for P in projectors]
+        projectors_qp = helpers.get_ghost_projectors(h0_k, bath_size, projectors)
+        for P, P_qp in zip(projectors, projectors_qp, strict=True):
+            assert P_qp["up"] == pytest.approx(P["up"], abs=abs)
+
+
+@pytest.mark.parametrize("k_dependent", [False, True])
+def test_upfolded_ghost_quasiparticle_hamiltonian_has_the_ghost_risb_form(
+    k_dependent: bool,
+) -> None:
+    # A two-site cell with site 0 in a cluster of 3 quasiparticles and site 1 in
+    # no cluster. In the quasiparticle space (site 0, site 1, ghost 1, ghost 2)
+    # H_qp is T eps T^dag + Lambda on (site 0, ghost 1, ghost 2), with T the
+    # rows of R on those orbitals and the identity on site 1
+    rng = np.random.default_rng(2)
+    n_k = 5
+    eps = rng.normal(size=(n_k, 2, 2)) + 1j * rng.normal(size=(n_k, 2, 2))
+    eps = eps + np.swapaxes(eps.conj(), -1, -2)
+    R = rng.normal(size=(3, 1)) + 1j * rng.normal(size=(3, 1))
+    Lambda = rng.normal(size=(3, 3)) + 1j * rng.normal(size=(3, 3))
+    Lambda = Lambda + Lambda.conj().T
+    cluster = [0, 2, 3]
+    T = np.zeros((4, 2), complex)
+    T[cluster, 0] = R[:, 0]
+    T[1, 1] = 1
+    expected = T @ eps @ T.conj().T
+    expected[:, *np.ix_(cluster, cluster)] += Lambda
+    # The same Hamiltonian in a basis of the cell that rotates with k
+    U = np.eye(2)
+    if k_dependent:
+        U = np.linalg.qr(
+            rng.normal(size=(n_k, 2, 2)) + 1j * rng.normal(size=(n_k, 2, 2))
+        )[0]
+    U_dag = np.swapaxes(U.conj(), -1, -2)
+    h0_k = {"up": U @ eps @ U_dag}
+    projectors = [{"up": np.array([[1.0, 0.0]]) @ U_dag}]
+    projectors_qp = helpers.get_ghost_projectors(h0_k, [{"up": 3}], projectors)
+    R_padded = np.hstack([R, np.zeros((3, 2))])
+    R_full = helpers.upfold([{"up": R_padded}], h0_k, projectors_qp, outside=1)["up"]
+    Lambda_full = helpers.upfold([{"up": Lambda}], h0_k, projectors_qp)["up"]
+    assert R_full[..., 2:] == pytest.approx(np.zeros_like(R_full[..., 2:]), abs=abs)
+    h_qp = helpers.get_h_qp(R_full[..., :2], Lambda_full, h0_k["up"])
+    assert np.linalg.eigvalsh(h_qp) == pytest.approx(
+        np.linalg.eigvalsh(expected), abs=abs
+    )
+
+
+def test_self_energy_with_ghosts_gives_the_green_function_at_every_k() -> None:
+    rng = np.random.default_rng(3)
+    n_orb, n_qp = 2, 6
+    R = rng.normal(size=(n_qp, n_orb)) + 1j * rng.normal(size=(n_qp, n_orb))
+    Lambda = rng.normal(size=(n_qp, n_qp)) + 1j * rng.normal(size=(n_qp, n_qp))
+    Lambda = Lambda + Lambda.conj().T
+    h0_kin_k = rng.normal(size=(4, n_orb, n_orb)) + 1j * rng.normal(
+        size=(4, n_orb, n_orb)
+    )
+    h0_kin_k = h0_kin_k + np.swapaxes(h0_kin_k.conj(), -1, -2)
+    h0_loc = np.diag([0.2, -0.1])
+    mu = 0.3
+    omega = np.array([0.4 + 0.1j, -1.3 + 0.05j, 2.5j])
+    sigma = helpers.get_sigma_w(omega, R, Lambda, mu, h0_loc)
+    z = (omega + mu)[:, None, None, None]
+    G = np.linalg.inv(z * np.eye(n_orb) - h0_kin_k - h0_loc - sigma[:, None])
+    G_qp = np.linalg.inv(z * np.eye(n_qp) - R @ h0_kin_k @ R.conj().T - Lambda)
+    assert pytest.approx(R.conj().T @ G_qp @ R, abs=abs) == G
+
+
+def test_self_energy_without_ghosts_is_linear_in_frequency() -> None:
+    rng = np.random.default_rng(4)
+    R = rng.normal(size=(2, 2)) + 1j * rng.normal(size=(2, 2))
+    Lambda = np.diag([0.3, -0.2])
+    h0_loc = np.diag([0.1, 0.0])
+    mu = 0.2
+    # Includes w + mu at the eigenvalues of Lambda
+    omega = np.array([0.1, -0.4, 1.7, 0.5j])
+    Z_inv = np.linalg.inv(R.conj().T @ R)
+    R_inv = np.linalg.inv(R)
+    expected = (
+        (np.eye(2) - Z_inv) * (omega + mu)[:, None, None]
+        + R_inv @ Lambda @ R_inv.conj().T
+        - h0_loc
+    )
+    assert helpers.get_sigma_w(omega, R, Lambda, mu, h0_loc) == pytest.approx(
+        expected, abs=abs
+    )
+
+
+@pytest.mark.parametrize(("n_orb", "n_qp"), [(2, 2), (2, 6)])
+def test_quasiparticle_weight_is_set_by_the_slope_of_the_self_energy(
+    n_orb: int, n_qp: int
+) -> None:
+    rng = np.random.default_rng(5)
+    R = rng.normal(size=(n_qp, n_orb)) + 1j * rng.normal(size=(n_qp, n_orb))
+    Lambda = rng.normal(size=(n_qp, n_qp)) + 1j * rng.normal(size=(n_qp, n_qp))
+    Lambda = Lambda + Lambda.conj().T
+    mu, h = 0.3, 1e-5
+    slope = (
+        helpers.get_sigma_w(h, R, Lambda, mu) - helpers.get_sigma_w(-h, R, Lambda, mu)
+    ) / (2 * h)
+    Z = helpers.get_z(R, Lambda, mu)
+    assert pytest.approx(np.linalg.inv(np.eye(n_orb) - slope), abs=1e-8) == Z

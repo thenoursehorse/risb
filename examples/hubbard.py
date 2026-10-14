@@ -78,7 +78,7 @@ Z = []
 total_number = []  # Avg particle number per site
 total_spin = []  # Total spin per site
 
-U_arr = np.arange(0, 10 + 0.1, 0.5)
+U_arr = np.arange(0, 10 + 0.1, 0.25)
 for U in U_arr:
     impurity_solver.set_h_int(hubbard(U=U, n_orb=n_orb))
 

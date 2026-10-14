@@ -394,14 +394,32 @@ def get_lagrangian(
     the states of impurity problem :math:`i`, so the stationary points are
     the solutions with that ensemble.
 
+    With ghosts, each block of ``R`` has a row for each of its :math:`M`
+    quasiparticles and a column for each of its :math:`n` orbitals. The
+    quasiparticle bands then hold :math:`n_g = \sum (M - n) / 2` more
+    electrons than the physical ones, summed over the blocks of the clusters,
+    so :math:`\mu n_g` is added for the value to be the grand potential.
+
     .. _PRL126401: https://doi.org/10.1103/PhysRevLett.118.126401
 
     """
     n_clusters = len(R)
-    R_full = upfold(R, h0_kin_k, projectors, gf_struct_mapping, outside=1)
-    Lambda_full = upfold(Lambda, h0_kin_k, projectors, gf_struct_mapping)
+    # With ghosts each block of R has more rows (quasiparticles) than columns
+    bath_size = [{bl: R_bl.shape[0] for bl, R_bl in R_i.items()} for R_i in R]
+    n_ghost_electrons = sum(
+        (R_bl.shape[0] - R_bl.shape[1]) / 2 for R_i in R for R_bl in R_i.values()
+    )
+    projectors_qp = projectors
+    if n_ghost_electrons > 0:
+        projectors_qp = get_ghost_projectors(
+            h0_kin_k, bath_size, projectors, gf_struct_mapping
+        )
+    R_full, Lambda_full = upfold_r_lambda(
+        R, Lambda, h0_kin_k, projectors_qp, gf_struct_mapping
+    )
 
-    lagrangian = 0.0
+    # The term of the quasiparticles has -mu n_g from the ghost electrons
+    lagrangian = mu * n_ghost_electrons
     for bl, h0 in h0_kin_k.items():
         energies = np.linalg.eigvalsh(get_h_qp(R_full[bl], Lambda_full[bl], h0, mu))
         n_k = energies.shape[0]
@@ -529,8 +547,10 @@ def get_density_matrix_k(
     Parameters
     ----------
     R_full : risb.types.BlockMatrixLike
-        Renormalization matrix in the blocks of the lattice, e.g.,
-        :attr:`risb.LatticeSolver.R_full`. It can depend on k.
+        Renormalization matrix of the lattice in each block, with a row for
+        each quasiparticle and a column for each orbital, e.g.,
+        :attr:`risb.LatticeSolver.R_full` or from :func:`upfold_r_lambda`. It
+        can depend on k.
     vectors : risb.types.BlockMatrixLike
         Eigenvectors of the quasiparticle Hamiltonian at each k-point, e.g.,
         :attr:`risb.LatticeSolver.bloch_vector_qp`.
@@ -681,17 +701,27 @@ def upfold(
     -------
     risb.types.BlockMatrix
         ``sum_i P_i^dag A_i P_i + outside (1 - sum_i P_i^dag P_i)`` in each
-        block of ``h0_k``, at each k-point if the projectors depend on k.
+        block of ``h0_k``, at each k-point if the projectors depend on k. A
+        block has as many rows and columns as the projectors into it have
+        columns (or as ``A`` has, without projectors), and otherwise the size
+        of the block of ``h0_k``. With the projectors from
+        :func:`get_ghost_projectors` this is the number of quasiparticles,
+        ghosts included.
 
     """
     if gf_struct_mapping is None:
         gf_struct_mapping = [{bl: bl for bl in h0_k} for _ in range(len(A))]
+    size = {bl: h0.shape[-1] for bl, h0 in h0_k.items()}
+    for i, A_i in enumerate(A):
+        for bl, A_bl in A_i.items():
+            P = A_bl if projectors is None else projectors[i][bl]
+            size[gf_struct_mapping[i][bl]] = P.shape[-1]
     A_full: BlockMatrix = {}
     covered: BlockMatrix = {}
-    for bl, h0 in h0_k.items():
+    for bl, n in size.items():
         # Accumulated out of place, so it is only complex if needed
-        A_full[bl] = np.zeros(h0.shape[1:])
-        covered[bl] = np.zeros(h0.shape[1:])
+        A_full[bl] = np.zeros((n, n))
+        covered[bl] = np.zeros((n, n))
     for i, A_i in enumerate(A):
         for bl, A_bl in A_i.items():
             bl_full = gf_struct_mapping[i][bl]
@@ -702,9 +732,242 @@ def upfold(
                 P = projectors[i][bl]
                 A_full[bl_full] = A_full[bl_full] + _dagger(P) @ A_bl @ P
                 covered[bl_full] = covered[bl_full] + _dagger(P) @ P
-    for bl, h0 in h0_k.items():
-        A_full[bl] = A_full[bl] + outside * (np.eye(h0.shape[-1]) - covered[bl])
+    for bl, n in size.items():
+        A_full[bl] = A_full[bl] + outside * (np.eye(n) - covered[bl])
     return A_full
+
+
+def upfold_r_lambda(
+    R: Sequence[BlockMatrixLike],
+    Lambda: Sequence[BlockMatrixLike],
+    h0_kin_k: BlockMatrixLike,
+    projectors_qp: Sequence[BlockMatrixLike] | None = None,
+    gf_struct_mapping: Sequence[Mapping[str, str]] | None = None,
+) -> tuple[BlockMatrix, BlockMatrix]:
+    """
+    Return ``R`` and ``Lambda`` of the clusters in the blocks of the lattice, also with ghosts.
+
+    Parameters
+    ----------
+    R : list of risb.types.BlockMatrixLike
+        Renormalization matrix of each cluster, with a row for each
+        quasiparticle and a column for each orbital.
+    Lambda : list of risb.types.BlockMatrixLike
+        Correlation potential of the quasiparticles of each cluster.
+    h0_kin_k : risb.types.BlockMatrixLike
+        Dispersion of the lattice, which sets its blocks and their size.
+    projectors_qp : list of risb.types.BlockMatrixLike, optional
+        The projectors onto the quasiparticles of each cluster, from
+        :func:`get_ghost_projectors` with ghosts, and otherwise the projectors
+        onto the subspace of each cluster, as in :class:`risb.LatticeSolver`.
+    gf_struct_mapping : list of mapping, optional
+        The mapping from the blocks of each cluster to the blocks of
+        ``h0_kin_k``. Default assumes they are the same.
+
+    Returns
+    -------
+    R_full : risb.types.BlockMatrix
+        ``R`` in each block of ``h0_kin_k``, with a row for each quasiparticle
+        and a column for each orbital, and ``R = 1`` on the orbitals in no
+        cluster.
+    Lambda_full : risb.types.BlockMatrix
+        ``Lambda`` in each block of ``h0_kin_k``, a matrix on the
+        quasiparticles, with ``Lambda = 0`` on the orbitals in no cluster.
+
+    Notes
+    -----
+    With ghosts ``R`` has more rows than columns. It is padded with zero
+    columns to be square and upfolded with :func:`upfold`, which leaves the
+    columns after the orbitals of the block zero, so they are dropped.
+
+    """
+    R_padded = [
+        {
+            bl: np.hstack(
+                [R_bl, np.zeros((R_bl.shape[0], R_bl.shape[0] - R_bl.shape[1]))]
+            )
+            for bl, R_bl in R_i.items()
+        }
+        for R_i in R
+    ]
+    R_full = upfold(R_padded, h0_kin_k, projectors_qp, gf_struct_mapping, outside=1)
+    R_full = {bl: R_full[bl][..., : h0.shape[-1]] for bl, h0 in h0_kin_k.items()}
+    Lambda_full = upfold(Lambda, h0_kin_k, projectors_qp, gf_struct_mapping)
+    return R_full, Lambda_full
+
+
+def get_ghost_projectors(
+    h0_k: BlockMatrixLike,
+    bath_size: Sequence[Mapping[str, int]],
+    projectors: Sequence[BlockMatrixLike] | None = None,
+    gf_struct_mapping: Sequence[Mapping[str, str]] | None = None,
+) -> list[BlockMatrix]:
+    """
+    Return the projectors onto the quasiparticles of each cluster in ghost RISB.
+
+    The quasiparticle space of a block of ``h0_k`` is its orbitals followed by
+    the ghost orbitals of the clusters, in the order of the clusters and their
+    blocks. A cluster block with ``n`` orbitals and ``bath_size`` ``M`` has
+    ``M`` quasiparticles: the first ``n`` are on its orbitals, as in
+    ``projectors``, and the other ``M - n`` are its ghost orbitals.
+
+    Parameters
+    ----------
+    h0_k : risb.types.BlockMatrixLike
+        Dispersion of the lattice, which sets its blocks and their size.
+    bath_size : list of mapping
+        Number of quasiparticles (bath orbitals of the impurity problem) of
+        each block of each cluster.
+    projectors : list of risb.types.BlockMatrixLike, optional
+        The projectors onto the subspace of each cluster, as in
+        :class:`risb.LatticeSolver`. They can depend on k. Without them there
+        is one cluster, the whole unit cell.
+    gf_struct_mapping : list of mapping, optional
+        The mapping from the blocks of each cluster to the blocks of ``h0_k``.
+        Default assumes they are the same.
+
+    Returns
+    -------
+    list of risb.types.BlockMatrix
+        Projector onto the quasiparticles of each cluster, with a row for each
+        quasiparticle of the cluster block and a column for each quasiparticle
+        of the block of ``h0_k``, at each k-point if ``projectors`` depend on
+        k.
+
+    Notes
+    -----
+    :func:`upfold_r_lambda` uses these projectors to put ``R`` and ``Lambda``
+    of the clusters in the blocks of ``h0_k``.
+
+    """
+    if gf_struct_mapping is None:
+        gf_struct_mapping = [{bl: bl for bl in h0_k} for _ in range(len(bath_size))]
+    if projectors is None:
+        projectors = [{bl: np.eye(h0.shape[-1]) for bl, h0 in h0_k.items()}]
+    # Index of the first ghost orbital of each cluster block
+    first_ghost: list[dict[str, int]] = []
+    size = {bl: h0.shape[-1] for bl, h0 in h0_k.items()}
+    for i, sizes in enumerate(bath_size):
+        first_ghost.append({})
+        for bl, M in sizes.items():
+            bl_full = gf_struct_mapping[i][bl]
+            first_ghost[i][bl] = size[bl_full]
+            size[bl_full] += M - projectors[i][bl].shape[-2]
+    projectors_qp: list[BlockMatrix] = []
+    for i, sizes in enumerate(bath_size):
+        projectors_qp.append({})
+        for bl, M in sizes.items():
+            P = np.asarray(projectors[i][bl])
+            n_orb, n_band = P.shape[-2:]
+            P_qp = np.zeros((*P.shape[:-2], M, size[gf_struct_mapping[i][bl]]), P.dtype)
+            P_qp[..., :n_orb, :n_band] = P
+            start = first_ghost[i][bl]
+            P_qp[..., n_orb:, start : start + M - n_orb] = np.eye(M - n_orb)
+            projectors_qp[i][bl] = P_qp
+    return projectors_qp
+
+
+def get_sigma_w(
+    omega: complex | NDArray[np.inexact],
+    R: NDArray[np.inexact],
+    Lambda: NDArray[np.inexact],
+    mu: float = 0.0,
+    h0_loc: NDArray[np.inexact] | None = None,
+) -> NDArray[np.inexact]:
+    """
+    Return the local self-energy of RISB, also with ghosts.
+
+    Parameters
+    ----------
+    omega : complex or numpy.ndarray
+        Frequencies, relative to the chemical potential, e.g., ``w + 1j * eta``
+        or Matsubara frequencies.
+    R : numpy.ndarray
+        Renormalization matrix of a block of a cluster, with a row for each
+        quasiparticle and a column for each orbital.
+    Lambda : numpy.ndarray
+        Correlation potential of the quasiparticles of the block.
+    mu : float, optional
+        Chemical potential.
+    h0_loc : numpy.ndarray, optional
+        Local non-interacting terms of the orbitals of the block.
+
+    Returns
+    -------
+    numpy.ndarray
+        ``Sigma(omega)``, with the frequencies along the first axes.
+
+    Notes
+    -----
+    The self-energy of the Green's function ``R^dag (w + mu - H_qp)^-1 R`` at
+    every k-point is ``Sigma(w) = w + mu - h0_loc - [R^dag (w + mu -
+    Lambda)^-1 R]^-1``, Eq. 11 of `arXiv:2601.16401
+    <https://arxiv.org/abs/2601.16401>`__. It is evaluated in the form of its
+    poles, Eq. B7 there (equivalently Eq. B10), with ``z = w + mu``, ``S =
+    R^dag R`` and ``Q`` the projector onto the quasiparticles that ``R`` does
+    not reach (the ghosts),
+
+    ``Sigma(z) = (1 - S^-1) z + S^-1 R^dag Lambda R S^-1
+    + S^-1 R^dag Lambda Q (z - Q Lambda Q)^-1 Q Lambda R S^-1 - h0_loc``,
+
+    which is only singular at its poles, the eigenvalues of ``Q Lambda Q`` on
+    the ghosts. The sign of its second term is printed as minus in Eq. B7
+    there. Without ghosts it is ``(1 - Z^-1) z + R^-1 Lambda R^-dag -
+    h0_loc`` with ``Z = R^dag R``. The derivation is in
+    :doc:`/explanations/self_energy`.
+
+    """
+    z = (np.asarray(omega) + mu)[..., None, None]
+    S, poles, B = _self_energy_poles(R, Lambda)
+    S_inv = np.linalg.inv(S)
+    residues = (B / (z - poles)) @ _dagger(B)
+    sigma: NDArray[np.inexact] = (
+        (np.eye(len(S)) - S_inv) * z
+        + S_inv @ _dagger(R) @ Lambda @ R @ S_inv
+        + S_inv @ residues @ S_inv
+    )
+    if h0_loc is not None:
+        sigma = sigma - h0_loc
+    return sigma
+
+
+def get_z(
+    R: NDArray[np.inexact], Lambda: NDArray[np.inexact], mu: float = 0.0
+) -> NDArray[np.inexact]:
+    """
+    Return the quasiparticle weight of RISB, also with ghosts.
+
+    Parameters
+    ----------
+    R : numpy.ndarray
+        Renormalization matrix of a block of a cluster, with a row for each
+        quasiparticle and a column for each orbital.
+    Lambda : numpy.ndarray
+        Correlation potential of the quasiparticles of the block.
+    mu : float, optional
+        Chemical potential.
+
+    Returns
+    -------
+    numpy.ndarray
+        ``Z = [1 - dSigma/dw (0)]^-1`` of :func:`get_sigma_w`. Without
+        ghosts it is ``R^dag R``.
+
+    Notes
+    -----
+    With the poles ``e_j`` of :func:`get_sigma_w`, the eigenvalues of ``Q
+    Lambda Q`` on the ghosts with eigenvectors ``v_j``, and ``B`` the matrix
+    with the columns ``R^dag Lambda v_j``, ``1 - dSigma/dw (0) = S^-1 (S
+    + B diag(1 / (mu - e_j)^2) B^dag) S^-1``, so by the Woodbury identity
+    ``Z = S - B [diag((mu - e_j)^2) + B^dag S^-1 B]^-1 B^dag``. It is finite
+    when a pole is at ``mu``, e.g., ``Z = 0`` in a Mott insulator. The
+    derivation is in :doc:`/explanations/self_energy`.
+
+    """
+    S, poles, B = _self_energy_poles(R, Lambda)
+    middle = np.diag((mu - poles) ** 2) + _dagger(B) @ np.linalg.pinv(S) @ B
+    Z: NDArray[np.inexact] = S - B @ np.linalg.pinv(middle) @ _dagger(B)
+    return Z
 
 
 def get_h_qp(
@@ -863,6 +1126,7 @@ def get_ke(
     vec: NDArray[np.inexact],
     kweights: NDArray[np.float64],
     P: NDArray[np.inexact] | None = None,
+    projector_qp: NDArray[np.inexact] | None = None,
 ) -> NDArray[np.inexact]:
     """
     Return average lopsided kinetic energy matrix of the quasiparticle Hamiltonian in RISB.
@@ -878,6 +1142,9 @@ def get_ke(
         Integration weights at each k-point for each band (eigenvector).
     P : numpy.ndarray, optional
         Projection matrix onto correlated subspace.
+    projector_qp : numpy.ndarray, optional
+        Projection matrix onto the quasiparticles of the correlated subspace,
+        from :func:`get_ghost_projectors`. Default is `P`.
 
     Returns
     -------
@@ -892,14 +1159,18 @@ def get_ke(
 
     """
     vec_dag = np.swapaxes(vec.conj(), -1, -2)
-    if P is None:
+    if P is None and projector_qp is None:
         ke: NDArray[np.inexact] = np.einsum(
             "kan,kn,knb->ab", h0_kin_k_R, kweights, vec_dag
         )
         return ke
-    P_dag = np.swapaxes(P.conj(), -2, -1)
     middle = np.einsum("kan,kn,knb->kab", h0_kin_k_R, kweights, vec_dag)
-    return np.sum(P @ middle @ P_dag, axis=0)
+    if P is not None:
+        middle = P @ middle
+    projector_qp = P if projector_qp is None else projector_qp
+    if projector_qp is not None:
+        middle = middle @ _dagger(projector_qp)
+    return np.sum(middle, axis=0)
 
 
 def get_ke2(
@@ -1121,6 +1392,21 @@ def _sqrt_k(rho: NDArray[np.inexact], inverse: bool = False) -> NDArray[np.inexa
         f = np.where(K < EDGE_TOL, 0, 1 / np.where(K < EDGE_TOL, 1, f))
     sqrt_k: NDArray[np.inexact] = (V * f) @ V.conj().T
     return sqrt_k
+
+
+def _self_energy_poles(
+    R: NDArray[np.inexact], Lambda: NDArray[np.inexact]
+) -> tuple[NDArray[np.inexact], NDArray[np.float64], NDArray[np.inexact]]:
+    # Returns S = R^dag R, the poles of the self-energy, and the matrix with
+    # the residue vectors R^dag Lambda v_j as columns. The poles are the
+    # eigenvalues of Lambda on the ghosts, the quasiparticles that R does not
+    # reach, with eigenvectors v_j. The ghosts are the left singular vectors
+    # of R beyond its rank, with the rank tolerance of scipy.linalg.null_space
+    U, singular_values, _ = np.linalg.svd(R)
+    tol = np.max(singular_values, initial=0) * max(R.shape) * np.finfo(float).eps
+    ghosts = U[:, np.sum(singular_values > tol) :]
+    poles, vectors = np.linalg.eigh(_dagger(ghosts) @ Lambda @ ghosts)
+    return _dagger(R) @ R, poles, _dagger(R) @ Lambda @ ghosts @ vectors
 
 
 def _dagger(A: NDArray[np.inexact]) -> NDArray[np.inexact]:

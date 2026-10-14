@@ -370,6 +370,40 @@ def test_particle_hole_sector_gives_the_same_ground_state() -> None:
         assert symmetric.rho_c[bl] == pytest.approx(plain.rho_c[bl], abs=1e-12)
 
 
+def test_decoupled_extra_bath_orbitals_leave_the_impurity_unchanged() -> None:
+    U = 4.0
+    gf_struct = [("up", 1), ("dn", 1)]
+    h_int = U * nc("up", 0) * nc("dn", 0)
+    h0_loc_mat = {bl: np.array([[-U / 2]]) for bl, _ in gf_struct}
+    one_bath = FockitImpuritySolver(h_int, gf_struct)
+    one_bath.set_h_imp(
+        {bl: np.array([[0.1]]) for bl, _ in gf_struct},
+        {bl: np.array([[-0.4]]) for bl, _ in gf_struct},
+        h0_loc_mat,
+    )
+    one_bath.solve()
+    # The bath term is f Lambda_c f^dag, so a level of +10 (-10) fills (empties)
+    # the orbital, and the half-filled sector keeps one electron per spin for
+    # the impurity and the coupled bath orbital
+    three_baths = FockitImpuritySolver(
+        h_int, gf_struct, bath_size={bl: 3 for bl, _ in gf_struct}
+    )
+    three_baths.set_h_imp(
+        {bl: np.diag([0.1, 10.0, -10.0]) for bl, _ in gf_struct},
+        {bl: np.array([[-0.4], [0.0], [0.0]]) for bl, _ in gf_struct},
+        h0_loc_mat,
+    )
+    three_baths.solve()
+    for bl, _ in gf_struct:
+        assert three_baths.rho_c[bl] == pytest.approx(one_bath.rho_c[bl], abs=1e-12)
+        assert three_baths.rho_cf[bl] == pytest.approx(
+            np.array([[one_bath.rho_cf[bl][0, 0], 0, 0]]), abs=1e-12
+        )
+        assert three_baths.rho_f[bl] == pytest.approx(
+            np.diag([one_bath.rho_f[bl][0, 0], 0, 1]), abs=1e-12
+        )
+
+
 def test_fockit_solver_rejects_symmetries_h_imp_does_not_have() -> None:
     gf_struct = [("up", 1), ("dn", 1)]
     Lambda_c = {bl: np.array([[-0.5]]) for bl, _ in gf_struct}

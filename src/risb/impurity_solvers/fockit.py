@@ -81,6 +81,10 @@ class FockitImpuritySolver(ImpuritySolver):
         thermal averages over the eigenstates of the half-filled sector,
         dropping states with a Boltzmann weight below ``1e-14`` relative to the
         ground state.
+    bath_size : mapping, optional
+        Number of bath orbitals of each block, e.g. ``{"up": 3, "dn": 3}``.
+        Blocks that are not given have as many bath orbitals as physical
+        orbitals.
 
     """
 
@@ -96,6 +100,8 @@ class FockitImpuritySolver(ImpuritySolver):
         degenerate: Literal["ignore", "warn"] = "ignore",
         degenerate_tol: float = 1e-8,
         beta: float | None = None,
+        *,
+        bath_size: Mapping[str, int] | None = None,
     ) -> None:
         if method not in ("eigsh", "eigh"):
             msg = f"Unknown method {method!r}."
@@ -132,7 +138,9 @@ class FockitImpuritySolver(ImpuritySolver):
 
         #: risb.types.GfStruct : Block matrix structure of the bath orbitals
         #: (f-electrons).
-        self.gf_struct_bath = [(_bath(bl), bl_size) for bl, bl_size in gf_struct]
+        self.gf_struct_bath = [
+            (_bath(bl), (bath_size or {}).get(bl, bl_size)) for bl, bl_size in gf_struct
+        ]
 
         modes = [
             (bl, i)
@@ -252,11 +260,13 @@ class FockitImpuritySolver(ImpuritySolver):
 
         """
         self.h_bath = zero()
-        for bl, bl_size in self.gf_struct:
+        for (bl, _), (bl_bath, n_bath) in zip(
+            self.gf_struct, self.gf_struct_bath, strict=True
+        ):
             self.h_bath += _bilinear(
-                [c(_bath(bl), a) for a in range(bl_size)],
+                [c(bl_bath, a) for a in range(n_bath)],
                 Lambda_c[bl],
-                [cdag(_bath(bl), a) for a in range(bl_size)],
+                [cdag(bl_bath, a) for a in range(n_bath)],
             )
 
     def set_h_hybr(self, D: BlockMatrixLike) -> None:
@@ -273,11 +283,13 @@ class FockitImpuritySolver(ImpuritySolver):
 
         """
         self.h_hybr = zero()
-        for bl, bl_size in self.gf_struct:
+        for (bl, bl_size), (bl_bath, n_bath) in zip(
+            self.gf_struct, self.gf_struct_bath, strict=True
+        ):
             tmp = _bilinear(
                 [cdag(bl, alpha) for alpha in range(bl_size)],
                 np.asarray(D[bl]).T,
-                [c(_bath(bl), a) for a in range(bl_size)],
+                [c(bl_bath, a) for a in range(n_bath)],
             )
             self.h_hybr += tmp + hc(tmp)
 
@@ -363,8 +375,9 @@ class FockitImpuritySolver(ImpuritySolver):
                 self.beta is not None and _weight(energies, self.beta)[-1] > _WEIGHT_TOL
             ):
                 k *= 2
-                # Once the Krylov space of eigsh would be most of the sector
-                if dim <= 2 * k + 1:
+                # Diagonalize the whole sector once the Krylov space of eigsh
+                # would be more than half of it
+                if dim <= 2 * (2 * k + 1):
                     energies, states = np.linalg.eigh(H.toarray())
                     break
                 energies, states = _eigsh(H, k, self.method_options)
@@ -402,23 +415,25 @@ class FockitImpuritySolver(ImpuritySolver):
         self.entropy = get_entropy_impurity(self.weights)
         self.gs_energy = float(energies[0])
         self.gs_vector = self.states[:, 0]
-        for bl, bl_size in self.gf_struct:
-            bl_bath = _bath(bl)
+        for (bl, bl_size), (bl_bath, n_bath) in zip(
+            self.gf_struct, self.gf_struct_bath, strict=True
+        ):
             sites = range(bl_size)
+            baths = range(n_bath)
             self.rho_f[bl] = np.array(
                 [
                     [
                         self.overlap(c(bl_bath, b) * cdag(bl_bath, a), False)
-                        for b in sites
+                        for b in baths
                     ]
-                    for a in sites
+                    for a in baths
                 ]
             )
             self.rho_cf[bl] = np.array(
                 [
                     [
                         self.overlap(cdag(bl, alpha) * c(bl_bath, a), False)
-                        for a in sites
+                        for a in baths
                     ]
                     for alpha in sites
                 ]

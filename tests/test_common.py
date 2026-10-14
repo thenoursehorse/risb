@@ -130,3 +130,15 @@ def one_band_cubic_h0_k(nkx: int, supercell: bool) -> NDArray[np.complex128]:
         ) / np.sqrt(2)
         h0_k[n] = bloch @ np.diag(energies) @ bloch.conj().T
     return h0_k
+
+
+def bethe_h0_k(n_k: int) -> NDArray[np.float64]:
+    """One band with the semicircular density of states of half bandwidth 1.
+
+    The energies are at equal steps of its cumulative distribution, so equal
+    weights at each k give the density of states.
+    """
+    energies = np.linspace(-1, 1, 100001)
+    cdf = 0.5 + (energies * np.sqrt(1 - energies**2) + np.arcsin(energies)) / np.pi
+    steps = (np.arange(n_k) + 0.5) / n_k
+    return np.interp(steps, cdf, energies)[:, None, None]

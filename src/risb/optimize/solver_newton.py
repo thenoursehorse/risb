@@ -151,6 +151,9 @@ class NewtonSolver(ABC):
 
         """
         self.success = False
+        self.x = []
+        self.g_x = []
+        self.error = []
         x = deepcopy(x0)
         if self.history_size > 0:
             self._insert_vector(self.x, x, self.history_size)

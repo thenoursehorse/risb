@@ -39,6 +39,9 @@ from risb.types import (
     UpdateWeights,
 )
 
+# Part of R^dag R = 1 that the ghost copies of an orbital start with
+_GHOST_WEIGHT = 0.18
+
 
 # The structure and methods here have been modeled
 # after github.com/TRIQS/hartree_fock
@@ -108,6 +111,18 @@ class LatticeSolver:
         quasiparticle density matrix :attr:`rho_qp` in the first cycle). It
         returns a matrix for each block of the cluster, which is subtracted
         from the local terms of cluster ``i`` in its impurity problem.
+    bath_size : sequence of mapping, optional
+        Ghost RISB (`10.1103/PhysRevB.96.195126
+        <https://doi.org/10.1103/PhysRevB.96.195126>`__,
+        `10.1103/PhysRevB.105.045111
+        <https://doi.org/10.1103/PhysRevB.105.045111>`__): the number of
+        quasiparticles of each block of each cluster, which is the number of
+        bath orbitals of its impurity problem, e.g., ``[{"up": 3, "dn": 3}]``
+        for three per orbital. It must be a multiple of the size of the block.
+        The quasiparticle bands then hold :attr:`n_ghost_electrons` more
+        electrons than the physical ones, which ``update_weights`` must include
+        in its filling. Default is the size of each block, i.e., RISB without
+        ghosts.
 
     """
 
@@ -126,6 +141,8 @@ class LatticeSolver:
         return_x_new: bool = True,
         check_projectors: bool = False,
         double_counting: Callable[[int, BlockMatrix], BlockMatrixLike] | None = None,
+        *,
+        bath_size: Sequence[Mapping[str, int]] | None = None,
     ) -> None:
         #: risb.types.BlockMatrixLike : Non-interacting Hamiltonian in k-space.
         self.h0_k = h0_k
@@ -186,15 +203,38 @@ class LatticeSolver:
         self.error_fun = error_fun
         self.return_x_new = return_x_new
 
-        # The Hermitian basis in each block of a cluster
-        # TODO make H_basis an input
-        self._H_basis: list[dict[str, list[NDArray[np.inexact]]]] = [
-            {
-                bl: self._hermitian_basis(bl_size, self.force_real)
-                for bl, bl_size in self.gf_struct[i]
-            }
-            for i in range(self.n_clusters)
+        # The Hermitian basis of each size of square matrix
+        self._H_basis: dict[int, list[NDArray[np.inexact]]] = {}
+
+        #: list of dict : Number of quasiparticles of each block of each
+        #: cluster, which is the number of bath orbitals of its impurity problem.
+        self.bath_size: list[dict[str, int]] = [
+            dict(gf_struct_i) for gf_struct_i in self.gf_struct
         ]
+        if bath_size is not None:
+            self.bath_size = [dict(sizes) for sizes in bath_size]
+        for i in range(self.n_clusters):
+            for bl, bl_size in self.gf_struct[i]:
+                if self.bath_size[i][bl] % bl_size:
+                    msg = f"bath_size {self.bath_size[i][bl]} of block {bl} of cluster {i} must be a multiple of its size {bl_size} !"
+                    raise ValueError(msg)
+
+        #: float : Number of electrons per unit cell that the quasiparticle
+        #: bands hold beyond the physical ones, ``sum (bath_size - size) / 2``
+        #: over the blocks of the clusters.
+        self.n_ghost_electrons = sum(
+            (self.bath_size[i][bl] - bl_size) / 2
+            for i in range(self.n_clusters)
+            for bl, bl_size in self.gf_struct[i]
+        )
+
+        # Projectors onto the quasiparticles of each cluster, the same as the
+        # projectors without ghosts
+        self._projectors_qp: Sequence[BlockMatrixLike] | None = self.projectors
+        if self.n_ghost_electrons > 0:
+            self._projectors_qp = helpers.get_ghost_projectors(
+                h0_k, self.bath_size, self.projectors, self.gf_struct_mapping
+            )
 
         #: risb.types.BlockMatrix : :attr:`h0_k` with the local couplings of
         #: each cluster removed, so with the local terms of the orbitals that
@@ -213,15 +253,30 @@ class LatticeSolver:
 
         #: list of risb.types.BlockMatrix : Renormalization matrix
         #: from c- to f-electrons at the mean-field level for each cluster.
-        self.R = self._initialize_block_mf_matrix(self.gf_struct, self.force_real)
-
-        for i in range(self.n_clusters):
-            for bl_sub, _ in self.gf_struct[i]:
-                np.fill_diagonal(self.R[i][bl_sub], 1)
+        self.R: list[BlockMatrix] = [{} for i in range(self.n_clusters)]
 
         #: list of risb.types.BlockMatrix : Correlation potential matrix of the quasiparticles
         #: for each cluster.
-        self.Lambda = self._initialize_block_mf_matrix(self.gf_struct, self.force_real)
+        self.Lambda: list[BlockMatrix] = [{} for i in range(self.n_clusters)]
+
+        # R starts at 1 and Lambda at 0. With ghosts each orbital also has
+        # B - 1 ghost copies, which start with part of the weight in R and with
+        # levels spread over the kinetic bandwidth, because ghosts that start
+        # with R = 0 stay decoupled
+        dtype = float if self.force_real else complex
+        for i in range(self.n_clusters):
+            for bl, bl_size in self.gf_struct[i]:
+                n_copies = self.bath_size[i][bl] // bl_size - 1
+                r, levels = [1.0], [0.0]
+                if n_copies:
+                    r = [np.sqrt(1 - _GHOST_WEIGHT)]
+                    r += [np.sqrt(_GHOST_WEIGHT / n_copies)] * n_copies
+                    levels += list(
+                        np.linspace(-1, 1, n_copies) * self._kinetic_half_bandwidth
+                    )
+                eye = np.eye(bl_size)
+                self.R[i][bl] = np.kron(np.array(r)[:, None], eye).astype(dtype)
+                self.Lambda[i][bl] = np.kron(np.diag(levels), eye).astype(dtype)
 
         #: list of risb.types.BlockMatrix : Bath coupling of the impurity problem for each cluster.
         self.Lambda_c: list[BlockMatrix] = [{} for i in range(self.n_clusters)]
@@ -371,14 +426,21 @@ class LatticeSolver:
                     A[i][bl] = np.zeros((bsize, bsize), dtype=complex)
         return A
 
+    def _hermitian_basis_of(self, N: int) -> list[NDArray[np.inexact]]:
+        if N not in self._H_basis:
+            self._H_basis[N] = self._hermitian_basis(N, self.force_real)
+        return self._H_basis[N]
+
     def _flatten_matrix(self, A: list[BlockMatrix], is_coeff_real: bool) -> list[float]:
-        if len(A) != len(self._H_basis):
-            msg = f"len(A) = {len(A)} and len(H_basis) = {len(self._H_basis)} must have the same number of clusters !"
-            raise ValueError(msg)
         x: list[float] = []
         for i in range(self.n_clusters):
             for bl, _bl_size in self.gf_struct[i]:
-                for h in self._H_basis[i][bl]:
+                A_bl = A[i][bl]
+                if A_bl.shape[0] != A_bl.shape[1]:
+                    # A rectangular matrix, e.g., R with ghosts, is stored by
+                    # its entries
+                    coeffs = list(A_bl.ravel())
+                else:
                     # To extract a coefficient of a basis that spans a vector
                     # space it is the inner product <basis_vec, vec> = coeff
                     # if the basis_vec is orthonormal. For matrices the inner
@@ -387,7 +449,11 @@ class LatticeSolver:
                     # stores no intermediate array
                     # Could also vectorize both matrices as flatten('F') to
                     # column-major order and then take normal inner product
-                    coeff = np.einsum("ij,ji->", h.conj().T, A[i][bl])
+                    coeffs = [
+                        np.einsum("ij,ji->", h.conj().T, A_bl)
+                        for h in self._hermitian_basis_of(A_bl.shape[0])
+                    ]
+                for coeff in coeffs:
                     x.append(float(coeff.real))
                     if (not is_coeff_real) and (not self.force_real):
                         x.append(float(coeff.imag))
@@ -397,14 +463,25 @@ class LatticeSolver:
         self,
         x: Sequence[float] | NDArray[np.float64],
         is_coeff_real: bool,
+        like: list[BlockMatrix],
         offset: int = 0,
     ) -> tuple[list[BlockMatrix], int]:
-        A = self._initialize_block_mf_matrix(self.gf_struct, self.force_real)
+        # Each block has the shape of the same block of like
+        dtype = float if self.force_real else complex
+        A: list[BlockMatrix] = [{} for i in range(self.n_clusters)]
         for i in range(self.n_clusters):
             for bl, _bl_size in self.gf_struct[i]:
-                for h in self._H_basis[i][bl]:
-                    # x stores the coefficients of the basis of Hermitian
-                    # matrices defined in self._H_basis.
+                shape = like[i][bl].shape
+                if shape[0] != shape[1]:
+                    basis = [
+                        np.eye(shape[0] * shape[1])[n].reshape(shape)
+                        for n in range(shape[0] * shape[1])
+                    ]
+                else:
+                    basis = self._hermitian_basis_of(shape[0])
+                A[i][bl] = np.zeros(shape, dtype=dtype)
+                for h in basis:
+                    # x stores the coefficients of the basis
                     if is_coeff_real or self.force_real:
                         A[i][bl] = A[i][bl] + x[offset] * h
                         offset = offset + 1
@@ -412,6 +489,13 @@ class LatticeSolver:
                         A[i][bl] = A[i][bl] + (x[offset] + 1j * x[offset + 1]) * h
                         offset = offset + 2
         return A, offset
+
+    def _project(self, A: list[BlockMatrix], is_coeff_real: bool) -> list[BlockMatrix]:
+        # Onto the matrices that x can hold, e.g., Hermitian or real
+        A_projected, _ = self._unflatten_matrix(
+            self._flatten_matrix(A, is_coeff_real), is_coeff_real, like=A
+        )
+        return A_projected
 
     @staticmethod
     # Not really used
@@ -434,9 +518,7 @@ class LatticeSolver:
                 else:
                     h0_loc_matrix[i][bl] = helpers.get_h0_loc_matrix(self.h0_k[bl_full])
 
-        h0_loc_matrix, _ = self._unflatten_matrix(
-            self._flatten_matrix(h0_loc_matrix, is_coeff_real=True), is_coeff_real=True
-        )
+        h0_loc_matrix = self._project(h0_loc_matrix, is_coeff_real=True)
         for symmetrize in self.symmetrizers:
             h0_loc_matrix = symmetrize(h0_loc_matrix)
 
@@ -445,8 +527,12 @@ class LatticeSolver:
     def _target_function(
         self, x: NDArray[np.float64]
     ) -> NDArray[np.float64] | tuple[NDArray[np.float64], NDArray[np.float64]]:
-        self.Lambda, offset = self._unflatten_matrix(x, is_coeff_real=True)
-        self.R, _ = self._unflatten_matrix(x, is_coeff_real=False, offset=offset)
+        self.Lambda, offset = self._unflatten_matrix(
+            x, is_coeff_real=True, like=self.Lambda
+        )
+        self.R, _ = self._unflatten_matrix(
+            x, is_coeff_real=False, like=self.R, offset=offset
+        )
         self.Lambda, self.R, self.f1, self.f2 = self.one_cycle()
         x_new: NDArray[np.float64] = np.array(
             self._flatten_matrix(self.Lambda, is_coeff_real=True)
@@ -494,11 +580,12 @@ class LatticeSolver:
 
         # Make R, Lambda in supercell basis from basis of the clusters. The
         # orbitals in no cluster keep their bands: R = 1, Lambda = 0 there
-        self.R_full = helpers.upfold(
-            self.R, self.h0_kin_k, self.projectors, self.gf_struct_mapping, outside=1
-        )
-        self.Lambda_full = helpers.upfold(
-            self.Lambda, self.h0_kin_k, self.projectors, self.gf_struct_mapping
+        self.R_full, self.Lambda_full = helpers.upfold_r_lambda(
+            self.R,
+            self.Lambda,
+            self.h0_kin_k,
+            self._projectors_qp,
+            self.gf_struct_mapping,
         )
 
         h0_k_R = {}
@@ -518,35 +605,26 @@ class LatticeSolver:
         for i in range(self.n_clusters):
             for bl, _ in self.gf_struct[i]:
                 bl_full = self.gf_struct_mapping[i][bl]
-                if self.projectors is not None:
-                    self.rho_qp[i][bl] = helpers.get_rho_qp(
-                        self.bloch_vector_qp[bl_full],
-                        self.kweights[bl_full],
-                        self.projectors[i][bl],
-                    )
-                    self.lopsided_ke_qp[i][bl] = helpers.get_ke(
-                        h0_k_R[bl_full],
-                        self.bloch_vector_qp[bl_full],
-                        self.kweights[bl_full],
-                        self.projectors[i][bl],
-                    )
-                else:
-                    self.rho_qp[i][bl] = helpers.get_rho_qp(
-                        self.bloch_vector_qp[bl_full], self.kweights[bl_full]
-                    )
-                    self.lopsided_ke_qp[i][bl] = helpers.get_ke(
-                        h0_k_R[bl_full],
-                        self.bloch_vector_qp[bl_full],
-                        self.kweights[bl_full],
-                    )
+                P = None if self.projectors is None else self.projectors[i][bl]
+                P_qp = None
+                if self._projectors_qp is not None:
+                    P_qp = self._projectors_qp[i][bl]
+                self.rho_qp[i][bl] = helpers.get_rho_qp(
+                    self.bloch_vector_qp[bl_full], self.kweights[bl_full], P_qp
+                )
+                self.lopsided_ke_qp[i][bl] = helpers.get_ke(
+                    h0_k_R[bl_full],
+                    self.bloch_vector_qp[bl_full],
+                    self.kweights[bl_full],
+                    P,
+                    P_qp,
+                )
                 # self.ke_qp[i][bl] = helpers.get_ke(R_h0_k_R[bl_full], self.bloch_vector_qp[bl_full], self.kweights[bl_full], self.projectors[i][bl])
 
         # FIXME More expensive to do this than just storing and working with the coefficients, but
         # nothing compared to solving the impurity problem so this is likely fine
         # Enforce matrix structure from symmetries
-        self.rho_qp, _ = self._unflatten_matrix(
-            self._flatten_matrix(self.rho_qp, is_coeff_real=True), is_coeff_real=True
-        )
+        self.rho_qp = self._project(self.rho_qp, is_coeff_real=True)
         # self.lopsided_ke_qp, _ = self._unflatten_matrix( self._flatten_matrix( self.lopsided_ke_qp, is_coeff_real=False ), is_coeff_real=False )
         for symmetrize in self.symmetrizers:
             self.rho_qp = symmetrize(self.rho_qp)
@@ -579,12 +657,8 @@ class LatticeSolver:
                     )
 
         # Enforce matrix structure from symmetries
-        self.Lambda_c, _ = self._unflatten_matrix(
-            self._flatten_matrix(self.Lambda_c, is_coeff_real=True), is_coeff_real=True
-        )
-        self.D, _ = self._unflatten_matrix(
-            self._flatten_matrix(self.D, is_coeff_real=False), is_coeff_real=False
-        )
+        self.Lambda_c = self._project(self.Lambda_c, is_coeff_real=True)
+        self.D = self._project(self.D, is_coeff_real=False)
         for symmetrize in self.symmetrizers:
             self.Lambda_c = symmetrize(self.Lambda_c)
             self.D = symmetrize(self.D)
@@ -619,15 +693,13 @@ class LatticeSolver:
                 self.rho_c[i][bl] = self.impurity_solvers[i].get_rho_c(bl)
 
         ## Enforce matrix structure from symmetries
-        self.rho_f, _ = self._unflatten_matrix(
-            self._flatten_matrix(self.rho_f, is_coeff_real=True), is_coeff_real=True
-        )
-        self.rho_cf, _ = self._unflatten_matrix(
-            self._flatten_matrix(self.rho_cf, is_coeff_real=False), is_coeff_real=False
-        )
+        self.rho_f = self._project(self.rho_f, is_coeff_real=True)
+        self.rho_cf = self._project(self.rho_cf, is_coeff_real=False)
+        self.rho_c = self._project(self.rho_c, is_coeff_real=True)
         for symmetrize in self.symmetrizers:
             self.rho_f = symmetrize(self.rho_f)
             self.rho_cf = symmetrize(self.rho_cf)
+            self.rho_c = symmetrize(self.rho_c)
 
         for i in range(self.n_clusters):
             for bl, _ in self.gf_struct[i]:
@@ -637,12 +709,8 @@ class LatticeSolver:
                 self.f2[i][bl] = helpers.get_f2(self.rho_f[i][bl], self.rho_qp[i][bl])
 
         # Enforce matrix structure from symmetries
-        self.f2, _ = self._unflatten_matrix(
-            self._flatten_matrix(self.f2, is_coeff_real=True), is_coeff_real=True
-        )
-        self.f1, _ = self._unflatten_matrix(
-            self._flatten_matrix(self.f1, is_coeff_real=False), is_coeff_real=False
-        )
+        self.f2 = self._project(self.f2, is_coeff_real=True)
+        self.f1 = self._project(self.f1, is_coeff_real=False)
         for symmetrize in self.symmetrizers:
             self.f1 = symmetrize(self.f1)
             self.f2 = symmetrize(self.f2)
@@ -669,12 +737,8 @@ class LatticeSolver:
                     self.R[i][bl] = helpers.get_r(self.rho_cf[i][bl], self.rho_f[i][bl])
 
         # Enforce matrix structure from symmetries
-        self.Lambda, _ = self._unflatten_matrix(
-            self._flatten_matrix(self.Lambda, is_coeff_real=True), is_coeff_real=True
-        )
-        self.R, _ = self._unflatten_matrix(
-            self._flatten_matrix(self.R, is_coeff_real=False), is_coeff_real=False
-        )
+        self.Lambda = self._project(self.Lambda, is_coeff_real=True)
+        self.R = self._project(self.R, is_coeff_real=False)
         for symmetrize in self.symmetrizers:
             self.Lambda = symmetrize(self.Lambda)
             self.R = symmetrize(self.R)
@@ -786,7 +850,19 @@ class LatticeSolver:
 
     @property
     def Z(self) -> list[BlockMatrix]:
-        """Returns the quasiparticle weight matrix Z = R^dag R of each cluster, in the basis of the physical orbitals, as a list of block matrices."""
+        """
+        Returns Z = R^dag R of each cluster, in the basis of the physical orbitals, as a list of block matrices.
+
+        It is the spectral weight of each orbital in the Green's function
+        ``R^dag G_qp R`` summed over all frequencies (Eq. 49 of the
+        supplemental of `10.1103/PhysRevB.96.195126 <PRB195126_>`__). Without
+        ghosts it is the quasiparticle weight. With ghosts (``bath_size``) the
+        ghost poles carry weight too, so it is the sum rule of that Green's
+        function, which is 1 if R is an isometry, and the quasiparticle weight
+        is :func:`risb.helpers.get_z`.
+
+        .. _PRB195126: https://doi.org/10.1103/PhysRevB.96.195126
+        """
         Z: list[BlockMatrix] = [{} for i in range(self.n_clusters)]
         for i in range(self.n_clusters):
             for bl, _ in self.gf_struct[i]:

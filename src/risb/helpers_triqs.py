@@ -23,6 +23,7 @@ import numpy as np
 from triqs.gfs import BlockGf, MeshImFreq, MeshProduct, MeshReFreq, inverse
 from triqs.operators import Operator, c, c_dag
 
+from risb import helpers
 from risb.helpers import get_h0_loc_matrix, get_h_qp
 from risb.types import BlockMatrixLike, GfStruct
 
@@ -328,39 +329,20 @@ def get_sigma_w(
     triqs.gfs.BlockGf
         RISB local self-energy :math:`\Sigma(\omega)`.
 
+    Notes
+    -----
+    See :func:`risb.helpers.get_sigma_w`, which also holds with ghosts.
+
     """
     sigma_w = BlockGf(mesh=mesh, gf_struct=gf_struct)
     for bl, gf in sigma_w:
-        identity = np.eye(
-            *gf.data.shape[-2::]
-        )  # Last two indices are the orbital structure
-        Z_inv = np.linalg.inv(R[bl].conj().T @ R[bl])
-        hf = np.linalg.inv(R[bl]) @ Lambda[bl] @ np.linalg.inv(R[bl].conj().T)
+        h0 = None if h0_loc is None else h0_loc[bl]
         if use_broadcasting:
             w = np.fromiter(gf.mesh.values(), dtype=complex)
-            if h0_loc is not None:
-                gf.data[...] = (
-                    (identity - Z_inv) * w[:, None, None]
-                    + hf
-                    + (identity - Z_inv) * mu
-                    - h0_loc[bl]
-                )
-            else:
-                gf.data[...] = (
-                    (identity - Z_inv) * w[:, None, None] + hf + (identity - Z_inv) * mu
-                )
+            gf.data[...] = helpers.get_sigma_w(w, R[bl], Lambda[bl], mu, h0)
         else:
-            if h0_loc is not None:
-                for w in gf.mesh:
-                    gf[w] = (
-                        (identity - Z_inv) * w
-                        + hf
-                        + (identity - Z_inv) * mu
-                        - h0_loc[bl]
-                    )
-            else:
-                for w in gf.mesh:
-                    gf[w] = (identity - Z_inv) * w + hf + (identity - Z_inv) * mu
+            for w in gf.mesh:
+                gf[w] = helpers.get_sigma_w(complex(w), R[bl], Lambda[bl], mu, h0)
     return sigma_w
 
 
