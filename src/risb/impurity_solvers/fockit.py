@@ -38,6 +38,9 @@ from scipy.sparse.linalg import eigsh
 
 from risb.types import BlockMatrix, BlockMatrixLike, GfStruct, ImpuritySolver
 
+# Boltzmann weight, relative to the ground state, below which a state is dropped
+_WEIGHT_TOL = 1e-14
+
 
 class FockitImpuritySolver(ImpuritySolver):
     """
@@ -71,6 +74,12 @@ class FockitImpuritySolver(ImpuritySolver):
         ``degenerate_tol``. Default is ``"ignore"``.
     degenerate_tol : float, optional
         Energy difference below which the ground state is degenerate.
+    beta : float, optional
+        Inverse temperature of the impurity problem. With the default ``None``
+        the density matrices are from its ground state. With a float they are
+        thermal averages over the eigenstates of the half-filled sector,
+        dropping states with a Boltzmann weight below ``1e-14`` relative to the
+        ground state.
 
     """
 
@@ -85,6 +94,7 @@ class FockitImpuritySolver(ImpuritySolver):
         onsite_symmetries: Sequence[OnsiteSymmetry] = (),
         degenerate: Literal["ignore", "warn"] = "ignore",
         degenerate_tol: float = 1e-8,
+        beta: float | None = None,
     ) -> None:
         if method not in ("eigsh", "eigh"):
             msg = f"Unknown method {method!r}."
@@ -107,6 +117,10 @@ class FockitImpuritySolver(ImpuritySolver):
 
         #: float : Energy difference below which the ground state is degenerate.
         self.degenerate_tol = degenerate_tol
+
+        #: float or None : Inverse temperature of the impurity problem, or
+        #: ``None`` for its ground state.
+        self.beta = beta
 
         #: fockit.algebra.OpSum : Interaction Hamiltonian.
         self.h_int = h_int
@@ -153,6 +167,15 @@ class FockitImpuritySolver(ImpuritySolver):
         #: float : Ground state energy of the impurity problem, set by
         #: :meth:`solve`.
         self.gs_energy: float
+
+        #: numpy.ndarray : Eigenstates of the impurity problem in :attr:`basis`
+        #: that the expectation values average over, as columns, set by
+        #: :meth:`solve`.
+        self.states: NDArray[np.complex128]
+
+        #: numpy.ndarray : Weights of :attr:`states` in the expectation values,
+        #: set by :meth:`solve`.
+        self.weights: NDArray[np.float64]
 
         #: fockit.algebra.OpSum : Impurity Hamiltonian. It is the sum of
         #: :attr:`h0_loc`, :attr:`h_int`, :attr:`h_hybr`, and :attr:`h_bath`.
@@ -294,7 +317,8 @@ class FockitImpuritySolver(ImpuritySolver):
         """
         Solve for the groundstate in the half-filled number sector of the impurity problem.
 
-        Sets the density matrices :attr:`rho_f`, :attr:`rho_cf`, and
+        With :attr:`beta` set, also find the low-lying eigenstates for the
+        thermal averages. Sets the density matrices :attr:`rho_f`, :attr:`rho_cf`, and
         :attr:`rho_c` of every block.
 
         Raises
@@ -327,14 +351,21 @@ class FockitImpuritySolver(ImpuritySolver):
         elif dim <= k + 1:
             energies, states = np.linalg.eigh(H.toarray())
         else:
-            options: dict[str, Any] = {
-                "which": "SA",
-                "v0": np.random.default_rng(0).normal(size=dim),
-                "ncv": min(dim, 40),
-            } | self.method_options
-            energies, states = eigsh(H, k=k, **options)
-            order = np.argsort(energies)
-            energies, states = energies[order], states[:, order]
+            energies, states = _eigsh(H, k, self.method_options)
+            # Find more states until the highest one has a negligible weight
+            while (
+                self.beta is not None and _weight(energies, self.beta)[-1] > _WEIGHT_TOL
+            ):
+                k *= 2
+                if dim <= k + 1:
+                    energies, states = np.linalg.eigh(H.toarray())
+                    break
+                energies, states = _eigsh(H, k, self.method_options)
+            if self.beta is not None:
+                # eigsh's vectors within a degenerate level need not be orthogonal
+                subspace = scipy.linalg.orth(states)
+                energies, rotation = np.linalg.eigh(subspace.conj().T @ (H @ subspace))
+                states = subspace @ rotation
 
         if (
             self.degenerate == "warn"
@@ -348,11 +379,21 @@ class FockitImpuritySolver(ImpuritySolver):
             )
             warnings.warn(msg, RuntimeWarning, stacklevel=2)
 
-        self.gs_energy = float(energies[0])
-        gs_vector = states[:, 0]
+        if self.beta is None:
+            states = states[:, :1]
+            self.weights = np.ones(1)
+        else:
+            weights = _weight(energies, self.beta)
+            keep = weights > _WEIGHT_TOL
+            states = states[:, keep]
+            self.weights = weights[keep] / np.sum(weights[keep])
         if self._symmetric_basis is not self.basis:
-            gs_vector = expand_state(gs_vector, self._symmetric_basis, self.basis)
-        self.gs_vector = np.asarray(gs_vector, dtype=complex)
+            states = np.column_stack(
+                [expand_state(v, self._symmetric_basis, self.basis) for v in states.T]
+            )
+        self.states = np.asarray(states, dtype=complex)
+        self.gs_energy = float(energies[0])
+        self.gs_vector = self.states[:, 0]
         for bl, bl_size in self.gf_struct:
             bl_bath = _bath(bl)
             sites = range(bl_size)
@@ -441,7 +482,7 @@ class FockitImpuritySolver(ImpuritySolver):
 
     def overlap(self, Op: OpSum, force_real: bool = True) -> float | complex:
         """
-        Calculate the expectation value of an operator against the ground state of the impurity problem.
+        Calculate the expectation value of an operator in the impurity problem, in its ground state or thermal state (see ``beta``).
 
         Parameters
         ----------
@@ -457,10 +498,35 @@ class FockitImpuritySolver(ImpuritySolver):
             Expectation value.
 
         """
-        res = expectation(to_matrix(Op, self.basis), self.gs_vector)
+        Op_matrix = to_matrix(Op, self.basis)
+        res = complex(
+            sum(
+                weight * expectation(Op_matrix, state)
+                for weight, state in zip(self.weights, self.states.T, strict=True)
+            )
+        )
         if force_real:
             return res.real
         return res
+
+
+def _eigsh(
+    H: Any, k: int, method_options: Mapping[str, Any]
+) -> tuple[NDArray[np.float64], NDArray[np.complex128]]:
+    dim = H.shape[0]
+    options: dict[str, Any] = {
+        "which": "SA",
+        "v0": np.random.default_rng(0).normal(size=dim),
+        "ncv": min(dim, max(40, 2 * k + 1)),
+    } | dict(method_options)
+    energies, states = eigsh(H, k=k, **options)
+    order = np.argsort(energies)
+    return energies[order], states[:, order]
+
+
+def _weight(energies: NDArray[np.float64], beta: float) -> NDArray[np.float64]:
+    weights: NDArray[np.float64] = np.exp(-beta * (energies - energies[0]))
+    return weights
 
 
 def _bath(bl: str) -> str:

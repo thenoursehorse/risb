@@ -194,6 +194,29 @@ impurity_solver = FockitImpuritySolver(
 
 This finds two states instead of one, so it is slower.
 
+### Temperature of the impurity problem
+
+By default the density matrices are from the ground state of the impurity
+problem. To instead use thermal averages over its eigenstates in the
+half-filled sector, give the inverse temperature
+
+```python
+impurity_solver = FockitImpuritySolver(h_int, gf_struct, beta=40)
+```
+
+Use the same inverse temperature as the quasiparticles, e.g., in
+{py:class}`~risb.kweight.SmearingKWeight`. This is can help in or near a Mott
+insulator. There the bath orbitals decouple from the impurity, and in its
+ground state they are completely full or empty, while the quasiparticles they
+must match are smeared by the temperature, so the self-consistent loop does not
+converge. Away from a Mott insulator the gap of the impurity problem is much
+larger than the temperature, and the result is the same as the ground state.
+A degenerate ground state is averaged over.
+
+`overlap` also gives thermal averages. Only the eigenstates with a Boltzmann
+weight above $10^{-14}$ relative to the ground state are found, so it is slower
+than the ground state when there are many low-lying states.
+
 ### Getting the density matrices
 
 The single-particle density matrix of the $f$ electrons in the impurity

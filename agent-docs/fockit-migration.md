@@ -52,7 +52,7 @@ user to review. Update this file as steps finish. Delete it when done.
    the chosen sector (a sector can also target a higher state, not only speed);
    one kind each: hubbard Sz (diagonal), bilayer layer swap (permutation),
    kagome spin swap (permutation), decorated honeycomb C3 (onsite).
-13. [ ] `degenerate="average"`: the equal-weight mixture over the degenerate
+13. [x] (deferred into item 15 by the user, see Item 13 notes) `degenerate="average"`: the equal-weight mixture over the degenerate
    level (eigsh doubling + `scipy.linalg.orth`; tested exact, see Step 8
    notes). First check the finite-temperature RISB/gGA literature on whether a
    mixed embedding state is the right prescription, and find a case that
@@ -65,7 +65,8 @@ user to review. Update this file as steps finish. Delete it when done.
    normal; all current examples were unaffected (R normal). Independent
    check: stationarity of `helpers.get_lagrangian` at risb's solutions (test
    added).
-15. [ ] Robustness at rho_qp eigenvalues 0 or 1 (insulating regime). Every K^(-1/2)
+15. [x] (done: thermal impurity `beta`, see Item 15 notes; includes `degenerate="average"` from item 13: the only exact
+   impurity degeneracy found is the Mott state, D = 0) Robustness at rho_qp eigenvalues 0 or 1 (insulating regime). Every K^(-1/2)
    formula (get_d, get_r, get_lambda_c, get_lambda, get_f1) is singular when a
    quasiparticle band is completely full or empty; iterates reach that in the
    Mott/transition regime of the complex 2-orbital model (U >= 4, J = 0.2 U):
@@ -81,6 +82,20 @@ user to review. Update this file as steps finish. Delete it when done.
    arguments (upfolded R(k), lambda(k) in the quasiparticle term; embedding
    and Delta_p terms summed over clusters). Extend the stationarity test to a
    multi-cluster model.
+17. [ ] Decorated honeycomb in the site basis. Rename
+   `examples/decorated_honeycomb.py` to `decorated_honeycomb_trimer_basis.py`
+   (update tests, docs, references) and add
+   `examples/decorated_honeycomb_site_basis.py`: the same model without the
+   trimer transformation (3x3 spin blocks), with C3 as a permutation symmetry
+   (cyclic relabelling of the sites, physical and bath, eigenvalue w^k; fockit
+   accepts it: site-basis trimer impurity, sectors 312/306/306, w^0 holds the
+   ground state). Checks to go with it: a symmetrizer that averages R, Lambda
+   over the rotation (the site basis has a U(3) bath gauge per block, so h_imp
+   is only C3 symmetric if D, Lambda_c commute with the permutation; the
+   trimer basis has 1x1 blocks so it is automatic); the k-mesh respects C3;
+   the ground state is in the chosen sector at every iteration; both examples
+   give the same physics (Z eigenvalues, densities, energies); add to
+   `test_examples.py`.
 
 ## Commits
 
@@ -473,6 +488,123 @@ Done (step 8):
   dh_trimer -1); particle-hole sector reproduces the plain solve; missing
   symmetries raise; "warn" warns at D = 0 and not with hybridization.
 - How-to: "Choosing the eigensolver", "Symmetries", "Degenerate ground states".
+
+## Item 15 notes (Mott regime)
+
+- Trace (scratchpad `item15_trace.py`, complex 2-orbital model 6^3,
+  Kanamori J = 0.2 U, beta 40, method eigh, start R = 1, lambda = mu):
+  - DIIS, U = 4 and 5 (complex and real hopping alike): raises after 141 / 15
+    (real 294 / 21) cycles. Before the crash DIIS extrapolates to absurd points
+    (lambda - mu eig -172 .. +163, Z eig 1e-6) where Delta eig is 1e-8 or
+    1 - 1e-7; that is where the K^(-1/2) helpers fail.
+  - Linear mixing 0.1, U = 4 and 5: no crash; goes to Z ~ 0.01-0.08,
+    lambda - mu ~ 0, Delta eig ~ 1/2 (no edges), then a period-2 oscillation
+    for 3000 cycles (residual ~0.8): lambda - mu eig (-0.000, +0.009) <->
+    (-0.009, +0.000), Delta (0.454, 0.502) <-> (0.498, 0.546).
+  - So the edge states are DIIS artifacts; the real problem is the
+    oscillation near the Mott state.
+- Hypothesis: near D = 0 the bath orbitals decouple and the T = 0 embedding
+  gives a step function of the bath level, while rho_qp = n_F(lambda - mu)
+  is smooth (beta = 40): f2 = rho_f - Delta cannot vanish near lambda = mu, so
+  the map is effectively discontinuous. At D = 0 exactly, the zero bath level
+  is degenerate (item 13): only a mixture gives rho_f = 1/2 = Delta. Test:
+  embedding at the quasiparticles' beta (Gibbs average in the N = M sector),
+  as in the finite-T functionals (Giuli et al. 2026; Ayral et al. 2017).
+- Test (scratchpad `item15_thermal.py`, dense prototype: Gibbs weights at
+  beta = 40 over the eigenstates of the N = M sector, weights < 1e-14
+  dropped; same model, start, tol 1e-9, maxiter 3000):
+
+  | U | ground, DIIS | ground, linear 0.1 | thermal, DIIS | thermal, linear 0.1 |
+  | --- | --- | --- | --- | --- |
+  | 3 | 11 it | 439 it | 11 it (identical) | 437 it |
+  | 4 | raises (141) | oscillates | 33 it, Z = 0 | 297 it, Z = 0 |
+  | 5 | raises (15) | oscillates | 12 it, Z = 0 | 236 it, Z = 0 |
+  | 6 | raises (72) | raises (68) | 9 it, Z = 0 | 222 it, Z = 0 |
+  | 8 | raises (15) | raises (68) | 9 it, Z = 0 | 213 it, Z = 0 |
+
+  Thermal Mott solutions: Z ~ 1e-33, Delta eig near 1/2 but lambda - mu not
+  unique (DIIS +-0.004 to +-0.028, linear +-1e-5 to +-1e-4): at D = 0 the
+  decoupled bath and the flat quasiparticle band are Fermi functions of the
+  same level at the same beta, so f2 holds for a family of lambda (like mu in
+  the gap); the impurity, hence the physics, does not depend on it.
+  U = 3 metal: thermal = ground (gap >> T).
+- Side finding: without a symmetrizer, linear mixing at U = 3 converges to a
+  spin-polarized solution (Tr Delta_up = 1.19, n_target 2 over both spins),
+  DIIS to the paramagnetic one; the thermal run found the opposite spin.
+- Ensemble (user asked to check first): canonical, the half-filled sector.
+  Giuli et al. say the T = 0 problems "are to be understood in the half-filled
+  sector" within the "particle-number conserving (normal-state) variational
+  setup" (their Refs. 45, 46): the sector is a property of the variational
+  space, so every pure state of a thermal ensemble lies in it. Inference; the
+  finite-T trace's space is not stated explicitly where I read.
+- Gibbs-average methods (user asked to check fockit's finite-T solvers;
+  scratchpad `item15_methods.py`, Kanamori impurities, beta 40, D = 0.5 metal
+  and 0.05 near Mott): states with weight > 1e-14: 5 (metal) to 13 / 33 / 61
+  (2 / 3 / 4 orbitals near Mott). Dense: exact, 0.04 s (924), 164 s (12870).
+  fockit `eigh_full` + `thermal_expectation`: exact, 0.2 s (924, per operator,
+  full spectrum). fockit TPQ: noisy at this beta (100 samples: 5e-3 to 3e-1
+  error near Mott), 55 s for 2 operators at 12870. Truncated eigsh (double k
+  until the top weight < 1e-14, Rayleigh-Ritz): exact (<= 1e-14), 1.1 s at
+  12870. Chosen: dense for `method="eigh"`, truncated eigsh otherwise. Possible
+  fockit addition (user's call): a low-T thermal_expectation from the lowest k
+  states.
+- Implemented: `FockitImpuritySolver(..., beta=None)`; attributes `states`,
+  `weights`; `overlap` is the weighted average; `gs_vector` is the lowest
+  state. Tests: degenerate impurity averaged at beta 1000 (rho 1/2), eigsh =
+  eigh thermal densities near Mott (1e-10), complex 2-orbital U = 5 lattice
+  reaches Z = 0 with beta 40 (raises without it). How-to section
+  "Temperature of the impurity problem". AtomDiagImpuritySolver unchanged
+  (users should use fockit).
+- U scan with the implementation (complex 2-orbital, beta 40, eigsh): U = 3
+  as before; U = 4-8 converge to Z = 0, DIIS 9-33 it, linear mixing 0.1
+  213-297 it.
+- Not done: guards for Delta eigenvalues at 0 or 1 (no longer reached here;
+  a DIIS overshoot could still reach them in other models); stationarity of
+  the thermal solutions (get_lagrangian is the T = 0 embedding functional).
+
+## Item 13 notes (degenerate="average")
+
+- Literature (definitions checked, derivations where marked mine):
+  - Lanata, Deng, Kotliar PRB 92, 081108 (2015), finite-T GA: thermal
+    quasiparticle ensemble (their Eq. 35) but a single slave-boson amplitude
+    phi (one pure embedding state, Eqs. 28, 30); T -> 0 flows to a ground
+    state of H_emb, not a mixture.
+  - Sandri, Capone, Fabrizio PRB 87, 205108 (2013): one variational matrix
+    Phi_i per site (pure embedding state), entropy term in Phi^dag Phi.
+  - Ayral, Lee, Kotliar PRB 96, 235139 (2017), Appendix C (finite-T RISB,
+    final expression only): embedding term T sum Tr log[1 - e^{-beta (H_emb -
+    E_c)}] + E_c. Mine: its derivatives weight embedding eigenstates by
+    Bose-like factors normalized to 1 by E_c; T -> 0 puts the weight on the
+    ground level, split equally over an exactly degenerate level.
+  - Giuli, Lee, Yao, Kotliar, Ruckenstein, Gingras, Lanata arXiv:2603.20559
+    (2026), finite-T ghost-GA (Eqs. 196-206): embedding enters as
+    -(1/beta) ln Tr e^{-beta H_emb}, expectation values are Gibbs averages;
+    beta -> infinity with an exact degeneracy gives the equal mixture. They
+    state it does not reduce to Ayral's finite-T RISB functional even at
+    B = 1.
+  - Also mine: the T = 0 embedding energy E0(D, Lambda_c) is not
+    differentiable where a degenerate level splits (degenerate perturbation
+    theory: the derivative depends on the direction); the equal mixture is
+    the T -> 0 limit of the smooth finite-T derivative.
+  So the finite-T RISB/ghost-GA functionals support "average" as the T -> 0
+  limit; the pure-state finite-T GA papers do not use mixtures.
+- Search for a case symmetrizers cannot handle (scratchpad `item13.py`,
+  `item13_gaps.py`):
+  - 3-orbital Kanamori, cubic 10^3, no symmetrizers (magnetism allowed),
+    "ignore" (eigsh default v0 and 2 seeds, eigh) vs a dense "average"
+    prototype: U = 2: non-degenerate, all identical (Z 0.7917, spin and
+    orbital polarization <= 4e-15). U = 3: none converge in 1000 it, average
+    included (Z 0.003-0.007, heading to the Mott state, item 15); final level
+    non-degenerate.
+  - Impurity ground level at converged solutions (symmetrize_blocks, 8^3,
+    eigh): 2 orbitals n = 1-3 and 3 orbitals n = 1-5, U = 1, 2, 3: every
+    metallic solution non-degenerate with gap E1 - E0 0.37-1.30; the only
+    degenerate one is the Mott state (3 orbitals n = 3 U = 3, Z = 0, 24-fold,
+    D = 0); 3 orbitals n = 4, 5 at U = 3 raise (item 15).
+  - Pattern (not a proof): with D != 0 the bath screens the impurity into a
+    non-degenerate ground state; exact degeneracy appears where D = 0 (Mott),
+    which is item 15's regime, and there the spin symmetrizer already copes
+    (the Mott test converges with "ignore").
 
 ## Item 12 notes (symmetries in the examples)
 

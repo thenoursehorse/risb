@@ -1,15 +1,22 @@
 # ruff: noqa: D100, D103
 from itertools import product
-from typing import Any
+from typing import Any, Literal
 
 import numpy as np
 import pytest
 from fockit.algebra import OpSum, c, cdag, nc, zero
 from numpy.typing import NDArray
-from test_common import IMPURITY_SOLVERS, make_impurity_solver, overlap
+from test_common import (
+    IMPURITY_SOLVERS,
+    build_two_orbital_complex_h0_k,
+    make_impurity_solver,
+    overlap,
+)
 
-from risb.helpers_fockit import N_op, S2_op
+from risb import LatticeSolver
+from risb.helpers_fockit import N_op, S2_op, h_int_kanamori
 from risb.impurity_solvers import FockitImpuritySolver
+from risb.kweight import SmearingKWeight
 from risb.types import BlockMatrix
 
 type Model = tuple[
@@ -407,3 +414,86 @@ def test_fockit_solver_warns_about_a_degenerate_ground_state() -> None:
     # With hybridization it is not
     impurity_solver.set_h_imp(Lambda_c, {bl: np.array([[-0.3]]) for bl, _ in gf_struct})
     impurity_solver.solve()
+
+
+def test_thermal_density_matrices_average_a_degenerate_ground_state() -> None:
+    gf_struct = [("up", 1), ("dn", 1)]
+    impurity_solver = FockitImpuritySolver(
+        nc("up", 0) * nc("dn", 0), gf_struct, beta=1000
+    )
+    # Without hybridization the ground state is the four states with one
+    # electron on the impurity and one in the bath, 0.5 below the others
+    impurity_solver.set_h_imp(
+        {bl: np.array([[-0.5]]) for bl, _ in gf_struct},
+        {bl: np.array([[0.0]]) for bl, _ in gf_struct},
+    )
+    impurity_solver.solve()
+    for bl, _ in gf_struct:
+        assert impurity_solver.rho_c[bl] == pytest.approx(np.array([[0.5]]), abs=1e-12)
+        assert impurity_solver.rho_f[bl] == pytest.approx(np.array([[0.5]]), abs=1e-12)
+        assert impurity_solver.rho_cf[bl] == pytest.approx(np.array([[0.0]]), abs=1e-12)
+
+
+def test_eigsh_and_eigh_give_the_same_thermal_density_matrices() -> None:
+    # Two Kanamori orbitals weakly coupled to the bath have many low-lying states
+    n_orb = 2
+    spin_names = ["up", "dn"]
+    gf_struct = [(bl, n_orb) for bl in spin_names]
+    h_int = h_int_kanamori(
+        spin_names,
+        n_orb,
+        U=1.2 * (1 - np.eye(n_orb)),
+        Uprime=3 * np.eye(n_orb) + 1.8 * (1 - np.eye(n_orb)),
+        J_hund=0.6,
+    )
+    splitting = np.diag([0.1, -0.05])
+    rho = {}
+    methods: list[Literal["eigsh", "eigh"]] = ["eigsh", "eigh"]
+    for method in methods:
+        impurity_solver = FockitImpuritySolver(h_int, gf_struct, method=method, beta=40)
+        impurity_solver.set_h_imp(
+            dict.fromkeys(spin_names, splitting),
+            {bl: 0.05 * np.eye(n_orb) for bl in spin_names},
+            dict.fromkeys(spin_names, -splitting),
+        )
+        impurity_solver.solve()
+        rho[method] = (
+            impurity_solver.rho_f,
+            impurity_solver.rho_cf,
+            impurity_solver.rho_c,
+        )
+    for got, expected in zip(rho["eigsh"], rho["eigh"], strict=True):
+        for bl in spin_names:
+            assert got[bl] == pytest.approx(expected[bl], abs=1e-10)
+
+
+def test_complex_two_orbital_model_reaches_the_mott_state_with_a_thermal_impurity() -> (
+    None
+):
+    # At the temperature of the quasiparticles the bath orbitals that decouple
+    # in the Mott state are half filled, as the quasiparticles are
+    U = 5
+    J = 0.2 * U
+    Up = U - 2 * J
+    off_diag = 1 - np.eye(2)
+    h_int = h_int_kanamori(
+        ["up", "dn"],
+        2,
+        U=(Up - J) * off_diag,
+        Uprime=U * np.eye(2) + Up * off_diag,
+        J_hund=J,
+    )
+    gf_struct = [(bl, 2) for bl in ["up", "dn"]]
+    beta = 40
+    S = LatticeSolver(
+        h0_k=build_two_orbital_complex_h0_k(),
+        gf_struct=gf_struct,
+        impurity_solvers=FockitImpuritySolver(h_int, gf_struct, beta=beta),
+        update_weights=SmearingKWeight(beta=beta, n_target=2).update_weights,
+    )
+    for bl, _ in gf_struct:
+        S.Lambda[0][bl] = (0.5 * U + Up - 0.5 * J) * np.eye(2)
+    S.solve(tol=1e-8)
+    assert S.optimize.success
+    for bl, _ in gf_struct:
+        assert S.Z[0][bl] == pytest.approx(np.zeros((2, 2)), abs=1e-6)
