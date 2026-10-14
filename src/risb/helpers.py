@@ -30,7 +30,7 @@ from scipy.linalg import sqrtm
 from risb.types import BlockMatrix, BlockMatrixLike
 
 # Eigenvalues of rho (1 - rho) below this are a completely full or empty orbital
-_EDGE_TOL = 1e-12
+EDGE_TOL = 1e-12
 
 ## Formula is (1-A)^{-1/2} = sum_r=0^{infty} (-1)^r * 1/2 choose r * A^r
 # def one_sqrtm_inv(A, tol=np.finfo(float).eps, N=10000):
@@ -801,7 +801,7 @@ def _sqrt_term_gradient(
     f = np.sqrt(np.clip(K, 0, None))
     # Between two completely full or empty orbitals the divided difference
     # diverges, but the entries of D R^T it multiplies vanish there
-    edge = K < _EDGE_TOL
+    edge = K < EDGE_TOL
     both_edge = edge[:, None] & edge[None, :]
     divided_differences = np.where(
         both_edge,
@@ -825,6 +825,6 @@ def _sqrt_k(rho: NDArray[np.inexact], inverse: bool = False) -> NDArray[np.inexa
     K = eigenvalues * (1 - eigenvalues)
     f = np.sqrt(np.clip(K, 0, None))
     if inverse:
-        f = np.where(K < _EDGE_TOL, 0, 1 / np.where(K < _EDGE_TOL, 1, f))
+        f = np.where(K < EDGE_TOL, 0, 1 / np.where(K < EDGE_TOL, 1, f))
     sqrt_k: NDArray[np.inexact] = (V * f) @ V.conj().T
     return sqrt_k

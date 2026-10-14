@@ -338,15 +338,16 @@ def test_rotated_copy_of_the_non_interacting_solution_is_converged(
         assert S.Z[0][bl] == pytest.approx(np.eye(2), abs=1e-8)
 
 
-def test_warns_when_the_self_consistency_equations_are_not_satisfied(
+def test_completely_full_orbital_decouples_and_leaves_the_one_band_solution(
     solver_name: str,
 ) -> None:
-    # A completely full orbital 0 decoupled from orbital 1. Starting with the
-    # bath of orbital 1 below its impurity level empties orbital 1 in the
-    # impurity problem, and the iterations stop at R = 0
-    gf_struct = [(bl, 2) for bl in ["up", "dn"]]
+    # Orbital 0 is a completely full band with no hopping to orbital 1, so
+    # with only density interactions orbital 1 is the one-band model, shifted
+    # in energy. The full orbital has no bath partner in the impurity problem
+    spin_names = ["up", "dn"]
+    gf_struct = [(bl, 2) for bl in spin_names]
     h_int = h_int_kanamori(
-        ["up", "dn"], 2, U=2 * (1 - np.eye(2)), Uprime=2 * np.ones((2, 2)), J_hund=0
+        spin_names, 2, U=2 * (1 - np.eye(2)), Uprime=2 * np.ones((2, 2)), J_hund=0
     )
     h0_k = build_cubic_h0_k(gf_struct=gf_struct, nkx=10, spatial_dim=3)
     for bl in h0_k:
@@ -360,9 +361,27 @@ def test_warns_when_the_self_consistency_equations_are_not_satisfied(
     )
     for bl, _ in gf_struct:
         S.Lambda[0][bl] = np.diag([0.0, 6.0])
-    with pytest.warns(RuntimeWarning, match="self-consistency"):
-        S.solve(tol=1e-10)
-    assert S.self_consistency_error > 0.1
+    S.solve(tol=1e-10)
+
+    gf_struct_one = [(bl, 1) for bl in spin_names]
+    one_band = LatticeSolver(
+        h0_k=build_cubic_h0_k(gf_struct=gf_struct_one, nkx=10, spatial_dim=3),
+        gf_struct=gf_struct_one,
+        impurity_solvers=make_impurity_solver(
+            solver_name, 2 * nc("up", 0) * nc("dn", 0), gf_struct_one
+        ),
+        update_weights=SmearingKWeight(beta=40, n_target=1).update_weights,
+    )
+    for bl, _ in gf_struct_one:
+        one_band.Lambda[0][bl] = np.array([[1.0]])
+    one_band.solve(tol=1e-10)
+
+    assert S.optimize.success
+    assert S.self_consistency_error < 1e-8
+    for bl, _ in gf_struct:
+        assert np.linalg.eigvalsh(S.Z[0][bl]) == pytest.approx(
+            [0, one_band.Z[0][bl][0, 0].real], abs=1e-6
+        )
 
 
 def test_two_site_cell_with_a_cluster_per_site_gives_the_one_site_solution(

@@ -101,7 +101,7 @@ user to review. Update this file as steps finish. Delete it when done.
    the ground state is in the chosen sector at every iteration; both examples
    give the same physics (Z eigenvalues, densities, energies); add to
    `test_examples.py`.
-18. [ ] Frozen quasiparticle orbitals (user): the analytic treatment of Delta
+18. [x] (done: DIIS fix, mu bracket, core treatment of full / empty orbitals; see Item 18 notes) Frozen quasiparticle orbitals (user): the analytic treatment of Delta
    eigenvalues at 0 or 1 in the condensed-boson (pure embedding) functional,
    e.g. with exact T = 0 k-integration. In the Mott state (R = 0, flat bands at
    lambda) a band away from mu is exactly full or empty (Delta at an edge,
@@ -687,6 +687,63 @@ Done (step 8):
   the decoupled full-shell trap (both solvers), the thermal Mott test expects
   the warning, the Kanamori Mott test ignores it (only fockit warns). Suite
   81 passed (62 passed, 19 skipped without TRIQS).
+- DIIS check (user asked; scratchpad `item18_diis_check.py`): coefficients
+  (bordered Gram system, sum c = 1, pinv), history alignment and restarts
+  are right; the step is x = sum c_i g(x_i) (Anderson with beta = 1; `alpha`
+  only in the plain step every n_period = 3 iterations, undamped by
+  default; the first step is the plain recursion). With error_fun="root" the
+  coefficients come from (f2, f1), not g - x: a Pulay-style heuristic. On a
+  linear fixed point (n = 8) with full history it matches textbook Anderson
+  exactly (9 it = n + 1, iterates to 1e-13). BUG: with history 3 it needed
+  147 it vs 84: the iterates separate at |e| ~ 4e-8, where pinv's relative
+  cutoff drops the Gram matrix (entries ~1e-16) next to the -1 border.
+  Fixed: B scaled to max |B| = 1 before bordering (same c; guarded for B =
+  0); 84 it. Test: DIIS is Anderson acceleration on a linear problem (n + 1
+  with full history; history 3 within 100 it; fails without the fix). Suite
+  88 passed, 9.7 s (was 14.5 s).
+- mu bracket (user: first): `update_mu` brackets with e_min - 50/beta, e_max
+  + 50/beta (was [e_min, e_max]: failed when mu sits at a flat level that
+  is not half filled). Test: a flat band filled to 3/4 (all three smearing
+  methods; Fermi mu = ln 3 / beta); fails without the fix. Suite 91 passed.
+- Where the trap happens (user asked): only the decoupled full-shell model
+  (2 orbitals, crystal field -+2, no inter-orbital hopping, orbital 0 a
+  completely full band, U = 2, J = 0 / 0.4, n = 3, beta 40): every R = 1
+  start (lambda diag(0, 4), (0, 6), Hartree (2, 7)) and every root finder
+  (DIIS, DIIS root, hybr, Krylov, linear warm-up, restart on collapse) end at
+  R = 0 with |f2| 0.3-1 and 2 instead of 3 impurity electrons. Not with 0.2
+  inter-orbital hopping, not in the bilayer / complex controls, the 22
+  Kanamori metals or the examples. The Mott runs end at R = 0 too but there
+  it is the atomic limit (traceless residual). Cause: Delta of the decoupled
+  full orbital is exactly 1 from cycle 0, the edge-safe gradient zeroes its
+  0 x infinity term, so its bath level -lambda is misplaced, the impurity
+  fills that bath and empties orbital 1. Not the start: DIIS started at the
+  regular solution (or 5% off, or R = 1 with its lambda) collapses at once.
+- Core treatment prototype (scratchpad `item18_core_full3.py`): for Delta
+  eigenvalues at 0 / 1, get_lambda_c puts the bath level at -+50 (bath
+  empty / full), and after each cycle that orbital's lambda goes to (min
+  eigenvalue of lambda on the other orbitals) - W - 50 (full) or max + W + 50
+  (empty), W the half-bandwidth of h0_kin_k (bounds R eps R^dag, Z <= 1).
+  Needs no mu or beta; idempotent. (Targets relative to the qp band extremes
+  failed: the frozen flat level is itself the extreme, so it recedes by 50
+  every cycle; holding it once at the edge collapsed again.) Results: all
+  three trap starts with DIIS 11-17 cycles (linear warm-up then DIIS 18-24)
+  to the one-band-equivalent solution, Z_1 0.86118, self-consistency error
+  <= 2e-11; bilayer and complex controls unchanged.
+- Implemented (user: on by default, scale relative to the model, explained
+  only in code comments): `LatticeSolver.one_cycle` puts the bath level of
+  quasiparticle orbitals with Delta eigenvalue 0 / 1 at -+scale after
+  Lambda_c is built, and their lambda below (above) the other orbitals'
+  lambda by W + scale after the update; scale = 10 (W + largest |h0_loc| and
+  |lambda| on the other orbitals), W the half-bandwidth of h0_kin_k
+  (computed once). The first version took max |lambda| over all orbitals,
+  which includes the placed level, so the scale grew ~10x per cycle and it
+  collapsed; leaving the edge directions out fixed it. `helpers.EDGE_TOL`
+  (1e-12) is now public (shared by helpers and LatticeSolver). Decoupled
+  full-shell model, starts diag(0, 4), (0, 6), (2, 7), eigsh and eigh: 10-16
+  it, Z_1 0.86118, self-consistency error <= 2e-11. Test replaced: the
+  completely full decoupled orbital leaves the one-band solution (both
+  solvers, vs a one-band solve on the same mesh; fails without the change).
+  Suite 91 passed (70 passed, 21 skipped without TRIQS).
 - Open for item 18: escaping the trivial fixed point R = 0 (the trap), the
   frozen-orbital core treatment as an option (prototype works: exact
   one-band-equivalent fixed point found by DIIS), and why ghost-like

@@ -193,6 +193,12 @@ class LatticeSolver:
         #: terms and energies in :attr:`h0_k`.
         self.h0_loc_matrix = self._get_h0_loc_matrix()
 
+        # Bounds the bands of R h0_kin_k R^dag, because Z = R^dag R <= 1
+        self._kinetic_half_bandwidth = max(
+            float(np.max(np.abs(np.linalg.eigvalsh(h0))))
+            for h0 in self.h0_kin_k.values()
+        )
+
         #: list of risb.types.BlockMatrix : Renormalization matrix
         #: from c- to f-electrons at the mean-field level for each cluster.
         self.R = self._initialize_block_mf_matrix(self.gf_struct, self.force_real)
@@ -587,6 +593,18 @@ class LatticeSolver:
             self.Lambda_c = symmetrize(self.Lambda_c)
             self.D = symmetrize(self.D)
 
+        # A completely full (empty) quasiparticle orbital has no bath partner.
+        # Its D is zero, and the limit of the gradient term that would put its
+        # bath orbital empty (full) is not finite, so put the bath level far
+        # away instead. Otherwise the bath orbital competes for electrons and
+        # the impurity problem can end at R = 0 with the wrong filling
+        core_scale = self._core_scale()
+        for i in range(self.n_clusters):
+            for bl in self.Lambda_c[i]:
+                self.Lambda_c[i][bl] = _place_core_baths(
+                    self.Lambda_c[i][bl], self.rho_qp[i][bl], core_scale
+                )
+
         for i in range(self.n_clusters):
             self.impurity_solvers[i].set_h_imp(
                 self.Lambda_c[i], self.D[i], self.h0_loc_matrix[i]
@@ -656,6 +674,20 @@ class LatticeSolver:
         for symmetrize in self.symmetrizers:
             self.Lambda = symmetrize(self.Lambda)
             self.R = symmetrize(self.R)
+
+        # The quasiparticle level of a full (empty) orbital is only fixed to be
+        # below (above) the chemical potential, so keep it below (above) every
+        # other quasiparticle band. This finds the solution where the orbital
+        # stays decoupled. A solution with a lower energy, where the
+        # quasiparticle orbital is not exactly full (empty) and is an extra
+        # channel for the other orbitals, can also exist
+        for i in range(self.n_clusters):
+            for bl in self.Lambda[i]:
+                self.Lambda[i][bl] = _place_core_levels(
+                    self.Lambda[i][bl],
+                    self.rho_f[i][bl],
+                    self._kinetic_half_bandwidth + core_scale,
+                )
 
         self.iteration += 1
 
@@ -728,6 +760,26 @@ class LatticeSolver:
                 warnings.warn(msg, RuntimeWarning, stacklevel=2)
         return x
 
+    def _core_scale(self) -> float:
+        # An energy far from every energy of the model, leaving out the
+        # levels of full or empty orbitals, which are themselves set far away
+        largest = max(
+            float(np.max(np.abs(A[i][bl]), initial=0))
+            for A in (self.h0_loc_matrix,)
+            for i in range(self.n_clusters)
+            for bl in A[i]
+        )
+        for i in range(self.n_clusters):
+            for bl in self.Lambda[i]:
+                _, vectors, edge = _edge_orbitals(self.rho_qp[i][bl])
+                active = vectors[:, ~edge].conj()
+                if active.size:
+                    levels = np.linalg.eigvalsh(
+                        active.conj().T @ self.Lambda[i][bl] @ active
+                    )
+                    largest = max(largest, float(np.max(np.abs(levels))))
+        return 10 * (self._kinetic_half_bandwidth + largest)
+
     @property
     def Z(self) -> list[BlockMatrix]:
         """Returns the quasiparticle weight matrix Z = R^dag R of each cluster, in the basis of the physical orbitals, as a list of block matrices."""
@@ -736,6 +788,51 @@ class LatticeSolver:
             for bl, _ in self.gf_struct[i]:
                 Z[i][bl] = self.R[i][bl].conj().T @ self.R[i][bl]
         return Z
+
+
+def _edge_orbitals(
+    rho: NDArray[np.inexact],
+) -> tuple[NDArray[np.float64], NDArray[np.inexact], NDArray[np.bool_]]:
+    # Eigenvalues, eigenvectors, and which eigenvalues are 0 or 1
+    eigenvalues, vectors = np.linalg.eigh(rho)
+    return eigenvalues, vectors, eigenvalues * (1 - eigenvalues) < helpers.EDGE_TOL
+
+
+def _place_core_baths(
+    Lambda_c: NDArray[np.inexact], rho_qp: NDArray[np.inexact], scale: float
+) -> NDArray[np.inexact]:
+    eigenvalues, vectors, edge = _edge_orbitals(rho_qp)
+    # The bath term is f Lambda_c f^dag, so filling the bath orbital costs
+    # -Lambda_c: empty for a full quasiparticle orbital, full for an empty one
+    for delta, v in zip(eigenvalues[edge], vectors[:, edge].T, strict=True):
+        level = -scale if delta > 0.5 else scale
+        Lambda_c = Lambda_c + (level - np.real(v.conj() @ Lambda_c @ v)) * np.outer(
+            v, v.conj()
+        )
+    return Lambda_c
+
+
+def _place_core_levels(
+    Lambda: NDArray[np.inexact], rho_f: NDArray[np.inexact], margin: float
+) -> NDArray[np.inexact]:
+    eigenvalues, vectors, edge = _edge_orbitals(rho_f)
+    if not edge.any():
+        return Lambda
+    # rho_qp is the transpose of n_F(lambda - mu), so these are the
+    # eigenvectors of lambda
+    vectors = vectors.conj()
+    active = vectors[:, ~edge]
+    others = (
+        np.linalg.eigvalsh(active.conj().T @ Lambda @ active)
+        if active.size
+        else np.zeros(1)
+    )
+    for delta, v in zip(eigenvalues[edge], vectors[:, edge].T, strict=True):
+        level = others.min() - margin if delta > 0.5 else others.max() + margin
+        Lambda = Lambda + (level - np.real(v.conj() @ Lambda @ v)) * np.outer(
+            v, v.conj()
+        )
+    return Lambda
 
 
 def _check_projectors(
