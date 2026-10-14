@@ -168,8 +168,10 @@ the density matrices.
 
 The examples show each kind: $S_z$ in `examples/hubbard.py`, swapping the
 layers in `examples/bilayer_hubbard.py`, swapping the spins in
-`examples/kagome_hubbard.py`, and a $C_3$ rotation in
-`examples/decorated_honeycomb.py`.
+`examples/kagome_hubbard.py`, and a $C_3$ rotation as on-site factors in the
+basis of the trimer orbitals in `examples/decorated_honeycomb_trimer_basis.py`
+and as a permutation of the sites in
+`examples/decorated_honeycomb_site_basis.py`.
 
 :::{warning}
 The solver finds the lowest state in the chosen sector, so choose the sector

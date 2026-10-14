@@ -87,7 +87,7 @@ user to review. Update this file as steps finish. Delete it when done.
    2026; Ayral et al. 2017 Eq. C3 has a Bose form T Tr log[1 - e^{-beta (H_emb
    - E_c)}] instead: decide which), and add the stationarity check of the
    thermal Mott solutions (complex 2-orbital, U = 5).
-17. [ ] Decorated honeycomb in the site basis. Rename
+17. [x] (done, see Item 17 notes) Decorated honeycomb in the site basis. Rename
    `examples/decorated_honeycomb.py` to `decorated_honeycomb_trimer_basis.py`
    (update tests, docs, references) and add
    `examples/decorated_honeycomb_site_basis.py`: the same model without the
@@ -513,6 +513,29 @@ Done (step 8):
   dh_trimer -1); particle-hole sector reproduces the plain solve; missing
   symmetries raise; "warn" warns at D = 0 and not with hybridization.
 - How-to: "Choosing the eigensolver", "Symmetries", "Degenerate ground states".
+
+## Item 17 notes (decorated honeycomb in the site basis)
+
+- `examples/decorated_honeycomb.py` renamed (git mv) to
+  `decorated_honeycomb_trimer_basis.py`; new
+  `decorated_honeycomb_site_basis.py`: same mesh and parameters, h0_k in the
+  sites (-tk between the sites of a triangle, -tg e^{ik d_a} from site a of
+  one triangle to site a of the other), U sum_a n_a,up n_a,dn, blocks
+  [("up", 3), ("dn", 3)], projectors rows of the identity, no
+  gf_struct_mapping, C3 as `permutation_symmetries=[(c3_rotation, 1)]`
+  (a -> a + 1 on physical and bath blocks), symmetrizer paramagnetic + C3
+  average (P A P^T over the three rotations), `force_real=True` (time reversal:
+  E2 = E1^* in the trimer basis is real circulant matrices in the sites).
+- Verified (scratchpad `item17_verify.py`, both at tol 1e-10): 81 it each,
+  self-consistency error 2e-11 / 3e-11; Z, lambda, rho_c eigenvalues, mu and
+  the impurity E0 agree to 1e-12 (Z 0.5912 x2, 0.8080; lambda 1.7913, 4.0374
+  x2; mu 4.0866; E0 -15.0221753). C3 eigenvalue 1 holds the ground state at
+  all 82 solves (<= 9e-14); w^1, w^2 0.349 higher. The Gamma-centred 18 x 18
+  mesh is C3 symmetric (C3 is the integer matrix [[-1, 1], [-1, 0]] in reduced
+  coordinates).
+- Tests: the trimer test renamed; new site-basis test asserting the
+  eigenvalues of Z and Lambda equal the trimer example's values (shared
+  constants). How-to impurity_solvers points to both examples.
 
 ## Item 16 notes (multi-cluster and finite-T get_lagrangian)
 

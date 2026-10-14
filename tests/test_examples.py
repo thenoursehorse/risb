@@ -100,12 +100,22 @@ def test_kagome_hubbard_example() -> None:
             assert S.Lambda[i][bl] == pytest.approx(Lambda_expected, abs=abs)
 
 
-def test_decorated_honeycomb_example() -> None:
-    g = run_example("decorated_honeycomb")
+# The decorated honeycomb is solved in the basis of the trimer orbitals and in
+# the basis of the sites, which must give the same physics
+decorated_honeycomb_Z = {"A": 0.8080352562, "E1": 0.5911964903, "E2": 0.5911964903}
+decorated_honeycomb_Lambda = {
+    "A": 1.7912505067,
+    "E1": 4.0374422190,
+    "E2": 4.0374422190,
+}
+
+
+def test_decorated_honeycomb_trimer_basis_example() -> None:
+    g = run_example("decorated_honeycomb_trimer_basis")
     S = g["S"]
     abs = 1e-3
-    Z_expected = {"A": 0.8080352562, "E1": 0.5911964903, "E2": 0.5911964903}
-    Lambda_expected = {"A": 1.7912505067, "E1": 4.0374422190, "E2": 4.0374422190}
+    Z_expected = decorated_honeycomb_Z
+    Lambda_expected = decorated_honeycomb_Lambda
 
     assert S.optimize.success
     for i in range(2):
@@ -114,3 +124,20 @@ def test_decorated_honeycomb_example() -> None:
                 bl = f"{spin}_{irrep}"
                 assert S.Z[i][bl] == pytest.approx(Z_expected[irrep], abs=abs)
                 assert S.Lambda[i][bl] == pytest.approx(Lambda_expected[irrep], abs=abs)
+
+
+def test_decorated_honeycomb_site_basis_example() -> None:
+    g = run_example("decorated_honeycomb_site_basis")
+    S = g["S"]
+    abs = 1e-3
+
+    assert S.optimize.success
+    # In the basis of the sites the eigenvalues are those of the trimer orbitals
+    for i in range(2):
+        for bl in ["up", "dn"]:
+            assert np.linalg.eigvalsh(S.Z[i][bl]) == pytest.approx(
+                sorted(decorated_honeycomb_Z.values()), abs=abs
+            )
+            assert np.linalg.eigvalsh(S.Lambda[i][bl]) == pytest.approx(
+                sorted(decorated_honeycomb_Lambda.values()), abs=abs
+            )
