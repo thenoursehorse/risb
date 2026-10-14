@@ -79,6 +79,10 @@ class DIIS(NewtonSolver):
         for i in range(m):
             for j in range(m):
                 B[i, j] = np.dot(error[i], error[j])
+        # Scale to order 1, else near convergence the pseudo-inverse treats B
+        # as zero next to the constraint row. The constraint fixes the scale of c
+        if np.max(np.abs(B)) > 0:
+            B = B / np.max(np.abs(B))
 
         # Add the constraint lambda
         B = np.column_stack((B, -np.ones(B.shape[0])))
