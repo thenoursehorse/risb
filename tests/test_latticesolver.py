@@ -570,3 +570,50 @@ def test_projectors_that_depend_on_k_give_the_same_solution(solver_name: str) ->
         for bl in spin_names:
             assert rotated.Z[i][bl] == pytest.approx(fixed.Z[i][bl], abs=1e-8)
             assert rotated.Lambda[i][bl] == pytest.approx(fixed.Lambda[i][bl], abs=1e-8)
+
+
+def test_constant_double_counting_is_a_shift_of_the_local_energies(
+    solver_name: str,
+) -> None:
+    U, J = 3.0, 0.6
+    Up = U - 2 * J
+    h_int = h_int_kanamori(
+        ["up", "dn"],
+        2,
+        U=(Up - J) * (1 - np.eye(2)),
+        Uprime=U * np.eye(2) + Up * (1 - np.eye(2)),
+        J_hund=J,
+    )
+    gf_struct = [(bl, 2) for bl in ["up", "dn"]]
+    potential = np.array([[0.3, 0.1], [0.1, -0.2]])
+    calls: list[tuple[int, BlockMatrix]] = []
+
+    def double_counting(i: int, rho_c: BlockMatrix) -> BlockMatrix:
+        calls.append((i, rho_c))
+        return dict.fromkeys(rho_c, potential)
+
+    def solve(
+        h0_k: dict[str, NDArray[np.complex128]], with_hook: bool
+    ) -> LatticeSolver:
+        S = LatticeSolver(
+            h0_k=h0_k,
+            gf_struct=gf_struct,
+            impurity_solvers=make_impurity_solver(solver_name, h_int, gf_struct),
+            update_weights=SmearingKWeight(beta=40, n_target=2).update_weights,
+            double_counting=double_counting if with_hook else None,
+        )
+        for bl, _ in gf_struct:
+            S.Lambda[0][bl] = 1.5 * np.eye(2)
+        S.solve(tol=1e-12)
+        return S
+
+    h0_k = build_two_orbital_complex_h0_k()
+    hook = solve(h0_k, with_hook=True)
+    shifted = solve({bl: h - potential for bl, h in h0_k.items()}, with_hook=False)
+    assert hook.optimize.success
+    for bl, _ in gf_struct:
+        assert hook.Z[0][bl] == pytest.approx(shifted.Z[0][bl], abs=1e-8)
+        assert hook.Lambda[0][bl] == pytest.approx(shifted.Lambda[0][bl], abs=1e-8)
+    # Called every cycle with the cluster index and a matrix for each block
+    assert len(calls) == hook.optimize.n + 1
+    assert all(i == 0 and set(rho) == {"up", "dn"} for i, rho in calls)

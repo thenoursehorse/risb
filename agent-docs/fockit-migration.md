@@ -135,7 +135,7 @@ user to review. Update this file as steps finish. Delete it when done.
 21. [x] (dropped (user): it would only be Lowdin orthonormalization at each k, (P P^dag)^(-1/2) P over all clusters' projectors, which users can do themselves; check_projectors=True flags when needed) Investigate allowing non-orthonormal or overlapping projectors (user;
    after item 19), e.g. orthonormalizing internally, as DFT+DMFT codes do
    with raw projections onto local orbitals.
-22. [ ] Rename `h0_kin_k` (user: later; the proposed h0_qp_k / h0_lat_k "aren't
+22. [x] (dropped by the user) Rename `h0_kin_k` (user: later; the proposed h0_qp_k / h0_lat_k "aren't
    great"; old-name aliases also decided later). It is h0_k minus the local
    terms of the correlated clusters, so it also holds the local terms outside
    all projectors (after item 19); until renamed, document that.
@@ -544,6 +544,84 @@ Done (step 8):
   dh_trimer -1); particle-hole sector reproduces the plain solve; missing
   symmetries raise; "warn" warns at D = 0 and not with hybridization.
 - How-to: "Choosing the eigensolver", "Symmetries", "Degenerate ground states".
+
+## Item 23 notes (DFT+RISB helpers)
+
+- User: risb does not provide double-counting formulas or a CSC loop; it
+  provides hooks/helpers for another workflow (~/GitHub/spincrossover,
+  examples/nio/vasp, run_csc.py). That workflow: one-body.h5 per DFT cycle
+  (hamiltonian (k, nb, nb) per spin in the band basis, projectors (k, n, nb),
+  occupations (k, nb), weights, total_energy, num_electrons); the DMFT step
+  returns ChargeCorrection = Delta N(k) = rho(k) - diag(f_DFT(k))
+  (`embedding.density_correction`, rho from TRIQS Gf.density()) and energy
+  components total = E_DFT - E_band^DFT + E_band^DMFT + E_int - E_dc
+  (`triqs/_dmft.py::_energy_components`). NiO dp PLO file: 4096 k (uniform
+  weights, full 16^3), 8 bands per spin (Ni 3d rows 0-4, O 2p rows 5-7),
+  projectors unitary at every k (6e-15), 14 electrons in the window.
+- Decisions (user): double counting is a LatticeSolver callable
+  `double_counting(i, rho_c_i)` returning a potential per block, subtracted
+  from cluster i's local terms in the impurity problem each cycle; the
+  k-resolved density matrix is returned in the f(h) convention
+  rho[a, b] = <c^dag_b c_a> (TRIQS / Lowdin, what Delta N(k) takes); NiO
+  check in the scratchpad only.
+- Convention (user asked why): Lanata defines [Delta^p]_ab = <f^dag_a f_b>
+  (PRL 118, 126401 Eq. 11); ghost DMET (2023) suppl. Eq. 53: Delta_ij =
+  <a^dag_i a_j> = [f(h)]_ji; Giuli et al. 2026: "the transpose of n_F(h)".
+  risb follows it (get_rho_qp takes .T of f(h); rho_c[alpha, beta] =
+  <c^dag_alpha c_beta>; the Lagrangian's Tr(lambda^T Delta^p)). TRIQS /
+  Lowdin / Green's functions use the matrix of the density operator,
+  rho_ab = <c^dag_b c_a> = f(h)_ab = G_ab(0^-). Both standard; transposes;
+  equal for real problems.
+- Implemented: `LatticeSolver(..., double_counting=callable)`: called each
+  cycle as double_counting(i, rho_c) (rho_c of cluster i from the previous
+  cycle, rho_qp in the first), the result subtracted from the cluster's
+  local terms in its impurity problem; `LatticeSolver.rho_c` is now filled
+  each cycle (it was declared but never set); `R_full`, `Lambda_full`
+  documented. Helpers: `get_density_matrix_k(*, R_full, vectors, kweights,
+  rho_c, projectors, gf_struct_mapping)` = R^dag n_qp R plus, on each cluster,
+  P^dag (rho_c^T - its coherent local part) P, in the f(h) convention;
+  `get_band_energy(h0_k, density_k)` = sum_k Tr[h0_k rho(k)] / n_k;
+  `get_total_energy(*, dft_total_energy, dft_band_energy, band_energy,
+  interaction_energy, double_counting_energy)`.
+- Tests: the density matrix's local block on each cluster is rho_c^T and its
+  trace the filling (complex 2-orbital; 2-site cell with a site in no
+  cluster); band energy + <H_int> = L + mu N + T S (same two models; fails
+  without the local correction, and the complex one with the transposed
+  convention; the local blocks are real so the density test alone cannot see
+  the convention); a constant double counting equals shifting the local
+  energies in h0_k (both solvers), and is called every cycle with the cluster
+  index and each block. Suite 105 passed.
+- NiO check (scratchpad `item23_nio.py`): VASP dp PLO one-body.h5, Ni d
+  rows 0-4 as one cluster (k-dependent projectors, O p in no cluster,
+  check_projectors passes), 14 electrons, Kanamori U = 6.2, J = 1.1, nominal
+  FLL (N0 = 8) through the double_counting hook, paramagnetic, ground-state
+  impurity in N_up - N_dn = 0 (63504 states; the full 184756-state thermal
+  run took minutes per cycle). DIIS 7 it, 24 s, self-consistency 1e-9.
+  Delta N(k): (4096, 8, 8) per spin, Hermitian, sum of traces -2e-9.
+  Energies (eV): DFT total -12.379, DFT band 62.101, RISB band 66.851,
+  interaction 161.778, double counting 160.400, DFT+RISB total -6.252.
+  Physics not meaningful: Z ~ 0.993 and 9.78 Ni d electrons, because the
+  nominal FLL (average U = Slater F0) was paired with Kanamori (U' = 4.0,
+  average ~4.5): the potential 42.65 eV over-subtracts by ~13 eV. A real run
+  needs the workflow's Slater interaction and its double counting.
+- Problem of that run (user asked): the workflow's U = 6.2, J = 1.1 are
+  Slater (F0, J = (F2 + F4) / 14); I built a Kanamori interaction with them.
+  FLL (made for Slater, average interaction F0 = 6.2) then over-subtracts
+  ~14.5 eV against Kanamori's mean ~3.76 (Held's U), sinking the Ni d shell.
+- Rerun with the workflow's own Slater tensor (spincrossover.coulomb
+  .slater_tensor, chemist [ij|kl], Wannier90 cubic order, F4/F2 = 0.63;
+  spherical average back to F0 6.2, J 1.1), H_int = 1/2 sum [ij|kl]
+  c+_is c+_ks' c_ls' c_js, and its spin-averaged FLL at N0 = 8 (potential
+  42.65, energy 160.40): DIIS 11 it, 67 s, self-consistency 1e-8, mu 9.138;
+  Z eig 0.567 (x2), 0.668 (x3) (paramagnetic metal in RISB); Ni d occupation
+  8.248; Delta N(k) (4096, 8, 8), Hermitian, traces sum to -7e-9; energies
+  (eV): DFT band 62.101, RISB band 63.523, interaction 171.062, double
+  counting 160.400, DFT+RISB total -0.296 (DFT -12.379). No DMFT result on
+  disk to compare (data/dp has csc, crpa, plo only).
+- Open (fockit?): the first Slater run raised "h_imp does not conserve a
+  diagonal symmetry" with np.int64 mode labels (indices from np.nonzero);
+  casting them to int fixed it. A small np.int64 term alone commutes fine, so
+  the mechanism is not pinned down.
 
 ## Item 20 notes ((R, Delta^p) as the input of the cycle)
 

@@ -388,3 +388,109 @@ def test_entropy_is_minus_the_temperature_derivative_of_the_lagrangian(
     assert entropy == pytest.approx(
         -(lagrangian_plus - lagrangian_minus) / (2 * dT), abs=1e-5
     )
+
+
+def solved_lattice(
+    model: str,
+) -> tuple[LatticeSolver, list[FockitImpuritySolver], SmearingKWeight, int]:
+    spin_names = ["up", "dn"]
+    if model == "complex":
+        U, J = 3.0, 0.6
+        Up = U - 2 * J
+        h_int = h_int_kanamori(
+            spin_names,
+            2,
+            U=(Up - J) * (1 - np.eye(2)),
+            Uprime=U * np.eye(2) + Up * (1 - np.eye(2)),
+            J_hund=J,
+        )
+        gf_struct = [[(bl, 2) for bl in spin_names]]
+        impurity_solvers = [FockitImpuritySolver(h_int, gf_struct[0])]
+        h0_k = build_two_orbital_complex_h0_k()
+        projectors = None
+        n_target, start = 2, 1.5 * np.eye(2)
+    else:
+        # One band on a cell of two sites, a cluster on site 0 only
+        gf_struct = [[(bl, 1) for bl in spin_names]]
+        impurity_solvers = [
+            FockitImpuritySolver(2 * nc("up", 0) * nc("dn", 0), gf_struct[0])
+        ]
+        h0_k = dict.fromkeys(spin_names, one_band_cubic_h0_k(4, supercell=True))
+        projectors = [dict.fromkeys(spin_names, np.array([[1.0, 0.0]]))]
+        n_target, start = 2, np.array([[1.0]])
+    kweight = SmearingKWeight(beta=40, n_target=n_target)
+    S = LatticeSolver(
+        h0_k=h0_k,
+        gf_struct=gf_struct,
+        impurity_solvers=impurity_solvers,
+        update_weights=kweight.update_weights,
+        projectors=projectors,
+    )
+    for bl in spin_names:
+        S.Lambda[0][bl] = start
+    S.solve(tol=1e-12)
+    assert S.optimize.success
+    return S, impurity_solvers, kweight, n_target
+
+
+@pytest.mark.parametrize("model", ["complex", "a site in no cluster"])
+def test_density_matrix_k_has_the_local_density_of_each_impurity(model: str) -> None:
+    S, _, _, n_target = solved_lattice(model)
+    density = helpers.get_density_matrix_k(
+        R_full=S.R_full,
+        vectors=S.bloch_vector_qp,
+        kweights=S.kweights,
+        rho_c=S.rho_c,
+        projectors=S.projectors,
+    )
+    assert sum(np.trace(rho.mean(axis=0)).real for rho in density.values()) == (
+        pytest.approx(n_target, abs=1e-10)
+    )
+    for bl, rho in density.items():
+        assert rho == pytest.approx(np.swapaxes(rho.conj(), -1, -2), abs=1e-12)
+        P = np.eye(rho.shape[-1]) if S.projectors is None else S.projectors[0][bl]
+        local = np.mean(P @ rho @ np.swapaxes(P.conj(), -1, -2), axis=0)
+        # <c^dag_b c_a>, the transpose of rho_c
+        assert local == pytest.approx(S.rho_c[0][bl].T, abs=1e-10)
+
+
+@pytest.mark.parametrize("model", ["complex", "a site in no cluster"])
+def test_band_and_interaction_energy_is_the_energy_of_risb(model: str) -> None:
+    S, impurity_solvers, kweight, n_target = solved_lattice(model)
+    assert kweight.mu is not None
+    density = helpers.get_density_matrix_k(
+        R_full=S.R_full,
+        vectors=S.bloch_vector_qp,
+        kweights=S.kweights,
+        rho_c=S.rho_c,
+        projectors=S.projectors,
+    )
+    energy = helpers.get_band_energy(S.h0_k, density) + sum(
+        float(np.real(s.overlap(s.h_int))) for s in impurity_solvers
+    )
+    # The grand potential plus mu N plus T S
+    lagrangian = helpers.get_lagrangian(
+        h0_kin_k=S.h0_kin_k,
+        R=S.R,
+        Lambda=S.Lambda,
+        D=S.D,
+        Lambda_c=S.Lambda_c,
+        Delta_p=S.rho_qp,
+        rho_f=S.rho_f,
+        rho_cf=S.rho_cf,
+        h_loc_energy=[
+            float(np.real(s.overlap(s.h_int + s.h0_loc))) for s in impurity_solvers
+        ],
+        beta=kweight.beta,
+        mu=kweight.mu,
+        projectors=S.projectors,
+    )
+    entropy = helpers.get_entropy(
+        energies=S.energies_qp,
+        beta=kweight.beta,
+        mu=kweight.mu,
+        impurity_entropy=[s.entropy for s in impurity_solvers],
+    )
+    assert energy == pytest.approx(
+        lagrangian + kweight.mu * n_target + entropy / kweight.beta, abs=1e-8
+    )

@@ -509,6 +509,147 @@ def get_entropy(
     return get_entropy_qp(energies, beta, mu) + float(np.sum(impurity_entropy))
 
 
+def get_density_matrix_k(
+    *,
+    R_full: BlockMatrixLike,
+    vectors: BlockMatrixLike,
+    kweights: BlockRealArray,
+    rho_c: Sequence[BlockMatrixLike],
+    projectors: Sequence[BlockMatrixLike] | None = None,
+    gf_struct_mapping: Sequence[Mapping[str, str]] | None = None,
+) -> BlockMatrix:
+    r"""
+    Return the density matrix of the electrons at each k-point.
+
+    It is in the basis of the dispersion of the lattice, as the matrix of the
+    single-particle density operator, ``rho[k, a, b] = <c^dag_b c_a>``. This is
+    the transpose of the convention of :attr:`risb.LatticeSolver.rho_c`. All
+    arguments are keyword-only.
+
+    Parameters
+    ----------
+    R_full : risb.types.BlockMatrixLike
+        Renormalization matrix in the blocks of the lattice, e.g.,
+        :attr:`risb.LatticeSolver.R_full`. It can depend on k.
+    vectors : risb.types.BlockMatrixLike
+        Eigenvectors of the quasiparticle Hamiltonian at each k-point, e.g.,
+        :attr:`risb.LatticeSolver.bloch_vector_qp`.
+    kweights : risb.types.BlockRealArray
+        Integration weights of each quasiparticle band at each k-point, on a
+        uniform mesh, e.g., :attr:`risb.LatticeSolver.kweights`.
+    rho_c : list of risb.types.BlockMatrixLike
+        Density matrix of the physical orbitals in the impurity problem of
+        each cluster, e.g., :attr:`risb.LatticeSolver.rho_c`, from the same
+        cycle as the other arguments.
+    projectors : list of risb.types.BlockMatrixLike, optional
+        The projectors onto the subspace of each cluster, as in
+        :class:`risb.LatticeSolver`.
+    gf_struct_mapping : list of mapping, optional
+        The mapping from the blocks of each cluster to the blocks of the
+        lattice. Default assumes they are the same.
+
+    Returns
+    -------
+    risb.types.BlockMatrix
+        The density matrix at each k-point, indexed as k, orb_i, orb_j.
+
+    Notes
+    -----
+    The quasiparticles give :math:`\mathcal{R}^{\dagger}(k) n^{\mathrm{qp}}(k)
+    \mathcal{R}(k)`, with :math:`n^{\mathrm{qp}}(k)` their density matrix. On
+    each cluster its local part is replaced by the density matrix of the
+    impurity problem, which also has the weight that is not in the
+    quasiparticles.
+
+    """
+    density: BlockMatrix = {}
+    for bl, vec in vectors.items():
+        n_k = vec.shape[0]
+        n_qp = (vec * (kweights[bl] * n_k)[:, None, :]) @ _dagger(vec)
+        density[bl] = _dagger(R_full[bl]) @ n_qp @ R_full[bl]
+    if gf_struct_mapping is None:
+        gf_struct_mapping = [{bl: bl for bl in vectors} for _ in range(len(rho_c))]
+    for i, rho_c_i in enumerate(rho_c):
+        for bl, rho in rho_c_i.items():
+            bl_full = gf_struct_mapping[i][bl]
+            P = np.eye(rho.shape[-1]) if projectors is None else projectors[i][bl]
+            coherent = np.mean(P @ density[bl_full] @ _dagger(P), axis=0)
+            density[bl_full] = (
+                density[bl_full] + _dagger(P) @ (np.transpose(rho) - coherent) @ P
+            )
+    return density
+
+
+def get_band_energy(h0_k: BlockMatrixLike, density_k: BlockMatrixLike) -> float:
+    """
+    Return the energy of a dispersion with a density matrix at each k-point.
+
+    Parameters
+    ----------
+    h0_k : risb.types.BlockMatrixLike
+        Single-particle dispersion, indexed as k, orb_i, orb_j.
+    density_k : risb.types.BlockMatrixLike
+        Density matrix at each k-point in the convention of
+        :func:`get_density_matrix_k`, e.g., its result, or the occupations of
+        the bands of a DFT calculation on the diagonal.
+
+    Returns
+    -------
+    float
+        ``sum_k Tr[h0_k rho(k)] / n_k`` summed over blocks, on a uniform mesh.
+
+    """
+    energy = 0.0
+    for bl, h0 in h0_k.items():
+        energy += np.real(np.einsum("kab,kba->", h0, density_k[bl])) / h0.shape[0]
+    return float(energy)
+
+
+def get_total_energy(
+    *,
+    dft_total_energy: float,
+    dft_band_energy: float,
+    band_energy: float,
+    interaction_energy: float,
+    double_counting_energy: float,
+) -> float:
+    """
+    Return the total energy of DFT+RISB.
+
+    All arguments are keyword-only.
+
+    Parameters
+    ----------
+    dft_total_energy : float
+        Total energy of the DFT calculation.
+    dft_band_energy : float
+        Energy of the DFT bands of the lattice dispersion with their DFT
+        occupations, from :func:`get_band_energy`.
+    band_energy : float
+        Energy of the lattice dispersion with the density matrix of RISB,
+        from :func:`get_band_energy` and :func:`get_density_matrix_k`.
+    interaction_energy : float
+        Expectation value of the interaction in the impurity problem of every
+        cluster, summed.
+    double_counting_energy : float
+        Energy of the double counting, summed over clusters.
+
+    Returns
+    -------
+    float
+        ``dft_total_energy - dft_band_energy + band_energy +
+        interaction_energy - double_counting_energy``.
+
+    """
+    return (
+        dft_total_energy
+        - dft_band_energy
+        + band_energy
+        + interaction_energy
+        - double_counting_energy
+    )
+
+
 def upfold(
     A: Sequence[BlockMatrixLike],
     h0_k: BlockMatrixLike,

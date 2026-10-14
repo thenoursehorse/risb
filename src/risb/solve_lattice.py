@@ -18,7 +18,7 @@
 """Solvers for rotationally invariant slave-boson mean-field theory on a lattice."""
 
 import warnings
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from itertools import product
 from typing import Literal, TypeIs
 
@@ -101,6 +101,13 @@ class LatticeSolver:
     check_projectors : bool, optional
         Raise a ValueError if `projectors` do not have orthonormal rows or
         overlap. Default is False.
+    double_counting : callable, optional
+        A double-counting potential, called each cycle as
+        ``double_counting(i, rho_c)`` with the density matrix
+        :attr:`rho_c` of cluster ``i`` from the previous cycle (its
+        quasiparticle density matrix :attr:`rho_qp` in the first cycle). It
+        returns a matrix for each block of the cluster, which is subtracted
+        from the local terms of cluster ``i`` in its impurity problem.
 
     """
 
@@ -118,6 +125,7 @@ class LatticeSolver:
         error_fun: Literal["root", "recursion"] = "recursion",
         return_x_new: bool = True,
         check_projectors: bool = False,
+        double_counting: Callable[[int, BlockMatrix], BlockMatrixLike] | None = None,
     ) -> None:
         #: risb.types.BlockMatrixLike : Non-interacting Hamiltonian in k-space.
         self.h0_k = h0_k
@@ -167,6 +175,8 @@ class LatticeSolver:
             raise ValueError(msg)
         if check_projectors and self.projectors is not None:
             _check_projectors(h0_k, self.projectors, self.gf_struct_mapping)
+
+        self.double_counting = double_counting
 
         self.symmetrizers = symmetrizers
         self.force_real = force_real
@@ -258,6 +268,14 @@ class LatticeSolver:
 
         #: risb.types.BlockMatrix : Bloch band vectors of quasiparticles.
         self.bloch_vector_qp: BlockMatrix = {}
+
+        #: risb.types.BlockMatrix : :attr:`R` of the clusters in the blocks of
+        #: :attr:`h0_k`, from :func:`risb.helpers.upfold`, set each cycle.
+        self.R_full: BlockMatrix = {}
+
+        #: risb.types.BlockMatrix : :attr:`Lambda` of the clusters in the
+        #: blocks of :attr:`h0_k`, set each cycle.
+        self.Lambda_full: BlockMatrix = {}
 
         self.iteration = 0
 
@@ -476,10 +494,10 @@ class LatticeSolver:
 
         # Make R, Lambda in supercell basis from basis of the clusters. The
         # orbitals in no cluster keep their bands: R = 1, Lambda = 0 there
-        self.R_full: BlockMatrix = helpers.upfold(
+        self.R_full = helpers.upfold(
             self.R, self.h0_kin_k, self.projectors, self.gf_struct_mapping, outside=1
         )
-        self.Lambda_full: BlockMatrix = helpers.upfold(
+        self.Lambda_full = helpers.upfold(
             self.Lambda, self.h0_kin_k, self.projectors, self.gf_struct_mapping
         )
 
@@ -584,13 +602,21 @@ class LatticeSolver:
                 )
 
         for i in range(self.n_clusters):
+            h0_loc_matrix = self.h0_loc_matrix[i]
+            if self.double_counting is not None:
+                rho = self.rho_c[i] if self.rho_c[i] else self.rho_qp[i]
+                potential = self.double_counting(i, rho)
+                h0_loc_matrix = {
+                    bl: h0_loc_matrix[bl] - potential[bl] for bl in h0_loc_matrix
+                }
             self.impurity_solvers[i].set_h_imp(
-                self.Lambda_c[i], self.D[i], self.h0_loc_matrix[i]
+                self.Lambda_c[i], self.D[i], h0_loc_matrix
             )
             self.impurity_solvers[i].solve()
             for bl, _ in self.gf_struct[i]:
                 self.rho_f[i][bl] = self.impurity_solvers[i].get_rho_f(bl)
                 self.rho_cf[i][bl] = self.impurity_solvers[i].get_rho_cf(bl)
+                self.rho_c[i][bl] = self.impurity_solvers[i].get_rho_c(bl)
 
         ## Enforce matrix structure from symmetries
         self.rho_f, _ = self._unflatten_matrix(
