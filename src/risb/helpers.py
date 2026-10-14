@@ -121,7 +121,7 @@ def get_lambda_c(
     Lambda: NDArray[np.inexact],
     D: NDArray[np.inexact],
 ) -> NDArray[np.inexact]:
-    """
+    r"""
     Return bath matrix of impurity problem.
 
     Parameters
@@ -142,19 +142,17 @@ def get_lambda_c(
 
     Notes
     -----
-    Eq. 36 in `10.1103/PhysRevX.5.011008 <PRX011008_>`__.
+    Eq. 36 in `10.1103/PhysRevX.5.011008 <PRX011008_>`__, with the matrix
+    derivative of :math:`\sqrt{\rho (1 - \rho)}` evaluated with the
+    Daleckii-Krein formula.
+    ``Lambda_c`` is the transpose of the bath matrix there, because the bath
+    term of the impurity problem is ``sum f_a Lambda_c[a, b] f^dag_b``.
 
     .. _PRX011008: https://doi.org/10.1103/PhysRevX.5.011008
 
     """
-    P = np.eye(rho_qp.shape[0]) - 2.0 * rho_qp
-    K = rho_qp - rho_qp @ rho_qp
-    K_sq = sqrtm(K)
-    K_sq_inv = inv(K_sq)
-    Lambda_c: NDArray[np.inexact] = -np.real((R @ D).T @ K_sq_inv @ P).T - Lambda
+    Lambda_c: NDArray[np.inexact] = -_sqrt_term_gradient(rho_qp, R, D).T - Lambda.T
     return Lambda_c
-    # lhs = ((R @ D).T @ K_sq_inv @ P ).T
-    # return - Lambda - 0.5 * (lhs + lhs.conj())
 
 
 def get_lambda(
@@ -186,19 +184,13 @@ def get_lambda(
     -----
     Derived from Eq. 36 in `10.1103/PhysRevX.5.011008 <PRX011008_>`__ by
     replacing the quasipartice density matrix with the f-electron density
-    matrix using Eq. 39.
+    matrix using Eq. 39. See :func:`get_lambda_c` for the conventions.
 
     .. _PRX011008: https://doi.org/10.1103/PhysRevX.5.011008
 
     """
-    P = np.eye(rho_f.shape[0]) - 2.0 * rho_f
-    K = rho_f - rho_f @ rho_f
-    K_sq = sqrtm(K)
-    K_sq_inv = inv(K_sq)
-    Lambda: NDArray[np.inexact] = -np.real((R @ D).T @ K_sq_inv @ P).T - Lambda_c
+    Lambda: NDArray[np.inexact] = -_sqrt_term_gradient(rho_f, R, D) - Lambda_c.T
     return Lambda
-    # lhs = ( (R @ D).T @ K_sq_inv @ P ).T
-    # return - Lambda_c - 0.5 * (lhs + lhs.conj())
 
 
 def get_r(
@@ -293,7 +285,7 @@ def get_f2(
     .. _PRX011008: https://doi.org/10.1103/PhysRevX.5.011008
 
     """
-    f2: NDArray[np.inexact] = rho_f - rho_qp.T
+    f2: NDArray[np.inexact] = rho_f - rho_qp
     return f2
 
 
@@ -668,3 +660,23 @@ def get_h0_kin_k(
             h0_kin_k[bl] = h0_kin_k[bl] - get_h0_loc_matrix(mat)
 
     return h0_kin_k
+
+
+def _sqrt_term_gradient(
+    rho: NDArray[np.inexact], R: NDArray[np.inexact], D: NDArray[np.inexact]
+) -> NDArray[np.inexact]:
+    """
+    Return the gradient of ``Tr[D R^T f(rho)] + c.c.`` with respect to ``rho``, with f(x) = sqrt(x (1 - x)).
+
+    Element ``[a, b]`` is the derivative with respect to ``rho[a, b]``. The
+    matrix derivative of f is evaluated with the Daleckii-Krein formula.
+    """
+    eigenvalues, V = np.linalg.eigh(rho)
+    f = np.sqrt(eigenvalues * (1 - eigenvalues))
+    divided_differences = (1 - eigenvalues[:, None] - eigenvalues[None, :]) / (
+        f[:, None] + f[None, :]
+    )
+    V_dag = V.conj().T
+    W = V @ (divided_differences * (V_dag @ D @ R.T @ V)) @ V_dag
+    gradient: NDArray[np.inexact] = W.T + W.conj()
+    return gradient

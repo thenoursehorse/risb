@@ -180,8 +180,10 @@ class AtomDiagImpuritySolver(ImpuritySolver):
         Parameters
         ----------
         D : risb.types.BlockMatrixLike
-            Hybridization coupling. Each key in dictionary must follow
-            :attr:`gf_struct`.
+            Hybridization coupling, indexed as ``D[bl][a, alpha]`` with ``a`` a
+            bath orbital and ``alpha`` a physical orbital. The term is
+            ``sum D[bl][a, alpha] c^dag(bl, alpha) c(bath, a) + h.c.``. Each key
+            in dictionary must follow :attr:`gf_struct`.
 
         """
         C_Op = get_C_Op(self.gf_struct_bath, dagger=False)
@@ -189,7 +191,7 @@ class AtomDiagImpuritySolver(ImpuritySolver):
         self.h_hybr = Operator()
         for bl, _loc_size in self.gf_struct:
             bl_bath = self._bl_loc_to_bath(bl)
-            tmp = C_dag_Op[bl] @ D[bl] @ C_Op[bl_bath]
+            tmp = C_dag_Op[bl] @ np.asarray(D[bl]).T @ C_Op[bl_bath]
             self.h_hybr += tmp + dagger(tmp)
 
     @override

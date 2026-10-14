@@ -686,11 +686,11 @@ class LatticeSolver:
 
     @property
     def Z(self) -> list[BlockMatrix]:
-        """Returns the quasiparticle weight matrix Z of each cluster as a list of block matrices."""
+        """Returns the quasiparticle weight matrix Z = R^dag R of each cluster, in the basis of the physical orbitals, as a list of block matrices."""
         Z: list[BlockMatrix] = [{} for i in range(self.n_clusters)]
         for i in range(self.n_clusters):
             for bl, _ in self.gf_struct[i]:
-                Z[i][bl] = self.R[i][bl] @ self.R[i][bl].conj().T
+                Z[i][bl] = self.R[i][bl].conj().T @ self.R[i][bl]
         return Z
 
 

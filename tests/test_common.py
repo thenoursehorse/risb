@@ -92,3 +92,22 @@ def build_block_mf_matrices(
         Lambda[bl] = np.zeros((bsize, bsize))
         np.fill_diagonal(R[bl], 1)
     return (R, Lambda)
+
+
+def build_two_orbital_complex_h0_k(nkx: int = 6) -> dict[str, NDArray[np.complex128]]:
+    """Cubic dispersion of two orbitals with a crystal field and complex inter-orbital hopping."""
+    k_mesh = 2 * np.pi * np.array(list(product(range(nkx), repeat=3))) / nkx
+    h0_k = np.zeros([len(k_mesh), 2, 2], dtype=complex)
+    h0_k[:] = -(2 / 3) * np.sum(np.cos(k_mesh), axis=1)[:, None, None] * np.eye(2)
+    h0_k += np.diag([0.2, -0.2])
+    hopping = 0.3 * (np.cos(k_mesh[:, 0]) + 1j * np.sin(k_mesh[:, 1]))
+    h0_k[:, 0, 1] += hopping
+    h0_k[:, 1, 0] += hopping.conj()
+    return {bl: h0_k.copy() for bl in ["up", "dn"]}
+
+
+def random_unitary(n: int, seed: int) -> NDArray[np.complex128]:
+    rng = np.random.default_rng(seed)
+    A = rng.normal(size=(n, n)) + 1j * rng.normal(size=(n, n))
+    Q, _ = np.linalg.qr(A)
+    return Q

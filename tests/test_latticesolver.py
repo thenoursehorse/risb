@@ -3,14 +3,16 @@
 
 import numpy as np
 import pytest
-from fockit.algebra import nc, zero
+from fockit.algebra import OpSum, nc, zero
 from numpy.typing import NDArray
 from scipy.optimize import OptimizeResult
 from scipy.optimize import root as root_fun
 from test_common import (
     IMPURITY_SOLVERS,
     build_cubic_h0_k,
+    build_two_orbital_complex_h0_k,
     make_impurity_solver,
+    random_unitary,
     symmetrize_blocks,
 )
 
@@ -54,14 +56,19 @@ def do_assert(
     abs = 1e-10
     with subtests.test(msg="mu"):
         assert mu == pytest.approx(mu_expected, abs=abs)
+    # Lambda and Z depend on the gauge of the quasiparticles; their eigenvalues do not
     with subtests.test(msg="Lambda"):
         for i in range(n_clusters):
             for bl in Lambda[i]:
-                assert Lambda[i][bl] == pytest.approx(Lambda_expected, abs=abs)
+                assert np.linalg.eigvalsh(Lambda[i][bl]) == pytest.approx(
+                    np.linalg.eigvalsh(Lambda_expected), abs=abs
+                )
     with subtests.test(msg="Z"):
         for i in range(n_clusters):
             for bl in Z[i]:
-                assert Z[i][bl] == pytest.approx(Z_expected, abs=abs)
+                assert np.linalg.eigvalsh(Z[i][bl]) == pytest.approx(
+                    np.linalg.eigvalsh(Z_expected), abs=abs
+                )
 
 
 @pytest.fixture
@@ -272,3 +279,57 @@ def test_three_orbital_kanamori_is_mott_insulator(solver_name: str) -> None:
     assert S.optimize.success
     for bl in S.Z[0]:
         assert S.Z[0][bl] == pytest.approx(np.zeros((n_orb, n_orb)), abs=1e-6)
+
+
+def two_orbital_complex_lattice(
+    solver_name: str, h_int: OpSum
+) -> tuple[LatticeSolver, SmearingKWeight]:
+    gf_struct = [(bl, 2) for bl in ["up", "dn"]]
+    kweight = SmearingKWeight(beta=40, n_target=2)
+    S = LatticeSolver(
+        h0_k=build_two_orbital_complex_h0_k(),
+        gf_struct=gf_struct,
+        impurity_solvers=make_impurity_solver(solver_name, h_int, gf_struct),
+        update_weights=kweight.update_weights,
+    )
+    return S, kweight
+
+
+def test_quasiparticle_basis_of_the_starting_guess_does_not_change_the_physics(
+    solver_name: str,
+) -> None:
+    U, J = 3.0, 0.6
+    Up = U - 2 * J
+    h_int = h_int_kanamori(
+        ["up", "dn"],
+        2,
+        U=(Up - J) * (1 - np.eye(2)),
+        Uprime=U * np.eye(2) + Up * (1 - np.eye(2)),
+        J_hund=J,
+    )
+    results = []
+    for u in [np.eye(2), random_unitary(2, seed=1), random_unitary(2, seed=2)]:
+        S, kweight = two_orbital_complex_lattice(solver_name, h_int)
+        for bl in ["up", "dn"]:
+            S.Lambda[0][bl] = 1.5 * np.eye(2)
+            S.R[0][bl] = u.conj().T
+        S.solve(tol=1e-10)
+        assert S.optimize.success
+        results.append((kweight.mu, S.Z[0]["up"]))
+    for mu, weight in results[1:]:
+        assert mu == pytest.approx(results[0][0], abs=1e-8)
+        assert weight == pytest.approx(results[0][1], abs=1e-8)
+
+
+def test_rotated_copy_of_the_non_interacting_solution_is_converged(
+    solver_name: str,
+) -> None:
+    S, _ = two_orbital_complex_lattice(solver_name, zero())
+    u = random_unitary(2, seed=3)
+    for bl in ["up", "dn"]:
+        S.R[0][bl] = u.conj().T
+    S.solve(tol=1e-10)
+    assert S.optimize.success
+    assert S.optimize.n <= 2
+    for bl in ["up", "dn"]:
+        assert S.Z[0][bl] == pytest.approx(np.eye(2), abs=1e-8)

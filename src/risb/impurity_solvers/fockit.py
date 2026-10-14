@@ -237,15 +237,17 @@ class FockitImpuritySolver(ImpuritySolver):
         Parameters
         ----------
         D : risb.types.BlockMatrixLike
-            Hybridization coupling. Each key in dictionary must follow
-            :attr:`gf_struct`.
+            Hybridization coupling, indexed as ``D[bl][a, alpha]`` with ``a`` a
+            bath orbital and ``alpha`` a physical orbital. The term is
+            ``sum D[bl][a, alpha] c^dag(bl, alpha) c(bath, a) + h.c.``. Each key
+            in dictionary must follow :attr:`gf_struct`.
 
         """
         self.h_hybr = zero()
         for bl, bl_size in self.gf_struct:
             tmp = _bilinear(
                 [cdag(bl, alpha) for alpha in range(bl_size)],
-                D[bl],
+                np.asarray(D[bl]).T,
                 [c(_bath(bl), a) for a in range(bl_size)],
             )
             self.h_hybr += tmp + hc(tmp)
