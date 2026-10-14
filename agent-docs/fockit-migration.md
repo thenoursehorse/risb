@@ -26,7 +26,8 @@ user to review. Update this file as steps finish. Delete it when done.
    against `h_imp`; density matrices via `expand_state` into the
    diagonal-restricted basis), `degenerate` ("ignore" default, "warn") and
    `degenerate_tol`. Never an automatic fallback. "average" is item 13.
-9. [ ] Explore pinning RISB's gauge redundancy. At the bilayer solution the root
+9. [x] Explore pinning RISB's gauge redundancy (see Step 9 notes; user: no
+   code, docs wording in the lattice_solver how-to). At the bilayer solution the root
    function's Jacobian has 3 zero singular values out of 24 (condition number
    1e16, null directions in the R parameters), so roots are not isolated and
    step-size stopping rules fail (see Step 3 notes). Ideas: fix the gauge (e.g.
@@ -69,6 +70,12 @@ user to review. Update this file as steps finish. Delete it when done.
    treat it consistently in all those helpers, re-run the U scan (DIIS and
    linear mixing), add a complex Mott test for both solvers. Step 9 may explain
    the large DIIS steps (lambda eigenvalues -51, 194) that reach these states.
+16. [ ] `helpers.get_lagrangian` for several clusters. It handles one cluster equal
+   to the unit cell only, but `LatticeSolver` allows several clusters with
+   `projectors` and `gf_struct_mapping`; the helper should take the same
+   arguments (upfolded R(k), lambda(k) in the quasiparticle term; embedding
+   and Delta_p terms summed over clusters). Extend the stationarity test to a
+   multi-cluster model.
 
 ## Commits
 
@@ -693,14 +700,69 @@ Results so far (bilayer, U=4, V=0.25, `method="eigh"`, DIIS tol 1e-13):
   direction < 1e-7; largest measured 7e-9). 0.14 s. The original code fails
   it (no convergence in 999 it; derivatives up to 5e-2). A 4^3 k-mesh does
   not converge (999 it), so the test keeps 6^3.
-- `get_lagrangian` handles one cluster equal to the unit cell only; several
-  clusters would need projectors / gf_struct_mapping like LatticeSolver
-  (user asked; not done).
+- `get_lagrangian` handles one cluster equal to the unit cell only: item 16.
 - Unblocked: step 9 (gauge freedom and convergence speed; Lanata's claim).
 - Tests to add once the cycle is covariant (user, done above): through `S.R`, `S.Lambda`,
   `S.solve()`: U = 0, a gauge-rotated copy of the exact solution converges in
   1-2 iterations; complex non-commuting interacting model, rotated and
   unrotated starts give the same physics without many more iterations.
+
+## Step 9 notes (gauge redundancy, after the covariance fixes)
+
+- Flat directions at the bilayer solution (`method="eigh"`): no symmetrizer,
+  complex: 8 = the full U(2) x U(2) gauge (every rotation maps the root to a
+  root, |F| 1.6e-14); `symmetrize_blocks`: 4 (only rotations equal on both
+  blocks survive the up = dn symmetrizer); `force_real`: 0 (R is restricted
+  to real symmetric matrices, which pins the gauge). The null directions are
+  exactly the gauge. Step 3's "3 of 24" came from the old non-covariant code.
+- Any R can be made Hermitian by a gauge rotation (polar decomposition
+  R = U P, rotate by U), so "R Hermitian" is a complete gauge choice.
+- Decisions (user): compare free gauge, Hermitian-R gauge and Lanata's natural
+  basis (rho_qp diagonal); include the Mott scan (U = 4-8, complex model).
+  Natural basis is done as a gauge-fixing rotation after each cycle (sorted
+  eigenvalues of rho_qp, phases making diag(R) real positive), root finder on
+  the full variables; not Lanata's eta formulation. Hermitian-R: polar
+  rotation after each cycle, root finder also on the full variables (the
+  slice R = R^dag is linear, so DIIS stays in it after the first step; same
+  as restricting R's parameters).
+- Why fixing after the cycle works: the cycle F is covariant, so g o F (g =
+  rotation into the slice) is gauge invariant; along a gauge direction its
+  derivative is 0, so the Jacobian of g(F(x)) - x is -1 there, not 0. Natural
+  basis uses rho_f of the same cycle (rho_f = Delta_p at convergence), ill
+  defined when rho_f is degenerate. A fixed point of g o F only gives
+  F(x) = u x, so the free residual |F(x) - x| is reported too.
+- Jacobian condition number of the recursion error at the solution (finite
+  differences, DIIS to 1e-12, scratchpad `step9.py`): bilayer free 2.0e14,
+  Hermitian R 17, natural 28; M2 complex free 7.0e12, Hermitian R 11,
+  natural 17. Either gauge choice makes the roots isolated.
+- Convergence (scratchpad `step9.py converge`, recursion error, tol 1e-10,
+  `method="eigh"`; 3 starts: R = 1 and 2 random unitary rotations; impurity
+  solves per run; every run reported converged has free |F(x) - x| <= 1e-10,
+  so no spurious fixed points):
+
+  | model | root finder | free | Hermitian R | natural |
+  | --- | --- | --- | --- | --- |
+  | bilayer | DIIS | 14 | 14-16 | 16 |
+  | bilayer | Krylov, residual stop | 54-60 | 56-650 | 43-93 |
+  | bilayer | Krylov, step stop | fails (8000+) | 88-679 | 74-145 |
+  | bilayer | hybr | 43-44 | 44-81 | 55-105, 1 of 3 fails |
+  | Kanamori degenerate | DIIS | 20 | 20 | raises |
+  | Kanamori degenerate | Krylov, residual stop | 60-68 | 55-76 | fails |
+  | Kanamori degenerate | Krylov, step stop | fails (8000+) | 84-108 | fails |
+  | Kanamori degenerate | hybr | 41 | 41-50 | fails |
+  | M2 complex | DIIS | 26-29 | 85-103 | 79-124 |
+  | M2 complex | Krylov, residual stop | 49-51 | 37-74 | 40-64 |
+  | M2 complex | Krylov, step stop | fails (8000+) | 70-104 | 72-93 |
+  | M2 complex | hybr | 43-45 | 42-44 | 42-47 |
+
+  Free-gauge Krylov with a step stop sits at the root (residual 1e-15) but
+  never stops: the steps along the gauge directions do not shrink. The
+  natural basis fails whenever rho_f is degenerate (degenerate orbitals), as
+  expected. Neither pinned gauge speeds up DIIS (M2: 3-4x slower), so
+  Lanata's claim does not carry over to risb's default root finder.
+- Mott scan (complex 2-orbital model, U = 4-8, DIIS): every gauge raises
+  (ValueError / LinAlgError from K^(-1/2)) at every U, same as free. Pinning
+  does not help item 15.
 
 ## Findings (step 1)
 

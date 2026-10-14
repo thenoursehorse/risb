@@ -230,9 +230,10 @@ S.solve(tol = , method = 'broyden1, hybr, krylov, etc', other kwargs = )
 
 For `krylov`, `broyden1`, `broyden2`, `anderson`, `linearmixing`,
 `diagbroyden` and `excitingmixing`, scipy turns `tol` into a stop on the step
-size. The {{RISB}} equations can have directions in which the error does not
-change (the Jacobian at the solution of the bilayer Hubbard model is singular),
-and then the steps need not shrink. Stop on the size of the error instead
+size. The {{RISB}} equations have directions in which the error does not
+change: rotating the basis of the quasiparticles maps a solution to another
+solution, so the solutions are not isolated, and then the steps need not
+shrink. Stop on the size of the error instead
 
 ```python
 S.solve(method="krylov", options={"fatol": 1e-10})
