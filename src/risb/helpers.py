@@ -29,6 +29,9 @@ from scipy.linalg import sqrtm
 
 from risb.types import BlockMatrix, BlockMatrixLike
 
+# Eigenvalues of rho (1 - rho) below this are a completely full or empty orbital
+_EDGE_TOL = 1e-12
+
 ## Formula is (1-A)^{-1/2} = sum_r=0^{infty} (-1)^r * 1/2 choose r * A^r
 # def one_sqrtm_inv(A, tol=np.finfo(float).eps, N=10000):
 #    # Do r = 0 manually (it is just the identity)
@@ -74,8 +77,7 @@ def get_d(rho_qp: NDArray[np.inexact], ke: NDArray[np.inexact]) -> NDArray[np.in
     .. _PRX011008: https://doi.org/10.1103/PhysRevX.5.011008
 
     """
-    K = rho_qp - rho_qp @ rho_qp
-    D: NDArray[np.inexact] = inv(sqrtm(K)) @ ke.T
+    D: NDArray[np.inexact] = _sqrt_k(rho_qp, inverse=True) @ ke.T
     return D
 
 
@@ -220,10 +222,7 @@ def get_r(
     .. _PRX011008: https://doi.org/10.1103/PhysRevX.5.011008
 
     """
-    K = rho_f - rho_f @ rho_f
-    K_sq = sqrtm(K)
-    K_sq_inv = inv(K_sq)
-    R: NDArray[np.inexact] = (rho_cf @ K_sq_inv).T
+    R: NDArray[np.inexact] = (rho_cf @ _sqrt_k(rho_f, inverse=True)).T
     return R
 
 
@@ -254,9 +253,7 @@ def get_f1(
     .. _PRX011008: https://doi.org/10.1103/PhysRevX.5.011008
 
     """
-    K = rho_qp - rho_qp @ rho_qp
-    K_sq = sqrtm(K)
-    f1: NDArray[np.inexact] = rho_cf - R.T @ K_sq
+    f1: NDArray[np.inexact] = rho_cf - R.T @ _sqrt_k(rho_qp)
     return f1
 
 
@@ -765,11 +762,34 @@ def _sqrt_term_gradient(
     matrix derivative of f is evaluated with the Daleckii-Krein formula.
     """
     eigenvalues, V = np.linalg.eigh(rho)
-    f = np.sqrt(eigenvalues * (1 - eigenvalues))
-    divided_differences = (1 - eigenvalues[:, None] - eigenvalues[None, :]) / (
-        f[:, None] + f[None, :]
+    K = eigenvalues * (1 - eigenvalues)
+    f = np.sqrt(np.clip(K, 0, None))
+    # Between two completely full or empty orbitals the divided difference
+    # diverges, but the entries of D R^T it multiplies vanish there
+    edge = K < _EDGE_TOL
+    both_edge = edge[:, None] & edge[None, :]
+    divided_differences = np.where(
+        both_edge,
+        0,
+        (1 - eigenvalues[:, None] - eigenvalues[None, :])
+        / np.where(both_edge, 1, f[:, None] + f[None, :]),
     )
     V_dag = V.conj().T
     W = V @ (divided_differences * (V_dag @ D @ R.T @ V)) @ V_dag
     gradient: NDArray[np.inexact] = W.T + W.conj()
     return gradient
+
+
+def _sqrt_k(rho: NDArray[np.inexact], inverse: bool = False) -> NDArray[np.inexact]:
+    """
+    Return the square root of ``rho (1 - rho)``, or its pseudo-inverse.
+
+    The pseudo-inverse is zero for completely full or empty orbitals.
+    """
+    eigenvalues, V = np.linalg.eigh(rho)
+    K = eigenvalues * (1 - eigenvalues)
+    f = np.sqrt(np.clip(K, 0, None))
+    if inverse:
+        f = np.where(K < _EDGE_TOL, 0, 1 / np.where(K < _EDGE_TOL, 1, f))
+    sqrt_k: NDArray[np.inexact] = (V * f) @ V.conj().T
+    return sqrt_k

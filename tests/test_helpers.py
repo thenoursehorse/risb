@@ -190,3 +190,20 @@ def test_converged_solution_is_a_stationary_point_of_the_lagrangian() -> None:
                         lagrangian(name, bl, step * E) - lagrangian(name, bl, -step * E)
                     ) / (2 * step)
                     assert derivative == pytest.approx(0, abs=1e-7), (name, bl, i, j)
+
+
+def test_completely_full_orbital_is_decoupled_and_the_rest_is_unchanged() -> None:
+    rho = np.diag([1.0, 0.3])
+    # No correlation between the physical orbitals and the full orbital a = 0
+    rho_cf = np.array([[0.0, 0.2], [0.0, 0.1]])
+    ke = np.array([[0.4, 0.3], [0.1, 0.2]])
+    R = helpers.get_r(rho_cf, rho)
+    D = helpers.get_d(rho, ke)
+    Lambda_c = helpers.get_lambda_c(rho, R, np.diag([0.5, -0.2]), D)
+    Lambda = helpers.get_lambda(R, D, Lambda_c, rho)
+    for A in [R, D, Lambda_c, Lambda]:
+        assert np.all(np.isfinite(A))
+    assert R[0] == pytest.approx(np.zeros(2), abs=1e-12)
+    assert D[0] == pytest.approx(np.zeros(2), abs=1e-12)
+    assert R[1] == pytest.approx(rho_cf[:, 1] / np.sqrt(0.3 * 0.7), abs=1e-12)
+    assert D[1] == pytest.approx(ke[:, 1] / np.sqrt(0.3 * 0.7), abs=1e-12)
