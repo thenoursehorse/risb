@@ -371,29 +371,17 @@ def get_lagrangian(
         - 2 \, \mathrm{Re} \, \mathrm{Tr} \left( \mathcal{D}_i
         \mathcal{R}_i^T \sqrt{\Delta^p_i (1 - \Delta^p_i)} \right) \Big],
 
-    summed over blocks, with :math:`\mathcal{R} = \sum_i \mathbf{P}_i^{\dagger}
-    \mathcal{R}_i \mathbf{P}_i` and :math:`\lambda = \sum_i
-    \mathbf{P}_i^{\dagger} \lambda_i \mathbf{P}_i` in the blocks of
-    ``h0_kin_k``, as in :class:`risb.LatticeSolver`. The terms with the
+    summed over blocks, with :math:`\mathcal{R}` and :math:`\lambda` of the
+    clusters in the blocks of ``h0_kin_k`` from :func:`upfold`, as in
+    :class:`risb.LatticeSolver`. The terms with the
     normalization of the impurity ground states are zero and left out.
 
     .. _PRL126401: https://doi.org/10.1103/PhysRevLett.118.126401
 
     """
     n_clusters = len(R)
-    if gf_struct_mapping is None:
-        gf_struct_mapping = [{bl: bl for bl in h0_kin_k} for _ in range(n_clusters)]
-
-    R_full = {bl: np.zeros(h0.shape[1:], dtype=complex) for bl, h0 in h0_kin_k.items()}
-    Lambda_full = {
-        bl: np.zeros(h0.shape[1:], dtype=complex) for bl, h0 in h0_kin_k.items()
-    }
-    for i in range(n_clusters):
-        for bl in R[i]:
-            bl_full = gf_struct_mapping[i][bl]
-            P = np.eye(R[i][bl].shape[0]) if projectors is None else projectors[i][bl]
-            R_full[bl_full] += P.conj().T @ R[i][bl] @ P
-            Lambda_full[bl_full] += P.conj().T @ Lambda[i][bl] @ P
+    R_full = upfold(R, h0_kin_k, projectors, gf_struct_mapping, outside=1)
+    Lambda_full = upfold(Lambda, h0_kin_k, projectors, gf_struct_mapping)
 
     lagrangian = 0.0
     for bl, h0 in h0_kin_k.items():
@@ -414,6 +402,63 @@ def get_lagrangian(
     return float(lagrangian)
 
 
+def upfold(
+    A: Sequence[BlockMatrixLike],
+    h0_k: BlockMatrixLike,
+    projectors: Sequence[BlockMatrixLike] | None = None,
+    gf_struct_mapping: Sequence[Mapping[str, str]] | None = None,
+    outside: float = 0.0,
+) -> BlockMatrix:
+    """
+    Return the matrices of the clusters in the blocks of the lattice.
+
+    Parameters
+    ----------
+    A : list of risb.types.BlockMatrixLike
+        A matrix for each cluster, e.g., ``R`` or ``Lambda``.
+    h0_k : risb.types.BlockMatrixLike
+        Dispersion of the lattice, which sets its blocks and their size.
+    projectors : list of risb.types.BlockMatrixLike, optional
+        The projectors onto the subspace of each cluster, as in
+        :class:`risb.LatticeSolver`. They can depend on k. Without them there
+        is one cluster, the whole unit cell.
+    gf_struct_mapping : list of mapping, optional
+        The mapping from the blocks of each cluster to the blocks of ``h0_k``.
+        Default assumes they are the same.
+    outside : float, optional
+        Multiple of the identity on the orbitals that are in no cluster, e.g.,
+        1 for ``R`` and 0 for ``Lambda``.
+
+    Returns
+    -------
+    risb.types.BlockMatrix
+        ``sum_i P_i^dag A_i P_i + outside (1 - sum_i P_i^dag P_i)`` in each
+        block of ``h0_k``, at each k-point if the projectors depend on k.
+
+    """
+    if gf_struct_mapping is None:
+        gf_struct_mapping = [{bl: bl for bl in h0_k} for _ in range(len(A))]
+    A_full: BlockMatrix = {}
+    covered: BlockMatrix = {}
+    for bl, h0 in h0_k.items():
+        # Accumulated out of place, so it is only complex if needed
+        A_full[bl] = np.zeros(h0.shape[1:])
+        covered[bl] = np.zeros(h0.shape[1:])
+    for i, A_i in enumerate(A):
+        for bl, A_bl in A_i.items():
+            bl_full = gf_struct_mapping[i][bl]
+            if projectors is None:
+                A_full[bl_full] = A_full[bl_full] + A_bl
+                covered[bl_full] = covered[bl_full] + np.eye(A_bl.shape[-1])
+            else:
+                P = projectors[i][bl]
+                A_full[bl_full] = A_full[bl_full] + _dagger(P) @ A_bl @ P
+                covered[bl_full] = covered[bl_full] + _dagger(P) @ P
+    for bl, h0 in h0_k.items():
+        A_full[bl] = A_full[bl] + outside * (np.eye(h0.shape[-1]) - covered[bl])
+    return A_full
+
+
 def get_h_qp(
     R: NDArray[np.inexact],
     Lambda: NDArray[np.inexact],
@@ -426,9 +471,10 @@ def get_h_qp(
     Parameters
     ----------
     R : numpy.ndarray
-        Renormalization matrix) from electrons to quasiparticles
+        Renormalization matrix) from electrons to quasiparticles. It can
+        depend on k, indexed as k, orb_i, orb_j.
     Lambda : numpy.ndarray
-        Correlation potential of quasiparticles.
+        Correlation potential of quasiparticles. It can depend on k.
     h0_kin_k : numpy.ndarray
         Single-particle dispersion between local clusters. Indexed as
         k, orb_i, orb_j
@@ -448,8 +494,8 @@ def get_h_qp(
 
     """
     # h_qp = np.einsum('ac,cdk,db->kab', R, h0_kin_k, R.conj().T, optimize='optimal') + (Lambda - mu*np.eye(Lambda.shape[0]))
-    h_qp: NDArray[np.inexact] = np.einsum("ac,kcd,db->kab", R, h0_kin_k, R.conj().T) + (
-        Lambda - mu * np.eye(Lambda.shape[0])
+    h_qp: NDArray[np.inexact] = R @ h0_kin_k @ _dagger(R) + (
+        Lambda - mu * np.eye(Lambda.shape[-1])
     )
     if not np.allclose(h_qp, np.swapaxes(h_qp, 1, 2).conj()):
         warnings.warn("H_qp is not Hermitian !", RuntimeWarning, stacklevel=2)
@@ -486,9 +532,7 @@ def get_h0_kin_k_R(
     the renormalization matrix `R` multiplied on the left.
 
     """
-    h0_kin_k_R: NDArray[np.inexact] = np.einsum(
-        "kac,cd,kdb->kab", h0_kin_k, R.conj().T, vec
-    )
+    h0_kin_k_R: NDArray[np.inexact] = h0_kin_k @ _dagger(R) @ vec
     return h0_kin_k_R
 
 
@@ -709,7 +753,7 @@ def get_h0_loc_matrix(
     n_k = h0_k.shape[0]
     if P is None:
         return np.sum(h0_k, axis=0) / float(n_k)
-    return np.sum(P @ h0_k @ P.conj().T, axis=0) / float(n_k)
+    return np.sum(P @ h0_k @ _dagger(P), axis=0) / float(n_k)
 
 
 def get_h0_kin_k_mat(
@@ -744,7 +788,7 @@ def get_h0_kin_k(
     gf_struct_mapping: Sequence[Mapping[str, str]] | None = None,
 ) -> BlockMatrix:
     """
-    Return a matrix representation of only the kinetic terms between clusters/local subspaces of a non-interacting dispersion.
+    Return a non-interacting dispersion without the local terms of the clusters.
 
     Parameters
     ----------
@@ -752,7 +796,8 @@ def get_h0_kin_k(
         Single-particle dispersion in each block.
     projectors : sequence of risb.types.BlockMatrixLike, optional
         The projectors onto each subspace of a local cluster within
-        the supercell organized into single-particle symmetry blocks.
+        the supercell organized into single-particle symmetry blocks. They
+        can depend on k.
     gf_struct_mapping : sequence of mapping, optional
         The mapping from the symmetry blocks in the subspace to the
         symmetry blocks of h0_k. Default assumes the keys in `projectors`
@@ -761,9 +806,9 @@ def get_h0_kin_k(
     Returns
     -------
     risb.types.BlockMatrix
-        The single-particle hopping with only the kinetic contribution,
-        without the single-particle terms from the clusters defined by
-        the projectors.
+        The single-particle dispersion without the local terms of the
+        clusters defined by the projectors, so with the local terms of the
+        orbitals that are in no cluster.
 
     """
     h0_kin_k = dict(h0_k)
@@ -777,7 +822,7 @@ def get_h0_kin_k(
                 bl_full = gf_struct_mapping[i][bl]
                 h0_loc_matrix = get_h0_loc_matrix(h0_k[bl_full], P[bl])
                 h0_kin_k[bl_full] = (
-                    h0_kin_k[bl_full] - P[bl].conj().T @ h0_loc_matrix @ P[bl]
+                    h0_kin_k[bl_full] - _dagger(P[bl]) @ h0_loc_matrix @ P[bl]
                 )
                 # h0_kin_k[bl_full] = get_h0_kin_k_mat(h0_kin_k[bl_full], P[bl])
     else:
@@ -828,3 +873,8 @@ def _sqrt_k(rho: NDArray[np.inexact], inverse: bool = False) -> NDArray[np.inexa
         f = np.where(K < EDGE_TOL, 0, 1 / np.where(K < EDGE_TOL, 1, f))
     sqrt_k: NDArray[np.inexact] = (V * f) @ V.conj().T
     return sqrt_k
+
+
+def _dagger(A: NDArray[np.inexact]) -> NDArray[np.inexact]:
+    """Return the conjugate transpose of the last two axes, e.g., at each k-point."""
+    return np.swapaxes(A.conj(), -1, -2)

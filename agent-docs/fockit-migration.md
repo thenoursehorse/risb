@@ -111,7 +111,10 @@ user to review. Update this file as steps finish. Delete it when done.
    the 0 x infinity terms in the gradient), check it against the literature
    (ghost-GA has non-invertible R) and numerically (approach T -> 0), then
    decide on an implementation.
-19. [ ] Relax the projector assumptions (user: "a VERY big restriction",
+19. [x] (done, see Item 19 notes; scope (user): k-dependence and coverage; non-orthonormal / overlapping
+   is item 21. lambda gets no Q term: uncorrelated states keep their local
+   part in h0_kin, have no constraint, so lambda = 0 there; R = 1 there gives
+   their bare band) Relax the projector assumptions (user: "a VERY big restriction",
    "100% sure that can be relaxed"). Now required: projectors the same at
    every k-point, orthonormal rows, no overlap between clusters, covering
    every orbital of h0_k (an uncovered orbital gets R = 0, lambda = 0, a
@@ -121,6 +124,21 @@ user to review. Update this file as steps finish. Delete it when done.
    Check the up/down-folding maths for each, extend `check_projectors`, and
    test (the supercell test is a starting point; a partially covered cell
    with an uncorrelated orbital should reproduce the covered result).
+20. [ ] Investigate (R, Delta^p) as the input of the self-consistent cycle
+   instead of (R, Lambda) (user). Initialising with R = 1 and Delta^p = the
+   non-interacting density matrix is more natural than guessing Lambda;
+   Lambda would then be found from Delta^p (e.g. a fit / inversion of
+   Delta^p = n_F(R eps R^dag + lambda - mu) for lambda). Find out whether it is
+   worth it: how lambda is obtained and whether that is well posed, cost per
+   cycle, effect on convergence and on the R = 0 / edge cases, gauge
+   covariance, and what the literature does (Lanata's codes, ghost-GA).
+21. [ ] Investigate allowing non-orthonormal or overlapping projectors (user;
+   after item 19), e.g. orthonormalizing internally, as DFT+DMFT codes do
+   with raw projections onto local orbitals.
+22. [ ] Rename `h0_kin_k` (user: later; the proposed h0_qp_k / h0_lat_k "aren't
+   great"; old-name aliases also decided later). It is h0_k minus the local
+   terms of the correlated clusters, so it also holds the local terms outside
+   all projectors (after item 19); until renamed, document that.
 
 ## Commits
 
@@ -513,6 +531,34 @@ Done (step 8):
   dh_trimer -1); particle-hole sector reproduces the plain solve; missing
   symmetries raise; "warn" warns at D = 0 and not with hybridization.
 - How-to: "Choosing the eigensolver", "Symmetries", "Degenerate ground states".
+
+## Item 19 notes (projectors that depend on k or leave orbitals uncovered)
+
+- Literature: PRL 118, 126401 supplement (arXiv:1606.09614): epsilon_k spans
+  the whole single-particle space ("contains also the uncorrelated
+  orbitals"), energy sum_kij R_i eps_k,ij R_j^dag; R = 1, lambda = 0 on
+  uncorrelated orbitals is not stated explicitly there. Lanata et al. PRX
+  2015 (arXiv:1407.4862) main text has no formalism.
+- Maths: R(k) = sum_i P_i(k)^dag R_i P_i(k) + (1 - sum_i P_i(k)^dag P_i(k)),
+  lambda(k) = sum_i P_i(k)^dag lambda_i P_i(k) (no outside term: uncorrelated
+  states have no constraint; their local terms stay in h0_kin_k). Downfolding
+  (rho_qp, ke, h0_loc) already broadcast over a k-dependent P.
+- Implemented: `helpers.upfold(A, h0_k, projectors, gf_struct_mapping,
+  outside)` used by LatticeSolver.one_cycle (R with outside = 1, Lambda 0)
+  and get_lagrangian; `_dagger` (conjugate transpose of the last two axes) in
+  get_h0_loc_matrix, get_h0_kin_k, get_h_qp, get_h0_kin_k_R so P and R can
+  depend on k; check_projectors checks orthonormal rows and no overlap at
+  every k (coverage no longer required); docstrings (projectors,
+  check_projectors, h0_kin_k holds the local terms of orbitals in no cluster,
+  get_h_qp, get_lagrangian) and the how-to.
+- Tests: check_projectors rejects overlapping / not orthonormal / not
+  orthonormal at one k, accepts partial coverage and k-dependent projectors;
+  an orbital in no cluster keeps its band (2-site cell: site 1 in no cluster
+  = site 1 a U = 0 cluster; fails without the R = 1 term); k-dependent
+  projectors give the same solution (random unitary at every k on h0 and P;
+  Z, Lambda to 1e-8); the Lagrangian is stationary with an orbital in no
+  cluster (fails with a Lagrangian missing the R = 1 term). Suite 96 passed
+  (74 passed, 27 skipped without TRIQS).
 
 ## Item 17 notes (decorated honeycomb in the site basis)
 

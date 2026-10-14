@@ -447,39 +447,126 @@ def test_two_site_cell_with_a_cluster_per_site_gives_the_one_site_solution(
             )
 
 
-def test_check_projectors_rejects_projectors_that_break_the_assumptions(
+def test_check_projectors_rejects_only_projectors_that_break_the_assumptions(
     solver_name: str, subtests: pytest.Subtests
 ) -> None:
     spin_names = ["up", "dn"]
-    h0_k = dict.fromkeys(spin_names, one_band_cubic_h0_k(4, supercell=True))
-    gf_struct = [[(bl, 1) for bl in spin_names]] * 2
-    impurity_solvers = [
-        make_impurity_solver(solver_name, nc("up", 0) * nc("dn", 0), gf)
-        for gf in gf_struct
-    ]
+    h0 = one_band_cubic_h0_k(4, supercell=True)
+    h0_k = dict.fromkeys(spin_names, h0)
+    n_k = h0.shape[0]
     site_a = np.array([[1.0, 0.0]])
+    site_b = np.array([[0.0, 1.0]])
+    # The same rotation of both sites at every k-point
+    rotations = np.array([random_unitary(2, seed=k) for k in range(n_k)])
+
+    def lattice(projectors: list[NDArray[np.inexact]], check: bool) -> None:
+        gf_struct = [[(bl, 1) for bl in spin_names]] * len(projectors)
+        LatticeSolver(
+            h0_k=h0_k,
+            gf_struct=gf_struct,
+            impurity_solvers=[
+                make_impurity_solver(solver_name, nc("up", 0) * nc("dn", 0), gf)
+                for gf in gf_struct
+            ],
+            update_weights=SmearingKWeight(beta=40, n_target=2).update_weights,
+            projectors=[dict.fromkeys(spin_names, P) for P in projectors],
+            check_projectors=check,
+        )
+
+    not_orthonormal_at_one_k = np.broadcast_to(site_a, (n_k, 1, 2)).copy()
+    not_orthonormal_at_one_k[3] *= 2
     bad = {
-        "missing an orbital": [site_a, site_a * 0],
         "overlapping": [site_a, site_a],
-        "not orthonormal": [2 * site_a, np.array([[0.0, 1.0]])],
+        "not orthonormal": [2 * site_a, site_b],
+        "not orthonormal at one k-point": [not_orthonormal_at_one_k, site_b],
     }
-    for case, (P_a, P_b) in bad.items():
-        projectors = [dict.fromkeys(spin_names, P_a), dict.fromkeys(spin_names, P_b)]
+    for case, projectors in bad.items():
         with subtests.test(case):
             with pytest.raises(ValueError, match="projectors"):
-                LatticeSolver(
-                    h0_k=h0_k,
-                    gf_struct=gf_struct,
-                    impurity_solvers=impurity_solvers,
-                    update_weights=SmearingKWeight(beta=40, n_target=2).update_weights,
-                    projectors=projectors,
-                    check_projectors=True,
-                )
+                lattice(projectors, check=True)
             # Not checked by default
-            LatticeSolver(
-                h0_k=h0_k,
-                gf_struct=gf_struct,
-                impurity_solvers=impurity_solvers,
-                update_weights=SmearingKWeight(beta=40, n_target=2).update_weights,
-                projectors=projectors,
-            )
+            lattice(projectors, check=False)
+    good = {
+        "an orbital in no cluster": [site_a],
+        "depending on k": [site_a @ rotations, site_b @ rotations],
+    }
+    for case, projectors in good.items():
+        with subtests.test(case):
+            lattice(projectors, check=True)
+
+
+def test_orbital_in_no_cluster_keeps_its_band(solver_name: str) -> None:
+    # Site 1 in no cluster must give the same as site 1 a cluster without
+    # interactions, where RISB is exact
+    spin_names = ["up", "dn"]
+    h0_k = dict.fromkeys(spin_names, one_band_cubic_h0_k(6, supercell=True))
+    site_a = dict.fromkeys(spin_names, np.array([[1.0, 0.0]]))
+    site_b = dict.fromkeys(spin_names, np.array([[0.0, 1.0]]))
+    h_ints = [4 * nc("up", 0) * nc("dn", 0), zero()]
+
+    def solve(projectors: list[BlockMatrix]) -> LatticeSolver:
+        gf_struct = [[(bl, 1) for bl in spin_names]] * len(projectors)
+        S = LatticeSolver(
+            h0_k=h0_k,
+            gf_struct=gf_struct,
+            impurity_solvers=[
+                make_impurity_solver(solver_name, h_ints[i], gf)
+                for i, gf in enumerate(gf_struct)
+            ],
+            update_weights=SmearingKWeight(beta=40, n_target=2).update_weights,
+            projectors=projectors,
+        )
+        for i in range(S.n_clusters):
+            for bl in spin_names:
+                S.Lambda[i][bl] = np.array([[2.0 if i == 0 else 0.0]])
+        S.solve(tol=1e-12)
+        return S
+
+    one_cluster = solve([site_a])
+    two_clusters = solve([site_a, site_b])
+    assert one_cluster.optimize.success
+    for bl in spin_names:
+        assert one_cluster.Z[0][bl] == pytest.approx(two_clusters.Z[0][bl], abs=1e-8)
+        assert two_clusters.Z[1][bl] == pytest.approx(np.eye(1), abs=1e-8)
+
+
+def test_projectors_that_depend_on_k_give_the_same_solution(solver_name: str) -> None:
+    # The lattice in a basis rotated differently at every k-point, with the
+    # projectors rotated with it, is the same problem
+    spin_names = ["up", "dn"]
+    h0 = one_band_cubic_h0_k(6, supercell=True)
+    h0[:, 0, 0] *= 1.3  # Inequivalent sites
+    rotations = np.array([random_unitary(2, seed=k) for k in range(h0.shape[0])])
+    sites = [np.array([[1.0, 0.0]]), np.array([[0.0, 1.0]])]
+
+    def solve(
+        h0: NDArray[np.complex128], projectors: list[NDArray[np.inexact]]
+    ) -> LatticeSolver:
+        gf_struct = [[(bl, 1) for bl in spin_names]] * 2
+        S = LatticeSolver(
+            h0_k=dict.fromkeys(spin_names, h0),
+            gf_struct=gf_struct,
+            impurity_solvers=[
+                make_impurity_solver(solver_name, 4 * nc("up", 0) * nc("dn", 0), gf)
+                for gf in gf_struct
+            ],
+            update_weights=SmearingKWeight(beta=40, n_target=2).update_weights,
+            projectors=[dict.fromkeys(spin_names, P) for P in projectors],
+            check_projectors=True,
+        )
+        for i in range(2):
+            for bl in spin_names:
+                S.Lambda[i][bl] = np.array([[2.0]])
+        S.solve(tol=1e-12)
+        return S
+
+    fixed = solve(h0, sites)
+    rotated = solve(
+        rotations @ h0 @ np.swapaxes(rotations.conj(), -1, -2),
+        [P @ np.swapaxes(rotations.conj(), -1, -2) for P in sites],
+    )
+    assert rotated.optimize.success
+    for i in range(2):
+        for bl in spin_names:
+            assert rotated.Z[i][bl] == pytest.approx(fixed.Z[i][bl], abs=1e-8)
+            assert rotated.Lambda[i][bl] == pytest.approx(fixed.Lambda[i][bl], abs=1e-8)

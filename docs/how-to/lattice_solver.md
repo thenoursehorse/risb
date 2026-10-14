@@ -146,12 +146,12 @@ S = LatticeSolver(...
 )
 ```
 
-The projectors must be the same at every $k$-point, have orthonormal rows,
-not overlap between clusters, and together cover every orbital of `h0_k`. An
-orbital that is in no cluster gets $\mathcal{R} = 0$ and $\lambda = 0$, so a
-flat quasiparticle band at zero energy instead of its own. These conditions are
-not checked by default. To check them, so that `LatticeSolver` raises a
-`ValueError` if they do not hold
+A projector that depends on $k$ is an array indexed as `[k, row, column]`. At
+every $k$-point the projectors must have orthonormal rows and not overlap
+between clusters. Orbitals of `h0_k` that are in no cluster have
+$\mathcal{R} = 1$ and $\lambda = 0$, and their local terms are in
+`S.h0_kin_k`. To check the projectors, so that `LatticeSolver` raises a
+`ValueError` if they are not orthonormal or overlap
 
 ```python
 S = LatticeSolver(..., projectors=projectors, check_projectors=True)

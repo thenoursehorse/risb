@@ -75,10 +75,11 @@ class LatticeSolver:
     projectors : sequence of risb.types.BlockMatrixLike, optional
         The projectors onto the subspace of each cluster. ``projectors[i][bl]``
         has a row for each orbital of block ``bl`` of cluster ``i`` and a
-        column for each orbital of the block of `h0_k` it maps to. They must
-        be the same at every k-point, have orthonormal rows, not overlap
-        between clusters, and together cover every orbital of `h0_k`. These
-        are not checked unless `check_projectors` is True.
+        column for each orbital of the block of `h0_k` it maps to, and can
+        depend on k (indexed as k, row, column). At every k-point they must
+        have orthonormal rows and not overlap between clusters, which is not
+        checked unless `check_projectors` is True. Orbitals in no cluster keep
+        their bands, with ``R = 1`` and ``Lambda = 0``.
     gf_struct_mapping : sequence of mapping, optional
         The mapping from the symmetry blocks of each cluster
         to the symmetry blocks of `h0_k`. Default assumes the keys in
@@ -98,8 +99,8 @@ class LatticeSolver:
         Whether to return a new guess for ``x`` and the ``error`` at each iteration or
         only the ``error``. :func:`scipy.optimize.root` should only use the ``error``.
     check_projectors : bool, optional
-        Raise a ValueError if `projectors` do not satisfy the conditions
-        above. Default is False.
+        Raise a ValueError if `projectors` do not have orthonormal rows or
+        overlap. Default is False.
 
     """
 
@@ -185,8 +186,9 @@ class LatticeSolver:
             for i in range(self.n_clusters)
         ]
 
-        #: risb.types.BlockMatrix : :attr:`h0_k` with the local couplings from
-        # ; each correlated subspace removed.
+        #: risb.types.BlockMatrix : :attr:`h0_k` with the local couplings of
+        #: each cluster removed, so with the local terms of the orbitals that
+        #: are in no cluster.
         self.h0_kin_k = helpers.get_h0_kin_k(h0_k, projectors, gf_struct_mapping)
 
         #: list of risb.types.BlockMatrix : Matrices of non-interacting local hopping
@@ -472,38 +474,14 @@ class LatticeSolver:
             self.R = symmetrize(self.R)
             self.Lambda = symmetrize(self.Lambda)
 
-        # Make R, Lambda in supercell basis from basis of the clusters
-        # FIXME check if projectors get broadcast correctly if they are a diff proj at each k
-        # Accumulate out of place so the dtype upcasts to complex if needed
-        self.R_full: BlockMatrix = {
-            bl: np.zeros(h0.shape[1:]) for bl, h0 in self.h0_kin_k.items()
-        }
-        self.Lambda_full: BlockMatrix = {
-            bl: np.zeros(h0.shape[1:]) for bl, h0 in self.h0_kin_k.items()
-        }
-        if self.projectors is not None:
-            for i in range(self.n_clusters):
-                for bl, _ in self.gf_struct[i]:
-                    bl_full = self.gf_struct_mapping[i][bl]
-                    self.R_full[bl_full] = (
-                        self.R_full[bl_full]
-                        + self.projectors[i][bl].conj().T
-                        @ self.R[i][bl]
-                        @ self.projectors[i][bl]
-                    )
-                    self.Lambda_full[bl_full] = (
-                        self.Lambda_full[bl_full]
-                        + self.projectors[i][bl].conj().T
-                        @ self.Lambda[i][bl]
-                        @ self.projectors[i][bl]
-                    )
-        else:
-            for bl, _ in self.gf_struct[0]:
-                bl_full = self.gf_struct_mapping[0][bl]
-                self.R_full[bl_full] = self.R_full[bl_full] + self.R[0][bl]
-                self.Lambda_full[bl_full] = (
-                    self.Lambda_full[bl_full] + self.Lambda[0][bl]
-                )
+        # Make R, Lambda in supercell basis from basis of the clusters. The
+        # orbitals in no cluster keep their bands: R = 1, Lambda = 0 there
+        self.R_full: BlockMatrix = helpers.upfold(
+            self.R, self.h0_kin_k, self.projectors, self.gf_struct_mapping, outside=1
+        )
+        self.Lambda_full: BlockMatrix = helpers.upfold(
+            self.Lambda, self.h0_kin_k, self.projectors, self.gf_struct_mapping
+        )
 
         h0_k_R = {}
         # R_h0_k_R = dict()
@@ -843,22 +821,22 @@ def _check_projectors(
     rows: dict[str, list[NDArray[np.inexact]]] = {bl: [] for bl in h0_k}
     for i, P in enumerate(projectors):
         for bl, P_bl in P.items():
-            if np.ndim(P_bl) != 2:
-                msg = f"The projector of block {bl} of cluster {i} depends on k."
-                raise ValueError(msg)
-            rows[gf_struct_mapping[i][bl]].append(np.asarray(P_bl))
+            bl_full = gf_struct_mapping[i][bl]
+            # The same shape at every k-point, whether or not P depends on k
+            n_k = np.shape(h0_k[bl_full])[0]
+            P_k = np.broadcast_to(P_bl, (n_k, *np.shape(P_bl)[-2:]))
+            rows[bl_full].append(P_k)
     for bl_full, P_list in rows.items():
-        n_orb = np.shape(h0_k[bl_full])[-1]
-        Q = np.concatenate(P_list) if P_list else np.zeros((0, n_orb))
-        if Q.shape[0] < n_orb:
-            msg = f"The projectors do not cover every orbital of block {bl_full}."
-            raise ValueError(msg)
-        if Q.shape[0] > n_orb or not np.allclose(
-            Q @ Q.conj().T, np.eye(Q.shape[0]), atol=1e-10
+        if not P_list:
+            continue
+        Q = np.concatenate(P_list, axis=-2)
+        n_rows = Q.shape[-2]
+        if n_rows > Q.shape[-1] or not np.allclose(
+            Q @ np.swapaxes(Q.conj(), -1, -2), np.eye(n_rows), atol=1e-10
         ):
             msg = (
                 f"The projectors onto block {bl_full} do not have orthonormal "
-                "rows, or overlap between clusters."
+                "rows, or overlap between clusters, at some k-point."
             )
             raise ValueError(msg)
 

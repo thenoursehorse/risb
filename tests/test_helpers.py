@@ -262,3 +262,27 @@ def test_completely_full_orbital_is_decoupled_and_the_rest_is_unchanged() -> Non
     assert D[0] == pytest.approx(np.zeros(2), abs=1e-12)
     assert R[1] == pytest.approx(rho_cf[:, 1] / np.sqrt(0.3 * 0.7), abs=1e-12)
     assert D[1] == pytest.approx(ke[:, 1] / np.sqrt(0.3 * 0.7), abs=1e-12)
+
+
+def test_converged_solution_with_an_orbital_in_no_cluster_is_a_stationary_point_of_the_lagrangian() -> (
+    None
+):
+    # One band on a cell of two sites, with a cluster on site 0 only
+    spin_names = ["up", "dn"]
+    gf_struct = [[(bl, 1) for bl in spin_names]]
+    impurity_solvers = [
+        FockitImpuritySolver(4 * nc("up", 0) * nc("dn", 0), gf_struct[0])
+    ]
+    kweight = SmearingKWeight(beta=40, n_target=2)
+    S = LatticeSolver(
+        h0_k=dict.fromkeys(spin_names, one_band_cubic_h0_k(6, supercell=True)),
+        gf_struct=gf_struct,
+        impurity_solvers=impurity_solvers,
+        update_weights=kweight.update_weights,
+        projectors=[dict.fromkeys(spin_names, np.array([[1.0, 0.0]]))],
+    )
+    for bl in spin_names:
+        S.Lambda[0][bl] = np.array([[2.0]])
+    S.solve(tol=1e-8)
+    assert S.optimize.success
+    assert_lagrangian_is_stationary(S, impurity_solvers, kweight)
