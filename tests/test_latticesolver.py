@@ -12,6 +12,7 @@ from test_common import (
     build_cubic_h0_k,
     build_two_orbital_complex_h0_k,
     make_impurity_solver,
+    one_band_cubic_h0_k,
     random_unitary,
     symmetrize_blocks,
 )
@@ -362,3 +363,104 @@ def test_warns_when_the_self_consistency_equations_are_not_satisfied(
     with pytest.warns(RuntimeWarning, match="self-consistency"):
         S.solve(tol=1e-10)
     assert S.self_consistency_error > 0.1
+
+
+def test_two_site_cell_with_a_cluster_per_site_gives_the_one_site_solution(
+    solver_name: str, subtests: pytest.Subtests
+) -> None:
+    U = 4.0
+    spin_names = ["up", "dn"]
+
+    def solve(
+        h0_k: NDArray[np.complex128],
+        gf_struct: list[GfStruct],
+        projectors: list[BlockMatrix] | None = None,
+        gf_struct_mapping: list[dict[str, str]] | None = None,
+    ) -> LatticeSolver:
+        S = LatticeSolver(
+            h0_k=dict.fromkeys(spin_names, h0_k),
+            gf_struct=gf_struct,
+            impurity_solvers=[
+                make_impurity_solver(
+                    solver_name, U * nc(gf[0][0], 0) * nc(gf[1][0], 0), gf
+                )
+                for gf in gf_struct
+            ],
+            update_weights=SmearingKWeight(
+                beta=40, n_target=len(gf_struct)
+            ).update_weights,
+            projectors=projectors,
+            gf_struct_mapping=gf_struct_mapping,
+            check_projectors=projectors is not None,
+        )
+        for i in range(S.n_clusters):
+            for bl in S.Lambda[i]:
+                S.Lambda[i][bl] = np.array([[U / 2]])
+        S.solve(tol=1e-12)
+        return S
+
+    one_site = solve(
+        one_band_cubic_h0_k(6, supercell=False), [[(bl, 1) for bl in spin_names]]
+    )
+    projectors = [
+        dict.fromkeys(spin_names, np.array([[1.0, 0.0]])),
+        dict.fromkeys(spin_names, np.array([[0.0, 1.0]])),
+    ]
+    h0_k = one_band_cubic_h0_k(6, supercell=True)
+    with subtests.test("same blocks as h0_k"):
+        S = solve(h0_k, [[(bl, 1) for bl in spin_names]] * 2, projectors)
+        for i in range(2):
+            assert S.Z[i]["up"] == pytest.approx(one_site.Z[0]["up"], abs=1e-10)
+    with subtests.test("blocks renamed with gf_struct_mapping"):
+        names = [{bl: f"{bl}_{site}" for bl in spin_names} for site in ["A", "B"]]
+        S = solve(
+            h0_k,
+            [[(names[i][bl], 1) for bl in spin_names] for i in range(2)],
+            [
+                {names[i][bl]: P[bl] for bl in spin_names}
+                for i, P in enumerate(projectors)
+            ],
+            [{names[i][bl]: bl for bl in spin_names} for i in range(2)],
+        )
+        for i in range(2):
+            assert S.Z[i][names[i]["up"]] == pytest.approx(
+                one_site.Z[0]["up"], abs=1e-10
+            )
+
+
+def test_check_projectors_rejects_projectors_that_break_the_assumptions(
+    solver_name: str, subtests: pytest.Subtests
+) -> None:
+    spin_names = ["up", "dn"]
+    h0_k = dict.fromkeys(spin_names, one_band_cubic_h0_k(4, supercell=True))
+    gf_struct = [[(bl, 1) for bl in spin_names]] * 2
+    impurity_solvers = [
+        make_impurity_solver(solver_name, nc("up", 0) * nc("dn", 0), gf)
+        for gf in gf_struct
+    ]
+    site_a = np.array([[1.0, 0.0]])
+    bad = {
+        "missing an orbital": [site_a, site_a * 0],
+        "overlapping": [site_a, site_a],
+        "not orthonormal": [2 * site_a, np.array([[0.0, 1.0]])],
+    }
+    for case, (P_a, P_b) in bad.items():
+        projectors = [dict.fromkeys(spin_names, P_a), dict.fromkeys(spin_names, P_b)]
+        with subtests.test(case):
+            with pytest.raises(ValueError, match="projectors"):
+                LatticeSolver(
+                    h0_k=h0_k,
+                    gf_struct=gf_struct,
+                    impurity_solvers=impurity_solvers,
+                    update_weights=SmearingKWeight(beta=40, n_target=2).update_weights,
+                    projectors=projectors,
+                    check_projectors=True,
+                )
+            # Not checked by default
+            LatticeSolver(
+                h0_k=h0_k,
+                gf_struct=gf_struct,
+                impurity_solvers=impurity_solvers,
+                update_weights=SmearingKWeight(beta=40, n_target=2).update_weights,
+                projectors=projectors,
+            )

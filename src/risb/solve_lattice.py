@@ -73,7 +73,12 @@ class LatticeSolver:
         where ``fun = self._target_function``.
         Defaults to :meth:`.DIIS.solve` method of :class:`.DIIS`.
     projectors : sequence of risb.types.BlockMatrixLike, optional
-        The projectors onto the subspace of each cluster.
+        The projectors onto the subspace of each cluster. ``projectors[i][bl]``
+        has a row for each orbital of block ``bl`` of cluster ``i`` and a
+        column for each orbital of the block of `h0_k` it maps to. They must
+        be the same at every k-point, have orthonormal rows, not overlap
+        between clusters, and together cover every orbital of `h0_k`. These
+        are not checked unless `check_projectors` is True.
     gf_struct_mapping : sequence of mapping, optional
         The mapping from the symmetry blocks of each cluster
         to the symmetry blocks of `h0_k`. Default assumes the keys in
@@ -92,6 +97,9 @@ class LatticeSolver:
     return_x_new : bool, optional
         Whether to return a new guess for ``x`` and the ``error`` at each iteration or
         only the ``error``. :func:`scipy.optimize.root` should only use the ``error``.
+    check_projectors : bool, optional
+        Raise a ValueError if `projectors` do not satisfy the conditions
+        above. Default is False.
 
     """
 
@@ -108,6 +116,7 @@ class LatticeSolver:
         force_real: bool = False,
         error_fun: Literal["root", "recursion"] = "recursion",
         return_x_new: bool = True,
+        check_projectors: bool = False,
     ) -> None:
         #: risb.types.BlockMatrixLike : Non-interacting Hamiltonian in k-space.
         self.h0_k = h0_k
@@ -155,6 +164,8 @@ class LatticeSolver:
         if len(self.gf_struct_mapping) != self.n_clusters:
             msg = f"Need a gf_struct_mapping (got {len(self.gf_struct_mapping)}) for each cluster (got {self.n_clusters}) !"
             raise ValueError(msg)
+        if check_projectors and self.projectors is not None:
+            _check_projectors(h0_k, self.projectors, self.gf_struct_mapping)
 
         self.symmetrizers = symmetrizers
         self.force_real = force_real
@@ -725,6 +736,34 @@ class LatticeSolver:
             for bl, _ in self.gf_struct[i]:
                 Z[i][bl] = self.R[i][bl].conj().T @ self.R[i][bl]
         return Z
+
+
+def _check_projectors(
+    h0_k: BlockMatrixLike,
+    projectors: Sequence[BlockMatrixLike],
+    gf_struct_mapping: Sequence[Mapping[str, str]],
+) -> None:
+    rows: dict[str, list[NDArray[np.inexact]]] = {bl: [] for bl in h0_k}
+    for i, P in enumerate(projectors):
+        for bl, P_bl in P.items():
+            if np.ndim(P_bl) != 2:
+                msg = f"The projector of block {bl} of cluster {i} depends on k."
+                raise ValueError(msg)
+            rows[gf_struct_mapping[i][bl]].append(np.asarray(P_bl))
+    for bl_full, P_list in rows.items():
+        n_orb = np.shape(h0_k[bl_full])[-1]
+        Q = np.concatenate(P_list) if P_list else np.zeros((0, n_orb))
+        if Q.shape[0] < n_orb:
+            msg = f"The projectors do not cover every orbital of block {bl_full}."
+            raise ValueError(msg)
+        if Q.shape[0] > n_orb or not np.allclose(
+            Q @ Q.conj().T, np.eye(Q.shape[0]), atol=1e-10
+        ):
+            msg = (
+                f"The projectors onto block {bl_full} do not have orthonormal "
+                "rows, or overlap between clusters."
+            )
+            raise ValueError(msg)
 
 
 def _is_single_gf_struct(

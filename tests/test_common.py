@@ -111,3 +111,22 @@ def random_unitary(n: int, seed: int) -> NDArray[np.complex128]:
     A = rng.normal(size=(n, n)) + 1j * rng.normal(size=(n, n))
     Q, _ = np.linalg.qr(A)
     return Q
+
+
+def one_band_cubic_h0_k(nkx: int, supercell: bool) -> NDArray[np.complex128]:
+    """One band on the cubic lattice, or the same in a cell of two sites along x."""
+    t = -1.0 / 3.0
+    mesh = 2 * np.pi * np.array(list(product(range(nkx), repeat=3))) / nkx
+    if not supercell:
+        return (2 * t * np.sum(np.cos(mesh), axis=1))[:, None, None].astype(complex)
+    # The two k of the one-site cell folded onto each k of the two-site cell
+    mesh = mesh[mesh[:, 0] < np.pi]
+    h0_k = np.zeros((len(mesh), 2, 2), dtype=complex)
+    for n, k in enumerate(mesh):
+        folded = [k, k + np.array([np.pi, 0, 0])]
+        energies = [2 * t * np.sum(np.cos(q)) for q in folded]
+        bloch = np.array(
+            [[np.exp(1j * q[0] * site) for q in folded] for site in range(2)]
+        ) / np.sqrt(2)
+        h0_k[n] = bloch @ np.diag(energies) @ bloch.conj().T
+    return h0_k
