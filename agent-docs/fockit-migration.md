@@ -51,13 +51,14 @@ user to review. Update this file as steps finish. Delete it when done.
    notes). First check the finite-temperature RISB/gGA literature on whether a
    mixed embedding state is the right prescription, and find a case that
    `symmetrizers` cannot handle.
-14. [ ] Make risb's RISB cycle gauge covariant (see Step 14 notes). Done: fixes 1-3
+14. [x] Make risb's RISB cycle gauge covariant (see Step 14 notes). Done: fixes 1-3
    (hybridization index order, Lambda_c / lambda from the gauge-invariant
    term with the exact matrix derivative, f2), Z = R^dag R, get_sigma_w with
    (R^dag R)^-1, covariance tests. Before, for complex non-commuting models the
    result depended on the starting gauge and Sigma was wrong when R is not
-   normal; all current examples were unaffected (R normal). Left: the
-   independent variational check on M2.
+   normal; all current examples were unaffected (R normal). Independent
+   check: stationarity of `helpers.get_lagrangian` at risb's solutions (test
+   added).
 15. [ ] Robustness at rho_qp eigenvalues 0 or 1 (insulating regime). Every K^(-1/2)
    formula (get_d, get_r, get_lambda_c, get_lambda, get_f1) is singular when a
    quasiparticle band is completely full or empty; iterates reach that in the
@@ -685,7 +686,16 @@ Results so far (bilayer, U=4, V=0.25, `method="eigh"`, DIIS tol 1e-13):
   rotated start (M2, 8^3 mesh) it does not converge in 20000 it and ends at a
   point with its own f1/f2-type derivatives 1e-6 / 1e-7 but the Delta_p
   derivative 3.5e-2, Z 0.5712 vs 0.5742: not a RISB solution.
-- Item 14 independent check: done (above). Proposed: add the stationarity check as a test.
+- Item 14 independent check: done (above). Test added:
+  `tests/test_helpers.py::test_converged_solution_is_a_stationary_point_of_
+  the_lagrangian` (fockit only; complex 2-orbital model, rotated starting R,
+  tol 1e-8; finite-difference derivatives of `get_lagrangian` in every
+  direction < 1e-7; largest measured 7e-9). 0.14 s. The original code fails
+  it (no convergence in 999 it; derivatives up to 5e-2). A 4^3 k-mesh does
+  not converge (999 it), so the test keeps 6^3.
+- `get_lagrangian` handles one cluster equal to the unit cell only; several
+  clusters would need projectors / gf_struct_mapping like LatticeSolver
+  (user asked; not done).
 - Unblocked: step 9 (gauge freedom and convergence speed; Lanata's claim).
 - Tests to add once the cycle is covariant (user, done above): through `S.R`, `S.Lambda`,
   `S.solve()`: U = 0, a gauge-rotated copy of the exact solution converges in

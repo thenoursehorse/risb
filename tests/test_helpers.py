@@ -1,12 +1,18 @@
 # ruff: noqa: D100, D103
 
+from itertools import product
 from pathlib import Path
 
 import h5py
 import numpy as np
 import pytest
+from numpy.typing import NDArray
+from test_common import build_two_orbital_complex_h0_k, random_unitary
 
-from risb import helpers
+from risb import LatticeSolver, helpers
+from risb.helpers_fockit import h_int_kanamori
+from risb.impurity_solvers import FockitImpuritySolver
+from risb.kweight import SmearingKWeight
 
 # FIXME finish helpers: lambda, r, f1, f2
 
@@ -112,3 +118,75 @@ def test_get_h0_kin_k_removes_local_terms_with_complex_projector() -> None:
     h0_kin_k = helpers.get_h0_kin_k(h0_k, [{"up": P}])
     h0_loc = (P @ h0_k["up"] @ P.conj().T).mean(axis=0)
     assert h0_kin_k["up"] == pytest.approx(h0_k["up"] - P.conj().T @ h0_loc @ P)
+
+
+def test_converged_solution_is_a_stationary_point_of_the_lagrangian() -> None:
+    U, J = 3.0, 0.6
+    Up = U - 2 * J
+    h_int = h_int_kanamori(
+        ["up", "dn"],
+        2,
+        U=(Up - J) * (1 - np.eye(2)),
+        Uprime=U * np.eye(2) + Up * (1 - np.eye(2)),
+        J_hund=J,
+    )
+    gf_struct = [(bl, 2) for bl in ["up", "dn"]]
+    kweight = SmearingKWeight(beta=40, n_target=2)
+    impurity_solver = FockitImpuritySolver(h_int, gf_struct)
+    S = LatticeSolver(
+        h0_k=build_two_orbital_complex_h0_k(),
+        gf_struct=gf_struct,
+        impurity_solvers=impurity_solver,
+        update_weights=kweight.update_weights,
+    )
+    # A quasiparticle basis rotated away from R = 1
+    u = random_unitary(2, seed=1)
+    for bl, _ in gf_struct:
+        S.Lambda[0][bl] = 1.5 * np.eye(2)
+        S.R[0][bl] = u.conj().T
+    S.solve(tol=1e-8)
+    assert S.optimize.success
+    assert kweight.mu is not None
+
+    variables = {
+        "R": S.R[0],
+        "Lambda": S.Lambda[0],
+        "D": S.D[0],
+        "Lambda_c": S.Lambda_c[0],
+        "Delta_p": S.rho_qp[0],
+    }
+    h_loc_energy = float(
+        np.real(impurity_solver.overlap(impurity_solver.h_int + impurity_solver.h0_loc))
+    )
+    mu = kweight.mu
+
+    def lagrangian(name: str, bl: str, E: NDArray[np.inexact]) -> float:
+        v = {**variables, name: {**variables[name], bl: variables[name][bl] + E}}
+        return helpers.get_lagrangian(
+            S.h0_kin_k,
+            v["R"],
+            v["Lambda"],
+            v["D"],
+            v["Lambda_c"],
+            v["Delta_p"],
+            S.rho_f[0],
+            S.rho_cf[0],
+            h_loc_energy,
+            beta=40,
+            mu=mu,
+        )
+
+    # R and D are general matrices, Lambda, Lambda_c and Delta_p Hermitian
+    step = 1e-6
+    for name in variables:
+        for bl, _ in gf_struct:
+            for i, j in product(range(2), repeat=2):
+                for phase in [1, 1j]:
+                    E = np.zeros((2, 2), dtype=complex)
+                    E[i, j] = phase
+                    if name not in ("R", "D"):
+                        E = E + E.conj().T
+                    derivative = (
+                        lagrangian(name, bl, step * E) - lagrangian(name, bl, -step * E)
+                    ) / (2 * step)
+                    assert derivative == pytest.approx(0, abs=1e-7), (name, bl, i, j)
