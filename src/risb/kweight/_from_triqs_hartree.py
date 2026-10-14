@@ -82,4 +82,7 @@ def update_mu(
             n += np.sum(smear_function(en, beta, mu)) / n_k
         return n - n_target
 
-    return brentq(target_function, e_min, e_max)
+    # The occupations are 0 or 1 a few widths of the smearing away from the
+    # energies, e.g., when mu is at a flat band that is not half filled
+    margin = 50 / beta
+    return brentq(target_function, e_min - margin, e_max + margin)

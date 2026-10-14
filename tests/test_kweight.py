@@ -25,3 +25,17 @@ def test_update_weights_without_mu_or_n_target_raises() -> None:
     kweight = SmearingKWeight(beta=10)
     with pytest.raises(ValueError, match="mu or n_target"):
         kweight.update_weights(energies)
+
+
+@pytest.mark.parametrize("method", ["fermi", "gaussian", "methfessel-paxton"])
+def test_mu_of_a_flat_band_more_than_half_filled(
+    method: Literal["fermi", "gaussian", "methfessel-paxton"],
+) -> None:
+    flat = {bl: np.zeros((100, 1)) for bl in ["up", "dn"]}
+    kweight = SmearingKWeight(beta=10, n_target=1.5, method=method)
+    weights = kweight.update_weights(flat)
+    assert sum(w.sum() for w in weights.values()) == pytest.approx(1.5)
+    assert kweight.mu is not None
+    assert kweight.mu > 0
+    if method == "fermi":
+        assert kweight.mu == pytest.approx(np.log(3) / 10)
