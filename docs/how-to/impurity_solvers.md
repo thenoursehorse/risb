@@ -207,16 +207,16 @@ impurity_solver = FockitImpuritySolver(h_int, gf_struct, beta=40)
 ```
 
 Use the same inverse temperature as the quasiparticles, e.g., in
-{py:class}`~risb.kweight.SmearingKWeight`. This is can help in or near a Mott
+{py:class}`~risb.kweight.SmearingKWeight`. This can help in or near a Mott
 insulator. There the bath orbitals decouple from the impurity, and in its
 ground state they are completely full or empty, while the quasiparticles they
-must match are smeared by the temperature, so the self-consistent loop does not
-converge. With `beta` it converges to the atomic limit, where the
-self-consistency equations are still not satisfied, but the observables do not
-depend on them (see `self_consistency_tol` in `LatticeSolver.solve`). Away from
-a Mott insulator the gap of the impurity problem is much
-larger than the temperature, and the result is the same as the ground state.
-A degenerate ground state is averaged over.
+must match are smeared by the temperature, which can make the self-consistent
+loop slow to converge or not converge. With `beta` it can converge to the
+atomic limit, where the self-consistency equations are still not satisfied,
+but the observables do not depend on them (see `self_consistency_tol` in
+`LatticeSolver.solve`). When the gap of the impurity problem is much larger
+than the temperature, the result is the same as with the ground state. A
+degenerate ground state is averaged over.
 
 `overlap` also gives thermal averages. Only the eigenstates with a Boltzmann
 weight above $10^{-14}$ relative to the ground state are found, so it is slower

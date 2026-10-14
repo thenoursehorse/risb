@@ -505,8 +505,9 @@ def test_eigsh_and_eigh_give_the_same_thermal_density_matrices() -> None:
 def test_complex_two_orbital_model_reaches_the_mott_state_with_a_thermal_impurity() -> (
     None
 ):
-    # At the temperature of the quasiparticles the bath orbitals that decouple
-    # in the Mott state are half filled, as the quasiparticles are
+    # In the Mott state the bath orbitals decouple. With the impurity problem
+    # at the temperature of the quasiparticles they are partly filled, close
+    # to the quasiparticles but not equal to them
     U = 5
     J = 0.2 * U
     Up = U - 2 * J

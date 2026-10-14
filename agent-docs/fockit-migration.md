@@ -162,7 +162,7 @@ user to review. Update this file as steps finish. Delete it when done.
 28. [ ] Investigate the benefit of having helpers_triqs and its Green's
    function helpers at all (user). Should the Green's function helpers be in
    helpers without TRIQS, like helpers.get_sigma_w?
-29. [ ] Review comments and docstrings (user): they have started to narrate
+29. [x] Review comments and docstrings (user): they have started to narrate
    the conversation (e.g., "ARPACK can fail (error 3, no shifts could be
    applied)") and to use phrases that do not make sense (e.g., "Renormalization
    matrix in the blocks of the lattice, quasiparticles by orbitals").
@@ -847,8 +847,27 @@ each quasiparticle and a column for each orbital"); get_z's Notes and
 _self_energy_poles's comment; two test comments (one overclaimed: "no
 solution the cycle reaches" -> "does not converge"); a ragged paragraph in
 the how-to. Restored the commented-out lopsided_ke_qp line that the rename
-had rewritten. Not reviewed yet: the comments and docstrings of earlier
-items that are already committed.
+had rewritten. Then the committed migration work (9f62a29..26e0868):
+- Source: "The ground state is found in this basis, then written in basis"
+  (broken); "Bounds the bands of R h0_kin_k R^dag, because Z = R^dag R <= 1"
+  (unproven, not Z with ghosts); the mu bracket comment in
+  _from_triqs_hartree; a stray ")" in get_h_qp's R; a ragged paragraph in
+  get_lagrangian.
+- Tests: "(textbook Anderson acceleration with 3 vectors needs 84 iterations
+  here)" (a measurement); the thermal Mott test comment claimed the
+  decoupled bath orbitals are half filled: they are not (rho_f eigenvalues
+  0.44, 0.56; rho_qp 0.45, 0.55; residual 0.11). Its ground-state version
+  converges too, in 171 iterations instead of 12.
+- Docs: impurity_solvers "This is can help", "does not converge" without
+  beta (it can be slow: 171 vs 12 iterations in that test), "Away from a Mott
+  insulator ... the same as the ground state" (too broad);
+  green_functions: the no-ghost self-energy and "only describes the
+  quasiparticles" now say "without ghosts" and point to the explanation (the
+  TRIQS quasiparticle Green's functions with ghosts are untested, item 28);
+  "Hubbad" typo in the self-consistent tutorial.
+- Left: commented-out old code in tests/test_impurity_solvers.py (hubb_N)
+  and examples/decorated_honeycomb_trimer_basis.py (an impurity_solvers
+  line). Item 29 done.
 
 ## Item 23 notes (DFT+RISB helpers)
 

@@ -63,7 +63,10 @@ $$
 + \mathcal{R}^{-1} \lambda \mathcal{R}^{-\dagger} - H_0^{\mathrm{loc}},
 $$
 
-where $Z = \mathcal{R}^{\dagger} \mathcal{R}$. It is constructed as
+where $Z = \mathcal{R}^{\dagger} \mathcal{R}$. With ghost quasiparticles
+$\mathcal{R}$ is not square and the self-energy has poles, see
+[the self-energy and the quasiparticle weight](../explanations/self_energy.md).
+It is constructed in both cases as
 
 ```python
 from risb.helpers_triqs import get_sigma_w
@@ -147,7 +150,8 @@ G_iw_loc = get_g_w_loc(G_k_iw)
 ```
 
 The electron filling is `G_qp_iw_loc.total_density()` from the quasiparticle
-Green's function. The interacting Green's function from {{RISB}} only describes
+Green's function. Without ghost quasiparticles the interacting Green's
+function from {{RISB}} only describes
 the quasiparticles: its spectral weight is $Z = \mathcal{R}^{\dagger}
 \mathcal{R}$ instead of 1, because the incoherent part (the Hubbard bands) is
 not described at the saddle point. So its filling is not the electron filling.

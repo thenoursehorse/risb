@@ -59,8 +59,7 @@ def test_diis_is_anderson_acceleration_on_a_linear_problem() -> None:
     assert solver.n <= n + 1
     assert x == pytest.approx(x_star, abs=1e-10)
 
-    # With a short history it keeps its rate down to the tolerance (textbook
-    # Anderson acceleration with 3 vectors needs 84 iterations here)
+    # With a short history it still converges to the tolerance
     solver = DIIS(history_size=3, n_period=10**9)
     solver.solve(linear, np.zeros(n), tol=1e-12, maxiter=100)
     assert solver.success

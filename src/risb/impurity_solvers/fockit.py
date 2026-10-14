@@ -159,7 +159,8 @@ class FockitImpuritySolver(ImpuritySolver):
             {FermionSpace(): modes}, diagonal_symmetries=diagonal
         )
 
-        # The ground state is found in this basis, then written in basis
+        # The states are found in this basis, which also has the permutation
+        # and on-site symmetries, and then written in basis
         self._symmetric_basis = self.basis
         if permutation_symmetries or onsite_symmetries:
             self._symmetric_basis = build_basis(

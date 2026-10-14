@@ -190,7 +190,7 @@ from fockit.algebra import c, cdag, nc, zero
 
 def make_h_loc(V=0.25, U=4):
     """
-    Return the local terms of the bilayer Hubbad model as a fockit operator.
+    Return the local terms of the bilayer Hubbard model as a fockit operator.
 
     Parameters
     ----------

@@ -310,10 +310,9 @@ def get_lagrangian(
     Its stationary points are the solutions of RISB, and its value at a
     solution is the grand potential of RISB, so minus its derivative with
     respect to the temperature at fixed chemical potential is the entropy of
-    RISB. It is written with the expectation
-    values of a fixed state (or thermal ensemble) of each impurity problem, so
-    its derivatives with respect to ``D`` and ``Lambda_c`` are taken at fixed
-    state. All arguments are keyword-only, and the matrices are lists with an
+    RISB. It is written with the expectation values of a fixed state (or
+    thermal ensemble) of each impurity problem, so its derivatives with
+    respect to ``D`` and ``Lambda_c`` are taken at fixed state. All arguments are keyword-only, and the matrices are lists with an
     entry for each cluster, as stored by :class:`risb.LatticeSolver`.
 
     Parameters
@@ -982,7 +981,7 @@ def get_h_qp(
     Parameters
     ----------
     R : numpy.ndarray
-        Renormalization matrix) from electrons to quasiparticles. It can
+        Renormalization matrix from electrons to quasiparticles. It can
         depend on k, indexed as k, orb_i, orb_j.
     Lambda : numpy.ndarray
         Correlation potential of quasiparticles. It can depend on k.

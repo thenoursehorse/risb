@@ -245,7 +245,8 @@ class LatticeSolver:
         #: terms and energies in :attr:`h0_k`.
         self.h0_loc_matrix = self._get_h0_loc_matrix()
 
-        # Bounds the bands of R h0_kin_k R^dag, because Z = R^dag R <= 1
+        # The largest energy of the bands of h0_kin_k from zero, an energy
+        # scale of the quasiparticle bands
         self._kinetic_half_bandwidth = max(
             float(np.max(np.abs(np.linalg.eigvalsh(h0))))
             for h0 in self.h0_kin_k.values()
