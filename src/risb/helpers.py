@@ -287,52 +287,65 @@ def get_f2(
 
 
 def get_lagrangian(
+    *,
     h0_kin_k: BlockMatrixLike,
-    R: BlockMatrixLike,
-    Lambda: BlockMatrixLike,
-    D: BlockMatrixLike,
-    Lambda_c: BlockMatrixLike,
-    Delta_p: BlockMatrixLike,
-    rho_f: BlockMatrixLike,
-    rho_cf: BlockMatrixLike,
-    h_loc_energy: float,
+    R: Sequence[BlockMatrixLike],
+    Lambda: Sequence[BlockMatrixLike],
+    D: Sequence[BlockMatrixLike],
+    Lambda_c: Sequence[BlockMatrixLike],
+    Delta_p: Sequence[BlockMatrixLike],
+    rho_f: Sequence[BlockMatrixLike],
+    rho_cf: Sequence[BlockMatrixLike],
+    h_loc_energy: Sequence[float],
     beta: float,
     mu: float,
+    projectors: Sequence[BlockMatrixLike] | None = None,
+    gf_struct_mapping: Sequence[Mapping[str, str]] | None = None,
 ) -> float:
     r"""
-    Return the RISB Lagrangian of a single cluster that is the whole unit cell.
+    Return the RISB Lagrangian.
 
     Its stationary points are the solutions of RISB. It is written with the
-    expectation values of a fixed, normalized ground state of the impurity
+    expectation values of a fixed, normalized ground state of each impurity
     problem, so its derivatives with respect to ``D`` and ``Lambda_c`` are taken
-    at fixed impurity ground state.
+    at fixed impurity ground state. All arguments are keyword-only, and the
+    matrices are lists with an entry for each cluster, as stored by
+    :class:`risb.LatticeSolver`.
 
     Parameters
     ----------
     h0_kin_k : risb.types.BlockMatrixLike
-        Single-particle dispersion, indexed as k, orb_i, orb_j.
-    R : risb.types.BlockMatrixLike
+        Single-particle dispersion without the local terms of the clusters,
+        indexed as k, orb_i, orb_j.
+    R : list of risb.types.BlockMatrixLike
         Renormalization matrix from electrons to quasiparticles.
-    Lambda : risb.types.BlockMatrixLike
+    Lambda : list of risb.types.BlockMatrixLike
         Correlation potential of quasiparticles.
-    D : risb.types.BlockMatrixLike
+    D : list of risb.types.BlockMatrixLike
         Hybridization coupling of the impurity problem, indexed as
-        ``D[bl][a, alpha]`` with ``a`` a bath orbital.
-    Lambda_c : risb.types.BlockMatrixLike
+        ``D[i][bl][a, alpha]`` with ``a`` a bath orbital.
+    Lambda_c : list of risb.types.BlockMatrixLike
         Bath coupling of the impurity problem.
-    Delta_p : risb.types.BlockMatrixLike
+    Delta_p : list of risb.types.BlockMatrixLike
         Quasiparticle density matrix, as a variable of the Lagrangian.
-    rho_f : risb.types.BlockMatrixLike
+    rho_f : list of risb.types.BlockMatrixLike
         f-electron density matrix of the impurity problem.
-    rho_cf : risb.types.BlockMatrixLike
+    rho_cf : list of risb.types.BlockMatrixLike
         c,f-electron density matrix of the impurity problem.
-    h_loc_energy : float
+    h_loc_energy : list of float
         Expectation value of the local Hamiltonian of the physical orbitals in
         the impurity problem.
     beta : float
         Inverse temperature of the Fermi-Dirac smearing of the quasiparticles.
     mu : float
         Chemical potential.
+    projectors : list of risb.types.BlockMatrixLike, optional
+        The projectors onto the subspace of each cluster, as in
+        :class:`risb.LatticeSolver`.
+    gf_struct_mapping : list of mapping, optional
+        The mapping from the blocks of each cluster to the blocks of
+        ``h0_kin_k``, as in :class:`risb.LatticeSolver`. Default assumes the
+        blocks of every cluster are the blocks of ``h0_kin_k``.
 
     Returns
     -------
@@ -350,32 +363,54 @@ def get_lagrangian(
         L = -\frac{1}{\beta N_k} \sum_k \mathrm{Tr} \log \left( 1 +
         e^{-\beta (\mathcal{R} \epsilon_k \mathcal{R}^{\dagger} + \lambda - \mu)}
         \right)
-        + \langle \hat{H}^{\mathrm{loc}} \rangle
-        + 2 \, \mathrm{Re} \, \mathrm{Tr} (\mathcal{D} \rho^{cf})
-        + \mathrm{Tr} (\lambda^c \rho^f)
-        - \mathrm{Tr} (\lambda^T \Delta^p)
-        - \mathrm{Tr} (\lambda^c \Delta^p)
-        - 2 \, \mathrm{Re} \, \mathrm{Tr} \left( \mathcal{D}
-        \mathcal{R}^T \sqrt{\Delta^p (1 - \Delta^p)} \right),
+        + \sum_i \Big[ \langle \hat{H}^{\mathrm{loc}}_i \rangle
+        + 2 \, \mathrm{Re} \, \mathrm{Tr} (\mathcal{D}_i \rho^{cf}_i)
+        + \mathrm{Tr} (\lambda^c_i \rho^f_i)
+        - \mathrm{Tr} (\lambda_i^T \Delta^p_i)
+        - \mathrm{Tr} (\lambda^c_i \Delta^p_i)
+        - 2 \, \mathrm{Re} \, \mathrm{Tr} \left( \mathcal{D}_i
+        \mathcal{R}_i^T \sqrt{\Delta^p_i (1 - \Delta^p_i)} \right) \Big],
 
-    summed over blocks. The term with the normalization of the impurity ground
-    state is zero and left out.
+    summed over blocks, with :math:`\mathcal{R} = \sum_i \mathbf{P}_i^{\dagger}
+    \mathcal{R}_i \mathbf{P}_i` and :math:`\lambda = \sum_i
+    \mathbf{P}_i^{\dagger} \lambda_i \mathbf{P}_i` in the blocks of
+    ``h0_kin_k``, as in :class:`risb.LatticeSolver`. The terms with the
+    normalization of the impurity ground states are zero and left out.
 
     .. _PRL126401: https://doi.org/10.1103/PhysRevLett.118.126401
 
     """
-    lagrangian = h_loc_energy
-    for bl in R:
-        energies = np.linalg.eigvalsh(get_h_qp(R[bl], Lambda[bl], h0_kin_k[bl], mu))
+    n_clusters = len(R)
+    if gf_struct_mapping is None:
+        gf_struct_mapping = [{bl: bl for bl in h0_kin_k} for _ in range(n_clusters)]
+
+    R_full = {bl: np.zeros(h0.shape[1:], dtype=complex) for bl, h0 in h0_kin_k.items()}
+    Lambda_full = {
+        bl: np.zeros(h0.shape[1:], dtype=complex) for bl, h0 in h0_kin_k.items()
+    }
+    for i in range(n_clusters):
+        for bl in R[i]:
+            bl_full = gf_struct_mapping[i][bl]
+            P = np.eye(R[i][bl].shape[0]) if projectors is None else projectors[i][bl]
+            R_full[bl_full] += P.conj().T @ R[i][bl] @ P
+            Lambda_full[bl_full] += P.conj().T @ Lambda[i][bl] @ P
+
+    lagrangian = 0.0
+    for bl, h0 in h0_kin_k.items():
+        energies = np.linalg.eigvalsh(get_h_qp(R_full[bl], Lambda_full[bl], h0, mu))
         n_k = energies.shape[0]
         lagrangian -= np.sum(np.logaddexp(0, -beta * energies)) / (beta * n_k)
-        Dp = Delta_p[bl]
-        sqrt_term = sqrtm(Dp - Dp @ Dp)
-        lagrangian += 2 * np.real(np.trace(D[bl] @ rho_cf[bl]))
-        lagrangian += np.real(np.trace(Lambda_c[bl] @ rho_f[bl]))
-        lagrangian -= np.real(np.trace(Lambda[bl].T @ Dp))
-        lagrangian -= np.real(np.trace(Lambda_c[bl] @ Dp))
-        lagrangian -= 2 * np.real(np.trace(D[bl] @ R[bl].T @ sqrt_term))
+
+    for i in range(n_clusters):
+        lagrangian += h_loc_energy[i]
+        for bl in R[i]:
+            Dp = Delta_p[i][bl]
+            sqrt_term = sqrtm(Dp - Dp @ Dp)
+            lagrangian += 2 * np.real(np.trace(D[i][bl] @ rho_cf[i][bl]))
+            lagrangian += np.real(np.trace(Lambda_c[i][bl] @ rho_f[i][bl]))
+            lagrangian -= np.real(np.trace(Lambda[i][bl].T @ Dp))
+            lagrangian -= np.real(np.trace(Lambda_c[i][bl] @ Dp))
+            lagrangian -= 2 * np.real(np.trace(D[i][bl] @ R[i][bl].T @ sqrt_term))
     return float(lagrangian)
 
 

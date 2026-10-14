@@ -76,7 +76,7 @@ user to review. Update this file as steps finish. Delete it when done.
    treat it consistently in all those helpers, re-run the U scan (DIIS and
    linear mixing), add a complex Mott test for both solvers. Step 9 may explain
    the large DIIS steps (lambda eigenvalues -51, 194) that reach these states.
-16. [ ] `helpers.get_lagrangian` for several clusters. It handles one cluster equal
+16. [ ] (several clusters done; finite T open) `helpers.get_lagrangian` for several clusters. It handles one cluster equal
    to the unit cell only, but `LatticeSolver` allows several clusters with
    `projectors` and `gf_struct_mapping`; the helper should take the same
    arguments (upfolded R(k), lambda(k) in the quasiparticle term; embedding
@@ -111,6 +111,16 @@ user to review. Update this file as steps finish. Delete it when done.
    the 0 x infinity terms in the gradient), check it against the literature
    (ghost-GA has non-invertible R) and numerically (approach T -> 0), then
    decide on an implementation.
+19. [ ] Relax the projector assumptions (user: "a VERY big restriction",
+   "100% sure that can be relaxed"). Now required: projectors the same at
+   every k-point, orthonormal rows, no overlap between clusters, covering
+   every orbital of h0_k (an uncovered orbital gets R = 0, lambda = 0, a
+   flat band at 0). Relax at least k-independence (e.g. Wannier-like
+   projectors that vary with k) and full coverage (uncorrelated orbitals
+   keeping their bare band: R = 1, lambda = 0 there, h0_kin unchanged).
+   Check the up/down-folding maths for each, extend `check_projectors`, and
+   test (the supercell test is a starting point; a partially covered cell
+   with an uncorrelated orbital should reproduce the covered result).
 
 ## Commits
 
@@ -503,6 +513,52 @@ Done (step 8):
   dh_trimer -1); particle-hole sector reproduces the plain solve; missing
   symmetries raise; "warn" warns at D = 0 and not with hybridization.
 - How-to: "Choosing the eigensolver", "Symmetries", "Degenerate ground states".
+
+## Item 16 notes (multi-cluster and finite-T get_lagrangian)
+
+- Projector up/down-folding (user asked to check first): R_full = sum_i
+  P_i^dag R_i P_i (and lambda) up; rho_qp, ke, h0_loc down with P (...) P^dag;
+  h0_kin = h0 - sum_i P_i^dag h0_loc_i P_i. Nothing else is upfolded.
+  Assumptions (were unchecked and undocumented): P k-independent, orthonormal
+  rows, no overlap between clusters, full coverage of h0_k (an uncovered
+  orbital gets R = 0, lambda = 0: a flat band at 0). Supercell check: the
+  one-site cubic Hubbard model (U = 4) as a 2-site cell, one cluster per
+  site: Z identical to 12 digits (plain and renamed blocks), lambda to 2e-7.
+  Done (user): assumptions documented (projectors docstring, how-to
+  "Multiple clusters"), `check_projectors=False` option on LatticeSolver
+  (ValueError: k-dependent, not covering, not orthonormal / overlapping;
+  kagome and decorated honeycomb pass), tests: the supercell reproduces the
+  one-site Z (both solvers, plain and renamed blocks), check_projectors
+  rejects the three bad cases and is off by default. Suite 85 passed.
+- Decisions (user): keyword-only per-cluster lists; finite-T via an entropy
+  argument (fockit only), but "be careful".
+- Finite T: the Gibbs-averaged impurity (`beta`) is not a consistent
+  finite-T RISB. U = 0, complex 2-orbital: ground-state impurity gives
+  Z = 1 and L = Omega_0 (exact) at every beta (2, 5, 10, 20, 40); thermal
+  impurity gives Z = 0 (trap) at beta 2, Z = 0.937 / 0.975 at beta 5 (a
+  genuine self-consistent solution, error 1e-13), 0.99989 at 10, 1 at 20;
+  L = -1.5094 and L - S/beta = -1.5630 vs Omega_0 = -1.5555 at beta 5. So
+  `beta` renormalizes the quasiparticles without interactions when T is
+  comparable to the impurity's gaps; only safe for T far below them. The
+  proposed -S/beta term would not fix it (the solution itself is off).
+  Giuli et al.'s finite-T functional subtracts the free energy of an
+  auxiliary quadratic embedding (Omega_0,emb), presumably to cancel this
+  (not verified); Ayral et al. use a Bose form. A correct finite-T embedding
+  changes the self-consistency equations, not only the averaging.
+- User: RISB / slave bosons are known to have a problem with the entropy in
+  the free energy; the criterion is that the definitions / maths are right
+  (the finite-T Lagrangian's stationary points are the thermal cycle's
+  solutions), not that it gives the physical entropy (check the literature on
+  the known issue). Multi-cluster first; finite T afterwards.
+- Multi-cluster `get_lagrangian` done: keyword-only, per-cluster lists (as
+  LatticeSolver stores them), `projectors`, `gf_struct_mapping`; R and lambda
+  upfolded as in LatticeSolver. Stationarity test made a helper; new test on
+  a 2-site cell with a cluster per site. The sites must differ in their
+  hopping (site 0's y, z hopping x 1.3): a staggered on-site energy is local,
+  goes into h0_loc, leaves h0_kin swap-symmetric, and then swapped projectors
+  still pass. With the hopping difference, swapped projectors fail the test
+  (R derivative of cluster 0). `one_band_cubic_h0_k` moved to test_common.
+  Suite 86 passed (65 passed, 21 skipped without TRIQS).
 
 ## Item 18 notes (frozen quasiparticle orbitals)
 

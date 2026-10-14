@@ -6,8 +6,13 @@ from pathlib import Path
 import h5py
 import numpy as np
 import pytest
+from fockit.algebra import nc
 from numpy.typing import NDArray
-from test_common import build_two_orbital_complex_h0_k, random_unitary
+from test_common import (
+    build_two_orbital_complex_h0_k,
+    one_band_cubic_h0_k,
+    random_unitary,
+)
 
 from risb import LatticeSolver, helpers
 from risb.helpers_fockit import h_int_kanamori
@@ -120,6 +125,68 @@ def test_get_h0_kin_k_removes_local_terms_with_complex_projector() -> None:
     assert h0_kin_k["up"] == pytest.approx(h0_k["up"] - P.conj().T @ h0_loc @ P)
 
 
+def assert_lagrangian_is_stationary(
+    S: LatticeSolver,
+    impurity_solvers: list[FockitImpuritySolver],
+    kweight: SmearingKWeight,
+) -> None:
+    assert kweight.mu is not None
+    mu = kweight.mu
+    variables = {
+        "R": S.R,
+        "Lambda": S.Lambda,
+        "D": S.D,
+        "Lambda_c": S.Lambda_c,
+        "Delta_p": S.rho_qp,
+    }
+    h_loc_energy = [
+        float(np.real(s.overlap(s.h_int + s.h0_loc))) for s in impurity_solvers
+    ]
+
+    def lagrangian(name: str, i: int, bl: str, E: NDArray[np.inexact]) -> float:
+        shifted = [dict(cluster) for cluster in variables[name]]
+        shifted[i][bl] = shifted[i][bl] + E
+        v = {**variables, name: shifted}
+        return helpers.get_lagrangian(
+            h0_kin_k=S.h0_kin_k,
+            R=v["R"],
+            Lambda=v["Lambda"],
+            D=v["D"],
+            Lambda_c=v["Lambda_c"],
+            Delta_p=v["Delta_p"],
+            rho_f=S.rho_f,
+            rho_cf=S.rho_cf,
+            h_loc_energy=h_loc_energy,
+            beta=kweight.beta,
+            mu=mu,
+            projectors=S.projectors,
+            gf_struct_mapping=S.gf_struct_mapping,
+        )
+
+    # R and D are general matrices, Lambda, Lambda_c and Delta_p Hermitian
+    step = 1e-6
+    for name in variables:
+        for i in range(S.n_clusters):
+            for bl, n in S.gf_struct[i]:
+                for a, b in product(range(n), repeat=2):
+                    for phase in [1, 1j]:
+                        E = np.zeros((n, n), dtype=complex)
+                        E[a, b] = phase
+                        if name not in ("R", "D"):
+                            E = E + E.conj().T
+                        derivative = (
+                            lagrangian(name, i, bl, step * E)
+                            - lagrangian(name, i, bl, -step * E)
+                        ) / (2 * step)
+                        assert derivative == pytest.approx(0, abs=1e-7), (
+                            name,
+                            i,
+                            bl,
+                            a,
+                            b,
+                        )
+
+
 def test_converged_solution_is_a_stationary_point_of_the_lagrangian() -> None:
     U, J = 3.0, 0.6
     Up = U - 2 * J
@@ -146,50 +213,38 @@ def test_converged_solution_is_a_stationary_point_of_the_lagrangian() -> None:
         S.R[0][bl] = u.conj().T
     S.solve(tol=1e-8)
     assert S.optimize.success
-    assert kweight.mu is not None
+    assert_lagrangian_is_stationary(S, [impurity_solver], kweight)
 
-    variables = {
-        "R": S.R[0],
-        "Lambda": S.Lambda[0],
-        "D": S.D[0],
-        "Lambda_c": S.Lambda_c[0],
-        "Delta_p": S.rho_qp[0],
-    }
-    h_loc_energy = float(
-        np.real(impurity_solver.overlap(impurity_solver.h_int + impurity_solver.h0_loc))
+
+def test_converged_solution_with_several_clusters_is_a_stationary_point_of_the_lagrangian() -> (
+    None
+):
+    # One band on a cell of two sites, with a cluster on each site. The
+    # hopping along y and z is larger on site 0, so the sites are inequivalent
+    h0_k = one_band_cubic_h0_k(6, supercell=True)
+    h0_k[:, 0, 0] *= 1.3
+    spin_names = ["up", "dn"]
+    gf_struct = [[(bl, 1) for bl in spin_names]] * 2
+    impurity_solvers = [
+        FockitImpuritySolver(4 * nc("up", 0) * nc("dn", 0), gf) for gf in gf_struct
+    ]
+    kweight = SmearingKWeight(beta=40, n_target=2)
+    S = LatticeSolver(
+        h0_k=dict.fromkeys(spin_names, h0_k),
+        gf_struct=gf_struct,
+        impurity_solvers=impurity_solvers,
+        update_weights=kweight.update_weights,
+        projectors=[
+            dict.fromkeys(spin_names, np.array([[1.0, 0.0]])),
+            dict.fromkeys(spin_names, np.array([[0.0, 1.0]])),
+        ],
     )
-    mu = kweight.mu
-
-    def lagrangian(name: str, bl: str, E: NDArray[np.inexact]) -> float:
-        v = {**variables, name: {**variables[name], bl: variables[name][bl] + E}}
-        return helpers.get_lagrangian(
-            S.h0_kin_k,
-            v["R"],
-            v["Lambda"],
-            v["D"],
-            v["Lambda_c"],
-            v["Delta_p"],
-            S.rho_f[0],
-            S.rho_cf[0],
-            h_loc_energy,
-            beta=40,
-            mu=mu,
-        )
-
-    # R and D are general matrices, Lambda, Lambda_c and Delta_p Hermitian
-    step = 1e-6
-    for name in variables:
-        for bl, _ in gf_struct:
-            for i, j in product(range(2), repeat=2):
-                for phase in [1, 1j]:
-                    E = np.zeros((2, 2), dtype=complex)
-                    E[i, j] = phase
-                    if name not in ("R", "D"):
-                        E = E + E.conj().T
-                    derivative = (
-                        lagrangian(name, bl, step * E) - lagrangian(name, bl, -step * E)
-                    ) / (2 * step)
-                    assert derivative == pytest.approx(0, abs=1e-7), (name, bl, i, j)
+    for i in range(2):
+        for bl in spin_names:
+            S.Lambda[i][bl] = np.array([[2.0]])
+    S.solve(tol=1e-8)
+    assert S.optimize.success
+    assert_lagrangian_is_stationary(S, impurity_solvers, kweight)
 
 
 def test_completely_full_orbital_is_decoupled_and_the_rest_is_unchanged() -> None:
