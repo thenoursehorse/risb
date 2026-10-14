@@ -34,7 +34,7 @@ user to review. Update this file as steps finish. Delete it when done.
    a parametrization of R or the f-orbital basis that removes the redundant
    directions), or a root finder that projects out the null space. Check first
    that the null directions really are the gauge.
-10. [ ] Investigate the claim in `docs/how-to/green_functions.md`: "The
+10. [x] (done, see Item 10 notes; docs sentence fixed) Investigate the claim in `docs/how-to/green_functions.md`: "The
    interacting Green's function from RISB only has the quasiparticle part, so its
    filling is reduced by Z." It implies RISB's G(k, w) = R^dag G_qp R is missing
    a (local/incoherent) part. Checked so far (bilayer example only): G filling =
@@ -468,6 +468,61 @@ Done (step 8):
   dh_trimer -1); particle-hole sector reproduces the plain solve; missing
   symmetries raise; "warn" warns at D = 0 and not with hybridization.
 - How-to: "Choosing the eigensolver", "Symmetries", "Degenerate ground states".
+
+## Item 10 notes (physical Green's function)
+
+- User's question (theory exploration): R only dresses the itinerant
+  (hopping) part; the local part is exact in the slave bosons (embedding).
+  G = R^dag G_qp R is not an isometry (weight Tr R^dag R = Tr Z, not M), so
+  its filling drops with Z. Should G be an itinerant part with R plus a local
+  part from the bosons, G = R^dag G_qp R + G_inc(w), and does that fix the
+  filling?
+- Sum rules fix G_inc's weight (1 - R^dag R) and equal-time density
+  (rho_c - R^dag n_qp R), not its w dependence (no boson dynamics at the
+  saddle point). Validity needs 0 <= rho_c - R^dag n_qp R <= 1 - R^dag R.
+- Scope (user): A literature (definitions only, checked), B derivation in
+  risb's conventions, C numbers (validity condition; embedding c Green's
+  function as a G_inc candidate) on bilayer half filled, bilayer n = 1.6, M2,
+  one large-U point, D report. No code.
+- Literature (definitions, checked against our numbers):
+  Lechermann et al. PRB 76, 155102 (2007): H_loc incl. its one-body part is
+  represented exactly in the bosons (their Eq. 47), only the intersite
+  hopping through R (Eq. 49); G from Dyson with the linear Sigma (Eqs. 53,
+  55); intro: incoherent (high-energy) excitations come from fluctuations
+  around the saddle point. Lanata, Lee, Yao, Dobrosavljevic PRB 96, 195126
+  (2017), supplement Eqs. 45-49: A(k, w) = R^dag delta(w - H_qp) R from
+  inserting projectors on the Gutzwiller quasiparticle excitations, "not a
+  complete basis", so the weight is R^dag R = Z; with ghost orbitals the
+  weight is [R~^dag R~]_11 ~ 1 for all U and the Hubbard bands appear (main
+  text). Raimondi & Castellani PRB 48, 11453 (1993): Hubbard bands from
+  Gaussian boson fluctuations (abstract only, not read).
+- Derivation (sketch): the embedding state's one-body density matrix Gamma
+  over (c, f) has 0 <= Gamma <= 1. Its Schur complements with the
+  stationarity condition rho_cf = R^T sqrt(Delta (1 - Delta)) give, in G's
+  index order ([a, b] = <c^dag_b c_a>), n_inc = rho_c^T - R^dag rho_qp^T R
+  >= 0 and (1 - R^dag R) - n_inc >= 0. So G_inc with the sum-rule weight and
+  density is always a valid local spectral function at a RISB solution, and
+  Z = R^dag R <= 1.
+- Numbers (scratchpad `item10.py`, per spin block, method eigh):
+
+  | model | Tr Z | filling G | n Z_mean | n_inc eig | (1-Z) - n_inc eig |
+  | --- | --- | --- | --- | --- | --- |
+  | bilayer U=4 n=2 | 0.906 | 0.4529 | 0.4529 | 0.257, 0.290 | 0.257, 0.290 |
+  | bilayer U=4.5 n=2 | 0.587 | 0.2933 | 0.2933 | 0.331, 0.376 | 0.331, 0.376 |
+  | bilayer U=4 n=1.6 | 1.321 | 0.5284 | 0.5286 | 0.125, 0.147 | 0.193, 0.214 |
+  | M2 n=2 | 1.270 | 0.6349 | 0.6349 | 0.150, 0.215 | 0.150, 0.215 |
+  | M2 n=1.6 | 1.462 | 0.5814 | 0.5846 | 0.079, 0.140 | 0.135, 0.185 |
+
+  Filling of G = Tr(R^dag rho_qp^T R); equals n Z_mean only with
+  particle-hole symmetry or equal Z. G_qp and rho_c fillings = n. Validity
+  condition holds strictly everywhere. Bilayer U >= 5 does not converge
+  (item 15).
+- Embedding c Green's function (Lehmann, full Fock space): weight 1 and
+  density rho_c (to 1e-12, by construction); poles at |w - mu| < 0.6 and
+  Hubbard-like ones at |w - mu| ~ 2.3-3 (bilayer U = 4). But its low-energy
+  weight (bilayer U=4: 0.61 vs Tr Z 0.91; M2: 0.89 vs 1.27) and high-energy
+  occupied weight (0.70 vs Tr n_inc 0.55) do not match the RISB split, so it
+  is not R^dag G_qp R + G_inc and cannot be used as G_inc directly.
 
 ## Step 9 notes
 

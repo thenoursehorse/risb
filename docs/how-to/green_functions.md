@@ -147,5 +147,7 @@ G_iw_loc = get_g_w_loc(G_k_iw)
 ```
 
 The electron filling is `G_qp_iw_loc.total_density()` from the quasiparticle
-Green's function. The interacting Green's function from {{RISB}} only has the
-quasiparticle part, so its filling is reduced by $Z$.
+Green's function. The interacting Green's function from {{RISB}} only describes
+the quasiparticles: its spectral weight is $Z = \mathcal{R}^{\dagger}
+\mathcal{R}$ instead of 1, because the incoherent part (the Hubbard bands) is
+not described at the saddle point. So its filling is not the electron filling.
