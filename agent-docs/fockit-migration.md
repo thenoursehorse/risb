@@ -51,6 +51,13 @@ user to review. Update this file as steps finish. Delete it when done.
    notes). First check the finite-temperature RISB/gGA literature on whether a
    mixed embedding state is the right prescription, and find a case that
    `symmetrizers` cannot handle.
+14. [ ] Make risb's RISB cycle gauge covariant (see Step 14 notes). Done: fixes 1-3
+   (hybridization index order, Lambda_c / lambda from the gauge-invariant
+   term with the exact matrix derivative, f2), Z = R^dag R, get_sigma_w with
+   (R^dag R)^-1, covariance tests. Before, for complex non-commuting models the
+   result depended on the starting gauge and Sigma was wrong when R is not
+   normal; all current examples were unaffected (R normal). Left: the
+   independent variational check on M2.
 
 ## Commits
 
@@ -443,6 +450,210 @@ Done (step 8):
   dh_trimer -1); particle-hole sector reproduces the plain solve; missing
   symmetries raise; "warn" warns at D = 0 and not with hybridization.
 - How-to: "Choosing the eigensolver", "Symmetries", "Degenerate ground states".
+
+## Step 9 notes
+
+Scope (user): 1) derive how R, lambda, D, Lambda_c, rho_qp, rho_f, rho_cf
+transform under a quasiparticle rotation u in risb's conventions; 2) test
+numerically whether one RISB cycle commutes with the gauge (U(n), O(n), U(1)
+per block; with/without symmetrizers; force_real); 3) compare with the measured
+flat directions of the Jacobian (one_band, bilayer, Kanamori 2 orbitals) and
+explain the 3 of 24; 4) try gauge fixing (R parametrization, lambda or rho_qp
+diagonal = natural-basis gauge, null-space projection) and measure conditioning,
+Krylov with a step-size stop, DIIS iterations. Scratchpad only; stop before
+changing LatticeSolver.
+Reference (user): the supplement of arXiv:1606.09614 (Lanata et al., PRL 118,
+126401 (2017)) discusses the gauge; `get_rho_qp` cites its Eq. 112
+(natural-basis gauge) and says risb does not use that gauge. risb's equations
+follow PRX 5, 011008 (2015), Eqs. 32-39.
+Naive count: U(2) per block, two blocks, so 8; measured 3.
+
+Results so far (bilayer, U=4, V=0.25, `method="eigh"`, DIIS tol 1e-13):
+- Flat directions of the Jacobian: 3 of 24 (symmetrized, complex), 6 of 24
+  (not symmetrized, complex), 0 of 12 with `force_real` (R restricted to real
+  symmetric matrices removes the gauge here; smallest singular value 0.07).
+- Of the U(2) rotations, only those commuting with lambda at the solution
+  (e.g. exp(i t sigma_x); the solution is layer symmetric, R = 0.673 * 1) map
+  the root to a root. A real rotation exp(i t sigma_y) gives |F| = 0.59 for
+  every convention tried (R -> u^dag R, R u, u^T R, R u*).
+- Stage by stage under that rotation: rho_qp -> u^dag rho_qp u and
+  D -> u^dag D are covariant; Lambda_c is not, so rho_f, rho_cf, R, Lambda
+  after it are not. Cause: item 14. Lanata's gauge group (supplement Eqs.
+  41-43) is the full U(n), so the 3 (or 6) flat directions are what is left
+  of the gauge after risb's non-covariant Lambda_c.
+- Lanata et al. (supplement Sec. VI) argue the gauge freedom speeds up
+  quasi-Newton convergence, and that natural-basis gauge fixing is costly
+  (an extra equation, Eq. 126) and breaks covariance under changes of basis.
+
+## Step 14 notes
+
+- The exact derivative of Tr[Y f(rho)] + c.c., f(x) = sqrt(x (1 - x)), is
+  -(W^T + W^*) with W = V [F o (V^dag Y V)] V^dag, rho = V diag(delta) V^dag,
+  F_ij = (1 - delta_i - delta_j) / (f(delta_i) + f(delta_j)) (stable divided
+  difference). Matches finite differences to 1e-9 (real 2x2, complex 3x3,
+  4x4). risb's `get_lambda_c` and `get_lambda` (same form) differ by O(1) for
+  random non-commuting inputs, and agree to 1e-12 when R D commutes with rho.
+- But in a non-commuting model (2 orbitals, cubic, crystal field 0.4,
+  inter-orbital hopping 0.3 cos kx, Kanamori U=3 J=0.6, |[rho_qp, (RD)^T]| =
+  6.9e-3), risb's formula and the exact one give the same physics to 8 digits
+  (eigenvalues of Z and of rho_c), and the same in three orbital bases (the
+  Kanamori term is invariant under the rotation). The exact one converged in
+  42-45 DIIS iterations vs 147 (another run: 156 vs 261). At the solution the
+  raw derivative terms differ by 1.4e-2, but Lambda_c is projected onto
+  Hermitian matrices right after, and lambda_new = lambda + T(rho_qp) - T(rho_f)
+  makes T cancel at the fixed point (rho_f = rho_qp). So earlier "possible
+  correctness bug" was an overclaim: no wrong result has been shown.
+- A change of orbital basis cannot test this: it rotates the physical and
+  quasiparticle indices together, and risb's formulas are covariant under that.
+  Only a gauge rotation (quasiparticle index alone) exposes it.
+- Gauge covariance of the risb cycle is broken in more than one place:
+  `get_d` returns D with the quasiparticle index first (transforms as
+  u^dag D, like Lanata's D_a,alpha), but the impurity solvers use D[alpha, a]
+  with the physical index first, i.e. they get D^T; and risb's Lambda formula
+  contracts R's physical index with D's quasiparticle index (R @ D), where
+  Lanata contracts the physical indices (R D^T). Best combination found
+  (Y = R D^T, impurity gets D^T, R -> u^dag R): |F(u x*)| = 9e-3, still not
+  covariant, so something else is too (not yet found; candidates: get_r,
+  get_f1, get_rho_qp's transpose, the lopsided ke).
+- Option (a) (user): are risb's results ever physically wrong? Models (8^3
+  cubic mesh, `method="eigh"`, no symmetrizers): M1 2 orbitals, crystal field,
+  real inter-orbital hopping; M2 same with complex hopping; M3 3 orbitals,
+  three crystal fields, inter-orbital hoppings, Kanamori U=2.5 J=0.5; M4 one
+  4x4 block (2 orbitals x 2 spins), complex spin-orbit-like coupling, Hubbard.
+  risb vs the "exact" Lambda formula: M1, M2 same physics (1e-12) and at
+  risb's solution the Hermitian parts of the two derivative terms agree to
+  ~1e-14 (so risb's formula is exact at those solutions). M4 same agreement
+  (2e-14) at risb's solution, but the exact formula did not converge (2999 it)
+  where risb's did (31). M3: both converge to |F| ~ 3e-14 at tol 1e-13 but to
+  different solutions (Z eigenvalues differ by 4.3e-6; Hermitian parts differ
+  by 3.2e-5 at both), so at least one is wrong. The "exact" formula is not a
+  reliable judge: it keeps risb's R @ D contraction.
+- Gauge-rotated starts with risb's unmodified code (Lambda = mu0 * 1,
+  R = u^dag for random U(n) u; DIIS, tol 1e-12, cap 3000): every unrotated
+  start (R = 1) converged (195-960 it); every rotated start failed (12/12,
+  M1-M4). With a 20000 cap, some M1/M2 rotated starts converged after
+  5313-16803 it. In a gauge-covariant loop a rotated start is an equivalent
+  problem. So risb's broken covariance makes convergence depend on starting
+  from a gauge-special point like R = 1.
+- Those that converge (cap 20000): M1 rotated start 2 (5477 it) has the same
+  physics as the unrotated start (Z 2.7e-15, rho_c 8.8e-14). M2 (complex):
+  rotated starts 2 (16836 it) and 3 (9582 it) converge to the same solution as
+  each other, which differs from the unrotated start's solution (Z eigenvalues
+  by 4.4e-4, rho_c eigenvalues by 1.6e-3). Either M2 has two RISB solutions,
+  or risb's answer depends on the starting gauge; cannot tell which is
+  physical with the current, non-covariant cycle.
+- Conclusion of (a): for every current example and test (commuting/symmetric
+  cases) risb is unaffected. For complex, non-commuting models risb's result
+  can depend on the starting point, convergence from anything but R = 1 is
+  very slow, and two Lambda formulas give different solutions in M3. A
+  gauge-covariant cycle (option (b)) is needed to know the right answer.
+- Option (b) (user): make the whole cycle gauge covariant, explaining every
+  step. Reference for "correct" (user): (iii) checks that must hold whatever
+  the formalism (U = 0 limit for any starting gauge, covariance of one cycle,
+  derivative formulas vs finite differences), then a direct variational
+  minimization on M2 as the final judge. Lanata's papers may be used for
+  definitions, but every definition is checked, not trusted.
+- Lattice-side transformation laws, derived from risb's own definitions (f =
+  u f'): R -> u^dag R, lambda -> u^dag lambda u, rho_qp[a, b] = <f^dag_a f_b>
+  -> u^T rho_qp u*, ke[alpha, b] = (h0 R^dag rho_qp^T)[alpha, b] -> ke u,
+  D = K^(-1/2) ke^T -> u^T D (agree with Lanata Eqs. 41, 43). The embedding is
+  then equivalent under the rotation only if the hybridization is
+  sum D[a, alpha] c^dag_alpha f_a (D's qp index first); risb's solvers use
+  D[alpha, a].
+- U = 0 limit, M2 (complex), risb's current code: correct physics from every
+  start (Z = 1, rho_c = exact non-interacting density matrix to 4e-13), but
+  the unrotated start converges in 1 iteration and rotated starts (R = u^dag,
+  a gauge copy of the exact solution) in 765-1464. A covariant cycle would take
+  1 from any rotated start: a formalism-independent test for each fix.
+- Fix 1 (applied): both impurity solvers' `set_h_hybr` use D transposed, i.e.
+  sum D[a, alpha] c^dag_alpha f_a (docstrings state the index order). Tests:
+  69 pass. (Its first measurement was wrong: `measure.py` imported scratch
+  code that replaced risb's Lambda functions. Clean numbers below.)
+- Impurity-side laws (derived, with sum D[a, alpha] c^dag_alpha f_a): rho_f ->
+  u^T rho_f u*, rho_cf -> rho_cf u*, R_new -> u^dag R_new, lambda_new ->
+  u^dag lambda_new u; hole-form bath sum f_a Lambda_c[a, b] f^dag_b needs
+  Lambda_c -> u^T Lambda_c u*. So f2 = rho_f - rho_qp^T is not covariant
+  (fix 3: rho_f - rho_qp).
+- Fix 2 (proposed): from the gauge-invariant term Tr(D R^T f(rho_qp)) + c.c.,
+  lambda + lambda_c = -(W^T + W^*), W = V [F o (V^dag D R^T V)] V^dag; risb's
+  Lambda_c is the transpose (hole-form bath): get_lambda_c = -(W + W^dag) -
+  Lambda^T, get_lambda = -(W_f^T + W_f^*) - Lambda_c^T (rho_f in place of
+  rho_qp).
+- Fix 2 (applied): `helpers.get_lambda_c` = -G^T - Lambda^T and
+  `get_lambda` = -G(rho_f) - Lambda_c^T, with G = W^T + W^* the gradient of
+  Tr(D R^T f(rho)) + c.c. (private `_sqrt_term_gradient`; checked against
+  finite differences to 1e-8 for complex 2x2-4x4).
+- Clean measurements (`measure.py`, M2 interacting, one generic U(2) u, risb's
+  own functions asserted):
+  original: |F(u x*)| 0.83, 3/8 stages covariant, U = 0 rotated starts
+  [1176, 972, no], M2 from R = 1 195 it;
+  fix 1 only: 4.5e-3, 3/8, [1035, no, no], 1125 it;
+  fix 1 + 2: 3.8e-13 (= |F(x*)|), 8/8, [1, 1, 1], 108 it.
+  The default cycle (error_fun="recursion") is now gauge covariant. f2 is
+  only used with error_fun="root" and is still not covariant (fix 3).
+- After fix 2: 2 tests fail, `test_scipy_root[{fockit,atom_diag}-bilayer-
+  krylov]`: Lambda differs from the expected matrix by 3e-9 (tolerance 1e-10)
+  but is a small gauge rotation of it (same eigenvalues; mu passes). Krylov
+  stops on the residual, which is now zero along the whole gauge orbit.
+- Found: `LatticeSolver.Z` is R R^dag (quasiparticle basis, gauge
+  dependent); the physical weight is R^dag R (same eigenvalues).
+  `helpers_triqs.get_sigma_w` uses (R R^dag)^-1 where G = R^dag G_qp R gives
+  (R^dag R)^-1 (not yet verified).
+- Proposed order: (1) lattice tests compare gauge-invariant quantities (mu,
+  eigenvalues of Lambda and Z); (2) fix 3 (f2 = rho_f - rho_qp) and measure
+  error_fun="root"; (3) Z = R^dag R; (4) check get_sigma_w and the other
+  Green's function helpers for gauge invariance; (5) covariance tests.
+- Done after fix 2 (user approved the order):
+  (1) `test_latticesolver.do_assert` compares mu and the eigenvalues of
+  Lambda and Z (gauge invariant); the 2 Krylov tests pass again.
+  (2) Fix 3: `get_f2` = rho_f - rho_qp. Before: error_fun="root" residual at
+  the rotated solution 7.8e-3; after 2.3e-13 (= at x*). At the R = 1 solution
+  rho_qp happened to be real symmetric, so both forms were 0 there.
+  (3) `LatticeSolver.Z` = R^dag R (physical orbitals, gauge invariant; same
+  eigenvalues as the old R R^dag; equal when R is normal, as in all examples).
+  (4) `helpers_triqs.get_sigma_w`: Z^-1 = (R^dag R)^-1 (from G = R^dag G_qp R:
+  Sigma = (1 - (R^dag R)^-1)(w + mu) + R^-1 lambda R^-dag - h0_loc). M2 (R not
+  normal): Dyson vs R^dag G_qp R disagreed by 1.2e-2 at the solution and 0.45
+  at the rotated one, Sigma changed by 0.73 under rotation; after: 1e-15,
+  2e-15. `docs/how-to/green_functions.md` says Z = R^dag R.
+  (5) Tests (behaviour, public interface), each failing on the original code
+  and passing now: `test_quasiparticle_basis_of_the_starting_guess_does_not_
+  change_the_physics` and `test_rotated_copy_of_the_non_interacting_solution_
+  is_converged` (test_latticesolver, both solvers; complex 2-orbital model
+  `build_two_orbital_complex_h0_k` and `random_unitary` in test_common), and
+  `test_self_energy_does_not_depend_on_the_quasiparticle_basis` (new
+  tests/test_helpers_triqs.py, skips without TRIQS).
+- Interacting M2 now: rotated starts converge in 25-28 it like the unrotated
+  start, same physics (Z 6e-12, mu 3e-10), both solvers. 74 tests pass (56 +
+  18 skipped without TRIQS); lint, mypy, strict docs pass.
+- Derivative method: Daleckii-Krein (eigensystem, divided differences) kept
+  over the equivalent Sylvester form (sqrt(K) Z + Z sqrt(K) = D R^T,
+  W = (1 - rho) Z - Z rho; agree to 2e-14): 3-4.5x faster for block sizes
+  1-10 (5-19 us vs 22-84 us). Docstrings of `get_lambda_c` and
+  `_sqrt_term_gradient` name the method. The scalar f'(rho) form with the
+  corrected D R^T pairing is also gauge covariant but differs from the exact
+  derivative (1.4 on a random non-commuting 3x3), so covariance alone does not
+  fix the formula.
+- Insulating regime check (user asked), complex 2-orbital model
+  (`build_two_orbital_complex_h0_k`, Kanamori J = 0.2 U), DIIS from R = 1:
+  original code: U = 3 converges (Z 0.55, 0.69); U = 4 Z = 0 after 530 it;
+  U = 5, 6 crash (singular matrix); U = 7, 8 reach Z = 0, but by a blow-up
+  (error 1.2e8 at call 6, then lambda = 0, R = 0, mu = 0, the trivial Mott
+  fixed point). New code: U = 3 identical; U >= 4 all crash (ARPACK error,
+  NaN, singular matrix). With linear mixing both codes crash at U >= 4.
+  Cause: iterates reach rho_qp eigenvalues at 0 or 1 (e.g. 1 + 3e-15), where
+  every K^(-1/2) formula (get_d, get_r, get_lambda_c, get_lambda, get_f1) is
+  singular; the new gradient gives NaN there (real sqrt of a tiny negative).
+  Complex-branch sqrt or clipping eigenvalues in the gradient alone does not
+  help (other helpers then hit a singular matrix). Starting exactly at R = 0
+  is accepted as converged at once by both; the existing Mott tests (real,
+  symmetric) pass.
+- Still to do for (iii): the independent variational check on M2.
+- Unblocked: step 9 (gauge freedom and convergence speed; Lanata's claim).
+- Tests to add once the cycle is covariant (user, done above): through `S.R`, `S.Lambda`,
+  `S.solve()`: U = 0, a gauge-rotated copy of the exact solution converges in
+  1-2 iterations; complex non-commuting interacting model, rotated and
+  unrotated starts give the same physics without many more iterations.
 
 ## Findings (step 1)
 
