@@ -144,7 +144,7 @@ user to review. Update this file as steps finish. Delete it when done.
    update, and a test on real input (the user has NiO projectors and h_k, and
    another workflow to point to). Not needed: k-point symmetrization and
    projector conditions.
-24. [ ] Investigate adding ghost RISB (g-RISB / ghost-GA) to risb (user): from
+24. [x] (done: steps 1-4 at T = 0; finite T is item 30) Investigate adding ghost RISB (g-RISB / ghost-GA) to risb (user): from
    Lanata's theory papers only, not other codes. What changes (bath larger
    than the impurity, rectangular R, the ghost orbitals' Lambda, the
    embedding sector), what it costs with fockit, and how it fits risb's
@@ -157,7 +157,7 @@ user to review. Update this file as steps finish. Delete it when done.
    B, or a mix, has no obvious half-filled sector ((B + 1) nu / 2 per block
    need not be an integer); what Lanata's papers say about the embedding's
    particle number then.
-27. [ ] Remove AtomDiag (user): AtomDiagImpuritySolver and what only it
+27. [x] (done: removed the solver, the tests' solver parametrization (101 tests, no skips), the benchmark's AtomDiag columns, the docs section and about entry; the TRIQS citation moved to the Green's function how-to; get_C_Op stays for item 28 because helpers_triqs.matrix_to_Op uses it) Remove AtomDiag (user): AtomDiagImpuritySolver and what only it
    needs.
 28. [ ] Investigate the benefit of having helpers_triqs and its Green's
    function helpers at all (user). Should the Green's function helpers be in
@@ -166,6 +166,13 @@ user to review. Update this file as steps finish. Delete it when done.
    the conversation (e.g., "ARPACK can fail (error 3, no shifts could be
    applied)") and to use phrases that do not make sense (e.g., "Renormalization
    matrix in the blocks of the lattice, quasiparticles by orbitals").
+30. [ ] Ghost RISB at finite temperature (user; from item 24 step 5). In the
+   4c model (two-site cubic cell, U = 2, fixed mu = 1, B = 3) the cycle does
+   not converge above T ~ 0.03, with a thermal or a ground-state impurity.
+   risb's finite T (Gibbs weights in the half-filled sector) is not Lanata's
+   finite-T ghost functional (arXiv:2603.20559: grand-canonical traces and an
+   extra quadratic embedding H_0emb), which GEM implements by fitting thermal
+   density matrices.
 
 ## Commits
 

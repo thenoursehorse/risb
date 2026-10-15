@@ -326,13 +326,3 @@ impurity solvers passed to `LatticeSolver`.
 `DummyImpuritySolver` has no `overlap` method. Rotationally invariant expectation
 values can be obtained from the impurity solver that `DummyImpuritySolver` copies.
 :::
-
-## `AtomDiagImpuritySolver`
-
-risb also has
-{py:class}`~risb.impurity_solvers.AtomDiagImpuritySolver`, based on
-`AtomDiag` from [TRIQS](https://triqs.github.io/). It needs a TRIQS
-installation and takes TRIQS operators, and it is slower than
-`FockitImpuritySolver` for all but the smallest impurity problems. Use
-`FockitImpuritySolver`. If you do use `AtomDiagImpuritySolver`, please also
-cite [TRIQS](https://doi.org/10.1016/j.cpc.2015.04.023).

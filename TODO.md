@@ -14,8 +14,6 @@ Rotationally invariant slave-bosons.
 - Add verbose output to `DIIS`
 - Maybe? Refactor `DIIS` and `NewtonSolver`
 - Explanation for why the root finders kind of suck.
-- Remove h_imp to real if real in `AtomDiagImpuritySolver` when TRIQS bumps from
-  version 3.2.0
 - Helper plot functions
 - Helper functions for calculating free/total energy
 - dimer insulator to explain some different insulating states

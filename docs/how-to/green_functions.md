@@ -3,6 +3,8 @@
 This guide shows you how to construct Green's functions from a {{RISB}}
 solution. The functions are in {py:mod}`risb.helpers_triqs` and use the
 Green's function objects of the {{TRIQS}} library, which must be installed.
+If you use them, please also cite
+[TRIQS](https://doi.org/10.1016/j.cpc.2015.04.023).
 
 :::{tip}
 In `examples/green_functions.py` we provide an example.

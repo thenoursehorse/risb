@@ -2,9 +2,8 @@
 import numpy as np
 import pytest
 from fockit.algebra import nc
-from test_common import IMPURITY_SOLVERS, make_impurity_solver
 
-from risb.impurity_solvers import DummyImpuritySolver
+from risb.impurity_solvers import DummyImpuritySolver, FockitImpuritySolver
 from risb.types import BlockMatrix
 
 
@@ -12,12 +11,9 @@ def swap_spin(A: BlockMatrix) -> BlockMatrix:
     return {"up": A["dn"], "dn": A["up"]}
 
 
-@pytest.mark.parametrize("solver_name", IMPURITY_SOLVERS)
-def test_dummy_returns_rotated_copy_of_referenced_solver(solver_name: str) -> None:
+def test_dummy_returns_rotated_copy_of_referenced_solver() -> None:
     gf_struct = [("up", 1), ("dn", 1)]
-    impurity_solver = make_impurity_solver(
-        solver_name, nc("up", 0) * nc("dn", 0), gf_struct
-    )
+    impurity_solver = FockitImpuritySolver(nc("up", 0) * nc("dn", 0), gf_struct)
     dummy = DummyImpuritySolver(impurity_solver, rotations=[swap_spin])
 
     # A magnetic field so the up and dn density matrices differ

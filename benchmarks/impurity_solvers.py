@@ -1,19 +1,17 @@
 # ruff: noqa: D103
 """
-Time FockitImpuritySolver against AtomDiagImpuritySolver.
+Time FockitImpuritySolver.
 
-Run with ``uv run python benchmarks/impurity_solvers.py``. The AtomDiag columns
-need TRIQS and are left out without it.
+Run with ``uv run python benchmarks/impurity_solvers.py``.
 """
 
-import importlib.util
 import logging
 import time
 from collections.abc import Callable
 from itertools import product
 
 import numpy as np
-from fockit.algebra import OpSum, nc, to_triqs, zero
+from fockit.algebra import OpSum, nc, zero
 from fockit.hilbert import to_matrix
 from numpy.typing import NDArray
 from scipy.sparse.linalg import eigsh
@@ -22,9 +20,7 @@ from risb import LatticeSolver
 from risb.helpers_fockit import h_int_kanamori
 from risb.impurity_solvers import FockitImpuritySolver
 from risb.kweight import SmearingKWeight
-from risb.types import BlockMatrix, ImpuritySolver
-
-HAS_TRIQS = importlib.util.find_spec("triqs") is not None
+from risb.types import BlockMatrix
 
 logger = logging.getLogger(__name__)
 
@@ -33,9 +29,6 @@ SPINS = ["up", "dn"]
 U = 3.0
 J = 0.2 * U
 U_PRIME = U - 2 * J
-
-# AtomDiag diagonalizes dense blocks, which run out of memory beyond this
-ATOM_DIAG_MAX_ORB = 4
 
 
 def hubbard(n_orb: int) -> OpSum:
@@ -106,22 +99,6 @@ def time_impurity_solve(name: str, h_int: OpSum, n_orb: int, is_complex: bool) -
         f"{t_h_imp:8.4f} {t_matrix:8.4f} {t_eigsh:8.4f} "
         f"{t_solve - t_matrix - t_eigsh:8.4f}"
     )
-
-    if HAS_TRIQS and n_orb <= ATOM_DIAG_MAX_ORB:
-        from risb.impurity_solvers import AtomDiagImpuritySolver  # noqa: PLC0415
-
-        atom_diag = AtomDiagImpuritySolver(to_triqs(h_int), gf_struct)
-
-        def solve_atom_diag() -> None:
-            atom_diag.set_h_imp(Lambda_c, D, h0)
-            atom_diag.solve()
-
-        t_atom_diag = best_time(solve_atom_diag)
-        largest = max(
-            atom_diag.ad.get_subspace_dim(i) for i in range(atom_diag.ad.n_subspaces)
-        )
-        dE = abs(atom_diag.gs_energy - fockit.gs_energy)
-        row += f" | {t_atom_diag:9.4f} {largest:7d} {dE:7.1e}"
     logger.info(row)
 
 
@@ -140,31 +117,21 @@ def paramagnetic(A: list[BlockMatrix]) -> list[BlockMatrix]:
 
 def time_lattice_solve(name: str, h_int: OpSum, n_orb: int, V: float = 0) -> None:
     gf_struct = [(bl, n_orb) for bl in SPINS]
-    solvers: dict[str, Callable[[], ImpuritySolver]] = {
-        "fockit": lambda: FockitImpuritySolver(h_int, gf_struct)
-    }
-    if HAS_TRIQS:
-        from risb.impurity_solvers import AtomDiagImpuritySolver  # noqa: PLC0415
-
-        solvers["atom_diag"] = lambda: AtomDiagImpuritySolver(
-            to_triqs(h_int), gf_struct
-        )
-    for solver_name, make_solver in solvers.items():
-        S = LatticeSolver(
-            h0_k=cubic_h0_k(n_orb, V),
-            gf_struct=gf_struct,
-            impurity_solvers=[make_solver()],
-            update_weights=SmearingKWeight(beta=40, n_target=n_orb).update_weights,
-            symmetrizers=[paramagnetic],
-        )
-        start = time.perf_counter()
-        S.solve(tol=1e-8)
-        elapsed = time.perf_counter() - start
-        logger.info(
-            f"{name:12s} {solver_name:9s} {elapsed:8.2f} s, "
-            f"{S.optimize.n:4d} iterations, success {S.optimize.success}, "
-            f"Z {S.Z[0]['up'][0, 0].real:.8f}"
-        )
+    S = LatticeSolver(
+        h0_k=cubic_h0_k(n_orb, V),
+        gf_struct=gf_struct,
+        impurity_solvers=[FockitImpuritySolver(h_int, gf_struct)],
+        update_weights=SmearingKWeight(beta=40, n_target=n_orb).update_weights,
+        symmetrizers=[paramagnetic],
+    )
+    start = time.perf_counter()
+    S.solve(tol=1e-8)
+    elapsed = time.perf_counter() - start
+    logger.info(
+        f"{name:12s} {elapsed:8.2f} s, "
+        f"{S.optimize.n:4d} iterations, success {S.optimize.success}, "
+        f"Z {S.Z[0]['up'][0, 0].real:.8f}"
+    )
 
 
 if __name__ == "__main__":
@@ -172,7 +139,7 @@ if __name__ == "__main__":
     logging.getLogger("risb").setLevel(logging.WARNING)
     logger.info(
         "model     n type        dim |  fockit:  total    basis    h_imp   matrix"
-        "    eigsh      rho | atom_diag  block    |dE|"
+        "    eigsh      rho"
     )
     for n_orb in range(1, 6):
         time_impurity_solve("hubbard", hubbard(n_orb), n_orb, is_complex=False)

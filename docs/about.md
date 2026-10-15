@@ -50,7 +50,6 @@ appropriately cited.
 % Fix class links
 
 1. `FockitImpuritySolver` uses the [fockit](https://github.com/thenoursehorse/fockit) library.
-2. `AtomDiagImpuritySolver` uses the [TRIQS](https://triqs.github.io/)[^Parcolett2015] library.
 
 ## License
 
@@ -89,8 +88,3 @@ appropriately cited.
     _Operatorial formulation of the ghost rotationally invariant slave-boson
     theory_,
     Phys. Rev. B **105**, 045111 (2022)](https://doi.org/10.1103/PhysRevB.105.045111)
-
-[^Parcolett2015]:
-    [O. Parcollet, M. Ferrero, T. Ayral, H. Hafermann, I. Krivenko,
-    L. Messio, and P. Seth, _TRIQS: A toolbox for research on interacting quantum systems_,
-    Comp. Phys. Comm. **196**, 398-415 (2015)](https://doi.org/10.1016/j.cpc.2015.04.023)

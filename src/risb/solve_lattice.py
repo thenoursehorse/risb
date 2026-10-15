@@ -63,7 +63,7 @@ class LatticeSolver:
         The solver of the impurity problem for each cluster. It must
         already store the interacting Hamiltonian ``h_int`` of the physical
         orbitals on a cluster, and implement :class:`risb.types.ImpuritySolver`.
-        See class :class:`.AtomDiagImpuritySolver`.
+        See class :class:`.FockitImpuritySolver`.
     update_weights : risb.types.UpdateWeights
         The function that gives the integral weights at each k-point on the
         lattice. It is called as ``update_weights(energies)``,

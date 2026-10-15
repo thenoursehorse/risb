@@ -1,38 +1,10 @@
 # ruff: noqa: D100, D103
 from itertools import product
-from typing import TYPE_CHECKING
 
 import numpy as np
-import pytest
-from fockit.algebra import OpSum, to_triqs
 from numpy.typing import NDArray
 
-from risb.impurity_solvers import FockitImpuritySolver
 from risb.types import BlockMatrix, GfStruct
-
-if TYPE_CHECKING:
-    from risb.impurity_solvers import AtomDiagImpuritySolver
-
-IMPURITY_SOLVERS = ["fockit", "atom_diag"]
-
-
-def make_impurity_solver(
-    name: str, h_int: OpSum, gf_struct: GfStruct
-) -> FockitImpuritySolver | AtomDiagImpuritySolver:
-    if name == "fockit":
-        return FockitImpuritySolver(h_int, gf_struct)
-    pytest.importorskip("triqs")
-    from risb.impurity_solvers import AtomDiagImpuritySolver  # noqa: PLC0415
-
-    return AtomDiagImpuritySolver(to_triqs(h_int), gf_struct)
-
-
-def overlap(
-    impurity_solver: FockitImpuritySolver | AtomDiagImpuritySolver, Op: OpSum
-) -> float | complex:
-    if isinstance(impurity_solver, FockitImpuritySolver):
-        return impurity_solver.overlap(Op)
-    return impurity_solver.overlap(to_triqs(Op))
 
 
 def symmetrize_blocks(A: list[BlockMatrix]) -> list[BlockMatrix]:

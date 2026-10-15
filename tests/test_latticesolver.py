@@ -8,11 +8,9 @@ from numpy.typing import NDArray
 from scipy.optimize import OptimizeResult
 from scipy.optimize import root as root_fun
 from test_common import (
-    IMPURITY_SOLVERS,
     bethe_h0_k,
     build_cubic_h0_k,
     build_two_orbital_complex_h0_k,
-    make_impurity_solver,
     one_band_cubic_h0_k,
     random_unitary,
     symmetrize_blocks,
@@ -25,15 +23,6 @@ from risb.kweight import SmearingKWeight
 from risb.types import BlockMatrix, GfStruct, ImpuritySolver
 
 # FIXME add one_shot test
-
-# Every test runs once per impurity solver, through the model fixtures
-pytestmark = pytest.mark.usefixtures("solver_name")
-
-
-@pytest.fixture(params=IMPURITY_SOLVERS)
-def solver_name(request: pytest.FixtureRequest) -> str:
-    return str(request.param)
-
 
 type Model = tuple[
     GfStruct,
@@ -75,7 +64,7 @@ def do_assert(
 
 
 @pytest.fixture
-def one_band(solver_name: str) -> Model:
+def one_band() -> Model:
     n_orb = 1
     spatial_dim = 3
     nkx = 10
@@ -86,7 +75,7 @@ def one_band(solver_name: str) -> Model:
     gf_struct = [(bl, n_orb) for bl in ["up", "dn"]]
     h0_k = build_cubic_h0_k(gf_struct=gf_struct, nkx=nkx, spatial_dim=spatial_dim)
     h_int = U * nc("up", 0) * nc("dn", 0)
-    impurity_solver = make_impurity_solver(solver_name, h_int, gf_struct)
+    impurity_solver = FockitImpuritySolver(h_int, gf_struct)
     # kweight = SmearingKWeight(beta=beta, mu=mu)
     kweight = SmearingKWeight(beta=beta, n_target=n_target)
     Lambda_expected = np.array([[2.0]])
@@ -95,7 +84,7 @@ def one_band(solver_name: str) -> Model:
 
 
 @pytest.fixture
-def bilayer(solver_name: str) -> Model:
+def bilayer() -> Model:
     U = 4
     V = 0.25
     mu = U / 2.0  # half-filling
@@ -113,7 +102,7 @@ def bilayer(solver_name: str) -> Model:
     h_int = zero()
     for o in range(n_orb):
         h_int += U * nc("up", o) * nc("dn", o)
-    impurity_solver = make_impurity_solver(solver_name, h_int, gf_struct)
+    impurity_solver = FockitImpuritySolver(h_int, gf_struct)
     # kweight = SmearingKWeight(beta=beta, mu=mu)
     kweight = SmearingKWeight(beta=beta, n_target=n_target)
     Lambda_expected = np.array([[2.0, 0.114569681915], [0.114569681915, 2.0]])
@@ -122,7 +111,7 @@ def bilayer(solver_name: str) -> Model:
 
 
 @pytest.fixture
-def kanamori(solver_name: str) -> Model:
+def kanamori() -> Model:
     coeff = 0.2
     U = 3
     J = coeff * U
@@ -144,7 +133,7 @@ def kanamori(solver_name: str) -> Model:
         Uprime=np.array([[U, Up], [Up, U]]),
         J_hund=J,
     )
-    impurity_solver = make_impurity_solver(solver_name, h_int, gf_struct)
+    impurity_solver = FockitImpuritySolver(h_int, gf_struct)
     kweight = SmearingKWeight(beta=beta, mu=mu)
     kweight = SmearingKWeight(beta=beta, n_target=n_target)
     Lambda_expected = np.array([[3.0, 0.0], [0.0, 3.0]])
@@ -258,9 +247,7 @@ def test_scipy_root(
 
 # In the atomic limit the self-consistency equations need not be satisfied
 @pytest.mark.filterwarnings("ignore:The RISB self-consistency:RuntimeWarning")
-def test_three_orbital_kanamori_is_a_paramagnetic_mott_insulator(
-    solver_name: str,
-) -> None:
+def test_three_orbital_kanamori_is_a_paramagnetic_mott_insulator() -> None:
     n_orb = 3
     U = 3
     J = 0.2 * U
@@ -278,7 +265,7 @@ def test_three_orbital_kanamori_is_a_paramagnetic_mott_insulator(
     S = LatticeSolver(
         h0_k=build_cubic_h0_k(gf_struct=gf_struct, nkx=10, spatial_dim=3),
         gf_struct=gf_struct,
-        impurity_solvers=make_impurity_solver(solver_name, h_int, gf_struct),
+        impurity_solvers=FockitImpuritySolver(h_int, gf_struct),
         update_weights=SmearingKWeight(beta=40, n_target=n_orb).update_weights,
         symmetrizers=[symmetrize_blocks],
     )
@@ -291,23 +278,21 @@ def test_three_orbital_kanamori_is_a_paramagnetic_mott_insulator(
     assert S.rho_c[0]["up"] == pytest.approx(S.rho_c[0]["dn"], abs=1e-10)
 
 
-def two_orbital_complex_lattice(
-    solver_name: str, h_int: OpSum
-) -> tuple[LatticeSolver, SmearingKWeight]:
+def two_orbital_complex_lattice(h_int: OpSum) -> tuple[LatticeSolver, SmearingKWeight]:
     gf_struct = [(bl, 2) for bl in ["up", "dn"]]
     kweight = SmearingKWeight(beta=40, n_target=2)
     S = LatticeSolver(
         h0_k=build_two_orbital_complex_h0_k(),
         gf_struct=gf_struct,
-        impurity_solvers=make_impurity_solver(solver_name, h_int, gf_struct),
+        impurity_solvers=FockitImpuritySolver(h_int, gf_struct),
         update_weights=kweight.update_weights,
     )
     return S, kweight
 
 
-def test_quasiparticle_basis_of_the_starting_guess_does_not_change_the_physics(
-    solver_name: str,
-) -> None:
+def test_quasiparticle_basis_of_the_starting_guess_does_not_change_the_physics() -> (
+    None
+):
     U, J = 3.0, 0.6
     Up = U - 2 * J
     h_int = h_int_kanamori(
@@ -319,7 +304,7 @@ def test_quasiparticle_basis_of_the_starting_guess_does_not_change_the_physics(
     )
     results = []
     for u in [np.eye(2), random_unitary(2, seed=1), random_unitary(2, seed=2)]:
-        S, kweight = two_orbital_complex_lattice(solver_name, h_int)
+        S, kweight = two_orbital_complex_lattice(h_int)
         for bl in ["up", "dn"]:
             S.Lambda[0][bl] = 1.5 * np.eye(2)
             S.R[0][bl] = u.conj().T
@@ -331,10 +316,8 @@ def test_quasiparticle_basis_of_the_starting_guess_does_not_change_the_physics(
         assert weight == pytest.approx(results[0][1], abs=1e-8)
 
 
-def test_rotated_copy_of_the_non_interacting_solution_is_converged(
-    solver_name: str,
-) -> None:
-    S, _ = two_orbital_complex_lattice(solver_name, zero())
+def test_rotated_copy_of_the_non_interacting_solution_is_converged() -> None:
+    S, _ = two_orbital_complex_lattice(zero())
     u = random_unitary(2, seed=3)
     for bl in ["up", "dn"]:
         S.R[0][bl] = u.conj().T
@@ -345,9 +328,7 @@ def test_rotated_copy_of_the_non_interacting_solution_is_converged(
         assert S.Z[0][bl] == pytest.approx(np.eye(2), abs=1e-8)
 
 
-def test_completely_full_orbital_decouples_and_leaves_the_one_band_solution(
-    solver_name: str,
-) -> None:
+def test_completely_full_orbital_decouples_and_leaves_the_one_band_solution() -> None:
     # Orbital 0 is a completely full band with no hopping to orbital 1, so
     # with only density interactions orbital 1 is the one-band model, shifted
     # in energy. The full orbital has no bath partner in the impurity problem
@@ -362,7 +343,7 @@ def test_completely_full_orbital_decouples_and_leaves_the_one_band_solution(
     S = LatticeSolver(
         h0_k=h0_k,
         gf_struct=gf_struct,
-        impurity_solvers=make_impurity_solver(solver_name, h_int, gf_struct),
+        impurity_solvers=FockitImpuritySolver(h_int, gf_struct),
         update_weights=SmearingKWeight(beta=40, n_target=3).update_weights,
         symmetrizers=[symmetrize_blocks],
     )
@@ -374,8 +355,8 @@ def test_completely_full_orbital_decouples_and_leaves_the_one_band_solution(
     one_band = LatticeSolver(
         h0_k=build_cubic_h0_k(gf_struct=gf_struct_one, nkx=10, spatial_dim=3),
         gf_struct=gf_struct_one,
-        impurity_solvers=make_impurity_solver(
-            solver_name, 2 * nc("up", 0) * nc("dn", 0), gf_struct_one
+        impurity_solvers=FockitImpuritySolver(
+            2 * nc("up", 0) * nc("dn", 0), gf_struct_one
         ),
         update_weights=SmearingKWeight(beta=40, n_target=1).update_weights,
     )
@@ -392,7 +373,7 @@ def test_completely_full_orbital_decouples_and_leaves_the_one_band_solution(
 
 
 def test_two_site_cell_with_a_cluster_per_site_gives_the_one_site_solution(
-    solver_name: str, subtests: pytest.Subtests
+    subtests: pytest.Subtests,
 ) -> None:
     U = 4.0
     spin_names = ["up", "dn"]
@@ -407,9 +388,7 @@ def test_two_site_cell_with_a_cluster_per_site_gives_the_one_site_solution(
             h0_k=dict.fromkeys(spin_names, h0_k),
             gf_struct=gf_struct,
             impurity_solvers=[
-                make_impurity_solver(
-                    solver_name, U * nc(gf[0][0], 0) * nc(gf[1][0], 0), gf
-                )
+                FockitImpuritySolver(U * nc(gf[0][0], 0) * nc(gf[1][0], 0), gf)
                 for gf in gf_struct
             ],
             update_weights=SmearingKWeight(
@@ -455,7 +434,7 @@ def test_two_site_cell_with_a_cluster_per_site_gives_the_one_site_solution(
 
 
 def test_check_projectors_rejects_only_projectors_that_break_the_assumptions(
-    solver_name: str, subtests: pytest.Subtests
+    subtests: pytest.Subtests,
 ) -> None:
     spin_names = ["up", "dn"]
     h0 = one_band_cubic_h0_k(4, supercell=True)
@@ -472,8 +451,7 @@ def test_check_projectors_rejects_only_projectors_that_break_the_assumptions(
             h0_k=h0_k,
             gf_struct=gf_struct,
             impurity_solvers=[
-                make_impurity_solver(solver_name, nc("up", 0) * nc("dn", 0), gf)
-                for gf in gf_struct
+                FockitImpuritySolver(nc("up", 0) * nc("dn", 0), gf) for gf in gf_struct
             ],
             update_weights=SmearingKWeight(beta=40, n_target=2).update_weights,
             projectors=[dict.fromkeys(spin_names, P) for P in projectors],
@@ -502,7 +480,7 @@ def test_check_projectors_rejects_only_projectors_that_break_the_assumptions(
             lattice(projectors, check=True)
 
 
-def test_orbital_in_no_cluster_keeps_its_band(solver_name: str) -> None:
+def test_orbital_in_no_cluster_keeps_its_band() -> None:
     # Site 1 in no cluster must give the same as site 1 a cluster without
     # interactions, where RISB is exact
     spin_names = ["up", "dn"]
@@ -517,8 +495,7 @@ def test_orbital_in_no_cluster_keeps_its_band(solver_name: str) -> None:
             h0_k=h0_k,
             gf_struct=gf_struct,
             impurity_solvers=[
-                make_impurity_solver(solver_name, h_ints[i], gf)
-                for i, gf in enumerate(gf_struct)
+                FockitImpuritySolver(h_ints[i], gf) for i, gf in enumerate(gf_struct)
             ],
             update_weights=SmearingKWeight(beta=40, n_target=2).update_weights,
             projectors=projectors,
@@ -537,7 +514,7 @@ def test_orbital_in_no_cluster_keeps_its_band(solver_name: str) -> None:
         assert two_clusters.Z[1][bl] == pytest.approx(np.eye(1), abs=1e-8)
 
 
-def test_projectors_that_depend_on_k_give_the_same_solution(solver_name: str) -> None:
+def test_projectors_that_depend_on_k_give_the_same_solution() -> None:
     # The lattice in a basis rotated differently at every k-point, with the
     # projectors rotated with it, is the same problem
     spin_names = ["up", "dn"]
@@ -554,7 +531,7 @@ def test_projectors_that_depend_on_k_give_the_same_solution(solver_name: str) ->
             h0_k=dict.fromkeys(spin_names, h0),
             gf_struct=gf_struct,
             impurity_solvers=[
-                make_impurity_solver(solver_name, 4 * nc("up", 0) * nc("dn", 0), gf)
+                FockitImpuritySolver(4 * nc("up", 0) * nc("dn", 0), gf)
                 for gf in gf_struct
             ],
             update_weights=SmearingKWeight(beta=40, n_target=2).update_weights,
@@ -579,9 +556,7 @@ def test_projectors_that_depend_on_k_give_the_same_solution(solver_name: str) ->
             assert rotated.Lambda[i][bl] == pytest.approx(fixed.Lambda[i][bl], abs=1e-8)
 
 
-def test_constant_double_counting_is_a_shift_of_the_local_energies(
-    solver_name: str,
-) -> None:
+def test_constant_double_counting_is_a_shift_of_the_local_energies() -> None:
     U, J = 3.0, 0.6
     Up = U - 2 * J
     h_int = h_int_kanamori(
@@ -605,7 +580,7 @@ def test_constant_double_counting_is_a_shift_of_the_local_energies(
         S = LatticeSolver(
             h0_k=h0_k,
             gf_struct=gf_struct,
-            impurity_solvers=make_impurity_solver(solver_name, h_int, gf_struct),
+            impurity_solvers=FockitImpuritySolver(h_int, gf_struct),
             update_weights=SmearingKWeight(beta=40, n_target=2).update_weights,
             double_counting=double_counting if with_hook else None,
         )
@@ -626,11 +601,7 @@ def test_constant_double_counting_is_a_shift_of_the_local_energies(
     assert all(i == 0 and set(rho) == {"up", "dn"} for i, rho in calls)
 
 
-def test_ghost_risb_without_interactions_is_the_non_interacting_solution(
-    solver_name: str,
-) -> None:
-    if solver_name != "fockit":
-        pytest.skip("only FockitImpuritySolver has bath orbitals of their own size")
+def test_ghost_risb_without_interactions_is_the_non_interacting_solution() -> None:
     B = 3
     gf_struct = [("up", 1), ("dn", 1)]
     bath_size = [{bl: B for bl, _ in gf_struct}]
@@ -668,13 +639,11 @@ def test_ghost_risb_without_interactions_is_the_non_interacting_solution(
     [(2.4, -0.061, 0.054, 0.17), (3.5, -0.037, 0.0108, 0.0)],
 )
 def test_ghost_risb_gives_the_published_energy_of_the_hubbard_model(
-    solver_name: str, U: float, energy: float, double_occupancy: float, Z: float
+    U: float, energy: float, double_occupancy: float, Z: float
 ) -> None:
     # Half-filled Hubbard model on the Bethe lattice with three quasiparticles
     # per spin, a metal and a Mott insulator. Values read off Figs. 3 and 4 of
     # Lee, Lanata, and Kotliar, Phys. Rev. B 107, L121104 (2023)
-    if solver_name != "fockit":
-        pytest.skip("only FockitImpuritySolver has bath orbitals of their own size")
     B = 3
     gf_struct = [("up", 1), ("dn", 1)]
     bath_size = [{bl: B for bl, _ in gf_struct}]

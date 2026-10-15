@@ -118,7 +118,6 @@ _external_targets = {
     "sequence": ("class", "collections.abc.Sequence"),
     "numpy._typing._array_like.NDArray": ("data", "numpy.typing.NDArray"),
     "numpy.float64": ("attr", "numpy.float64"),
-    "triqs.atom_diag.AtomDiag": ("func", "triqs.atom_diag.AtomDiag"),
     "triqs.gfs.BlockGf": ("class", "triqs.gfs.block_gf.BlockGf"),
     "triqs.gfs.MeshImFreq": ("class", "triqs.mesh.meshes.MeshImFreq"),
     "triqs.gfs.MeshProduct": ("class", "triqs.mesh.mesh_product.MeshProduct"),

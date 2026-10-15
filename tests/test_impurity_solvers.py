@@ -7,10 +7,7 @@ import pytest
 from fockit.algebra import OpSum, c, cdag, nc, zero
 from numpy.typing import NDArray
 from test_common import (
-    IMPURITY_SOLVERS,
     build_two_orbital_complex_h0_k,
-    make_impurity_solver,
-    overlap,
 )
 
 from risb import LatticeSolver
@@ -224,7 +221,6 @@ def dh_trimer_expected() -> Expected:
     )
 
 
-@pytest.mark.parametrize("solver_name", IMPURITY_SOLVERS)
 @pytest.mark.parametrize(
     ("model", "model_expected"),
     [
@@ -236,7 +232,6 @@ def dh_trimer_expected() -> Expected:
 def test_solve(
     subtests: pytest.Subtests,
     request: pytest.FixtureRequest,
-    solver_name: str,
     model: str,
     model_expected: str,
 ) -> None:
@@ -250,7 +245,7 @@ def test_solve(
         S2_expected,
     ) = request.getfixturevalue(model_expected)
     gf_struct = [(bl, n_orb) for bl in spin_names]
-    impurity_solver = make_impurity_solver(solver_name, h_int, gf_struct)
+    impurity_solver = FockitImpuritySolver(h_int, gf_struct)
     impurity_solver.set_h_imp(Lambda_c, D, h0_loc_mat)
     impurity_solver.solve()
     rho_f: BlockMatrix = {}
@@ -261,8 +256,8 @@ def test_solve(
         rho_cf[bl] = impurity_solver.get_rho_cf(bl)
         rho_c[bl] = impurity_solver.get_rho_c(bl)
     gs_energy = impurity_solver.gs_energy
-    N = overlap(impurity_solver, N_op(spin_names, n_orb))
-    S2 = overlap(impurity_solver, S2_op(spin_names, n_orb))
+    N = impurity_solver.overlap(N_op(spin_names, n_orb))
+    S2 = impurity_solver.overlap(S2_op(spin_names, n_orb))
     do_assert(
         subtests,
         rho_f,
