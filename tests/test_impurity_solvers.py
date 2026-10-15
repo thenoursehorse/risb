@@ -146,25 +146,16 @@ def dh_trimer() -> Model:
     n_orb = 3
     spin_names = ["up", "dn"]
 
-    def hubb_N(tk: float, U: float, n_orb: int, spin_names: list[str]) -> OpSum:  # noqa: ARG001
-        # hopping
-        # phi = 2.0 * np.pi / n_orb
-        # for a,m,mm,s in product(range(n_orb),range(n_orb),range(n_orb), spin_names):
-        #    h0_loc += (-tk / n_orb) * c_dag(s,m) * c(s,mm) * np.exp(-1j * phi * a * m) * np.exp(1j * phi * np.mod(a+1,n_orb) * mm)
-        #    h0_loc += (-tk / n_orb) * c_dag(s,m) * c(s,mm) * np.exp(-1j * phi * np.mod(a+1,n_orb) * m) * np.exp(1j * phi * a * mm)
-        # hubbard U
-        h_int = zero()
-        for m, mm, mmm in product(range(n_orb), range(n_orb), range(n_orb)):
-            h_int += (
-                (U / n_orb)
-                * cdag("up", m)
-                * c("up", mm)
-                * cdag("dn", mmm)
-                * c("dn", (m + mmm - mm) % n_orb)
-            )
-        return h_int
-
-    h_int = hubb_N(tk, U, n_orb, spin_names)
+    # Hubbard U
+    h_int = zero()
+    for m, mm, mmm in product(range(n_orb), range(n_orb), range(n_orb)):
+        h_int += (
+            (U / n_orb)
+            * cdag("up", m)
+            * c("up", mm)
+            * cdag("dn", mmm)
+            * c("dn", (m + mmm - mm) % n_orb)
+        )
     Lambda_c: dict[str, NDArray[np.float64]] = {}
     D: dict[str, NDArray[np.float64]] = {}
     h0_loc_mat = {bl: np.zeros([n_orb, n_orb]) for bl in spin_names}

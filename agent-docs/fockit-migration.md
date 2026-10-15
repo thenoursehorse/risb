@@ -1942,17 +1942,36 @@ Problems:
 
 ## Open questions
 
-- Step 8: degenerate ground states. Idea (not yet agreed): `solve(n_states=1,
-  dense=False, degeneracy_tol=1e-10)`. Default eigsh with 2 states, logging a
-  warning if `E1 - E0 < tol`. `n_states=k` asks eigsh for k states; `dense=True`
-  uses `eigh` on the whole sector. In both cases, average the density matrices
-  over the states within tol of E0 (equal-weight mixture).
-- Step 7: docs should say to stop scipy root finders on the residual (`fatol`),
-  not the step size, because RISB roots are not isolated.
-- `ArpackNoConvergence` with k=1 has no result to return, so "warn and continue"
-  is not possible (stale or NaN density matrices would corrupt the iteration).
-  Proposed: keep raising, with a message saying what the user can change; warn
-  only where a partial result exists (k > 1, step 8). Not yet agreed.
+- Resolved (step 8, items 13 and 15): degenerate ground states, with
+  `degenerate="warn"` / `"average"` and `degenerate_tol`.
+- Resolved (step 7): `how-to/lattice_solver.md` stops scipy's root finders on
+  the residual (`options={"fatol": ...}`).
+- Resolved: `ArpackNoConvergence` is raised (k = 1 has no partial result);
+  `how-to/impurity_solvers.md` says so, and `method="eigh"` or
+  `method_options` are the user's remedies.
 - Resolved (step 3): the `N`/`S2`/Kanamori helpers live in `risb.helpers_fockit`.
-- Step 5/6: should `AtomDiagImpuritySolver` accept fockit operators (fockit has
-  `to_triqs`) so there is one operator syntax?
+- Moot (item 27): AtomDiag is removed.
+
+## Loose ends notes
+
+- Dead commented-out code removed: `hubb_N` in `tests/test_impurity_solvers.py`
+  (inlined, its hopping comment and unused arguments dropped) and two lines in
+  `examples/decorated_honeycomb_trimer_basis.py`.
+- np.int64 mode labels (from item 23), reproduced with fockit 0.4.2: a
+  3-orbital Slater-like h_int with labels from np.nonzero raises "h_imp does
+  not conserve a diagonal symmetry", int labels solve. Mechanism (fockit):
+  `fockit.algebra.rules.mode_sort_key` matches `case int()`, which np.int64
+  is not, so ("up", np.int64(0)) sorts by repr after every int label. But
+  np.int64(0) == 0 with the same hash, so OpSum's term dict and the
+  lru_cache of `ordering._insert` treat them as one mode: the same operator
+  gets two normal orders that do not cancel (c+_0 c+_1 c_1 c_0 vs
+  c+_1 c+_0 c_0 c_1 left in [h, Q]). Fix belongs in fockit:
+  `case numbers.Integral()` (np.integer is registered as Integral).
+- Frozen-shell model (item 18, decoupled full orbital, U = 2, J = 0, beta 40,
+  n = 3), rerun now: starts lambda = 0 (default), (0, 4), (0, 6), (2, 7),
+  (-4, 4) reach Z_1 = 0.86118 (error <= 2e-11); lambda = h0_loc = (-2, 2)
+  still ends at R = 0 in 3 iterations, |f1|, |f2| = 0.6, with the
+  RuntimeWarning about unsatisfied equations.
+- DummyImpuritySolver has no `entropy`: `[s.entropy for s in solvers]` fails
+  with Dummy clusters (a unitary rotation does not change the entropy, so
+  the referenced solver's value is the right one).

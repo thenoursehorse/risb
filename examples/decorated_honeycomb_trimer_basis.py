@@ -218,7 +218,6 @@ for bl, _ in gf_struct_molecule:
             c3_factors.append(c(*mode) * cdag(*mode) + w**q * cdag(*mode) * c(*mode))
 
 # Set up impurity solvers
-# impurity_solvers = [FockitImpuritySolver(h_loc[i], gf_struct[i]) for i in range(n_clusters)]
 impurity_solvers: list[ImpuritySolver] = [
     FockitImpuritySolver(h_loc[0], gf_struct[0], onsite_symmetries=[(c3_factors, 1)])
 ]
@@ -256,8 +255,6 @@ S = LatticeSolver(
 
 # Solve
 S.solve(tol=1e-4)
-# for i in range(5):
-#    x = S.solve(one_shot=True)
 
 # Print out some interesting observables
 with np.printoptions(formatter={"float": "{: 0.4f}".format}):
