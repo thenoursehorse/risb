@@ -2,7 +2,6 @@
 
 from pathlib import Path
 
-import h5py
 import numpy as np
 import pytest
 from fockit.algebra import nc
@@ -22,14 +21,14 @@ from risb.types import BlockMatrix
 # FIXME finish helpers: lambda, r, f1, f2
 
 abs = 1e-12
-helpers_filename = Path(__file__).parent / Path("data_helpers.h5")
+helpers_filename = Path(__file__).parent / Path("data_helpers.npz")
 
 
 def test_get_h_qp(subtests: pytest.Subtests) -> None:
-    with h5py.File(helpers_filename, "r") as f:
-        h0_k = f["h0_k"][:]
-        eig_expected = f["eig"][:]
-        vec_expected = f["vec"][:]
+    with np.load(helpers_filename) as f:
+        h0_k = f["h0_k"]
+        eig_expected = f["eig"]
+        vec_expected = f["vec"]
     R = np.zeros(shape=(2, 2))
     np.fill_diagonal(R, 1)
     Lambda = np.zeros(shape=(2, 2))
@@ -45,28 +44,28 @@ def test_get_h_qp(subtests: pytest.Subtests) -> None:
 def test_get_h0_kin_k_R() -> None:
     R = np.zeros(shape=(2, 2))
     np.fill_diagonal(R, 1)
-    with h5py.File(helpers_filename, "r") as f:
-        h0_k = f["h0_k"][:]
-        vec = f["vec"][:]
-        h0_k_R_expected = f["h0_R"][:]
+    with np.load(helpers_filename) as f:
+        h0_k = f["h0_k"]
+        vec = f["vec"]
+        h0_k_R_expected = f["h0_R"]
     h0_k_R = helpers.get_h0_kin_k_R(R, h0_k, vec)
     assert h0_k_R == pytest.approx(h0_k_R_expected, abs=abs)
 
 
 def test_get_ke() -> None:
-    with h5py.File(helpers_filename, "r") as f:
-        h0_k_R = f["h0_R"][:]
-        vec = f["vec"][:]
-        wks = f["wks"][:]
+    with np.load(helpers_filename) as f:
+        h0_k_R = f["h0_R"]
+        vec = f["vec"]
+        wks = f["wks"]
     ke = helpers.get_ke(h0_k_R, vec, wks)
     ke_expected = np.array([[-0.36035732126514364, 0], [0, -0.36035732126514364]])
     assert ke == pytest.approx(ke_expected, abs=abs)
 
 
 def test_get_rho_qp() -> None:
-    with h5py.File(helpers_filename, "r") as f:
-        vec = f["vec"][:]
-        wks = f["wks"][:]
+    with np.load(helpers_filename) as f:
+        vec = f["vec"]
+        wks = f["wks"]
     rho_qp = helpers.get_rho_qp(vec, wks)
     rho_qp_expected = np.array([[0.30667105643085796, 0], [0, 0.30667105643085796]])
     assert rho_qp == pytest.approx(rho_qp_expected, abs=abs)

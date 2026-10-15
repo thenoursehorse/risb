@@ -55,7 +55,6 @@ docs = [
 ]
 test = [
   "pytest >=9.0",
-  "h5py",
   "matplotlib>=3.11.2",
 ]
 dev = [
@@ -90,10 +89,6 @@ enable_error_code = [
   "possibly-undefined",
 ]
 warn_unreachable = true
-
-[[tool.mypy.overrides]]
-module = ["h5py.*"]
-ignore_missing_imports = true
 
 [tool.ruff]
 src = ["src"]
