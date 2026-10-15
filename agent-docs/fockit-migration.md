@@ -173,6 +173,11 @@ user to review. Update this file as steps finish. Delete it when done.
    finite-T ghost functional (arXiv:2603.20559: grand-canonical traces and an
    extra quadratic embedding H_0emb), which GEM implements by fitting thermal
    density matrices.
+31. [ ] Choose the electron offset M_i of a cluster's embedding (user; from
+   item 26): g-RISB allows any integer 0 <= M_i <= ghosts, each a variational
+   ansatz, the physical one the lowest energy. Needed for even B in a
+   paramagnet. Would need one value per cluster shared by
+   FockitImpuritySolver (sector) and LatticeSolver (n_ghost_electrons).
 
 ## Commits
 
@@ -581,11 +586,55 @@ Step 1, literature (papers only):
 - Every paper read uses one odd B for all orbitals. The molecules paper
   (arXiv:2403.05157) uses 2 and 4 ghosts per orbital, i.e. B = 3 and 5. None
   uses an even B or a different B per block.
+- Lanata, g-RISB operatorial formulation (PRB 105, 045111 (2022),
+  arXiv:2109.10320): B_i nu_i auxiliary f modes per fragment, "B_i >= 1 is a
+  given integer" (Eq. 6), then B_i = B assumed for simplicity. Bosons
+  Phi_{Gamma n} only for N(n) - N(Gamma) = M_i (Eq. 8), M_i = nu_i (B - 1) / 2
+  (Eq. 11) chosen so the mean field is g-GA; "different choices B and M_i
+  would be also possible, in principle". The reformulation is exact for any
+  B (Eqs. 23, 29, 39). Embedding state (Eq. 63) = |Gamma> x U_PH |n>, so it
+  holds B nu_i - M_i electrons; Eq. 11 is half filling. Only the number of f
+  modes of the fragment and M_i enter, not the block structure (mine).
+  Mine, from Eqs. 13, 15, 28: every physical state needs a non-empty S_i^Gamma
+  and nonzero D, C, i.e. 0 <= M_i <= (number of f modes) - nu_i.
+- "Generally" / "usually" (ghost DMET; arXiv:2603.20559) is empirical: the
+  physical choice of M_i is the lowest-energy one, half filling is what
+  previous work found, with no proof that it always is.
 - risb's code: bath_size is per block (a multiple of the block size), so a
   mix like t2g B = 2, eg B = 3 is accepted. Gaps when nu_i + M_i is odd:
   FockitImpuritySolver takes len(modes) // 2 (floor) and
   LatticeSolver.n_ghost_electrons sums (M - nu) / 2 (a half-integer), which
   disagree (the floor sector has m = ceil((M - nu) / 2)).
+- Step 2a: test (test_latticesolver) two half-filled Hubbard orbitals (U =
+  2.4, Bethe, no coupling) in one cluster with B = 3 and B = 1: each matches
+  its own cluster, Z and docc to 1e-10 in the prototype (Z 0.16424 / 0.49980).
+  Only particle-hole symmetric: away from it the total-N constraint of the
+  shared embedding is weaker than one per orbital.
+- Step 2c: how-to/lattice_solver.md ghost section: mixed B, even ghosts per
+  cluster and per spin (t2g 3 + eg 2 per orbital: 8 per spin; 2 + 3: 7).
+- Even B (mine): M_i in [0, (B - 1) nu_i]; one band with spin, B = 2: M = 0,
+  1, 2 give N_emb = 4, 3, 2; half filling (3) has no Sz = 0 state, M = 0 or 2
+  do. So even B with spin symmetry needs a non-half-filled M_i.
+- Odd ghosts per spin, checked (one band, Bethe, U = 2.4, beta 200 smearing,
+  thermal impurity beta 2000): the parity is right (2 degenerate states for
+  B = 2 and 4), but "no paramagnet" was too strong. B = 2: converged (1e-12),
+  ghost levels +-0.918, none at mu, Z = 0, docc 0.0258, energy -0.0549, an
+  insulator where B = 1 (Z 0.4998, E -0.0364) and B = 3 (Z 0.1642,
+  E -0.0615) are metals; at U = 1.5 B = 2 does not converge (error 2e-2).
+  B = 4: the B = 3 solution plus a level at mu with |R| 0.02 and occupation
+  0.5 that carries the odd spin (Z, docc, E the same as B = 3).
+- B = 5 with the thermal solver (beta 2000) fails at cycle 11 (sector 924):
+  E - E0 = 0, then 4.64057e-3 three times and 4.64059e-3 (3-fold exact plus
+  one 2e-8 away), 9.28e-3. On that H (seed 0 v0, ncv 40): eigsh k = 2 does
+  not converge (maxiter, 7.5 s); ncv 80 converges. k = 4 "converges" but
+  returns 0, 4.64e-3 x 2, 9.28e-3: it misses a degenerate copy, silently
+  (seeds 1-5: 4 of 5 right). Single-vector Lanczos sees one vector per
+  degenerate eigenspace in exact arithmetic, so the thermal solver's
+  eigsh path can drop degenerate states without an error.
+- Step 2b (user: option 1): LatticeSolver raises if a cluster has an odd
+  number of ghosts, FockitImpuritySolver if its number of modes is odd;
+  n_ghost_electrons is an int. Choosing M_i (non-half-filled embeddings,
+  even B in a paramagnet) is not done.
 - Spin (mine): with equal spin blocks, half filling per spin needs
   nu_s + M_s even, i.e. an even number of ghosts per spin. t2g B = 2 (3
   ghosts) + eg B = 3 (4 ghosts) gives 7 per spin: the half-filled embedding

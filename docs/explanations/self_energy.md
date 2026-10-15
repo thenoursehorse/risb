@@ -146,8 +146,7 @@ direction. Without ghosts $\mathbf{B}$ has no columns and $\mathbf{Z} =
 With ghosts $\mathcal{R}^{\dagger} \mathcal{R}$ is not the quasiparticle
 weight. It is the spectral weight of $\mathbf{G}$ summed over all frequencies
 (Eq. 49 of the supplemental of Ref. [^Lanata2017]), which is 1 if
-$\mathcal{R}$ is an isometry, because the poles of the ghosts carry the
-Hubbard bands.
+$\mathcal{R}$ is an isometry.
 
 ## Several clusters
 

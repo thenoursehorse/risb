@@ -159,15 +159,22 @@ S = LatticeSolver(..., projectors=projectors, check_projectors=True)
 
 ## Ghost quasiparticles
 
-In ghost {{RISB}}[^LanataGhost2017] [^Lanata2022] each cluster has more
-quasiparticles than orbitals. The extra (ghost) quasiparticles describe the
-Hubbard bands, e.g., a Mott insulator that still has a finite double
-occupancy. Give the number of quasiparticles of each block of each cluster as
-`bath_size`, which is also the number of bath orbitals of its impurity
-problem. E.g., for three quasiparticles for the one orbital of each spin
+In ghost {{RISB}}[^LanataGhost2017] [^Lanata2022] the quasiparticle
+Hamiltonian has $B$ orbitals for each orbital of a cluster instead of one, so
+$\mathcal{R}$ is $B \nu \times \nu$ for $\nu$ orbitals. The $B - 1$ extra
+quasiparticle orbitals per orbital, the ghosts, give the self-energy of the
+cluster up to $(B - 1) \nu$ poles, while without ghosts it is linear in frequency
+(see [the self-energy and the quasiparticle weight](../explanations/self_energy.md)).
+The poles can describe, e.g., the Hubbard bands and the gap of a Mott
+insulator. $B = 1$ is {{RISB}} without ghosts.
+
+Set $B$ with `bath_size`, the number of quasiparticle orbitals of each block,
+which is $B$ times the size of the block. It is also the number of bath
+orbitals of the impurity problem, so both solvers take it. E.g., for $B = 3$
 
 ```python
-bath_size = {"up": 3, "dn": 3}
+B = 3
+bath_size = {bl: B * bl_size for bl, bl_size in gf_struct}
 impurity_solver = FockitImpuritySolver(h_int, gf_struct, bath_size=bath_size)
 S = LatticeSolver(...
                   impurity_solvers = impurity_solver,
@@ -176,17 +183,34 @@ S = LatticeSolver(...
 )
 ```
 
-The `bath_size` of a block must be a multiple of the size of the block, and
-without `bath_size` there are no ghosts. The quasiparticle bands hold
-`S.n_ghost_electrons` more electrons than the physical ones, half the number
-of ghosts, so a filling `n_target` of the $k$-space integration weights must
-include them
+The impurity problem is half filled, so the ghosts hold $(B - 1) / 2$
+electrons per orbital. The quasiparticle bands then hold
+`S.n_ghost_electrons` more electrons than the physical ones, and the filling
+`n_target` of the $k$-space integration weights must include them
 
 ```python
 kweight = SmearingKWeight(beta=..., n_target=n_target)
 S = LatticeSolver(..., update_weights=kweight.update_weights, bath_size=...)
 kweight.n_target = n_target + S.n_ghost_electrons
 ```
+
+Half filling needs an even number of ghosts in a cluster, and for a paramagnet
+an even number for each spin. Otherwise the impurity problem has an odd number
+of electrons, so it has no $S_z = 0$ state and its ground state is degenerate.
+With the same $B$ for every orbital, an odd $B$ always works, and an even $B$
+only if each spin has an even number of orbitals.
+
+Blocks can have different $B$, e.g., a larger $B$ for the more correlated
+orbitals. They still share one impurity problem, with all the interactions of
+the cluster. E.g., for a $d$ shell with blocks of the $t_{2g}$ and $e_g$
+orbitals of each spin, $B = 3$ for $t_{2g}$ and $B = 2$ for $e_g$ give
+$6 + 2 = 8$ ghosts per spin
+
+```python
+bath_size = {"up_t2g": 9, "dn_t2g": 9, "up_eg": 4, "dn_eg": 4}
+```
+
+while $B = 2$ for $t_{2g}$ and $B = 3$ for $e_g$ give $3 + 4 = 7$.
 
 In a Mott insulator the ground state of the impurity problem can break a
 symmetry of the solution, e.g., it can be spin polarized. Enforce the

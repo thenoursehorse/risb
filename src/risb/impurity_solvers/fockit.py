@@ -82,9 +82,12 @@ class FockitImpuritySolver(ImpuritySolver):
         dropping states with a Boltzmann weight below ``1e-14`` relative to the
         ground state.
     bath_size : mapping, optional
-        Number of bath orbitals of each block, e.g. ``{"up": 3, "dn": 3}``.
-        Blocks that are not given have as many bath orbitals as physical
-        orbitals.
+        Number of bath orbitals of each block, ``B`` times its size for ghost
+        RISB with ``B`` quasiparticle orbitals per orbital, e.g.,
+        ``{"up": 3, "dn": 3}`` for ``B = 3`` and one orbital per spin. Blocks
+        that are not given have as many bath orbitals as physical orbitals
+        (``B = 1``). The total number of physical and bath orbitals must be
+        even.
 
     """
 
@@ -147,6 +150,9 @@ class FockitImpuritySolver(ImpuritySolver):
             for bl, bl_size in self.gf_struct + self.gf_struct_bath
             for i in range(bl_size)
         ]
+        if len(modes) % 2:
+            msg = f"The impurity problem has {len(modes)} orbitals, so it has no half-filled sector."
+            raise ValueError(msg)
         N = zero()
         for mode in modes:
             N += nc(*mode)

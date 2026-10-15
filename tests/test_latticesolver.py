@@ -681,3 +681,73 @@ def test_ghost_risb_gives_the_published_energy_of_the_hubbard_model(
     assert kweight.mu is not None
     quasiparticle_weight = helpers.get_z(S.R[0]["up"], S.Lambda[0]["up"], kweight.mu)
     assert quasiparticle_weight == pytest.approx(np.array([[Z]]), abs=1e-2)
+
+
+def test_orbitals_with_different_numbers_of_ghosts_give_their_own_solutions() -> None:
+    # Two half-filled Hubbard orbitals with no hopping or interaction between
+    # them, in one cluster with B = 3 for orbital 0 and B = 1 for orbital 1.
+    # Each orbital must match a cluster of that orbital alone
+    U = 2.4
+
+    def solve(bath_sizes: dict[str, int]) -> dict[str, tuple[float, float]]:
+        gf_struct = [(spin + o, 1) for o in bath_sizes for spin in ["up", "dn"]]
+        bath_size = {bl: bath_sizes[bl[2:]] for bl, _ in gf_struct}
+        h_int = zero()
+        Sz = zero()
+        for o, B in bath_sizes.items():
+            h_int += U * nc("up" + o, 0) * nc("dn" + o, 0)
+            h_int -= U / 2 * (nc("up" + o, 0) + nc("dn" + o, 0))
+            Sz += nc("up" + o, 0) - nc("dn" + o, 0)
+            for a in range(B):
+                Sz += nc("bath_up" + o, a) - nc("bath_dn" + o, a)
+        impurity_solver = FockitImpuritySolver(
+            h_int, gf_struct, diagonal_symmetries={Sz: 0}, bath_size=bath_size
+        )
+
+        def paramagnetic(A: list[BlockMatrix]) -> list[BlockMatrix]:
+            for o in bath_sizes:
+                A[0]["up" + o] = A[0]["dn" + o] = 0.5 * (
+                    A[0]["up" + o] + A[0]["dn" + o]
+                )
+            return A
+
+        kweight = SmearingKWeight(beta=200, n_target=len(bath_sizes))
+        S = LatticeSolver(
+            h0_k={bl: bethe_h0_k(200) for bl, _ in gf_struct},
+            gf_struct=gf_struct,
+            impurity_solvers=impurity_solver,
+            update_weights=kweight.update_weights,
+            symmetrizers=[paramagnetic],
+            force_real=True,
+            bath_size=[bath_size],
+        )
+        kweight.n_target = len(bath_sizes) + S.n_ghost_electrons
+        S.solve(tol=1e-10)
+        assert S.self_consistency_error < 1e-8
+        assert kweight.mu is not None
+        solution = {}
+        for o in bath_sizes:
+            Z = helpers.get_z(S.R[0]["up" + o], S.Lambda[0]["up" + o], kweight.mu)
+            docc = impurity_solver.overlap(nc("up" + o, 0) * nc("dn" + o, 0))
+            solution[o] = (float(Z[0, 0].real), float(np.real(docc)))
+        return solution
+
+    mixed = solve({"_0": 3, "_1": 1})
+    assert mixed["_0"] == pytest.approx(solve({"_0": 3})["_0"], abs=1e-8)
+    assert mixed["_1"] == pytest.approx(solve({"_1": 1})["_1"], abs=1e-8)
+
+
+def test_a_cluster_with_an_odd_number_of_ghosts_is_rejected() -> None:
+    # One ghost, so the impurity problem has five orbitals and no half filling
+    gf_struct = [("up", 1), ("dn", 1)]
+    bath_size = {"up": 2, "dn": 1}
+    with pytest.raises(ValueError, match="no half-filled sector"):
+        FockitImpuritySolver(zero(), gf_struct, bath_size=bath_size)
+    with pytest.raises(ValueError, match="1 ghosts"):
+        LatticeSolver(
+            h0_k={bl: bethe_h0_k(10) for bl, _ in gf_struct},
+            gf_struct=gf_struct,
+            impurity_solvers=FockitImpuritySolver(zero(), gf_struct),
+            update_weights=SmearingKWeight(beta=10, n_target=1).update_weights,
+            bath_size=[bath_size],
+        )

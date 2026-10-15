@@ -128,5 +128,5 @@ verify your implementation. It needs
 - Methods `get_rho_f(block)`, `get_rho_cf(block)`, and `get_rho_c(block)` that
   return them.
 - `entropy`, the entropy of the states found by `solve()`, which is zero for
-  a single ground state. Only {py:func}`risb.helpers.get_lagrangian` and
-  {py:func}`risb.helpers.get_entropy` use it, if you pass it to them.
+  a single ground state. It is only used if you pass it to
+  {py:func}`risb.helpers.get_lagrangian` or {py:func}`risb.helpers.get_entropy`.

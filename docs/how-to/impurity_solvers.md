@@ -317,10 +317,10 @@ dummy_solver = DummyImpuritySolver(impurity_solver=..., rotations=[rotate_spin])
 :::{note}
 `set_h_imp()` does nothing. `solve()` copies the density matrices stored in
 the referenced impurity solver and rotates them according to the list of
-functions in `rotations`. It also copies its `entropy`, which the rotations do
-not change. The referenced impurity solver must therefore be
+functions in `rotations`. The referenced impurity solver must therefore be
 solved first, i.e., come before the `DummyImpuritySolver` in the list of
-impurity solvers passed to `LatticeSolver`.
+impurity solvers passed to `LatticeSolver`. `solve()` also copies the
+`entropy` of the referenced solver, which the rotations do not change.
 :::
 
 :::{warning}

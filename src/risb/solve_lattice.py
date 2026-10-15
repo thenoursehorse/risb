@@ -116,13 +116,15 @@ class LatticeSolver:
         <https://doi.org/10.1103/PhysRevB.96.195126>`__,
         `10.1103/PhysRevB.105.045111
         <https://doi.org/10.1103/PhysRevB.105.045111>`__): the number of
-        quasiparticles of each block of each cluster, which is the number of
-        bath orbitals of its impurity problem, e.g., ``[{"up": 3, "dn": 3}]``
-        for three per orbital. It must be a multiple of the size of the block.
-        The quasiparticle bands then hold :attr:`n_ghost_electrons` more
-        electrons than the physical ones, which ``update_weights`` must include
-        in its filling. Default is the size of each block, i.e., RISB without
-        ghosts.
+        quasiparticle orbitals of each block of each cluster, ``B`` times the
+        size of the block for ``B`` quasiparticle orbitals per orbital, e.g.,
+        ``[{"up": 3, "dn": 3}]`` for ``B = 3`` and one orbital per spin. It is
+        also the number of bath orbitals of the impurity problem. The number
+        of ghosts of a cluster, ``bath_size`` minus the size summed over its
+        blocks, must be even. The quasiparticle bands then hold
+        :attr:`n_ghost_electrons` more electrons than the physical ones, which
+        ``update_weights`` must include in its filling. Default is the size of
+        each block (``B = 1``), i.e., RISB without ghosts.
 
     """
 
@@ -206,8 +208,9 @@ class LatticeSolver:
         # The Hermitian basis of each size of square matrix
         self._H_basis: dict[int, list[NDArray[np.inexact]]] = {}
 
-        #: list of dict : Number of quasiparticles of each block of each
-        #: cluster, which is the number of bath orbitals of its impurity problem.
+        #: list of dict : Number of quasiparticle orbitals of each block of
+        #: each cluster, which is the number of bath orbitals of its impurity
+        #: problem.
         self.bath_size: list[dict[str, int]] = [
             dict(gf_struct_i) for gf_struct_i in self.gf_struct
         ]
@@ -218,15 +221,28 @@ class LatticeSolver:
                 if self.bath_size[i][bl] % bl_size:
                     msg = f"bath_size {self.bath_size[i][bl]} of block {bl} of cluster {i} must be a multiple of its size {bl_size} !"
                     raise ValueError(msg)
-
-        #: float : Number of electrons per unit cell that the quasiparticle
-        #: bands hold beyond the physical ones, ``sum (bath_size - size) / 2``
-        #: over the blocks of the clusters.
-        self.n_ghost_electrons = sum(
-            (self.bath_size[i][bl] - bl_size) / 2
+        # The impurity problem of a cluster with nu orbitals and M quasiparticle
+        # orbitals (bath orbitals) is half filled, (nu + M) / 2
+        # electrons, so the number of ghosts M - nu must be even. A paramagnet
+        # also needs an even number of ghosts for each spin, which is not
+        # checked. The bath orbitals of a spin block couple only to that spin,
+        # so with nu_s, M_s and g_s = M_s - nu_s for each spin, half filling
+        # is N = nu_s + M_s = 2 nu_s + g_s electrons. S_z = 0 needs
+        # N_up = N_dn, i.e., N even, so for odd g_s there is no S_z = 0 state
+        # and the ground state is degenerate (S_z = +-1/2)
+        n_ghosts = [
+            sum(self.bath_size[i][bl] - bl_size for bl, bl_size in self.gf_struct[i])
             for i in range(self.n_clusters)
-            for bl, bl_size in self.gf_struct[i]
-        )
+        ]
+        for i, n in enumerate(n_ghosts):
+            if n % 2:
+                msg = f"Cluster {i} has {n} ghosts, but its impurity problem is half filled only for an even number !"
+                raise ValueError(msg)
+
+        #: int : Number of electrons per unit cell that the quasiparticle
+        #: bands hold beyond the physical ones, half the number of ghosts
+        #: (``bath_size`` minus the size of each block) of all clusters.
+        self.n_ghost_electrons = sum(n_ghosts) // 2
 
         # Projectors onto the quasiparticles of each cluster, the same as the
         # projectors without ghosts

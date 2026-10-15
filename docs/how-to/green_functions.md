@@ -92,8 +92,8 @@ G_k_iw = {
 
 Without ghosts the interacting Green's function from {{RISB}} only describes
 the quasiparticles: its spectral weight is $Z = \mathcal{R}^{\dagger}
-\mathcal{R}$ instead of 1, because the incoherent part (the Hubbard bands) is
-not described at the saddle point.
+\mathcal{R}$ instead of 1, because the incoherent part (e.g., the Hubbard
+bands) is not described at the saddle point.
 
 ## Local Green's function
 
