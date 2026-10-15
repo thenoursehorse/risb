@@ -61,6 +61,7 @@ class DummyImpuritySolver(ImpuritySolver):
         self.rho_f: BlockMatrix = {}
         self.rho_cf: BlockMatrix = {}
         self.rho_c: BlockMatrix = {}
+        self.entropy: float
 
     @override
     def set_h_imp(
@@ -73,7 +74,12 @@ class DummyImpuritySolver(ImpuritySolver):
 
     @override
     def solve(self) -> None:
-        """Copy the density matrices of the referenced impurity solver and apply :attr:`rotations`."""
+        """
+        Copy the density matrices and the entropy of the referenced impurity solver.
+
+        The density matrices are rotated by :attr:`rotations`, which do not
+        change the entropy.
+        """
         rho_f = dict(self.impurity_solver.rho_f)
         rho_cf = dict(self.impurity_solver.rho_cf)
         rho_c = dict(self.impurity_solver.rho_c)
@@ -84,6 +90,7 @@ class DummyImpuritySolver(ImpuritySolver):
         self.rho_f = rho_f
         self.rho_cf = rho_cf
         self.rho_c = rho_c
+        self.entropy = self.impurity_solver.entropy
 
     @override
     def get_rho_f(self, bl: str) -> NDArray[np.inexact]:

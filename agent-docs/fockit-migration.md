@@ -566,6 +566,33 @@ Done (step 8):
   symmetries raise; "warn" warns at D = 0 and not with hybridization.
 - How-to: "Choosing the eigensolver", "Symmetries", "Degenerate ground states".
 
+## Item 26 notes (different ghost counts per block)
+
+Step 1, literature (papers only):
+- Giuli et al., arXiv:2603.20559, Eq. 16, and Lanata's ghost DMET (PRB
+  2023), Eq. 63 of its supplement: the selection rule N(n) - N(Gamma) = m_i
+  for each fragment i, on the total numbers of the fragment (all blocks), so
+  the embedding holds B nu_i - m_i electrons (M_i - m_i with M_i quasiparticle
+  orbitals). m_i is any integer, each a different variational ansatz.
+- Ghost DMET, main text: different assignments of fermions give different
+  variational states, "among which the physical solution is the one
+  resulting in the lowest variational energy"; previous work found it is
+  generally the half-filled one, nu_i (B + 1) / 2, "integer for odd B".
+- Every paper read uses one odd B for all orbitals. The molecules paper
+  (arXiv:2403.05157) uses 2 and 4 ghosts per orbital, i.e. B = 3 and 5. None
+  uses an even B or a different B per block.
+- risb's code: bath_size is per block (a multiple of the block size), so a
+  mix like t2g B = 2, eg B = 3 is accepted. Gaps when nu_i + M_i is odd:
+  FockitImpuritySolver takes len(modes) // 2 (floor) and
+  LatticeSolver.n_ghost_electrons sums (M - nu) / 2 (a half-integer), which
+  disagree (the floor sector has m = ceil((M - nu) / 2)).
+- Spin (mine): with equal spin blocks, half filling per spin needs
+  nu_s + M_s even, i.e. an even number of ghosts per spin. t2g B = 2 (3
+  ghosts) + eg B = 3 (4 ghosts) gives 7 per spin: the half-filled embedding
+  has an odd number of electrons, so no Sz = 0 state. t2g B = 3 (6) + eg
+  B = 2 (2) gives 8, fine. One band with even B has B - 1 ghosts per spin,
+  odd, the same problem.
+
 ## Item 24 notes (ghost RISB: literature and how hard)
 
 Sources (papers only, no code read):
@@ -1966,12 +1993,16 @@ Problems:
   lru_cache of `ordering._insert` treat them as one mode: the same operator
   gets two normal orders that do not cancel (c+_0 c+_1 c_1 c_0 vs
   c+_1 c+_0 c_0 c_1 left in [h, Q]). Fix belongs in fockit:
-  `case numbers.Integral()` (np.integer is registered as Integral).
+  `case numbers.Integral(): return (0, int(mode))` (np.integer is
+  registered as Integral). Checked by patching it in at runtime: the int64
+  model then solves, with the int model's ground-state energy
+  (-2.96967843716710).
 - Frozen-shell model (item 18, decoupled full orbital, U = 2, J = 0, beta 40,
   n = 3), rerun now: starts lambda = 0 (default), (0, 4), (0, 6), (2, 7),
   (-4, 4) reach Z_1 = 0.86118 (error <= 2e-11); lambda = h0_loc = (-2, 2)
   still ends at R = 0 in 3 iterations, |f1|, |f2| = 0.6, with the
-  RuntimeWarning about unsatisfied equations.
+  RuntimeWarning about unsatisfied equations. Closed (user): known and warned.
 - DummyImpuritySolver has no `entropy`: `[s.entropy for s in solvers]` fails
   with Dummy clusters (a unitary rotation does not change the entropy, so
-  the referenced solver's value is the right one).
+  the referenced solver's value is the right one). Done: `entropy` is in
+  the `ImpuritySolver` protocol, and DummyImpuritySolver.solve copies it.

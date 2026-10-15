@@ -37,3 +37,18 @@ def test_dummy_returns_rotated_copy_of_referenced_solver() -> None:
         assert dummy.get_rho_c(bl) == pytest.approx(
             impurity_solver.get_rho_c(bl_rotated)
         )
+
+
+def test_dummy_has_the_entropy_of_the_referenced_solver() -> None:
+    gf_struct = [("up", 1), ("dn", 1)]
+    impurity_solver = FockitImpuritySolver(nc("up", 0) * nc("dn", 0), gf_struct, beta=2)
+    dummy = DummyImpuritySolver(impurity_solver, rotations=[swap_spin])
+
+    Lambda_c = {bl: np.array([[-0.5]]) for bl, _ in gf_struct}
+    D = {bl: np.array([[-0.3333]]) for bl, _ in gf_struct}
+    for solver in [impurity_solver, dummy]:
+        solver.set_h_imp(Lambda_c, D)
+        solver.solve()
+
+    assert impurity_solver.entropy > 0.01
+    assert dummy.entropy == pytest.approx(impurity_solver.entropy, abs=1e-14)

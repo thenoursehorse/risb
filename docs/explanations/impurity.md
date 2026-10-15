@@ -127,3 +127,6 @@ verify your implementation. It needs
   and `rho_c[bl][alpha, beta]` $= \langle \hat{c}^{\dagger}_{i\alpha} \hat{c}^{}_{i\beta} \rangle$.
 - Methods `get_rho_f(block)`, `get_rho_cf(block)`, and `get_rho_c(block)` that
   return them.
+- `entropy`, the entropy of the states found by `solve()`, which is zero for
+  a single ground state. Only {py:func}`risb.helpers.get_lagrangian` and
+  {py:func}`risb.helpers.get_entropy` use it, if you pass it to them.

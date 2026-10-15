@@ -52,6 +52,9 @@ class ImpuritySolver(Protocol):
     rho_c: BlockMatrix
     """c-electron density matrix of each block in :attr:`gf_struct`, set by :meth:`solve`."""
 
+    entropy: float
+    """Entropy of the states of the impurity problem, set by :meth:`solve`."""
+
     def set_h_imp(
         self,
         Lambda_c: BlockMatrixLike,
