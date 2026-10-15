@@ -116,7 +116,7 @@ calculates the density matrices described below for every block.
 
 `solve()` raises a `ValueError` if `h_imp` is not Hermitian, and
 {py:class}`scipy.sparse.linalg.ArpackNoConvergence` if `eigsh` does not
-converge. If the ground state is degenerate, the solver returns one state in
+converge, also after two retries that each double its `ncv`. If the ground state is degenerate, the solver returns one state in
 the degenerate subspace, and which one is not specified.
 
 ### Choosing the eigensolver
@@ -220,7 +220,10 @@ degenerate ground state is averaged over.
 
 `overlap` also gives thermal averages. Only the eigenstates with a Boltzmann
 weight above $10^{-14}$ relative to the ground state are found, so it is slower
-than the ground state when there are many low-lying states.
+than the ground state when there are many low-lying states. A sector of at most
+2000 states is diagonalized as a dense matrix. In a larger one `eigsh` can
+miss a state of a degenerate level, so the solver also looks for missed states
+below the highest one it found.
 
 ### Getting the density matrices
 

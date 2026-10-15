@@ -34,13 +34,22 @@ from fockit.hilbert import (
 )
 from fockit.hilbert.symmetries import OnsiteSymmetry, PermutationSymmetry
 from numpy.typing import NDArray
-from scipy.sparse.linalg import eigsh
+from scipy.sparse.linalg import ArpackNoConvergence, aslinearoperator, eigsh
 
 from risb.helpers import get_entropy_impurity
 from risb.types import BlockMatrix, BlockMatrixLike, GfStruct, ImpuritySolver
 
 # Boltzmann weight, relative to the ground state, below which a state is dropped
 _WEIGHT_TOL = 1e-14
+
+# Largest sector that a thermal solve diagonalizes as a dense matrix
+_DENSE_DIM = 2000
+
+# Times eigsh is retried with a doubled ncv when it does not converge
+_ARPACK_RETRIES = 2
+
+# Energy below the highest state found by eigsh at which a state was missed
+_MISSED_TOL = 1e-10
 
 
 class FockitImpuritySolver(ImpuritySolver):
@@ -80,7 +89,8 @@ class FockitImpuritySolver(ImpuritySolver):
         the density matrices are from its ground state. With a float they are
         thermal averages over the eigenstates of the half-filled sector,
         dropping states with a Boltzmann weight below ``1e-14`` relative to the
-        ground state.
+        ground state. A sector of at most 2000 states is diagonalized as a
+        dense matrix.
     bath_size : mapping, optional
         Number of bath orbitals of each block, ``B`` times its size for ghost
         RISB with ``B`` quasiparticle orbitals per orbital, e.g.,
@@ -373,7 +383,7 @@ class FockitImpuritySolver(ImpuritySolver):
         dim = H.shape[0]
         if self.method == "eigh":
             energies, states = scipy.linalg.eigh(H.toarray(), **self.method_options)
-        elif dim <= k + 1:
+        elif dim <= k + 1 or (self.beta is not None and dim <= _DENSE_DIM):
             energies, states = np.linalg.eigh(H.toarray())
         else:
             energies, states = _eigsh(H, k, self.method_options)
@@ -388,11 +398,8 @@ class FockitImpuritySolver(ImpuritySolver):
                     energies, states = np.linalg.eigh(H.toarray())
                     break
                 energies, states = _eigsh(H, k, self.method_options)
-            if self.beta is not None:
-                # eigsh's vectors within a degenerate level need not be orthogonal
-                subspace = scipy.linalg.orth(states)
-                energies, rotation = np.linalg.eigh(subspace.conj().T @ (H @ subspace))
-                states = subspace @ rotation
+            if 1 < len(energies) < dim:
+                energies, states = _add_missed_states(H, states, self.method_options)
 
         if (
             self.degenerate == "warn"
@@ -549,9 +556,45 @@ def _eigsh(
         "v0": np.random.default_rng(0).normal(size=dim),
         "ncv": min(dim, max(40, 2 * k + 1)),
     } | dict(method_options)
-    energies, states = eigsh(H, k=k, **options)
+    # ARPACK can run out of iterations when eigenvalues are close, and a
+    # larger Krylov space usually fixes it
+    for _ in range(_ARPACK_RETRIES):
+        try:
+            energies, states = eigsh(H, k=k, **options)
+            break
+        except ArpackNoConvergence:
+            options["ncv"] = min(dim, 2 * options["ncv"])
+    else:
+        energies, states = eigsh(H, k=k, **options)
     order = np.argsort(energies)
     return energies[order], states[:, order]
+
+
+def _add_missed_states(
+    H: Any, states: NDArray[np.complex128], method_options: Mapping[str, Any]
+) -> tuple[NDArray[np.float64], NDArray[np.complex128]]:
+    # Lanczos finds one state of a degenerate level in exact arithmetic, so
+    # eigsh can skip the others. Shift the states found above the highest of
+    # them, and add the lowest state of the shifted H while it is below it
+    dim = H.shape[0]
+    while True:
+        # As when eigsh finds more states, diagonalize the whole sector once
+        # the states would be more than a quarter of it
+        if dim <= 2 * (2 * states.shape[1] + 1):
+            energies, states = np.linalg.eigh(H.toarray())
+            return energies, states
+        # eigsh's vectors within a degenerate level need not be orthogonal
+        states = scipy.linalg.orth(states)
+        energies, rotation = np.linalg.eigh(states.conj().T @ (H @ states))
+        states = states @ rotation
+        shift = energies[-1] - energies[0] + 1
+        shifted = aslinearoperator(H) + shift * (
+            aslinearoperator(states) @ aslinearoperator(states.conj().T)
+        )
+        energy, state = _eigsh(shifted, 1, method_options)
+        if energy[0] > energies[-1] - _MISSED_TOL:
+            return energies, states
+        states = np.column_stack([states, state])
 
 
 def _weight(energies: NDArray[np.float64], beta: float) -> NDArray[np.float64]:

@@ -456,36 +456,35 @@ def test_thermal_density_matrices_average_a_degenerate_ground_state() -> None:
 
 
 def test_eigsh_and_eigh_give_the_same_thermal_density_matrices() -> None:
-    # Two Kanamori orbitals weakly coupled to the bath have many low-lying states
-    n_orb = 2
-    spin_names = ["up", "dn"]
-    gf_struct = [(bl, n_orb) for bl in spin_names]
-    h_int = h_int_kanamori(
-        spin_names,
-        n_orb,
-        U=1.2 * (1 - np.eye(n_orb)),
-        Uprime=3 * np.eye(n_orb) + 1.8 * (1 - np.eye(n_orb)),
-        J_hund=0.6,
-    )
-    splitting = np.diag([0.1, -0.05])
-    rho = {}
+    # One orbital with six bath orbitals, one at zero energy and weakly
+    # coupled, has degenerate low-lying levels. Its sector has 3432 states,
+    # more than are diagonalized as a dense matrix. Whether eigsh alone misses
+    # a state of a degenerate level depends on rounding, and here it does
+    gf_struct = [("up", 1), ("dn", 1)]
+    U = 2.4
+    h_int = U * nc("up", 0) * nc("dn", 0) - U / 2 * (nc("up", 0) + nc("dn", 0))
+    rng = np.random.default_rng(34)
+    levels = np.sort(rng.normal(size=6))
+    levels[3] = 0
+    D = 0.4 * rng.normal(size=(6, 1))
+    D[3] = 0.01
+    solvers = {}
     methods: list[Literal["eigsh", "eigh"]] = ["eigsh", "eigh"]
     for method in methods:
-        impurity_solver = FockitImpuritySolver(h_int, gf_struct, method=method, beta=40)
+        impurity_solver = FockitImpuritySolver(
+            h_int, gf_struct, method=method, beta=200, bath_size={"up": 6, "dn": 6}
+        )
         impurity_solver.set_h_imp(
-            dict.fromkeys(spin_names, splitting),
-            {bl: 0.05 * np.eye(n_orb) for bl in spin_names},
-            dict.fromkeys(spin_names, -splitting),
+            {bl: np.diag(levels) for bl, _ in gf_struct}, {bl: D for bl, _ in gf_struct}
         )
         impurity_solver.solve()
-        rho[method] = (
-            impurity_solver.rho_f,
-            impurity_solver.rho_cf,
-            impurity_solver.rho_c,
-        )
-    for got, expected in zip(rho["eigsh"], rho["eigh"], strict=True):
-        for bl in spin_names:
-            assert got[bl] == pytest.approx(expected[bl], abs=1e-10)
+        solvers[method] = impurity_solver
+    assert solvers["eigsh"].entropy == pytest.approx(solvers["eigh"].entropy, abs=1e-10)
+    for bl, _ in gf_struct:
+        for rho in ["rho_f", "rho_cf", "rho_c"]:
+            got = getattr(solvers["eigsh"], rho)[bl]
+            expected = getattr(solvers["eigh"], rho)[bl]
+            assert got == pytest.approx(expected, abs=1e-10)
 
 
 def test_complex_two_orbital_model_reaches_the_mott_state_with_a_thermal_impurity() -> (

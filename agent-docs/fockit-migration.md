@@ -178,6 +178,19 @@ user to review. Update this file as steps finish. Delete it when done.
    ansatz, the physical one the lowest energy. Needed for even B in a
    paramagnet. Would need one value per cluster shared by
    FockitImpuritySolver (sector) and LatticeSolver (n_ghost_electrons).
+32. [ ] Thermal average over one symmetry sector (user; found in item 26):
+   with `beta` and `diagonal_symmetries` (e.g. {Sz: 0}) FockitImpuritySolver
+   averages only over the eigenstates of that sector, not a Gibbs average
+   over all of the half-filled sector. E.g. one band, B = 5: the first
+   excited level is a triplet (S = 1); with {Sz: 0} its Sz = +-1 states are
+   left out. Fix idea: sum the Gibbs weights over all sectors of the
+   symmetry, solving each.
+33. [ ] Redundant ghosts (from item 26): one band, U = 2.4, B = 5 converges
+   to the B = 3 solution plus two ghosts per spin with R = 0 near mu, and
+   the self-consistency error stays 0.05-0.6 with every impurity mode. The
+   decoupled orbitals of item 18 and the U = 0 ghosts of item 24. Options to
+   investigate: the core treatment for ghosts, or detecting and removing
+   ghosts that decouple.
 
 ## Commits
 
@@ -631,6 +644,31 @@ Step 1, literature (papers only):
   (seeds 1-5: 4 of 5 right). Single-vector Lanczos sees one vector per
   degenerate eigenspace in exact arithmetic, so the thermal solver's
   eigsh path can drop degenerate states without an error.
+- B = 5 levels: ground state, then an S = 1 triplet (exact 3-fold) and a
+  singlet 2e-8 above it.
+- Options measured (thermal, dim 924 at beta 2000; 2-orbital Kanamori B = 3,
+  dim 12870, beta 200 / 40 / 20 with 3 / 13 / 68 states): current doubling
+  fails / 0.33 / 0.76 / 4.8 s; deflation one state at a time 0.08 / 0.31 /
+  1.77 / 13.8 s (beta 10 still running after 25 min: too slow at high T);
+  doubling + ncv retries + deflated check 7.2 / 0.45 / 0.90 / 5.3 s; dense
+  0.02 s at 924, 108 s at 12870; lobpcg 0.48 s at 924 (tolerance warnings).
+- Done (user: dense below a size, current doubling above, with bounded
+  retries): thermal solves diagonalize sectors <= 2000 densely; _eigsh
+  retries twice with doubled ncv (capped at dim) then raises; after the
+  doubling (and for degenerate="warn", k = 2) _add_missed_states shifts the
+  found states up and adds the lowest state of the shifted H while it is
+  below the highest found, switching to dense once the states are a quarter
+  of the sector (bounded, no arbitrary cap: a highly degenerate level can
+  have more missed copies than eigsh found). Test: one band B = 6 (3432),
+  rng 34 inputs, eigsh = eigh to 1e-10; fails without the change (11 vs 12
+  states). A miss depends on rounding: the same inputs printed to 17 digits
+  (1 ulp off) are not missed, and an exactly degenerate model (two decoupled
+  zero-energy baths, 20 states) is found by plain eigsh.
+- B = 5 after the fix: no crash, but no solution with any impurity mode
+  (ground state 999 it error 0.58; beta 200 error 0.05; beta 2000 error
+  0.33). It is the B = 3 solution (levels +-1.0665, 0, same |R|, energy
+  -0.06152) plus two ghosts per spin with R = 0 at +-0.0014, occupations
+  0.57 / 0.43: decoupled ghosts, item 33.
 - Step 2b (user: option 1): LatticeSolver raises if a cluster has an odd
   number of ghosts, FockitImpuritySolver if its number of modes is odd;
   n_ghost_electrons is an int. Choosing M_i (non-half-filled embeddings,
