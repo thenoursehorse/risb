@@ -11,7 +11,7 @@ authors = [
   {name = "H. L. Nourse"}
 ]
 dependencies = [
-  "fockit>=0.4.1",
+  "fockit>=0.4.2",
   "numpy",
   "scipy",
 ]
