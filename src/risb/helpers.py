@@ -969,6 +969,167 @@ def get_z(
     return Z
 
 
+def get_g0_k_w(
+    omega: NDArray[np.inexact], h0_k: BlockMatrixLike, mu: float = 0.0
+) -> BlockMatrix:
+    """
+    Return the non-interacting Green's function at each k-point and frequency.
+
+    Parameters
+    ----------
+    omega : numpy.ndarray
+        Frequencies, relative to the chemical potential, e.g., ``w + 1j * eta``
+        or Matsubara frequencies.
+    h0_k : risb.types.BlockMatrixLike
+        Single-particle dispersion, indexed as k, orb_i, orb_j.
+    mu : float, optional
+        Chemical potential.
+
+    Returns
+    -------
+    risb.types.BlockMatrix
+        ``[w + mu - h0_k]^-1`` in each block, indexed as k, frequency, orb_i,
+        orb_j.
+
+    """
+    g0_k_w: BlockMatrix = {}
+    for bl, h0 in h0_k.items():
+        energies, vectors = np.linalg.eigh(h0)
+        g0_k_w[bl] = _resolvent(omega, mu, energies, vectors, vectors)
+    return g0_k_w
+
+
+def get_g_qp_k_w(
+    omega: NDArray[np.inexact],
+    R_full: BlockMatrixLike,
+    Lambda_full: BlockMatrixLike,
+    h0_kin_k: BlockMatrixLike,
+    mu: float = 0.0,
+) -> BlockMatrix:
+    """
+    Return the Green's function of the quasiparticles at each k-point and frequency.
+
+    Parameters
+    ----------
+    omega : numpy.ndarray
+        Frequencies, relative to the chemical potential, e.g., ``w + 1j * eta``
+        or Matsubara frequencies.
+    R_full : risb.types.BlockMatrixLike
+        Renormalization matrix of the lattice in each block, with a row for
+        each quasiparticle and a column for each orbital, e.g.,
+        :attr:`risb.LatticeSolver.R_full`. It can depend on k.
+    Lambda_full : risb.types.BlockMatrixLike
+        Correlation potential of the quasiparticles of the lattice in each
+        block, e.g., :attr:`risb.LatticeSolver.Lambda_full`.
+    h0_kin_k : risb.types.BlockMatrixLike
+        Single-particle dispersion without the local terms of the clusters,
+        e.g., :attr:`risb.LatticeSolver.h0_kin_k`.
+    mu : float, optional
+        Chemical potential.
+
+    Returns
+    -------
+    risb.types.BlockMatrix
+        ``[w + mu - H_qp(k)]^-1`` in each block, with ``H_qp(k) = R h0_kin_k
+        R^dag + Lambda``, indexed as k, frequency, quasiparticle,
+        quasiparticle.
+
+    """
+    g_qp_k_w: BlockMatrix = {}
+    for bl, h0 in h0_kin_k.items():
+        energies, vectors = np.linalg.eigh(get_h_qp(R_full[bl], Lambda_full[bl], h0))
+        g_qp_k_w[bl] = _resolvent(omega, mu, energies, vectors, vectors)
+    return g_qp_k_w
+
+
+def get_g_k_w(
+    omega: NDArray[np.inexact],
+    R_full: BlockMatrixLike,
+    Lambda_full: BlockMatrixLike,
+    h0_kin_k: BlockMatrixLike,
+    mu: float = 0.0,
+) -> BlockMatrix:
+    """
+    Return the Green's function of RISB at each k-point and frequency.
+
+    Parameters
+    ----------
+    omega : numpy.ndarray
+        Frequencies, relative to the chemical potential, e.g., ``w + 1j * eta``
+        or Matsubara frequencies.
+    R_full : risb.types.BlockMatrixLike
+        Renormalization matrix of the lattice in each block, with a row for
+        each quasiparticle and a column for each orbital, e.g.,
+        :attr:`risb.LatticeSolver.R_full`. It can depend on k.
+    Lambda_full : risb.types.BlockMatrixLike
+        Correlation potential of the quasiparticles of the lattice in each
+        block, e.g., :attr:`risb.LatticeSolver.Lambda_full`.
+    h0_kin_k : risb.types.BlockMatrixLike
+        Single-particle dispersion without the local terms of the clusters,
+        e.g., :attr:`risb.LatticeSolver.h0_kin_k`.
+    mu : float, optional
+        Chemical potential.
+
+    Returns
+    -------
+    risb.types.BlockMatrix
+        ``R^dag [w + mu - H_qp(k)]^-1 R`` in each block, indexed as k,
+        frequency, orb_i, orb_j. It is also the Green's function from Dyson's
+        equation with the self-energy :func:`get_sigma_w` of each cluster.
+
+    """
+    g_k_w: BlockMatrix = {}
+    for bl, h0 in h0_kin_k.items():
+        energies, vectors = np.linalg.eigh(get_h_qp(R_full[bl], Lambda_full[bl], h0))
+        left = _dagger(R_full[bl]) @ vectors
+        g_k_w[bl] = _resolvent(omega, mu, energies, left, left)
+    return g_k_w
+
+
+def get_g_w_loc(
+    g_k_w: BlockMatrixLike,
+    projectors: Sequence[BlockMatrixLike] | None = None,
+    gf_struct_mapping: Sequence[Mapping[str, str]] | None = None,
+) -> list[BlockMatrix]:
+    """
+    Return the local Green's function of each cluster.
+
+    Parameters
+    ----------
+    g_k_w : risb.types.BlockMatrixLike
+        Green's function in each block of the lattice, indexed as k,
+        frequency, orb_i, orb_j, on a uniform mesh, e.g., from
+        :func:`get_g_k_w`.
+    projectors : list of risb.types.BlockMatrixLike, optional
+        The projectors onto the subspace of each cluster, as in
+        :class:`risb.LatticeSolver`. They can depend on k. Without them there
+        is one cluster, the whole unit cell.
+    gf_struct_mapping : list of mapping, optional
+        The mapping from the blocks of each cluster to the blocks of
+        ``g_k_w``. Default assumes they are the same.
+
+    Returns
+    -------
+    list of risb.types.BlockMatrix
+        The average over k of ``P g_k_w P^dag`` in each block of each cluster,
+        indexed as frequency, orb_i, orb_j.
+
+    """
+    if projectors is None:
+        return [{bl: np.mean(g, axis=0) for bl, g in g_k_w.items()}]
+    if gf_struct_mapping is None:
+        gf_struct_mapping = [{bl: bl for bl in g_k_w} for _ in range(len(projectors))]
+    g_w_loc: list[BlockMatrix] = []
+    for i, P_i in enumerate(projectors):
+        g_w_loc.append({})
+        for bl, P in P_i.items():
+            # A frequency axis, after the k-points if P depends on k
+            P_w = np.asarray(P)[..., None, :, :]
+            g = g_k_w[gf_struct_mapping[i][bl]]
+            g_w_loc[i][bl] = np.mean(P_w @ g @ _dagger(P_w), axis=0)
+    return g_w_loc
+
+
 def get_h_qp(
     R: NDArray[np.inexact],
     Lambda: NDArray[np.inexact],
@@ -1406,6 +1567,23 @@ def _self_energy_poles(
     ghosts = U[:, np.sum(singular_values > tol) :]
     poles, vectors = np.linalg.eigh(_dagger(ghosts) @ Lambda @ ghosts)
     return _dagger(R) @ R, poles, _dagger(R) @ Lambda @ ghosts @ vectors
+
+
+def _resolvent(
+    omega: NDArray[np.inexact],
+    mu: float,
+    energies: NDArray[np.floating],
+    left: NDArray[np.inexact],
+    right: NDArray[np.inexact],
+) -> NDArray[np.complex128]:
+    # sum_n left[k, a, n] right[k, b, n]^* / (w + mu - energies[k, n]), indexed
+    # as k, frequency, a, b
+    z = np.asarray(omega) + mu
+    inverse = 1 / (z[None, :, None] - energies[:, None, :])
+    resolvent: NDArray[np.complex128] = np.einsum(
+        "kan,kwn,kbn->kwab", left, inverse, right.conj()
+    )
+    return resolvent
 
 
 def _dagger(A: NDArray[np.inexact]) -> NDArray[np.inexact]:

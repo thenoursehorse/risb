@@ -1,24 +1,12 @@
 # ruff: noqa: D100
 import logging
+from itertools import product
 
+import matplotlib.pyplot as plt
 import numpy as np
 from fockit.algebra import nc, zero
-from triqs.gfs import MeshImFreq, MeshProduct
-from triqs.lattice.tight_binding import (
-    BravaisLattice,
-    BrillouinZone,
-    MeshBrZone,
-    TBLattice,
-)
 
-from risb import LatticeSolver
-from risb.helpers_triqs import (
-    get_g0_k_w,
-    get_g_k_w,
-    get_g_qp_k_w,
-    get_g_w_loc,
-    get_sigma_w,
-)
+from risb import LatticeSolver, helpers
 from risb.impurity_solvers import FockitImpuritySolver
 from risb.kweight import SmearingKWeight
 
@@ -32,23 +20,14 @@ n_orb = 2
 spin_names = ["up", "dn"]
 gf_struct = [(bl, n_orb) for bl in spin_names]
 
-# Non-interacting cubic dispersion on lattice, built using TRIQS
+# Bilayer cubic dispersion on a Gamma-centred k-mesh
 nkx = 10  # nkx**3 total number of k-points
 t = -1.0 / 3.0  # hopping amplitude
-V = 0.25  # Bilayer hopping between orbitals on same site
-units = np.eye(3)  # lattice vectors, a1, a2, a3 on a cube
-hoppings = {}
-for i in range(3):
-    hoppings[tuple((units[:, i]).astype(int))] = np.eye(n_orb) * t
-    hoppings[tuple((-units[:, i]).astype(int))] = np.eye(n_orb) * t
-    hoppings[(0, 0, 0)] = np.array([[0, V], [V, 0]])
-tbl = TBLattice(units=units, hoppings=hoppings, orbital_positions=[(0, 0, 0)] * n_orb)
-bl = BravaisLattice(units=units)
-bz = BrillouinZone(bl)
-mk = MeshBrZone(bz, nkx)
-h0_k = {}
-for bl, _ in gf_struct:
-    h0_k[bl] = tbl.fourier(mk).data
+V = 0.25  # hopping between the two orbitals of a site
+k_mesh = 2 * np.pi * np.array(list(product(range(nkx), repeat=3))) / nkx
+dispersion = 2 * t * np.sum(np.cos(k_mesh), axis=1)
+h0 = dispersion[:, None, None] * np.eye(n_orb) + np.array([[0, V], [V, 0]])
+h0_k = dict.fromkeys(spin_names, h0)
 
 # Hubbard interactions
 U = 4
@@ -74,49 +53,51 @@ S = LatticeSolver(
 
 # Solve
 S.solve(tol=1e-6)
-
-# Some different ways to construct some Green's functions
-
-# The k-space and frequency mesh of the problem
-iw_mesh = MeshImFreq(beta=beta, statistic="Fermion", n_iw=64)
-k_iw_mesh = MeshProduct(mk, iw_mesh)
-
 assert kweight.mu is not None
 mu = kweight.mu
 
-# Gf constructed from local self-energy
-G0_k_iw = get_g0_k_w(gf_struct=gf_struct, mesh=k_iw_mesh, h0_k=h0_k, mu=mu)
-Sigma_iw = get_sigma_w(
-    mesh=iw_mesh,
-    gf_struct=gf_struct,
-    Lambda=S.Lambda[0],
-    R=S.R[0],
-    h0_loc=S.h0_loc_matrix[0],
-    mu=mu,
+# R and Lambda in the blocks of the lattice. S.R_full and S.Lambda_full are
+# from the start of the last cycle, one step behind S.R and S.Lambda
+R_full, Lambda_full = helpers.upfold_r_lambda(S.R, S.Lambda, S.h0_kin_k)
+
+# Green's functions at Matsubara frequencies, indexed as k, frequency, orb, orb
+iw = 1j * (2 * np.arange(64) + 1) * np.pi / beta
+
+# From Dyson's equation with the self-energy of the cluster
+G0_k_iw = helpers.get_g0_k_w(iw, h0_k, mu)
+Sigma_iw = {
+    bl: helpers.get_sigma_w(iw, S.R[0][bl], S.Lambda[0][bl], mu, S.h0_loc_matrix[0][bl])
+    for bl in spin_names
+}
+G_k_iw = {
+    bl: np.linalg.inv(np.linalg.inv(G0_k_iw[bl]) - Sigma_iw[bl][None])
+    for bl in spin_names
+}
+
+# From the quasiparticles, R^dag G_qp R
+G_k_iw2 = helpers.get_g_k_w(iw, R_full, Lambda_full, S.h0_kin_k, mu)
+
+# Local Green's functions, averaged over k
+G_iw_loc = helpers.get_g_w_loc(G_k_iw)[0]
+G_iw_loc2 = helpers.get_g_w_loc(G_k_iw2)[0]
+
+# Local spectral function on real frequencies, broadened by eta
+eta = 0.05
+w = np.linspace(-10, 10, 4001)
+G_w_loc = helpers.get_g_w_loc(
+    helpers.get_g_k_w(w + 1j * eta, R_full, Lambda_full, S.h0_kin_k, mu)
+)[0]
+A_w = {bl: -np.trace(G_w_loc[bl], axis1=1, axis2=2).imag / np.pi for bl in spin_names}
+
+# The spectral weight is Tr R^dag R, not the number of orbitals, because the
+# Hubbard bands are not in the Green's function of RISB without ghosts
+spectral_weight = np.sum(A_w["up"]) * (w[1] - w[0])
+logger.info(
+    f"Spectral weight {spectral_weight:.4f}, Tr R^dag R "
+    f"{np.trace(S.Z[0]['up']).real:.4f}"
 )
-G_k_iw = get_g_k_w(g0_k_w=G0_k_iw, sigma_w=Sigma_iw)
 
-# Gf constructed from quasiparticle Gf
-G_qp_k_iw = get_g_qp_k_w(
-    gf_struct=gf_struct,
-    mesh=k_iw_mesh,
-    h0_kin_k=S.h0_kin_k,
-    Lambda=S.Lambda[0],
-    R=S.R[0],
-    mu=mu,
-)
-G_k_iw2 = get_g_k_w(g_qp_k_w=G_qp_k_iw, R=S.R[0])
-
-# Local Green's functions integrated over k
-G0_iw_loc = get_g_w_loc(
-    G0_k_iw
-)  # this is using the correlated chemical potential, so will not have right filling
-G_qp_iw_loc = get_g_w_loc(G_qp_k_iw)
-G_iw_loc = get_g_w_loc(G_k_iw)
-G_iw_loc2 = get_g_w_loc(G_k_iw2)
-
-# Filling of physical electron scales with Z
-logger.info(f"Filling G0: {G0_iw_loc.total_density().real:.4f}")
-logger.info(f"Filling G_qp: {G_qp_iw_loc.total_density().real:.4f}")
-logger.info(f"Filling G: {G_iw_loc.total_density().real:.4f}")
-logger.info(f"Filling G2: {G_iw_loc2.total_density().real:.4f}")
+plt.plot(w, A_w["up"], "-k")
+plt.xlabel(r"$\omega$")
+plt.ylabel(r"$A(\omega)$")
+plt.show()

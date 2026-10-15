@@ -7,7 +7,6 @@ Rotationally invariant slave-bosons.
 - Add multiple cluster tests, complex SOC tests,
   all helpers functions (make random inputs and store, because current tests
   have too much structure)
-- Add helpers_triqs tests
 - Fix sensitive to initial R, Lambda guess, make more robust
 - Implement initial guess as R, pdensity, as this will likely be more robust.
 - Add verbose output to `LatticeSolver`

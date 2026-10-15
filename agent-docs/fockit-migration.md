@@ -159,7 +159,7 @@ user to review. Update this file as steps finish. Delete it when done.
    particle number then.
 27. [x] (done: removed the solver, the tests' solver parametrization (101 tests, no skips), the benchmark's AtomDiag columns, the docs section and about entry; the TRIQS citation moved to the Green's function how-to; get_C_Op stays for item 28 because helpers_triqs.matrix_to_Op uses it) Remove AtomDiag (user): AtomDiagImpuritySolver and what only it
    needs.
-28. [ ] Investigate the benefit of having helpers_triqs and its Green's
+28. [x] (done: helpers_triqs removed, numpy Green's function helpers in helpers, TRIQS out of CI/CD; see Item 28 notes) Investigate the benefit of having helpers_triqs and its Green's
    function helpers at all (user). Should the Green's function helpers be in
    helpers without TRIQS, like helpers.get_sigma_w?
 29. [x] Review comments and docstrings (user): they have started to narrate
@@ -875,6 +875,35 @@ had rewritten. Then the committed migration work (9f62a29..26e0868):
 - Left: commented-out old code in tests/test_impurity_solvers.py (hubb_N)
   and examples/decorated_honeycomb_trimer_basis.py (an impurity_solvers
   line). Item 29 done.
+
+## Item 28 notes (helpers_triqs)
+
+Audit: group 1, TRIQS-operator helpers (get_C_Op, matrix_to_Op,
+get_h0_loc_blocks, get_h0_loc, get_gf_struct_from_g): unused, with fockit
+twins in helpers_fockit; deleted (user). Group 2, Green's function helpers:
+only one cluster covering the whole cell (R and Lambda of the cluster used
+directly, no projectors, clusters or ghosts), slow duplicate code paths;
+replaced by numpy helpers (user): helpers.get_g0_k_w(omega, h0_k, mu),
+get_g_qp_k_w and get_g_k_w(omega, R_full, Lambda_full, h0_kin_k, mu) (from the
+eigenvectors of H_qp, private _resolvent), get_g_w_loc(g_k_w, projectors,
+gf_struct_mapping) (a list per cluster, the k average of P g P^dag).
+Tests: the old TRIQS test ported (Sigma independent of the quasiparticle
+basis, Dyson = R^dag G_qp R locally); G with ghosts, two clusters, k-dependent
+projectors and an orbital in no cluster = Dyson with the upfolded Sigma; the
+local G does not depend on a basis that rotates with k (a missing conjugate
+in get_g_w_loc fails it). Example green_functions.py in numpy: Matsubara G
+both ways (agree to 2e-15), spectral function on w + i 0.05, weight 0.9028
+vs Tr R^dag R 0.9057 (test 1e-2). Found: S.R_full / S.Lambda_full are from
+the start of the last cycle, ~1e-8 behind S.R after solve (docs now say so;
+the example uses upfold_r_lambda(S.R, S.Lambda, ...)). How-to rewritten,
+with a checked snippet that fills a TRIQS BlockGf. Removed: helpers_triqs,
+its test and API page, environment.yml, CI's TRIQS job (docs build moved to
+the main job), micromamba in CD's docs build, the triqs mypy override,
+intersphinx and type mappings, README's optional TRIQS, test_docs's TRIQS
+skips, TRIQS links in helpers_fockit (now literals). The TRIQS citation
+too (user): nothing in risb uses TRIQS, so it is gone from the how-to,
+CITATION.bib and CITATION.cff; the how-to only says the arrays are easily
+converted to TRIQS Green's functions. 103 passed.
 
 ## Item 23 notes (DFT+RISB helpers)
 

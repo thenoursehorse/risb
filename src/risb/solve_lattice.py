@@ -326,11 +326,14 @@ class LatticeSolver:
         self.bloch_vector_qp: BlockMatrix = {}
 
         #: risb.types.BlockMatrix : :attr:`R` of the clusters in the blocks of
-        #: :attr:`h0_k`, from :func:`risb.helpers.upfold`, set each cycle.
+        #: :attr:`h0_k`, from :func:`risb.helpers.upfold_r_lambda`, set at the
+        #: start of each cycle. After :meth:`solve` it is from the :attr:`R`
+        #: that the last cycle started from, not the :attr:`R` it returned.
         self.R_full: BlockMatrix = {}
 
         #: risb.types.BlockMatrix : :attr:`Lambda` of the clusters in the
-        #: blocks of :attr:`h0_k`, set each cycle.
+        #: blocks of :attr:`h0_k`, set at the start of each cycle like
+        #: :attr:`R_full`.
         self.Lambda_full: BlockMatrix = {}
 
         self.iteration = 0

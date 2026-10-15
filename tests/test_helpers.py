@@ -17,6 +17,7 @@ from risb import LatticeSolver, helpers
 from risb.helpers_fockit import h_int_kanamori
 from risb.impurity_solvers import FockitImpuritySolver
 from risb.kweight import SmearingKWeight
+from risb.types import BlockMatrix
 
 # FIXME finish helpers: lambda, r, f1, f2
 
@@ -649,3 +650,133 @@ def test_quasiparticle_weight_is_set_by_the_slope_of_the_self_energy(
     ) / (2 * h)
     Z = helpers.get_z(R, Lambda, mu)
     assert pytest.approx(np.linalg.inv(np.eye(n_orb) - slope), abs=1e-8) == Z
+
+
+def test_green_functions_do_not_depend_on_the_quasiparticle_basis() -> None:
+    U, J = 3.0, 0.6
+    Up = U - 2 * J
+    h_int = h_int_kanamori(
+        ["up", "dn"],
+        2,
+        U=(Up - J) * (1 - np.eye(2)),
+        Uprime=U * np.eye(2) + Up * (1 - np.eye(2)),
+        J_hund=J,
+    )
+    gf_struct = [(bl, 2) for bl in ["up", "dn"]]
+    h0_k = build_two_orbital_complex_h0_k(nkx=6)
+    kweight = SmearingKWeight(beta=40, n_target=2)
+    S = LatticeSolver(
+        h0_k=h0_k,
+        gf_struct=gf_struct,
+        impurity_solvers=FockitImpuritySolver(h_int, gf_struct),
+        update_weights=kweight.update_weights,
+    )
+    for bl, _ in gf_struct:
+        S.Lambda[0][bl] = 1.5 * np.eye(2)
+    S.solve(tol=1e-10)
+    assert kweight.mu is not None
+    mu = kweight.mu
+    # Matsubara frequencies
+    iw = 1j * (2 * np.arange(32) + 1) * np.pi / 40
+
+    def green_functions(
+        R: BlockMatrix, Lambda: BlockMatrix
+    ) -> tuple[BlockMatrix, BlockMatrix, BlockMatrix]:
+        sigma = {
+            bl: helpers.get_sigma_w(iw, R[bl], Lambda[bl], mu, S.h0_loc_matrix[0][bl])
+            for bl, _ in gf_struct
+        }
+        g0 = helpers.get_g0_k_w(iw, h0_k, mu)
+        g_dyson = {
+            bl: np.linalg.inv(np.linalg.inv(g0[bl]) - sigma[bl][None])
+            for bl, _ in gf_struct
+        }
+        g_qp = helpers.get_g_k_w(iw, R, Lambda, S.h0_kin_k, mu)
+        return (
+            sigma,
+            helpers.get_g_w_loc(g_dyson)[0],
+            helpers.get_g_w_loc(g_qp)[0],
+        )
+
+    u = random_unitary(2, seed=4)
+    sigma, g_dyson, g_qp = green_functions(S.R[0], S.Lambda[0])
+    sigma_rotated, g_dyson_rotated, g_qp_rotated = green_functions(
+        {bl: u.conj().T @ S.R[0][bl] for bl, _ in gf_struct},
+        {bl: u.conj().T @ S.Lambda[0][bl] @ u for bl, _ in gf_struct},
+    )
+    for bl, _ in gf_struct:
+        assert sigma_rotated[bl] == pytest.approx(sigma[bl], abs=1e-10)
+        assert g_dyson[bl] == pytest.approx(g_qp[bl], abs=1e-10)
+        assert g_dyson_rotated[bl] == pytest.approx(g_qp_rotated[bl], abs=1e-10)
+
+
+def test_green_function_with_ghosts_and_projectors_is_dyson_with_the_upfolded_self_energy() -> (
+    None
+):
+    # A two-orbital and a one-orbital cluster, both with three quasiparticles
+    # per orbital, in a basis that rotates with k, and an orbital in no cluster
+    rng = np.random.default_rng(7)
+    n_k, n_band = 5, 4
+    h0 = rng.normal(size=(n_k, n_band, n_band)) + 1j * rng.normal(
+        size=(n_k, n_band, n_band)
+    )
+    h0_k = {"up": h0 + np.swapaxes(h0.conj(), -1, -2)}
+    U = np.linalg.qr(
+        rng.normal(size=(n_k, n_band, n_band))
+        + 1j * rng.normal(size=(n_k, n_band, n_band))
+    )[0]
+    projectors = [{"up": U[:, 0:2, :]}, {"up": U[:, 2:3, :]}]
+    R, Lambda, h0_loc = [], [], []
+    for P in projectors:
+        n_orb = P["up"].shape[-2]
+        n_qp = 3 * n_orb
+        R.append({"up": rng.normal(size=(n_qp, n_orb)) + 0.5j})
+        L = rng.normal(size=(n_qp, n_qp)) + 1j * rng.normal(size=(n_qp, n_qp))
+        Lambda.append({"up": L + L.conj().T})
+        h0_loc.append(helpers.get_h0_loc_matrix(h0_k["up"], P["up"]))
+    h0_kin_k = helpers.get_h0_kin_k(h0_k, projectors)
+    projectors_qp = helpers.get_ghost_projectors(
+        h0_kin_k, [{"up": R_i["up"].shape[0]} for R_i in R], projectors
+    )
+    R_full, Lambda_full = helpers.upfold_r_lambda(R, Lambda, h0_kin_k, projectors_qp)
+    mu = 0.2
+    omega = np.array([0.3 + 0.15j, -1.0 + 0.05j, 2.0j])
+    g = helpers.get_g_k_w(omega, R_full, Lambda_full, h0_kin_k, mu)["up"]
+    g0 = helpers.get_g0_k_w(omega, h0_k, mu)["up"]
+    for w, z in enumerate(omega):
+        sigma = [
+            {"up": helpers.get_sigma_w(z, R[i]["up"], Lambda[i]["up"], mu, h0_loc[i])}
+            for i in range(2)
+        ]
+        sigma_k = helpers.upfold(sigma, h0_k, projectors)["up"]
+        g_dyson = np.linalg.inv(np.linalg.inv(g0[:, w]) - sigma_k)
+        assert g[:, w] == pytest.approx(g_dyson, abs=abs)
+
+
+def test_local_green_function_does_not_depend_on_a_basis_that_rotates_with_k() -> None:
+    # A two-site cell with a cluster on site 0, three quasiparticles per
+    # orbital, and site 1 in no cluster
+    rng = np.random.default_rng(8)
+    n_k = 5
+    eps = rng.normal(size=(n_k, 2, 2)) + 1j * rng.normal(size=(n_k, 2, 2))
+    eps = eps + np.swapaxes(eps.conj(), -1, -2)
+    R = [{"up": rng.normal(size=(3, 1)) + 0.3j}]
+    L = rng.normal(size=(3, 3))
+    Lambda = [{"up": L + L.T}]
+    omega = np.array([0.4 + 0.1j, 1.5j])
+    U = np.linalg.qr(rng.normal(size=(n_k, 2, 2)) + 1j * rng.normal(size=(n_k, 2, 2)))[
+        0
+    ]
+    g_w_loc = []
+    for basis in [np.eye(2), U]:
+        basis_dag = np.swapaxes(basis.conj(), -1, -2)
+        h0_k = {"up": basis @ eps @ basis_dag}
+        projectors = [{"up": np.array([[1.0, 0.0]]) @ basis_dag}]
+        h0_kin_k = helpers.get_h0_kin_k(h0_k, projectors)
+        projectors_qp = helpers.get_ghost_projectors(h0_kin_k, [{"up": 3}], projectors)
+        R_full, Lambda_full = helpers.upfold_r_lambda(
+            R, Lambda, h0_kin_k, projectors_qp
+        )
+        g = helpers.get_g_k_w(omega, R_full, Lambda_full, h0_kin_k, mu=0.1)
+        g_w_loc.append(helpers.get_g_w_loc(g, projectors)[0]["up"])
+    assert g_w_loc[1] == pytest.approx(g_w_loc[0], abs=abs)

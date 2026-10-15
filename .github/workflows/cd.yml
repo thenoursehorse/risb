@@ -53,9 +53,6 @@ jobs:
     name: Build docs
     needs: [bump-version]
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        shell: bash -el {0}
 
     steps:
       - name: Checkout
@@ -64,23 +61,16 @@ jobs:
           persist-credentials: false
           fetch-depth: 0
 
-      - name: Setup TRIQS
-        uses: mamba-org/setup-micromamba@f457c30a868e4760d3a6fcea5f25dc655b8edf39 # v3.2.1
-        with:
-          environment-file: environment.yml
-          environment-name: risb
-          cache-environment: true
-
       - name: Setup uv
         uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
         with:
           enable-cache: true
 
       - name: Install risb and docs dependencies
-        run: UV_PROJECT_ENVIRONMENT=$CONDA_PREFIX uv sync --inexact --locked --no-dev --group docs
+        run: uv sync --locked --no-dev --group docs
 
       - name: Build docs
-        run: sphinx-build -b html -n -T -W --keep-going docs docs/_build
+        run: uv run sphinx-build -b html -n -T -W --keep-going docs docs/_build
 
       - name: Upload docs artifact
         uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0

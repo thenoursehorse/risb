@@ -34,7 +34,7 @@ def N_op(spin_names: Sequence[str], n_orb: int) -> OpSum:
 
     .. math:: \hat{N} = \sum_{i\sigma} \hat{c}_{i\sigma}^\dagger \hat{c}_{i\sigma}.
 
-    Adapted from TRIQS's :func:`triqs.operators.util.observables.N_op` with
+    Adapted from TRIQS's ``triqs.operators.util.observables.N_op`` with
     ``off_diag=True``.
 
     Parameters
@@ -62,7 +62,7 @@ def S2_op(spin_names: Sequence[str], n_orb: int) -> OpSum:
 
     .. math:: \hat{S}^2 = \hat{S}_z^2 + \frac{1}{2} (\hat{S}_+ \hat{S}_- + \hat{S}_- \hat{S}_+).
 
-    Adapted from TRIQS's :func:`triqs.operators.util.observables.S2_op` with
+    Adapted from TRIQS's ``triqs.operators.util.observables.S2_op`` with
     ``off_diag=True``.
 
     Parameters
@@ -105,7 +105,7 @@ def h_int_kanamori(
 
     where :math:`U^{\sigma \sigma} = U` and :math:`U^{\sigma \bar{\sigma}} = U'`.
 
-    Adapted from TRIQS's :func:`triqs.operators.util.hamiltonians.h_int_kanamori` with
+    Adapted from TRIQS's ``triqs.operators.util.hamiltonians.h_int_kanamori`` with
     ``off_diag=True``.
 
     Parameters

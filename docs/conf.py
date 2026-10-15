@@ -86,7 +86,6 @@ intersphinx_mapping = {
     "python": ("https://docs.python.org/3", None),
     "numpy": ("https://numpy.org/doc/stable/", None),
     "scipy": ("https://docs.scipy.org/doc/scipy/", None),
-    "triqs": ("https://triqs.github.io/triqs/latest/", None),
 }
 
 nitpick_ignore = [
@@ -109,8 +108,8 @@ myst_substitutions = {
 }
 
 
-# Names in docstring types that are plain words, or that numpy and TRIQS
-# document under another path or object type: (role, target in an inventory)
+# Names in docstring types that are plain words, or that numpy documents
+# under another path or object type: (role, target in an inventory)
 _external_targets = {
     "callable": ("class", "collections.abc.Callable"),
     "mapping": ("class", "collections.abc.Mapping"),
@@ -118,11 +117,6 @@ _external_targets = {
     "sequence": ("class", "collections.abc.Sequence"),
     "numpy._typing._array_like.NDArray": ("data", "numpy.typing.NDArray"),
     "numpy.float64": ("attr", "numpy.float64"),
-    "triqs.gfs.BlockGf": ("class", "triqs.gfs.block_gf.BlockGf"),
-    "triqs.gfs.MeshImFreq": ("class", "triqs.mesh.meshes.MeshImFreq"),
-    "triqs.gfs.MeshProduct": ("class", "triqs.mesh.mesh_product.MeshProduct"),
-    "triqs.gfs.MeshReFreq": ("class", "triqs.mesh.meshes.MeshReFreq"),
-    "triqs.operators.Operator": ("class", "triqs.operators.operators.Operator"),
 }
 
 

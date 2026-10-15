@@ -10,10 +10,6 @@ import risb
 api_dir = Path(__file__).parent.parent / "docs" / "api"
 
 
-def needs_missing_triqs(error: ModuleNotFoundError) -> bool:
-    return (error.name or "").split(".")[0] == "triqs"
-
-
 def test_every_public_object_is_in_the_api_docs() -> None:
     documented_modules = {
         module
@@ -24,18 +20,9 @@ def test_every_public_object_is_in_the_api_docs() -> None:
     }
     exported: set[object] = set()
     for module_name in documented_modules:
-        try:
-            module = importlib.import_module(module_name)
-        except ModuleNotFoundError as error:
-            if needs_missing_triqs(error):
-                continue
-            raise
+        module = importlib.import_module(module_name)
         for name in getattr(module, "__all__", []):
-            try:
-                exported.add(getattr(module, name))
-            except ModuleNotFoundError as error:
-                if not needs_missing_triqs(error):
-                    raise
+            exported.add(getattr(module, name))
 
     missing = []
     for info in pkgutil.walk_packages(risb.__path__, prefix="risb."):
@@ -43,12 +30,7 @@ def test_every_public_object_is_in_the_api_docs() -> None:
             part.startswith("_") for part in info.name.split(".")
         ):
             continue
-        try:
-            module = importlib.import_module(info.name)
-        except ModuleNotFoundError as error:
-            if needs_missing_triqs(error):
-                continue
-            raise
+        module = importlib.import_module(info.name)
         for name, obj in vars(module).items():
             is_public = not name.startswith("_") and (
                 inspect.isclass(obj) or inspect.isfunction(obj)

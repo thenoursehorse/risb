@@ -92,7 +92,7 @@ enable_error_code = [
 warn_unreachable = true
 
 [[tool.mypy.overrides]]
-module = ["triqs.*", "h5py.*"]
+module = ["h5py.*"]
 ignore_missing_imports = true
 
 [tool.ruff]

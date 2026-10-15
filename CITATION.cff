@@ -76,29 +76,6 @@ references:
     year: 2020
     doi: 10.14264/uql.2020.169
   - type: article
-    title: "TRIQS: A toolbox for research on interacting quantum systems"
-    authors:
-      - family-names: Parcollet
-        given-names: Olivier
-      - family-names: Ferrero
-        given-names: Michel
-      - family-names: Ayral
-        given-names: Thomas
-      - family-names: Hafermann
-        given-names: Hartmut
-      - family-names: Krivenko
-        given-names: Igor
-      - family-names: Messio
-        given-names: Laura
-      - family-names: Seth
-        given-names: Priyanka
-    journal: "Computer Physics Communications"
-    volume: 196
-    start: 398
-    end: 415
-    year: 2015
-    doi: 10.1016/j.cpc.2015.04.023
-  - type: article
     title: "Convergence analysis of adaptive DIIS algorithms with application to electronic ground state calculations"
     authors:
       - family-names: Chupin

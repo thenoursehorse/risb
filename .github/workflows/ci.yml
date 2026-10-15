@@ -17,7 +17,7 @@ permissions:
 
 jobs:
   test:
-    name: Test (no TRIQS)
+    name: Test
     runs-on: ubuntu-latest
 
     steps:
@@ -32,7 +32,7 @@ jobs:
           enable-cache: true
 
       - name: Install risb
-        run: uv sync --locked
+        run: uv sync --locked --group docs
 
       - name: Lint
         run: SKIP=no-commit-to-branch uv run pre-commit run --all-files --show-diff-on-failure
@@ -43,39 +43,8 @@ jobs:
       - name: Test risb
         run: uv run pytest
 
-  test-triqs:
-    name: Test (TRIQS)
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        shell: bash -el {0}
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-
-      - name: Setup TRIQS
-        uses: mamba-org/setup-micromamba@f457c30a868e4760d3a6fcea5f25dc655b8edf39 # v3.2.1
-        with:
-          environment-file: environment.yml
-          environment-name: risb
-          cache-environment: true
-
-      - name: Setup uv
-        uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
-        with:
-          enable-cache: true
-
-      - name: Install risb
-        run: UV_PROJECT_ENVIRONMENT=$CONDA_PREFIX uv sync --inexact --locked --group docs
-
-      - name: Test risb
-        run: pytest
-
       - name: Test docs
-        run: sphinx-build -b html -n -T -W --keep-going docs docs/_build
+        run: uv run sphinx-build -b html -n -T -W --keep-going docs docs/_build
 
   dist:
     name: Build package

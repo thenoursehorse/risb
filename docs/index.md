@@ -27,7 +27,6 @@ api/risb.kweight
 api/risb.optimize
 api/risb.helpers
 api/risb.helpers_fockit
-api/risb.helpers_triqs
 api/risb.types
 ```
 

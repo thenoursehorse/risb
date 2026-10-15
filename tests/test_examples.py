@@ -20,11 +20,6 @@ def run_example(name: str) -> dict[str, Any]:
     return runpy.run_path(str(examples_dir / f"{name}.py"))
 
 
-def assert_g_constructions_agree(g: dict[str, Any]) -> None:
-    for bl, gf in g["G_iw_loc"]:
-        assert gf.data == pytest.approx(g["G_iw_loc2"][bl].data, abs=1e-10)
-
-
 def test_bilayer_hubbard_example() -> None:
     g = run_example("bilayer_hubbard")
     S = g["S"]
@@ -39,16 +34,17 @@ def test_bilayer_hubbard_example() -> None:
         assert S.Lambda[0][bl] == pytest.approx(Lambda_expected, abs=abs)
 
 
+@pytest.mark.filterwarnings("ignore:FigureCanvasAgg is non-interactive")
 def test_green_functions_example() -> None:
-    pytest.importorskip("triqs")
     g = run_example("green_functions")
-    abs = 1e-5
 
     assert g["S"].optimize.success
-    assert g["G_qp_iw_loc"].total_density().real == pytest.approx(
-        g["n_target"], abs=abs
+    for bl in g["spin_names"]:
+        assert g["G_iw_loc"][bl] == pytest.approx(g["G_iw_loc2"][bl], abs=1e-10)
+    # The broadened spectral function loses a little weight outside the window
+    assert g["spectral_weight"] == pytest.approx(
+        np.trace(g["S"].Z[0]["up"]).real, abs=1e-2
     )
-    assert_g_constructions_agree(g)
 
 
 @pytest.mark.filterwarnings("ignore:FigureCanvasAgg is non-interactive")

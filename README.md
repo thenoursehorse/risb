@@ -55,8 +55,6 @@ Lastly, the appropriate original theory outlined in the [documentation](https://
 - [numpy](https://numpy.org/)
 - [scipy](https://scipy.org/)
 - [fockit](https://github.com/thenoursehorse/fockit)
-- [TRIQS](https://triqs.github.io/) version `4.x` (optional) for Green's functions
-  in `risb.helpers_triqs`
 
 ## Installation
 
