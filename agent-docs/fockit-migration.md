@@ -152,7 +152,7 @@ user to review. Update this file as steps finish. Delete it when done.
 25. [ ] Investigate overlapping fragments, as in bootstrap embedding (user):
    clusters that share orbitals, how their overlapping parts are matched,
    and what that would need beyond risb's non-overlapping projectors.
-26. [ ] Investigate different numbers of ghost bath orbitals per block of an
+26. [x] (done: mixed B per block works, odd ghosts per cluster rejected, docs on choosing B; see Item 26 notes) Investigate different numbers of ghost bath orbitals per block of an
    impurity (user), e.g. B = 2 for t2g and B = 3 for eg. Questions: an even
    B, or a mix, has no obvious half-filled sector ((B + 1) nu / 2 per block
    need not be an integer); what Lanata's papers say about the embedding's
@@ -583,6 +583,67 @@ Done (step 8):
   dh_trimer -1); particle-hole sector reproduces the plain solve; missing
   symmetries raise; "warn" warns at D = 0 and not with hybridization.
 - How-to: "Choosing the eigensolver", "Symmetries", "Degenerate ground states".
+
+## Item 30 notes (ghost RISB at finite temperature)
+
+Step 1, the paper (Giuli et al., arXiv:2603.20559, Secs. III A, III F, IV,
+VI, VII B):
+- T = 0 reformulation (Eq. 21): L = L_qp + L_emb - L_0emb. The standard
+  mixing term F[Delta] = Tr((Lambda + Lambda_c) Delta) + 2 Re Tr(D R^T
+  sqrt(Delta (1 - Delta))) (Eq. 93, risb's get_lagrangian) is replaced by
+  the ground-state energy of a quadratic H_0emb (Eq. 27) on f (B nu ghost-
+  extended modes) and b (bath): Lambda on f, D R^T coupling f-b, Lambda_c on
+  b. Sec. IV: at T = 0 its ground state is the purification of Delta
+  (Eqs. 95-97: <f+f> = Delta, <f+b> = sqrt(Delta (1 - Delta)), <b b+> =
+  Delta), so the two Lagrangians are equivalent (same stationary points,
+  larger gauge group).
+- Finite T (Eq. 196): L_beta = Omega_qp + sum Omega_emb - sum Omega_0emb,
+  each -T ln Tr e^{-beta H}, grand canonical. Stationarity (Eqs. 200-203):
+  thermal <f+f>, <f+ D b> of H_0emb match the qp; thermal <b b+>, <R f+ b>
+  of H_0emb match H_emb. beta -> inf gives Eq. 21.
+- Sec. VI B-C (checked the algebra: trace-log, Eqs. 212-227): L_beta equals
+  the DMFT functional (Kotliar RMP 2006) restricted to Sigma(i w_n) and
+  Delta(i w_n) with the ghost pole parametrizations (Eqs. 207-208). Claimed
+  -> DMFT as B -> inf at any T ("carries over", not shown in detail).
+- Entropy from the stationary value: S = beta (E - mu N - L_beta*).
+- Does not reduce to the finite-T RISB of Ayral, Lee, Kotliar (PRB 96,
+  235139) even at B = 1.
+- Algorithm (Sec. III F): (R, Lambda) -> qp -> fit (D, Lambda_c) to Eqs.
+  43-44 -> H_emb -> fit (R, Lambda) to Eqs. 45-46. At T = 0 the first fit
+  is analytic (Eqs. 88-89 = risb's get_d, get_lambda_c); the second they do
+  numerically. At T > 0 both are fits (a thermal H_0emb is mixed, no
+  Schmidt purification).
+- Validation: only the half-filled paramagnetic one band on the Bethe
+  lattice, B = 1 and 3, against NRG (Fig. 7: d, (E - mu N)/N, S vs T at
+  U = 1, 2, 3.2).
+- risb now: L = Omega_qp (Fermi smearing) + <H_emb> - T S_imp (Gibbs in the
+  half-filled sector) - F[Delta] with the T = 0 purification form. A mixed
+  qp state is matched with the pure-state relation sqrt(Delta (1 - Delta)),
+  which is the likely cause of the item 24 finite-T stalls (Tr Delta 2.08 vs
+  Tr rho_f 1.49) and of the decoupled-orbital residuals (items 18, 33): a
+  decoupled f level and its bath are both Fermi functions in thermal H_0emb.
+
+Plan (user): a separate ThermalLatticeSolver (solve_lattice_thermal.py)
+with new helpers; LatticeSolver stays (T = 0, beta=None); if this works it
+becomes the finite-T path. Steps: 1 H_0emb helpers; 2 grand-canonical
+impurity solve (absorbs item 32); 3 prototype then ThermalLatticeSolver
+(root over R, Lambda, D, Lambda_c); 4 grand potential and entropy; 5 retest
+item 33 and the item 24 stalls; 6 example, docs, decision.
+
+Step 1 (done): helpers.get_h0_emb (2M x 2M one-body matrix in risb's
+conventions, psi = (f, b): [[Lambda - mu, R D^T], [(R D^T)^dag, -Lambda_c^T
+- mu]] plus the constant Tr Lambda_c from the b b^dag ordering),
+get_h0_emb_densities (thermal <f+f> as rho_qp, <f+b>, <b b+> as rho_f),
+get_h0_emb_grand_potential. risb's Lambda and Lambda_c exclude mu, the
+paper's include it, so mu is a uniform shift of all f and b modes. Checked
+at a converged B = 3 solution (U = 2.4, Bethe, mu ~ 0): at beta 1e3 to 1e8
+the thermal state reproduces Delta, sqrt(Delta (1 - Delta)), Delta, the
+impurity rho_f and R^T <f+b> = rho_cf to 2e-13, with N = M (half filling)
+and a +- symmetric spectrum. Tests: exact diagonalization of the operator
+written with fockit over the whole Fock space (M = 3, nu = 2, complex,
+beta 3, mu 0.3; densities and grand potential to 1e-12; fails if W is
+D R^T, if Lambda_c is not transposed, or without Tr Lambda_c), and the
+purification at a converged solution (1e-10).
 
 ## Item 26 notes (different ghost counts per block)
 

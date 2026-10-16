@@ -287,6 +287,167 @@ def get_f2(
     return f2
 
 
+def get_h0_emb(
+    R: NDArray[np.inexact],
+    Lambda: NDArray[np.inexact],
+    D: NDArray[np.inexact],
+    Lambda_c: NDArray[np.inexact],
+    mu: float = 0,
+) -> NDArray[np.inexact]:
+    r"""
+    Return the one-body matrix of the quadratic embedding Hamiltonian.
+
+    The quadratic embedding Hamiltonian couples the quasiparticles
+    :math:`f_a` of a cluster to the bath orbitals :math:`b_a` of its impurity
+    problem,
+
+    .. math::
+
+        \hat{H}_{0,\mathrm{emb}} = \sum_{ab} \lambda_{ab} f^{\dagger}_a f_b
+        + \sum_{ab} \left( [\mathcal{D} \mathcal{R}^T]_{ab} f^{\dagger}_b b_a
+        + \mathrm{h.c.} \right)
+        + \sum_{ab} b_a [\lambda^c]_{ab} b^{\dagger}_b
+        - \mu \sum_a \left( f^{\dagger}_a f_a + b^{\dagger}_a b_a \right),
+
+    with the bath terms as in the impurity problem. It is
+    :math:`\sum_{ij} \psi^{\dagger}_i h_{ij} \psi_j + \mathrm{Tr} \lambda^c`
+    with :math:`\psi = (f_1, \dots, f_M, b_1, \dots, b_M)`.
+
+    Parameters
+    ----------
+    R : numpy.ndarray
+        Renormalization matrix from electrons to quasiparticles.
+    Lambda : numpy.ndarray
+        Correlation potential of quasiparticles.
+    D : numpy.ndarray
+        Hybridization coupling of the impurity problem.
+    Lambda_c : numpy.ndarray
+        Bath coupling of the impurity problem.
+    mu : float, optional
+        Chemical potential.
+
+    Returns
+    -------
+    h : numpy.ndarray
+        The :math:`2M \times 2M` matrix :math:`h`.
+
+    Notes
+    -----
+    Eq. 27 of `arXiv:2603.20559 <arXiv260320559_>`__, whose
+    :math:`\lambda` and :math:`\lambda^c` include the chemical potential.
+    At zero temperature its ground state reproduces the quasiparticle density
+    matrix and the impurity problem at a solution of RISB (Eqs. 95-97 and
+    45-46 there).
+
+    .. _arXiv260320559: https://arxiv.org/abs/2603.20559
+
+    """
+    M = Lambda.shape[-1]
+    W = R @ D.T
+    h: NDArray[np.inexact] = np.block(
+        [
+            [Lambda - mu * np.eye(M), W],
+            [_dagger(W), -Lambda_c.T - mu * np.eye(M)],
+        ]
+    )
+    return h
+
+
+def get_h0_emb_densities(
+    R: NDArray[np.inexact],
+    Lambda: NDArray[np.inexact],
+    D: NDArray[np.inexact],
+    Lambda_c: NDArray[np.inexact],
+    beta: float,
+    mu: float = 0,
+) -> tuple[NDArray[np.inexact], NDArray[np.inexact], NDArray[np.inexact]]:
+    r"""
+    Return the thermal density matrices of the quadratic embedding Hamiltonian.
+
+    Parameters
+    ----------
+    R : numpy.ndarray
+        Renormalization matrix from electrons to quasiparticles.
+    Lambda : numpy.ndarray
+        Correlation potential of quasiparticles.
+    D : numpy.ndarray
+        Hybridization coupling of the impurity problem.
+    Lambda_c : numpy.ndarray
+        Bath coupling of the impurity problem.
+    beta : float
+        Inverse temperature.
+    mu : float, optional
+        Chemical potential.
+
+    Returns
+    -------
+    rho_qp : numpy.ndarray
+        ``rho_qp[a, b]`` is the thermal average of :math:`f^{\dagger}_a f_b`,
+        as in :func:`get_rho_qp`.
+    rho_qpf : numpy.ndarray
+        ``rho_qpf[a, b]`` is the thermal average of :math:`f^{\dagger}_a b_b`.
+    rho_f : numpy.ndarray
+        ``rho_f[a, b]`` is the thermal average of :math:`b_b b^{\dagger}_a`,
+        as the f-electron density matrix of the impurity problem.
+
+    Notes
+    -----
+    See :func:`get_h0_emb` for the Hamiltonian.
+
+    """
+    h = get_h0_emb(R, Lambda, D, Lambda_c, mu)
+    M = Lambda.shape[-1]
+    energies, vectors = np.linalg.eigh(h)
+    # The thermal average of psi^dag_i psi_j is [n_F(h)]_ji
+    rho = ((vectors * expit(-beta * energies)) @ _dagger(vectors)).T
+    return rho[:M, :M], rho[:M, M:], np.eye(M) - rho[M:, M:]
+
+
+def get_h0_emb_grand_potential(
+    R: NDArray[np.inexact],
+    Lambda: NDArray[np.inexact],
+    D: NDArray[np.inexact],
+    Lambda_c: NDArray[np.inexact],
+    beta: float,
+    mu: float = 0,
+) -> float:
+    r"""
+    Return the grand potential of the quadratic embedding Hamiltonian.
+
+    Parameters
+    ----------
+    R : numpy.ndarray
+        Renormalization matrix from electrons to quasiparticles.
+    Lambda : numpy.ndarray
+        Correlation potential of quasiparticles.
+    D : numpy.ndarray
+        Hybridization coupling of the impurity problem.
+    Lambda_c : numpy.ndarray
+        Bath coupling of the impurity problem.
+    beta : float
+        Inverse temperature.
+    mu : float, optional
+        Chemical potential.
+
+    Returns
+    -------
+    float
+        :math:`-\log \mathrm{Tr} \, e^{-\beta \hat{H}_{0,\mathrm{emb}}} / \beta`
+        over all particle numbers, with the Hamiltonian of
+        :func:`get_h0_emb`.
+
+    Notes
+    -----
+    Eq. 199 of `arXiv:2603.20559 <arXiv260320559_>`__.
+
+    .. _arXiv260320559: https://arxiv.org/abs/2603.20559
+
+    """
+    energies = np.linalg.eigvalsh(get_h0_emb(R, Lambda, D, Lambda_c, mu))
+    omega = np.trace(Lambda_c).real - np.sum(np.logaddexp(0, -beta * energies)) / beta
+    return float(omega)
+
+
 def get_lagrangian(
     *,
     h0_kin_k: BlockMatrixLike,

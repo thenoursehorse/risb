@@ -4,12 +4,15 @@ from pathlib import Path
 
 import numpy as np
 import pytest
-from fockit.algebra import nc
+from fockit.algebra import OpSum, c, cdag, hc, nc, zero
+from fockit.hilbert import FermionSpace, build_basis, to_matrix
 from numpy.typing import NDArray
 from test_common import (
+    bethe_h0_k,
     build_two_orbital_complex_h0_k,
     one_band_cubic_h0_k,
     random_unitary,
+    symmetrize_blocks,
 )
 
 from risb import LatticeSolver, helpers
@@ -779,3 +782,100 @@ def test_local_green_function_does_not_depend_on_a_basis_that_rotates_with_k() -
         g = helpers.get_g_k_w(omega, R_full, Lambda_full, h0_kin_k, mu=0.1)
         g_w_loc.append(helpers.get_g_w_loc(g, projectors)[0]["up"])
     assert g_w_loc[1] == pytest.approx(g_w_loc[0], abs=abs)
+
+
+def test_quadratic_embedding_is_the_exact_thermal_state_over_all_particle_numbers() -> (
+    None
+):
+    # Compare with the Hamiltonian written out with fockit and diagonalized in
+    # the whole Fock space of the quasiparticles f and bath orbitals b
+    M, nu, beta, mu = 3, 2, 3.0, 0.3
+    rng = np.random.default_rng(0)
+
+    def hermitian() -> NDArray[np.complex128]:
+        A: NDArray[np.complex128] = rng.normal(size=(M, M)) + 1j * rng.normal(
+            size=(M, M)
+        )
+        return 0.5 * (A + A.conj().T)
+
+    R = rng.normal(size=(M, nu)) + 1j * rng.normal(size=(M, nu))
+    D = rng.normal(size=(M, nu)) + 1j * rng.normal(size=(M, nu))
+    Lambda = hermitian()
+    Lambda_c = hermitian()
+
+    f = [("f", a) for a in range(M)]
+    b = [("b", a) for a in range(M)]
+    W = D @ R.T
+    coupling = zero()
+    for i in range(M):
+        for j in range(M):
+            coupling += complex(W[i, j]) * cdag(*f[j]) * c(*b[i])
+    H: OpSum = coupling + hc(coupling)
+    for i in range(M):
+        for j in range(M):
+            H += complex(Lambda[i, j]) * cdag(*f[i]) * c(*f[j])
+            H += complex(Lambda_c[i, j]) * c(*b[i]) * cdag(*b[j])
+    for mode in f + b:
+        H -= mu * nc(*mode)
+    basis = build_basis({FermionSpace(): f + b})
+    energies, vectors = np.linalg.eigh(to_matrix(H, basis).toarray())
+    weights = np.exp(-beta * (energies - energies[0]))
+    rho = (vectors * (weights / np.sum(weights))) @ vectors.conj().T
+
+    def average(op: OpSum) -> complex:
+        return complex(np.trace(rho @ to_matrix(op, basis).toarray()))
+
+    rho_qp, rho_qpf, rho_f = helpers.get_h0_emb_densities(
+        R, Lambda, D, Lambda_c, beta, mu
+    )
+    for i in range(M):
+        for j in range(M):
+            assert rho_qp[i, j] == pytest.approx(
+                average(cdag(*f[i]) * c(*f[j])), abs=1e-12
+            )
+            assert rho_qpf[i, j] == pytest.approx(
+                average(cdag(*f[i]) * c(*b[j])), abs=1e-12
+            )
+            assert rho_f[i, j] == pytest.approx(
+                average(c(*b[j]) * cdag(*b[i])), abs=1e-12
+            )
+    omega = energies[0] - np.log(np.sum(weights)) / beta
+    assert helpers.get_h0_emb_grand_potential(
+        R, Lambda, D, Lambda_c, beta, mu
+    ) == pytest.approx(omega, abs=1e-12)
+
+
+def test_quadratic_embedding_at_low_temperature_purifies_a_solution() -> None:
+    # At a solution of ghost RISB, the ground state of the quadratic embedding
+    # Hamiltonian has the quasiparticle density matrix Delta, <f^dag b> =
+    # sqrt(Delta (1 - Delta)), the bath density matrix of the impurity problem
+    # and, through R, its c-f density matrix
+    U, B = 2.4, 3
+    gf_struct = [("up", 1), ("dn", 1)]
+    bath_size = {bl: B for bl, _ in gf_struct}
+    h_int = U * nc("up", 0) * nc("dn", 0) - U / 2 * (nc("up", 0) + nc("dn", 0))
+    kweight = SmearingKWeight(beta=200, n_target=B)
+    S = LatticeSolver(
+        h0_k={bl: bethe_h0_k(200) for bl, _ in gf_struct},
+        gf_struct=gf_struct,
+        impurity_solvers=FockitImpuritySolver(h_int, gf_struct, bath_size=bath_size),
+        update_weights=kweight.update_weights,
+        symmetrizers=[symmetrize_blocks],
+        force_real=True,
+        bath_size=[bath_size],
+    )
+    S.solve(tol=1e-12)
+    assert kweight.mu is not None
+    for bl, _ in gf_struct:
+        R = S.R[0][bl]
+        Delta = S.rho_qp[0][bl]
+        rho_qp, rho_qpf, rho_f = helpers.get_h0_emb_densities(
+            R, S.Lambda[0][bl], S.D[0][bl], S.Lambda_c[0][bl], 1e6, kweight.mu
+        )
+        eigenvalues, vectors = np.linalg.eigh(Delta @ (np.eye(B) - Delta))
+        sqrt_k = (vectors * np.sqrt(eigenvalues)) @ vectors.conj().T
+        assert rho_qp == pytest.approx(Delta, abs=1e-10)
+        assert rho_qpf == pytest.approx(sqrt_k, abs=1e-10)
+        assert rho_f == pytest.approx(Delta, abs=1e-10)
+        assert rho_f == pytest.approx(S.rho_f[0][bl], abs=1e-10)
+        assert R.T @ rho_qpf == pytest.approx(S.rho_cf[0][bl], abs=1e-10)
