@@ -351,6 +351,49 @@ standard linear mixing or {{DIIS}} (which seems to work very well for
 {{RISB}}, and is the default method).
 :::
 
+## Finite temperature
+
+`LatticeSolver` solves the zero-temperature equations. A `beta` in
+{py:class}`~risb.kweight.SmearingKWeight` or in the impurity solver only
+smears them. {py:class}`~risb.ThermalLatticeSolver` solves the
+finite-temperature ghost {{RISB}} equations[^Giuli2026] at a fixed inverse
+temperature and chemical potential
+
+```python
+from risb import ThermalLatticeSolver
+
+beta, mu = 10, 0
+impurity_solver = FockitImpuritySolver(
+    h_int, gf_struct, bath_size=bath_size, beta=beta, grand_canonical=True
+)
+S = ThermalLatticeSolver(
+    h0_k, gf_struct, impurity_solver, beta=beta, mu=mu, bath_size=[bath_size]
+)
+S.solve(tol=1e-10)
+```
+
+The impurity solvers must give the thermal state at the same `beta` over
+every particle number (see the grand-canonical mode of
+`FockitImpuritySolver`). `Lambda` starts at `mu`. Each cycle fits `D` and
+`Lambda_c` so that the quadratic embedding Hamiltonian of
+{py:func}`~risb.helpers.get_h0_emb` has the quasiparticle density matrices,
+solves the impurity problems, and then fits `Lambda` and `R` so that it has
+their density matrices. At low temperature the solution is that of
+`LatticeSolver` at the same `mu`.
+
+At high temperature several `R` and `Lambda` can solve the equations with the
+same physical results, so the default `error_fun` is `'root'`: with
+`'recursion'` the changes between cycles need not vanish at a solution. Each
+fit starts from the result of the previous cycle, so the error is not a
+function of `R` and `Lambda` alone. {{DIIS}} and linear mixing handle this, but
+scipy's `root` functions only work near a solution, and not at high
+temperature.
+
+At a fixed `mu` there can be several solutions, e.g., with different fillings,
+and which one is found depends on the starting `R` and `Lambda`. The
+physical one has the lowest grand potential, which risb does not compute for
+the lattice.
+
 ## Real or complex?
 
 In general the matrices in {{RISB}} should be complex. If you choose a basis
@@ -377,3 +420,10 @@ operations faster. For many systems forcing the matrices to be real is fine.
     _Operatorial formulation of the ghost rotationally invariant slave-boson
     theory_,
     Phys. Rev. B **105**, 045111 (2022)](https://doi.org/10.1103/PhysRevB.105.045111)
+
+[^Giuli2026]:
+    [S. Giuli, T.-H. Lee, Y.-X. Yao, G. Kotliar, A. E. Ruckenstein, O. Gingras,
+    and N. Lanatà,
+    _Unifying variational and dynamical quantum embedding: from ghost
+    Gutzwiller approximation to dynamical mean-field theory_,
+    arXiv:2603.20559 (2026)](https://arxiv.org/abs/2603.20559)

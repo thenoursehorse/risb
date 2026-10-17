@@ -721,8 +721,45 @@ holds setup, flatten/project, `_target_function`, `solve`, `Z`, and
 passes `mu` to `set_h_imp` only when `self.mu` is not None), `update_qp`
 (abstract, sets f1, f2, Lambda, R). `LatticeSolver` keeps the analytic T = 0
 steps and the core-orbital placement. `ImpuritySolver.set_h_imp` takes
-`mu=None`. All 110 tests unchanged. Next (3b-ii): `ThermalLatticeSolver`
-with the approach-B fits, Fermi weights at fixed beta, mu.
+`mu=None`. All 110 tests unchanged.
+
+Step 3b-ii: `ThermalLatticeSolver(h0_k, gf_struct, impurity_solvers, beta,
+mu, ...)` (`solve_lattice_thermal.py`), approach B per block with the base's
+`_flatten_block`/`_unflatten_block` as the fit parameters. Lambda starts at
+mu. f1 = rho_cf - R^T <f+b>_0emb, f2 = rho_f - <bb+>_0emb at the input R,
+Lambda (the T -> 0 limits of get_f1, get_f2).
+- Conventions checked at complex T = 0 solutions (two-orbital complex
+  Kanamori, B = 1 random-unitary start, and B = 3): E1-E4 to 1e-13.
+- Bath-fit start: from the T = 0 formulas every cycle makes x -> f a
+  function, but at high T it lands on different solutions; from the previous
+  cycle is much faster (U = 2, B = 3, DIIS: T = 0.5 300+ -> 5 cycles).
+- error_fun default 'root': with 'recursion' T = 0.5, 1 never converge
+  (x keeps moving at |f| ~ 1e-12, item 36).
+- At one x, f from a cold vs warm bath start: T = 0.1 differs by the bath
+  gauge only (same rho_f eigenvalues), T = 0.5 by physically different
+  (D, Lambda_c) (rho_f eigenvalues 0.07/0.50/0.93 vs 0.10/0.70/0.97). So
+  E1-E2 alone have several solutions at high T.
+- scipy root: hybr fails (T 0.1, 0.5); krylov converges near a solution at T
+  0.005, 0.1, not from cold, not at T 0.5. LinearMixing converges (T 0.1,
+  0.5).
+- U = 2, B = 3, continuation: d 0.0856 (T 0.005), 0.0762, 0.0526, 0.0534,
+  0.0875, 0.1418, 0.1900 (T 2), 2-43 cycles; cold starts converge too
+  (133, 199 cycles at T 0.5, 1).
+- Low T vs LatticeSolver at the same mu (beta 400): Z, rho_c to 1e-11
+  (complex two-orbital U = 3, and B = 3 Bethe U = 2).
+- Several solutions at fixed mu, same in LatticeSolver with fixed mu:
+  complex two-orbital U = 1.5, mu = 1.5: n per spin 1.0, 0.870 (start
+  Lambda = 0 or mu +- 0.2), 1.130. U = 3, mu = 3 from Lambda = 0: all bands
+  below mu, a trivial full fixed point (Z = 1) in one cycle, hence the mu
+  start.
+- B = 5, U = 2.4 (item 33): T = 0.005 cold fails (300 cycles, 3.6e-6);
+  from the B = 3 solution padded with two ghosts at +-1.5 (weight 0.01
+  each) converges in 30 cycles: d 0.0531, E -1.2619 (B = 3: 0.0534). A
+  second solution from T = 0.03 downwards: d 0.0268, E -1.2551 at T =
+  0.005 (B = 3 cold at T = 0.03 lands on it too, d 0.0268): likely the
+  insulating branch of the coexistence region. Choosing needs Omega
+  (step 4).
+- Not yet checked: item 24 two-site stall (projectors).
 
 ## Item 26 notes (different ghost counts per block)
 

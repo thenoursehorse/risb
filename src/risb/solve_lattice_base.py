@@ -444,28 +444,7 @@ class BaseLatticeSolver(ABC):
         x: list[float] = []
         for i in range(self.n_clusters):
             for bl, _bl_size in self.gf_struct[i]:
-                A_bl = A[i][bl]
-                if A_bl.shape[0] != A_bl.shape[1]:
-                    # A rectangular matrix, e.g., R with ghosts, is stored by
-                    # its entries
-                    coeffs = list(A_bl.ravel())
-                else:
-                    # To extract a coefficient of a basis that spans a vector
-                    # space it is the inner product <basis_vec, vec> = coeff
-                    # if the basis_vec is orthonormal. For matrices the inner
-                    # product is <A, B> = Tr(A^+, B).
-                    # Note that einsum is order mag faster than tr(a,b) and
-                    # stores no intermediate array
-                    # Could also vectorize both matrices as flatten('F') to
-                    # column-major order and then take normal inner product
-                    coeffs = [
-                        np.einsum("ij,ji->", h.conj().T, A_bl)
-                        for h in self._hermitian_basis_of(A_bl.shape[0])
-                    ]
-                for coeff in coeffs:
-                    x.append(float(coeff.real))
-                    if (not is_coeff_real) and (not self.force_real):
-                        x.append(float(coeff.imag))
+                x += self._flatten_block(A[i][bl], is_coeff_real)
         return x
 
     def _unflatten_matrix(
@@ -476,27 +455,65 @@ class BaseLatticeSolver(ABC):
         offset: int = 0,
     ) -> tuple[list[BlockMatrix], int]:
         # Each block has the shape of the same block of like
-        dtype = float if self.force_real else complex
         A: list[BlockMatrix] = [{} for i in range(self.n_clusters)]
         for i in range(self.n_clusters):
             for bl, _bl_size in self.gf_struct[i]:
-                shape = like[i][bl].shape
-                if shape[0] != shape[1]:
-                    basis = [
-                        np.eye(shape[0] * shape[1])[n].reshape(shape)
-                        for n in range(shape[0] * shape[1])
-                    ]
-                else:
-                    basis = self._hermitian_basis_of(shape[0])
-                A[i][bl] = np.zeros(shape, dtype=dtype)
-                for h in basis:
-                    # x stores the coefficients of the basis
-                    if is_coeff_real or self.force_real:
-                        A[i][bl] = A[i][bl] + x[offset] * h
-                        offset = offset + 1
-                    else:
-                        A[i][bl] = A[i][bl] + (x[offset] + 1j * x[offset + 1]) * h
-                        offset = offset + 2
+                A[i][bl], offset = self._unflatten_block(
+                    x, is_coeff_real, like[i][bl].shape, offset
+                )
+        return A, offset
+
+    def _flatten_block(
+        self, A: NDArray[np.inexact], is_coeff_real: bool
+    ) -> list[float]:
+        if A.shape[0] != A.shape[1]:
+            # A rectangular matrix, e.g., R with ghosts, is stored by its
+            # entries
+            coeffs = list(A.ravel())
+        else:
+            # To extract a coefficient of a basis that spans a vector
+            # space it is the inner product <basis_vec, vec> = coeff
+            # if the basis_vec is orthonormal. For matrices the inner
+            # product is <A, B> = Tr(A^+, B).
+            # Note that einsum is order mag faster than tr(a,b) and
+            # stores no intermediate array
+            # Could also vectorize both matrices as flatten('F') to
+            # column-major order and then take normal inner product
+            coeffs = [
+                np.einsum("ij,ji->", h.conj().T, A)
+                for h in self._hermitian_basis_of(A.shape[0])
+            ]
+        x: list[float] = []
+        for coeff in coeffs:
+            x.append(float(coeff.real))
+            if (not is_coeff_real) and (not self.force_real):
+                x.append(float(coeff.imag))
+        return x
+
+    def _unflatten_block(
+        self,
+        x: Sequence[float] | NDArray[np.float64],
+        is_coeff_real: bool,
+        shape: tuple[int, ...],
+        offset: int = 0,
+    ) -> tuple[NDArray[np.inexact], int]:
+        dtype = float if self.force_real else complex
+        if shape[0] != shape[1]:
+            basis = [
+                np.eye(shape[0] * shape[1])[n].reshape(shape)
+                for n in range(shape[0] * shape[1])
+            ]
+        else:
+            basis = self._hermitian_basis_of(shape[0])
+        A: NDArray[np.inexact] = np.zeros(shape, dtype=dtype)
+        for h in basis:
+            # x stores the coefficients of the basis
+            if is_coeff_real or self.force_real:
+                A = A + x[offset] * h
+                offset = offset + 1
+            else:
+                A = A + (x[offset] + 1j * x[offset + 1]) * h
+                offset = offset + 2
         return A, offset
 
     def _project(self, A: list[BlockMatrix], is_coeff_real: bool) -> list[BlockMatrix]:

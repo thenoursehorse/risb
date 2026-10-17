@@ -241,7 +241,8 @@ until a particle number has a negligible weight. The `diagonal_symmetries`
 only split the Hamiltonian of each particle number into blocks, which are all
 in the average, and permutation and onsite symmetries cannot be used. The grand
 potential $-\log(\sum e^{-\beta E}) / \beta$ over the states is
-`impurity_solver.grand_potential`. `LatticeSolver` does not use this mode.
+`impurity_solver.grand_potential`. `ThermalLatticeSolver` needs this mode,
+and `LatticeSolver` does not use it.
 
 ### Getting the density matrices
 
