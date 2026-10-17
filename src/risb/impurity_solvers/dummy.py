@@ -69,6 +69,7 @@ class DummyImpuritySolver(ImpuritySolver):
         Lambda_c: BlockMatrixLike,
         D: BlockMatrixLike,
         h0_loc_matrix: BlockMatrixLike | None = None,
+        mu: float | None = None,
     ) -> None:
         """Do nothing, because the referenced impurity solver is the one solved."""
 

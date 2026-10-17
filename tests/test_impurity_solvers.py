@@ -5,6 +5,7 @@ from typing import Any, Literal
 import numpy as np
 import pytest
 from fockit.algebra import OpSum, c, cdag, nc, zero
+from fockit.hilbert import FermionSpace, build_basis, to_matrix
 from numpy.typing import NDArray
 from test_common import (
     build_two_orbital_complex_h0_k,
@@ -521,3 +522,119 @@ def test_complex_two_orbital_model_reaches_the_mott_state_with_a_thermal_impurit
     assert S.optimize.success
     for bl, _ in gf_struct:
         assert S.Z[0][bl] == pytest.approx(np.zeros((2, 2)), abs=1e-6)
+
+
+def thermal_average_over_the_fock_space(
+    impurity_solver: FockitImpuritySolver, h: OpSum, beta: float
+) -> tuple[dict[str, BlockMatrix], float]:
+    # The density matrices and grand potential from all eigenstates of h in the
+    # whole Fock space of the impurity problem
+    modes = [
+        (bl, i)
+        for bl, size in impurity_solver.gf_struct + impurity_solver.gf_struct_bath
+        for i in range(size)
+    ]
+    basis = build_basis({FermionSpace(): modes})
+    energies, vectors = np.linalg.eigh(to_matrix(h, basis).toarray())
+    weights = np.exp(-beta * (energies - energies[0]))
+    rho = (vectors * (weights / np.sum(weights))) @ vectors.conj().T
+
+    def average(op: OpSum) -> complex:
+        return complex(np.trace(rho @ to_matrix(op, basis).toarray()))
+
+    expected: dict[str, BlockMatrix] = {"rho_f": {}, "rho_cf": {}, "rho_c": {}}
+    for (bl, size), (bl_bath, n_bath) in zip(
+        impurity_solver.gf_struct, impurity_solver.gf_struct_bath, strict=True
+    ):
+        expected["rho_f"][bl] = np.array(
+            [
+                [average(c(bl_bath, b) * cdag(bl_bath, a)) for b in range(n_bath)]
+                for a in range(n_bath)
+            ]
+        )
+        expected["rho_cf"][bl] = np.array(
+            [
+                [average(cdag(bl, alpha) * c(bl_bath, a)) for a in range(n_bath)]
+                for alpha in range(size)
+            ]
+        )
+        expected["rho_c"][bl] = np.array(
+            [
+                [average(cdag(bl, alpha) * c(bl, b)) for b in range(size)]
+                for alpha in range(size)
+            ]
+        )
+    omega = energies[0] - np.log(np.sum(weights)) / beta
+    return expected, float(omega)
+
+
+def test_grand_canonical_impurity_is_the_thermal_state_over_every_particle_number() -> (
+    None
+):
+    # Both spins in one block, so the complex local terms can flip the spin,
+    # and a chemical potential away from half filling
+    beta, mu = 5.0, 0.4
+    gf_struct = [("s", 2)]
+    rng = np.random.default_rng(0)
+    A = rng.normal(size=(4, 4)) + 1j * rng.normal(size=(4, 4))
+    Lambda_c = {"s": 0.5 * (A + A.conj().T)}
+    D = {"s": 0.5 * (rng.normal(size=(4, 2)) + 1j * rng.normal(size=(4, 2)))}
+    h0_loc = {"s": np.array([[0.2, 0.3 - 0.1j], [0.3 + 0.1j, -0.1]])}
+    impurity_solver = FockitImpuritySolver(
+        2 * nc("s", 0) * nc("s", 1),
+        gf_struct,
+        beta=beta,
+        bath_size={"s": 4},
+        grand_canonical=True,
+    )
+    # The chemical potential is on the physical and bath orbitals
+    impurity_solver.set_h_imp(Lambda_c, D, h0_loc)
+    h = impurity_solver.h_imp
+    for i in range(2):
+        h -= mu * nc("s", i)
+    for a in range(4):
+        h -= mu * nc("bath_s", a)
+    impurity_solver.set_h_imp(Lambda_c, D, h0_loc, mu=mu)
+    impurity_solver.solve()
+
+    expected, omega = thermal_average_over_the_fock_space(impurity_solver, h, beta)
+    for rho in ["rho_f", "rho_cf", "rho_c"]:
+        assert getattr(impurity_solver, rho)["s"] == pytest.approx(
+            expected[rho]["s"], abs=1e-10
+        )
+    assert impurity_solver.grand_potential == pytest.approx(omega, abs=1e-10)
+    assert len(impurity_solver.ensemble) > 2
+
+
+def test_grand_canonical_impurity_keeps_every_value_of_a_diagonal_symmetry() -> None:
+    # Sz splits the Hamiltonian into blocks, and the average is over all of
+    # them
+    beta, mu = 3.0, 0.3
+    gf_struct = [("up", 1), ("dn", 1)]
+    bath_size = {"up": 3, "dn": 3}
+    Lambda_c = {bl: np.diag([-0.8, 0.1, 0.9]) for bl, _ in gf_struct}
+    D = {bl: np.array([[0.3], [0.2], [0.4]]) for bl, _ in gf_struct}
+    h0_loc = {"up": np.array([[-0.2]]), "dn": np.array([[0.1]])}
+    Sz = nc("up", 0) - nc("dn", 0)
+    for a in range(3):
+        Sz += nc("bath_up", a) - nc("bath_dn", a)
+    impurity_solver = FockitImpuritySolver(
+        2 * nc("up", 0) * nc("dn", 0),
+        gf_struct,
+        diagonal_symmetries={Sz: 0},
+        beta=beta,
+        bath_size=bath_size,
+        grand_canonical=True,
+    )
+    impurity_solver.set_h_imp(Lambda_c, D, h0_loc, mu=mu)
+    impurity_solver.solve()
+
+    expected, omega = thermal_average_over_the_fock_space(
+        impurity_solver, impurity_solver.h_imp, beta
+    )
+    for rho in ["rho_f", "rho_cf", "rho_c"]:
+        for bl, _ in gf_struct:
+            assert getattr(impurity_solver, rho)[bl] == pytest.approx(
+                expected[rho][bl], abs=1e-10
+            )
+    assert impurity_solver.grand_potential == pytest.approx(omega, abs=1e-10)

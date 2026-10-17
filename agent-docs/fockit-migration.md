@@ -178,7 +178,7 @@ user to review. Update this file as steps finish. Delete it when done.
    ansatz, the physical one the lowest energy. Needed for even B in a
    paramagnet. Would need one value per cluster shared by
    FockitImpuritySolver (sector) and LatticeSolver (n_ghost_electrons).
-32. [ ] Thermal average over one symmetry sector (user; found in item 26):
+32. [x] (superseded (user): the half-filled thermal mode stays as a convergence aid for T = 0, documented so; thermal averages over every particle number and symmetry value are the grand-canonical mode of item 30 step 2) Thermal average over one symmetry sector (user; found in item 26):
    with `beta` and `diagonal_symmetries` (e.g. {Sz: 0}) FockitImpuritySolver
    averages only over the eigenstates of that sector, not a Gibbs average
    over all of the half-filled sector. E.g. one band, B = 5: the first
@@ -191,6 +191,25 @@ user to review. Update this file as steps finish. Delete it when done.
    decoupled orbitals of item 18 and the U = 0 ghosts of item 24. Options to
    investigate: the core treatment for ghosts, or detecting and removing
    ghosts that decouple.
+34. [ ] Permutation and onsite symmetries in the grand-canonical impurity
+   solve (user; from item 30 step 2): fockit builds one eigenvalue of each.
+   Idea: enumerate each symmetry's eigenvalues (2m-th roots of unity for
+   order m, since fermion signs can make g^m = -1), build every sector,
+   expand to the particle-number basis, and raise unless the sector
+   dimensions add up to the particle-number dimension (non-commuting
+   symmetries leave states in no sector). An optimization: smaller blocks,
+   and symmetry-degenerate states in different blocks.
+35. [ ] Revisit a separate grand-canonical impurity solver class (user; from
+   item 30 step 2): the two modes treat symmetries differently, e.g.
+   diagonal_symmetries take a value (fockit's convention) that has no
+   meaning in the grand-canonical mode, where they only split blocks.
+36. [ ] Non-unique finite-T ghost solutions at high T (user; from item 30
+   step 3): above T ~ 0.1 (one band, B = 3, U = 2) the Jacobian of Eqs.
+   200-203 has more zero directions than the 6 of the gauge (about 4 more
+   at T = 1). Two T = 1 solutions have the same d, E and L_beta to 6 digits
+   but Tr Delta 1.62 vs 1.50 and Sigma(i w_1) 2% apart. Investigate what the
+   extra directions are, whether Sigma(i w_n) is then ill-defined, and how to
+   pick a solution (e.g., continuation from low T).
 
 ## Commits
 
@@ -644,6 +663,66 @@ written with fockit over the whole Fock space (M = 3, nu = 2, complex,
 beta 3, mu 0.3; densities and grand potential to 1e-12; fails if W is
 D R^T, if Lambda_c is not transposed, or without Tr Lambda_c), and the
 purification at a converged solution (1e-10).
+
+Step 2 (done): FockitImpuritySolver(..., grand_canonical=True) needs beta;
+permutation / onsite symmetries rejected (they keep one irrep). Particle
+numbers built lazily (cached fockit bases) from half filling outwards until
+the lowest energy of a particle number has a negligible weight (assumes no
+second minimum in N); each particle number's states split by the values of
+the diagonal symmetries (diagonal in the Fock basis), all kept; states of
+every kept block found with the thermal path relative to the global E0.
+New attributes: ensemble [(basis, states, weights)] per particle number
+(ground state's first; overlap sums over it in both modes), grand_potential.
+set_h_imp(mu) now subtracts mu on physical and bath orbitals (was physical
+only, undocumented, unused). The half-filled thermal mode is documented as a
+convergence aid for T = 0 (user). Tests vs exact thermal averages over the
+whole Fock space: one spin-mixing complex block, doped (mu 0.4, beta 5,
+reference H built without mu minus mu times every mode); Sz split (beta 3,
+mu 0.3); both 1e-10. They fail with half filling only, one Sz value, or mu on
+the physical orbitals only.
+
+Step 3 prototype (scratchpad thermal/, one band, Bethe D = 1, 400 k, mu = 0
+fixed, paramagnetic, real): Eqs. 200-203 in risb conventions per block:
+E1 <f+f>_0emb = rho_qp; E2 <f+b>_0emb D = ke, ke[a, alpha] = mean_k eps_k
+(n_F(H_k)^T R*)[a, alpha] (= risb's lopsided ke transposed, checked 3e-14);
+E3 <b b+>_0emb = rho_f(imp); E4 R^T <f+b>_0emb = rho_cf(imp); impurity
+grand canonical with set_h_imp(mu). At LatticeSolver's T = 0 solution all
+four hold to 1e-14 with H_0emb at beta 1e8 and a ground-state impurity.
+- (A) least_squares over all 18 reals: converges at every T (residual
+  1e-10 to 1e-15) but 39-1176 residual calls up to T = 0.3 and 10629 at
+  T = 0.5 (each a grand-canonical impurity solve).
+- (B) outer DIIS on (R, Lambda); inner least_squares fit of (D, Lambda_c) to
+  E1-E2 (H_0emb only), one impurity solve, fit of (R, Lambda) to E3-E4:
+  4-67 impurity solves per T, same d and E to 4 digits. Chosen.
+- U = 2, B = 3 vs Fig. 7 (read off): d 0.0762 / 0.077 (T 0.03), 0.0526 /
+  0.054 (0.1), 0.0534 / 0.052 (0.2, minimum), 0.0875 / 0.08 (0.5), 0.142 /
+  0.13 (1), 0.190 / 0.19 (2); (E - mu N)/N -1.083 / -1.08 low T, -0.680 /
+  -0.68 at T = 2. U = 1: d 0.167 low T, min 0.142 near T 0.2, 0.193 (1),
+  0.220 (2); E -0.716. U = 3.2: d 0.0133, E -1.640 low T; d 0.092 (1), 0.157
+  (2); T = 0.5 stops at 300 iterations with residual 3.5e-9.
+- T -> 0: d 0.0856 at T = 0.005 vs LatticeSolver 0.08559.
+- <N_emb> = 4 (half filling) to 1e-6 up to T 0.3 on the continuation path,
+  physical n_c = 0.5 always.
+- Non-uniqueness at high T: Jacobian (18 x 18, central differences) has 6
+  zero singular values (the u, v gauge) for T <= 0.1; the smallest others
+  fall with T (2.9e-4 at 0.1, 7.5e-6 at 0.2) and about four more are zero at
+  T = 1. Two T = 1 solutions (jump from T = 0 vs continuation) have the same
+  d 0.141837, E -0.820781, L_beta -2.059247 but Tr Delta 1.616 vs 1.499 and
+  Sigma(i w_1) -0.10239i vs -0.10456i, no decoupled mode: thermodynamics
+  unique, the pole parametrization not.
+- Item 33: B = 5, U = 2.4 converges (1e-15 at T = 0.005, 0.01, 0.1; 3.5e-13
+  at 0.03), E -1.2619 vs B = 3 -1.2615 (T = 0.005), same d. Not yet
+  checked: the item 24 two-site-cell stall (needs projectors).
+
+Step 3b-i (refactor only): `BaseLatticeSolver` (ABC, `solve_lattice_base.py`)
+holds setup, flatten/project, `_target_function`, `solve`, `Z`, and
+`one_cycle`: bands, `update_weights` (abstract), rho_qp and lopsided ke, then
+`update_bath` (abstract, sets D and Lambda_c), `solve_impurities` (shared;
+passes `mu` to `set_h_imp` only when `self.mu` is not None), `update_qp`
+(abstract, sets f1, f2, Lambda, R). `LatticeSolver` keeps the analytic T = 0
+steps and the core-orbital placement. `ImpuritySolver.set_h_imp` takes
+`mu=None`. All 110 tests unchanged. Next (3b-ii): `ThermalLatticeSolver`
+with the approach-B fits, Fermi weights at fixed beta, mu.
 
 ## Item 26 notes (different ghost counts per block)
 

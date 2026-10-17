@@ -199,15 +199,16 @@ This finds two states instead of one, so it is slower.
 ### Temperature of the impurity problem
 
 By default the density matrices are from the ground state of the impurity
-problem. To instead use thermal averages over its eigenstates in the
-half-filled sector, give the inverse temperature
+problem. Giving an inverse temperature averages them over the eigenstates of
+the half-filled sector with Boltzmann weights
 
 ```python
 impurity_solver = FockitImpuritySolver(h_int, gf_struct, beta=40)
 ```
 
-Use the same inverse temperature as the quasiparticles, e.g., in
-{py:class}`~risb.kweight.SmearingKWeight`. This can help in or near a Mott
+This is a convergence aid for the zero-temperature solution. Use the same
+inverse temperature as the quasiparticles, e.g., in
+{py:class}`~risb.kweight.SmearingKWeight`. It can help in or near a Mott
 insulator. There the bath orbitals decouple from the impurity, and in its
 ground state they are completely full or empty, while the quasiparticles they
 must match are smeared by the temperature, which can make the self-consistent
@@ -224,6 +225,23 @@ than the ground state when there are many low-lying states. A sector of at most
 2000 states is diagonalized as a dense matrix. In a larger one `eigsh` can
 miss a state of a degenerate level, so the solver also looks for missed states
 below the highest one it found.
+
+### Grand-canonical impurity problem
+
+For thermal averages over every particle number of the impurity problem
+
+```python
+impurity_solver = FockitImpuritySolver(h_int, gf_struct, beta=40, grand_canonical=True)
+impurity_solver.set_h_imp(Lambda_c, D, h0_loc_matrix, mu=mu)
+```
+
+The chemical potential `mu` is subtracted on the physical and bath orbitals.
+The states of each particle number are found from half filling outwards,
+until a particle number has a negligible weight. The `diagonal_symmetries`
+only split the Hamiltonian of each particle number into blocks, which are all
+in the average, and permutation and onsite symmetries cannot be used. The grand
+potential $-\log(\sum e^{-\beta E}) / \beta$ over the states is
+`impurity_solver.grand_potential`. `LatticeSolver` does not use this mode.
 
 ### Getting the density matrices
 

@@ -3,8 +3,9 @@
 from importlib.metadata import PackageNotFoundError, version
 
 from .solve_lattice import LatticeSolver
+from .solve_lattice_base import BaseLatticeSolver
 
-__all__ = ["LatticeSolver"]
+__all__ = ["BaseLatticeSolver", "LatticeSolver"]
 
 try:
     __version__ = version("risb")

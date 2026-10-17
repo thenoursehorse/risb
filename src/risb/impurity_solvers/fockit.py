@@ -87,10 +87,11 @@ class FockitImpuritySolver(ImpuritySolver):
     beta : float, optional
         Inverse temperature of the impurity problem. With the default ``None``
         the density matrices are from its ground state. With a float they are
-        thermal averages over the eigenstates of the half-filled sector,
-        dropping states with a Boltzmann weight below ``1e-14`` relative to the
-        ground state. A sector of at most 2000 states is diagonalized as a
-        dense matrix.
+        averages over the eigenstates of the half-filled sector with Boltzmann
+        weights, dropping states with a weight below ``1e-14`` relative to the
+        ground state. It is a convergence aid for the zero-temperature
+        solution. A sector of at most 2000 states is diagonalized as a dense
+        matrix.
     bath_size : mapping, optional
         Number of bath orbitals of each block, ``B`` times its size for ghost
         RISB with ``B`` quasiparticle orbitals per orbital, e.g.,
@@ -98,6 +99,13 @@ class FockitImpuritySolver(ImpuritySolver):
         that are not given have as many bath orbitals as physical orbitals
         (``B = 1``). The total number of physical and bath orbitals must be
         even.
+    grand_canonical : bool, optional
+        With ``True``, the density matrices are thermal averages at ``beta``
+        over every particle number, with the chemical potential of
+        :meth:`set_h_imp`. The ``diagonal_symmetries`` then only split the
+        Hamiltonian into blocks, which are all in the average. ``beta`` must be
+        given, and ``permutation_symmetries`` and ``onsite_symmetries`` cannot
+        be. Default is ``False``.
 
     """
 
@@ -115,7 +123,17 @@ class FockitImpuritySolver(ImpuritySolver):
         beta: float | None = None,
         *,
         bath_size: Mapping[str, int] | None = None,
+        grand_canonical: bool = False,
     ) -> None:
+        if grand_canonical and beta is None:
+            msg = "A grand-canonical impurity problem needs beta."
+            raise ValueError(msg)
+        if grand_canonical and (permutation_symmetries or onsite_symmetries):
+            msg = (
+                "A grand-canonical impurity problem cannot use permutation or "
+                "onsite symmetries, because they keep only part of the states."
+            )
+            raise ValueError(msg)
         if method not in ("eigsh", "eigh"):
             msg = f"Unknown method {method!r}."
             raise ValueError(msg)
@@ -142,6 +160,9 @@ class FockitImpuritySolver(ImpuritySolver):
         #: ``None`` for its ground state.
         self.beta = beta
 
+        #: bool : Whether the thermal averages are over every particle number.
+        self.grand_canonical = grand_canonical
+
         #: fockit.algebra.OpSum : Interaction Hamiltonian.
         self.h_int = h_int
 
@@ -166,6 +187,8 @@ class FockitImpuritySolver(ImpuritySolver):
         N = zero()
         for mode in modes:
             N += nc(*mode)
+        self._modes = modes
+        self._N = N
 
         diagonal = {N: len(modes) // 2, **self.diagonal_symmetries}
 
@@ -196,12 +219,27 @@ class FockitImpuritySolver(ImpuritySolver):
 
         #: numpy.ndarray : Eigenstates of the impurity problem in :attr:`basis`
         #: that the expectation values average over, as columns, set by
-        #: :meth:`solve`.
+        #: :meth:`solve`. With :attr:`grand_canonical` they are the states of
+        #: the particle number of the ground state, in the first basis of
+        #: :attr:`ensemble`.
         self.states: NDArray[np.complex128]
 
-        #: numpy.ndarray : Weights of :attr:`states` in the expectation values,
-        #: set by :meth:`solve`.
+        #: numpy.ndarray : Weights of the states in the expectation values, in
+        #: the order of :attr:`ensemble`, set by :meth:`solve`.
         self.weights: NDArray[np.float64]
+
+        #: list of tuple : The states that the expectation values average
+        #: over, as ``(basis, states, weights)`` with the states as columns in
+        #: the basis, for each particle number, starting with that of the
+        #: ground state, set by :meth:`solve`.
+        self.ensemble: list[tuple[Basis, NDArray[np.complex128], NDArray[np.float64]]]
+
+        #: float : ``-log(sum(exp(-beta * E))) / beta`` over the states, set by
+        #: :meth:`solve` with :attr:`grand_canonical`.
+        self.grand_potential: float
+
+        # Bases of the particle numbers that a grand-canonical solve needs
+        self._sector_bases: dict[int, Basis] = {}
 
         #: float : Entropy ``-sum(weights * log(weights))`` of the states of
         #: the impurity problem, set by :meth:`solve`. It is zero for the
@@ -333,8 +371,8 @@ class FockitImpuritySolver(ImpuritySolver):
             Single-particle quadratic couplings of the c-electrons. Each key
             in dictionary must follow :attr:`gf_struct`.
         mu : float, optional
-            Chemical potential, subtracted as ``mu * n`` on the physical
-            orbitals.
+            Chemical potential, subtracted as ``mu * n`` on the physical and
+            bath orbitals.
 
         """
         if h0_loc_matrix is not None:
@@ -343,9 +381,7 @@ class FockitImpuritySolver(ImpuritySolver):
         self.set_h_hybr(D)
         self.h_imp = self.h0_loc + self.h_int + self.h_bath + self.h_hybr
         if mu is not None:
-            for bl, bl_size in self.gf_struct:
-                for alpha in range(bl_size):
-                    self.h_imp -= mu * nc(bl, alpha)
+            self.h_imp -= mu * self._N
 
     @override
     def solve(self) -> None:
@@ -353,8 +389,9 @@ class FockitImpuritySolver(ImpuritySolver):
         Solve for the groundstate in the half-filled number sector of the impurity problem.
 
         With :attr:`beta` set, also find the low-lying eigenstates for the
-        thermal averages. Sets the density matrices :attr:`rho_f`, :attr:`rho_cf`, and
-        :attr:`rho_c` of every block.
+        averages with Boltzmann weights, and with :attr:`grand_canonical` those
+        of every particle number. Sets the density matrices :attr:`rho_f`,
+        :attr:`rho_cf`, and :attr:`rho_c` of every block.
 
         Raises
         ------
@@ -369,65 +406,16 @@ class FockitImpuritySolver(ImpuritySolver):
             degenerate.
 
         """
-        H = to_matrix(self.h_imp, self._symmetric_basis)
-        if abs(H - H.conj().T).max() > 1e-10:
-            msg = "h_imp is not Hermitian."
-            raise ValueError(msg)
         for Q in self.diagonal_symmetries:
             terms = normal_order(commutator(self.h_imp, Q)).terms.values()
             if any(abs(complex(coeff)) > 1e-10 for coeff in terms):
                 msg = "h_imp does not conserve a diagonal symmetry."
                 raise ValueError(msg)
-
-        k = 2 if self.degenerate == "warn" else 1
-        dim = H.shape[0]
-        if self.method == "eigh":
-            energies, states = scipy.linalg.eigh(H.toarray(), **self.method_options)
-        elif dim <= k + 1 or (self.beta is not None and dim <= _DENSE_DIM):
-            energies, states = np.linalg.eigh(H.toarray())
+        if self.grand_canonical:
+            self._solve_grand_canonical()
         else:
-            energies, states = _eigsh(H, k, self.method_options)
-            # Find more states until the highest one has a negligible weight
-            while (
-                self.beta is not None and _weight(energies, self.beta)[-1] > _WEIGHT_TOL
-            ):
-                k *= 2
-                # Diagonalize the whole sector once the Krylov space of eigsh
-                # would be more than half of it
-                if dim <= 2 * (2 * k + 1):
-                    energies, states = np.linalg.eigh(H.toarray())
-                    break
-                energies, states = _eigsh(H, k, self.method_options)
-            if 1 < len(energies) < dim:
-                energies, states = _add_missed_states(H, states, self.method_options)
-
-        if (
-            self.degenerate == "warn"
-            and len(energies) > 1
-            and energies[1] - energies[0] < self.degenerate_tol
-        ):
-            msg = (
-                "The ground state of h_imp is degenerate (E1 - E0 = "
-                f"{energies[1] - energies[0]:.1e}). The density matrices are from "
-                "one state in the degenerate subspace."
-            )
-            warnings.warn(msg, RuntimeWarning, stacklevel=2)
-
-        if self.beta is None:
-            states = states[:, :1]
-            self.weights = np.ones(1)
-        else:
-            weights = _weight(energies, self.beta)
-            keep = weights > _WEIGHT_TOL
-            states = states[:, keep]
-            self.weights = weights[keep] / np.sum(weights[keep])
-        if self._symmetric_basis is not self.basis:
-            states = np.column_stack(
-                [expand_state(v, self._symmetric_basis, self.basis) for v in states.T]
-            )
-        self.states = np.asarray(states, dtype=complex)
+            self._solve_half_filled()
         self.entropy = get_entropy_impurity(self.weights)
-        self.gs_energy = float(energies[0])
         self.gs_vector = self.states[:, 0]
         for (bl, bl_size), (bl_bath, n_bath) in zip(
             self.gf_struct, self.gf_struct_bath, strict=True
@@ -461,6 +449,145 @@ class FockitImpuritySolver(ImpuritySolver):
                     for alpha in sites
                 ]
             )
+
+    def _solve_half_filled(self) -> None:
+        H = _hermitian_matrix(self.h_imp, self._symmetric_basis)
+        energies, states = self._lowest_states(H, self.beta)
+
+        if (
+            self.degenerate == "warn"
+            and len(energies) > 1
+            and energies[1] - energies[0] < self.degenerate_tol
+        ):
+            msg = (
+                "The ground state of h_imp is degenerate (E1 - E0 = "
+                f"{energies[1] - energies[0]:.1e}). The density matrices are from "
+                "one state in the degenerate subspace."
+            )
+            warnings.warn(msg, RuntimeWarning, stacklevel=3)
+
+        if self.beta is None:
+            states = states[:, :1]
+            self.weights = np.ones(1)
+        else:
+            weights = _weight(energies, self.beta, energies[0])
+            keep = weights > _WEIGHT_TOL
+            states = states[:, keep]
+            self.weights = weights[keep] / np.sum(weights[keep])
+        if self._symmetric_basis is not self.basis:
+            states = np.column_stack(
+                [expand_state(v, self._symmetric_basis, self.basis) for v in states.T]
+            )
+        self.states = np.asarray(states, dtype=complex)
+        self.gs_energy = float(energies[0])
+        self.ensemble = [(self.basis, self.states, self.weights)]
+
+    def _solve_grand_canonical(self) -> None:
+        beta = self.beta
+        assert beta is not None  # checked in __init__
+        n_modes = len(self._modes)
+        half = n_modes // 2
+
+        # The Hamiltonian of a particle number in blocks, one for each set of
+        # values of the diagonal symmetries on the basis states
+        def blocks(n: int) -> list[tuple[NDArray[np.intp], Any]]:
+            if n not in self._sector_bases:
+                self._sector_bases[n] = build_basis(
+                    {FermionSpace(): self._modes}, diagonal_symmetries={self._N: n}
+                )
+            basis = self._sector_bases[n]
+            H = _hermitian_matrix(self.h_imp, basis).tocsr()
+            values = [
+                np.round(to_matrix(Q, basis).diagonal().real, 8)
+                for Q in self.diagonal_symmetries
+            ]
+            labels = np.stack(values, axis=1) if values else np.zeros((basis.dim, 0))
+            groups = np.unique(labels, axis=0, return_inverse=True)[1].ravel()
+            return [
+                (idx, H[idx][:, idx])
+                for idx in (np.flatnonzero(groups == g) for g in np.unique(groups))
+            ]
+
+        # The lowest energy of each particle number, from half filling
+        # outwards until it has a negligible weight. This assumes the lowest
+        # energy has no other minimum as a function of the particle number
+        lowest: dict[int, float] = {}
+        sectors = {half: blocks(half)}
+        lowest[half] = min(
+            _lowest_energy(H, self.method_options) for _, H in sectors[half]
+        )
+        for step in (1, -1):
+            n = half + step
+            while 0 <= n <= n_modes:
+                sectors[n] = blocks(n)
+                lowest[n] = min(
+                    _lowest_energy(H, self.method_options) for _, H in sectors[n]
+                )
+                if np.exp(-beta * (lowest[n] - min(lowest.values()))) <= _WEIGHT_TOL:
+                    break
+                n += step
+        e0 = min(lowest.values())
+
+        ensemble = []
+        all_energies = []
+        for n in sorted(sectors, key=lambda n: lowest[n]):
+            if np.exp(-beta * (lowest[n] - e0)) <= _WEIGHT_TOL:
+                continue
+            dim = self._sector_bases[n].dim
+            energies_n = []
+            states_n = []
+            for idx, H in sectors[n]:
+                energies, states = self._lowest_states(H, beta, e0)
+                keep = _weight(energies, beta, e0) > _WEIGHT_TOL
+                full = np.zeros((dim, int(np.sum(keep))), dtype=complex)
+                full[idx] = states[:, keep]
+                energies_n.append(energies[keep])
+                states_n.append(full)
+            energies = np.concatenate(energies_n)
+            order = np.argsort(energies)
+            ensemble.append(
+                (self._sector_bases[n], np.hstack(states_n)[:, order], energies[order])
+            )
+            all_energies.append(energies[order])
+        weights = _weight(np.concatenate(all_energies), beta, e0)
+        self.weights = weights / np.sum(weights)
+        self.ensemble = [
+            (basis, states, _weight(energies, beta, e0) / np.sum(weights))
+            for basis, states, energies in ensemble
+        ]
+        self.states = self.ensemble[0][1]
+        self.gs_energy = e0
+        self.grand_potential = e0 - float(np.log(np.sum(weights))) / beta
+
+    def _lowest_states(
+        self, H: Any, beta: float | None, reference: float | None = None
+    ) -> tuple[NDArray[np.float64], NDArray[np.complex128]]:
+        # The ground state, or with beta every state with a weight above
+        # _WEIGHT_TOL relative to the energy reference (default the lowest)
+        k = 2 if self.degenerate == "warn" else 1
+        dim = H.shape[0]
+        if self.method == "eigh":
+            energies, states = scipy.linalg.eigh(H.toarray(), **self.method_options)
+            return energies, states
+        if dim <= k + 1 or (beta is not None and dim <= _DENSE_DIM):
+            energies, states = np.linalg.eigh(H.toarray())
+            return energies, states
+        energies, states = _eigsh(H, k, self.method_options)
+        # Find more states until the highest one has a negligible weight
+        while beta is not None and (
+            _weight(energies, beta, energies[0] if reference is None else reference)[-1]
+            > _WEIGHT_TOL
+        ):
+            k *= 2
+            # Diagonalize the whole sector once the Krylov space of eigsh
+            # would be more than half of it
+            if dim <= 2 * (2 * k + 1):
+                energies, states = np.linalg.eigh(H.toarray())
+                return energies, states
+            energies, states = _eigsh(H, k, self.method_options)
+        if 1 < len(energies) < dim:
+            energies, states = _add_missed_states(H, states, self.method_options)
+        return energies, states
 
     @override
     def get_rho_f(self, bl: str) -> NDArray[np.inexact]:
@@ -535,13 +662,15 @@ class FockitImpuritySolver(ImpuritySolver):
             Expectation value.
 
         """
-        Op_matrix = to_matrix(Op, self.basis)
-        res = complex(
-            sum(
-                weight * expectation(Op_matrix, state)
-                for weight, state in zip(self.weights, self.states.T, strict=True)
+        res = 0j
+        for basis, states, weights in self.ensemble:
+            Op_matrix = to_matrix(Op, basis)
+            res += complex(
+                sum(
+                    weight * expectation(Op_matrix, state)
+                    for weight, state in zip(weights, states.T, strict=True)
+                )
             )
-        )
         if force_real:
             return res.real
         return res
@@ -597,9 +726,25 @@ def _add_missed_states(
         states = np.column_stack([states, state])
 
 
-def _weight(energies: NDArray[np.float64], beta: float) -> NDArray[np.float64]:
-    weights: NDArray[np.float64] = np.exp(-beta * (energies - energies[0]))
+def _weight(
+    energies: NDArray[np.float64], beta: float, reference: float
+) -> NDArray[np.float64]:
+    weights: NDArray[np.float64] = np.exp(-beta * (energies - reference))
     return weights
+
+
+def _hermitian_matrix(op: OpSum, basis: Basis) -> Any:
+    H = to_matrix(op, basis)
+    if abs(H - H.conj().T).max() > 1e-10:
+        msg = "h_imp is not Hermitian."
+        raise ValueError(msg)
+    return H
+
+
+def _lowest_energy(H: Any, method_options: Mapping[str, Any]) -> float:
+    if H.shape[0] <= _DENSE_DIM:
+        return float(np.linalg.eigvalsh(H.toarray())[0])
+    return float(_eigsh(H, 1, method_options)[0][0])
 
 
 def _bath(bl: str) -> str:
