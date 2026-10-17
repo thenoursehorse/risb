@@ -624,8 +624,7 @@ def get_entropy_qp(energies: BlockRealArray, beta: float, mu: float) -> float:
     """
     entropy = 0.0
     for e in energies.values():
-        x = beta * (np.asarray(e) - mu)
-        entropy += np.sum(np.logaddexp(0, -x) + x * expit(-x)) / x.shape[0]
+        entropy += _fermi_entropy(beta * (e - mu)) / e.shape[0]
     return float(entropy)
 
 
@@ -685,6 +684,137 @@ def get_entropy(
 
     """
     return get_entropy_qp(energies, beta, mu) + float(np.sum(impurity_entropy))
+
+
+def get_thermal_grand_potential(
+    *,
+    energies: BlockRealArray,
+    R: Sequence[BlockMatrixLike],
+    Lambda: Sequence[BlockMatrixLike],
+    D: Sequence[BlockMatrixLike],
+    Lambda_c: Sequence[BlockMatrixLike],
+    beta: float,
+    mu: float,
+    impurity_grand_potential: Sequence[float],
+) -> float:
+    r"""
+    Return the grand potential per unit cell of finite-temperature ghost RISB.
+
+    It is the value at a solution of :class:`risb.ThermalLatticeSolver`. All
+    arguments are keyword-only, and the matrices are lists with an entry for
+    each cluster, as stored by :class:`risb.ThermalLatticeSolver`.
+
+    Parameters
+    ----------
+    energies : risb.types.BlockRealArray
+        Energies of the quasiparticle bands in each block, indexed as k, band,
+        e.g., :attr:`risb.ThermalLatticeSolver.energies_qp`.
+    R : list of risb.types.BlockMatrixLike
+        Renormalization matrix from electrons to quasiparticles.
+    Lambda : list of risb.types.BlockMatrixLike
+        Correlation potential of quasiparticles.
+    D : list of risb.types.BlockMatrixLike
+        Hybridization coupling of the impurity problem.
+    Lambda_c : list of risb.types.BlockMatrixLike
+        Bath coupling of the impurity problem.
+    beta : float
+        Inverse temperature.
+    mu : float
+        Chemical potential.
+    impurity_grand_potential : list of float
+        Grand potential of the impurity problem of each cluster, in the order
+        of the clusters, e.g.,
+        :attr:`risb.impurity_solvers.FockitImpuritySolver.grand_potential`.
+
+    Returns
+    -------
+    float
+        The grand potential.
+
+    Notes
+    -----
+    Eq. 196 of `arXiv:2603.20559 <arXiv260320559_>`__,
+    :math:`\Omega_{\mathrm{qp}} + \sum_i (\Omega_{\mathrm{emb}, i} -
+    \Omega_{0\mathrm{emb}, i})`, with :math:`\Omega_{\mathrm{qp}}` of the
+    quasiparticle bands, :math:`\Omega_{\mathrm{emb}, i}` of the impurity
+    problem, and :math:`\Omega_{0\mathrm{emb}, i}` of the quadratic
+    embedding Hamiltonian of each block from
+    :func:`get_h0_emb_grand_potential`.
+
+    .. _arXiv260320559: https://arxiv.org/abs/2603.20559
+
+    """
+    omega = 0.0
+    for e in energies.values():
+        omega -= np.sum(np.logaddexp(0, -beta * (e - mu))) / (beta * e.shape[0])
+    for i, R_i in enumerate(R):
+        omega += impurity_grand_potential[i]
+        for bl in R_i:
+            omega -= get_h0_emb_grand_potential(
+                R_i[bl], Lambda[i][bl], D[i][bl], Lambda_c[i][bl], beta, mu
+            )
+    return float(omega)
+
+
+def get_thermal_entropy(
+    *,
+    energies: BlockRealArray,
+    R: Sequence[BlockMatrixLike],
+    Lambda: Sequence[BlockMatrixLike],
+    D: Sequence[BlockMatrixLike],
+    Lambda_c: Sequence[BlockMatrixLike],
+    beta: float,
+    mu: float,
+    impurity_entropy: Sequence[float],
+) -> float:
+    """
+    Return the entropy per unit cell of finite-temperature ghost RISB.
+
+    It is minus the derivative of :func:`get_thermal_grand_potential` at a
+    solution with respect to the temperature at fixed chemical potential. All
+    arguments are keyword-only, as in :func:`get_thermal_grand_potential`.
+
+    Parameters
+    ----------
+    energies : risb.types.BlockRealArray
+        Energies of the quasiparticle bands in each block, indexed as k, band,
+        e.g., :attr:`risb.ThermalLatticeSolver.energies_qp`.
+    R : list of risb.types.BlockMatrixLike
+        Renormalization matrix from electrons to quasiparticles.
+    Lambda : list of risb.types.BlockMatrixLike
+        Correlation potential of quasiparticles.
+    D : list of risb.types.BlockMatrixLike
+        Hybridization coupling of the impurity problem.
+    Lambda_c : list of risb.types.BlockMatrixLike
+        Bath coupling of the impurity problem.
+    beta : float
+        Inverse temperature.
+    mu : float
+        Chemical potential.
+    impurity_entropy : list of float
+        Entropy of the impurity problem of each cluster, in the order of the
+        clusters, e.g.,
+        :attr:`risb.impurity_solvers.FockitImpuritySolver.entropy`.
+
+    Returns
+    -------
+    float
+        :func:`get_entropy_qp` plus the entropy of each impurity problem, minus
+        the entropy of the quadratic embedding Hamiltonian of each block.
+
+    Notes
+    -----
+    At a solution the grand potential is stationary in every matrix, so its
+    derivative with respect to the temperature is that of each of its terms
+    at fixed matrices, minus the entropy of each state.
+
+    """
+    entropy = get_entropy_qp(energies, beta, mu) + float(np.sum(impurity_entropy))
+    for i, R_i in enumerate(R):
+        for bl in R_i:
+            h = get_h0_emb(R_i[bl], Lambda[i][bl], D[i][bl], Lambda_c[i][bl], mu)
+            entropy -= _fermi_entropy(beta * np.linalg.eigvalsh(h))
+    return float(entropy)
 
 
 def get_density_matrix_k(
@@ -1750,3 +1880,8 @@ def _resolvent(
 def _dagger(A: NDArray[np.inexact]) -> NDArray[np.inexact]:
     """Return the conjugate transpose of the last two axes, e.g., at each k-point."""
     return np.swapaxes(A.conj(), -1, -2)
+
+
+def _fermi_entropy(x: NDArray[np.floating]) -> float:
+    # Entropy of fermion modes at energies x in units of the temperature
+    return float(np.sum(np.logaddexp(0, -x) + x * expit(-x)))

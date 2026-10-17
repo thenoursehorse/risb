@@ -389,10 +389,37 @@ function of `R` and `Lambda` alone. {{DIIS}} and linear mixing handle this, but
 scipy's `root` functions only work near a solution, and not at high
 temperature.
 
+The grand potential and the entropy per unit cell at a solution are
+
+```python
+from risb import helpers
+
+matrices = {
+    "energies": S.energies_qp,
+    "R": S.R,
+    "Lambda": S.Lambda,
+    "D": S.D,
+    "Lambda_c": S.Lambda_c,
+    "beta": beta,
+    "mu": mu,
+}
+omega = helpers.get_thermal_grand_potential(
+    **matrices, impurity_grand_potential=[impurity_solver.grand_potential]
+)
+entropy = helpers.get_thermal_entropy(
+    **matrices, impurity_entropy=[impurity_solver.entropy]
+)
+energy = omega + entropy / beta + mu * n
+```
+
+with `n` the number of electrons per unit cell. The entropy is minus the
+temperature derivative of the grand potential at fixed `mu`. At low
+temperature the grand potential is
+{py:func}`~risb.helpers.get_lagrangian` at a solution of `LatticeSolver`.
+
 At a fixed `mu` there can be several solutions, e.g., with different fillings,
 and which one is found depends on the starting `R` and `Lambda`. The
-physical one has the lowest grand potential, which risb does not compute for
-the lattice.
+physical one has the lowest grand potential.
 
 ## Real or complex?
 
