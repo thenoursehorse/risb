@@ -96,6 +96,35 @@ def test_ghost_hubbard_example() -> None:
     )
 
 
+@pytest.mark.filterwarnings("ignore:FigureCanvasAgg is non-interactive")
+def test_thermal_hubbard_example() -> None:
+    g = run_example("thermal_hubbard")
+    abs = 1e-5
+    # The double occupancy, energy, and entropy / ln 2 with ghosts (B = 3) at
+    # U = 2 for T = 0.01 to 10, as in Fig. 7 of arXiv:2603.20559
+    double_occupancy_expected = [
+        *[0.0849524266, 0.0825713938, 0.0753048635, 0.0626243026, 0.0525707223],
+        *[0.0522091678, 0.0639272726, 0.0957314090, 0.1418369010, 0.1831492320],
+        *[0.2111147038, 0.2278877658, 0.2375207830],
+    ]
+    energy_expected = [
+        *[-1.0891486655, -1.0872363328, -1.0826509162, -1.0758012529, -1.0700102095],
+        *[-1.0624332886, -1.0334844414, -0.9506673121, -0.8207901013, -0.6997293716],
+        *[-0.6164999384, -0.5663069575, -0.5374323035],
+    ]
+    entropy_expected = [
+        *[0.1890074057, 0.3837777773, 0.6629373633, 0.8962471675, 1.0123272783],
+        *[1.0911158208, 1.2587548478, 1.5353739713, 1.7867167647, 1.9211852788],
+        *[1.9736626459, 1.9915184866, 1.9973022638],
+    ]
+
+    assert pytest.approx(double_occupancy_expected, abs=abs) == g["double_occupancy"]
+    assert pytest.approx(energy_expected, abs=abs) == g["energy"]
+    assert pytest.approx(entropy_expected, abs=abs) == np.array(g["entropy"]) / np.log(
+        2
+    )
+
+
 def test_kagome_hubbard_example() -> None:
     g = run_example("kagome_hubbard")
     S = g["S"]

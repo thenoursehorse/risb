@@ -234,8 +234,7 @@ Sigma = helpers.get_sigma_w(
 ```
 
 See [the self-energy and the quasiparticle weight](../explanations/self_energy.md)
-for how they are obtained, and `examples/ghost_hubbard.py` for the Hubbard
-model on the Bethe lattice with and without ghosts.
+for how they are obtained.
 
 ## Enforcing symmetries
 
@@ -335,11 +334,8 @@ S.solve(tol = , method = 'broyden1, hybr, krylov, etc', other kwargs = )
 ```
 
 For `krylov`, `broyden1`, `broyden2`, `anderson`, `linearmixing`,
-`diagbroyden` and `excitingmixing`, scipy turns `tol` into a stop on the step
-size. The {{RISB}} equations have directions in which the error does not
-change: rotating the basis of the quasiparticles maps a solution to another
-solution, so the solutions are not isolated, and then the steps need not
-shrink. Stop on the size of the error instead
+`diagbroyden` and `excitingmixing`, scipy stops on the size of the step,
+which need not shrink in {{RISB}}. Stop on the size of the error instead
 
 ```python
 S.solve(method="krylov", options={"fatol": 1e-10})
@@ -353,89 +349,63 @@ standard linear mixing or {{DIIS}} (which seems to work very well for
 
 ## Finite temperature
 
-`LatticeSolver` solves the zero-temperature equations. A `beta` in
-{py:class}`~risb.kweight.SmearingKWeight` or in the impurity solver only
-smears them. {py:class}`~risb.ThermalLatticeSolver` solves the
-finite-temperature ghost {{RISB}} equations[^Giuli2026] at a fixed inverse
-temperature, and a fixed chemical potential
+`LatticeSolver` is at zero temperature. If you want ghost {{RISB}} at a finite
+temperature[^Giuli2026], use {py:class}`~risb.ThermalLatticeSolver` with an
+impurity solver in the grand-canonical mode at the same inverse temperature
 
 ```python
 from risb import ThermalLatticeSolver
 
-beta, mu = 10, 0
 impurity_solver = FockitImpuritySolver(
     h_int, gf_struct, bath_size=bath_size, beta=beta, grand_canonical=True
 )
 S = ThermalLatticeSolver(
-    h0_k, gf_struct, impurity_solver, beta=beta, mu=mu, bath_size=[bath_size]
+    h0_k=h0_k,
+    gf_struct=gf_struct,
+    impurity_solvers=impurity_solver,
+    beta=beta,
+    mu=mu,
+    bath_size=[bath_size],
 )
-S.solve(tol=1e-10)
+S.solve(tol=...)
 ```
 
-The impurity solvers must give the thermal state at the same `beta` over
-every particle number (see the grand-canonical mode of
-`FockitImpuritySolver`). `Lambda` starts at `mu`. Each cycle fits `D` and
-`Lambda_c` so that the quadratic embedding Hamiltonian of
-{py:func}`~risb.helpers.get_h0_emb` has the quasiparticle density matrices,
-solves the impurity problems, and then fits `Lambda` and `R` so that it has
-their density matrices. At low temperature the solution is that of
-`LatticeSolver` at the same `mu`.
-
-For a fixed filling instead, give the number of electrons per unit cell
+The chemical potential `mu` is fixed. If you want a fixed number of electrons
+per unit cell instead
 
 ```python
-S = ThermalLatticeSolver(
-    h0_k, gf_struct, impurity_solver, beta=beta, n_target=0.9, bath_size=[bath_size]
+S = ThermalLatticeSolver(...
+                         n_target = n_target,
+                         ...
 )
-S.solve(tol=1e-10)
-S.mu
 ```
 
-The chemical potential is then solved for together with `R` and `Lambda`,
-starting from `mu` if it is given. The electrons are those of the impurity
-problems (`rho_c`) and of the quasiparticle bands of the orbitals in no
-cluster, `S.n_electrons`. Unlike in `LatticeSolver`, `n_target` does not
+and the chemical potential is `S.mu` after solving. `n_target` does not
 include `S.n_ghost_electrons`.
 
-At high temperature several `R` and `Lambda` can solve the equations with the
-same physical results, so the default `error_fun` is `'root'`: with
-`'recursion'` the changes between cycles need not vanish at a solution. Each
-fit starts from the result of the previous cycle, so the error is not a
-function of `R` and `Lambda` alone. {{DIIS}} and linear mixing handle this, but
-scipy's `root` functions only work near a solution, and not at high
-temperature.
-
-The grand potential and the entropy per unit cell at a solution are
+The grand potential and the entropy per unit cell are
 
 ```python
 from risb import helpers
 
-matrices = {
-    "energies": S.energies_qp,
-    "R": S.R,
-    "Lambda": S.Lambda,
-    "D": S.D,
-    "Lambda_c": S.Lambda_c,
-    "beta": beta,
-    "mu": mu,
-}
 omega = helpers.get_thermal_grand_potential(
-    **matrices, impurity_grand_potential=[impurity_solver.grand_potential]
+    energies=S.energies_qp,
+    R=S.R,
+    Lambda=S.Lambda,
+    D=S.D,
+    Lambda_c=S.Lambda_c,
+    beta=beta,
+    mu=S.mu,
+    impurity_grand_potential=[impurity_solver.grand_potential],
 )
 entropy = helpers.get_thermal_entropy(
-    **matrices, impurity_entropy=[impurity_solver.entropy]
+    ...
+    impurity_entropy=[impurity_solver.entropy],
 )
-energy = omega + entropy / beta + mu * n
 ```
 
-with `n` the number of electrons per unit cell. The entropy is minus the
-temperature derivative of the grand potential at fixed `mu`. At low
-temperature the grand potential is
-{py:func}`~risb.helpers.get_lagrangian` at a solution of `LatticeSolver`.
-
-At a fixed `mu` there can be several solutions, e.g., with different fillings,
-and which one is found depends on the starting `R` and `Lambda`. The
-physical one has the lowest grand potential.
+If you find more than one solution, the physical one has the lowest grand
+potential.
 
 ## Real or complex?
 

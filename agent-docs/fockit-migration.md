@@ -185,7 +185,7 @@ user to review. Update this file as steps finish. Delete it when done.
    excited level is a triplet (S = 1); with {Sz: 0} its Sz = +-1 states are
    left out. Fix idea: sum the Gibbs weights over all sectors of the
    symmetry, solving each.
-33. [ ] Redundant ghosts (from item 26): one band, U = 2.4, B = 5 converges
+33. [x] (closed (user): ThermalLatticeSolver has no decoupled ghosts at B = 5, see item 30 step 5; LatticeSolver keeps the T = 0 behaviour) Redundant ghosts (from item 26): one band, U = 2.4, B = 5 converges
    to the B = 3 solution plus two ghosts per spin with R = 0 near mu, and
    the self-consistency error stays 0.05-0.6 with every impurity mode. The
    decoupled orbitals of item 18 and the U = 0 ghosts of item 24. Options to
@@ -218,6 +218,17 @@ user to review. Update this file as steps finish. Delete it when done.
    the bath fit (E1-E2) has several solutions. Ideas: fix the bath gauge
    (e.g., <f+b>_0emb Hermitian positive, unstable at low T where it is
    nearly singular), or a deterministic start for the fit.
+38. [ ] Make convergence of ThermalLatticeSolver more robust (user; from item
+   30 step 5). Cycles from the default start (FAIL = 300), DIIS history 3 /
+   6 / 10 / 15, LinearMixing alpha 1 / 0.5: U 2 B 3 T 0.1 12/12/14/18,
+   33/77; T 0.5 73/133/111/49, F/F; T 1 291/199/186/F, F/F; U 2.4 B 5 T
+   0.005 16/F/35/20, 39/91; T 0.03 28/53/23/33, 96/197; T 0.1 F/16/78/253,
+   F/73; n 0.9 20/24/134/42, 35/76; complex n 2 T 0.0025 46/35/102/F, F/F.
+   No setting is best and success flips with small changes, pointing at
+   the cycle: the history-dependent bath fit and the near-flat directions
+   (items 36, 37). Ideas: fix the bath gauge after each fit (<f+b>
+   Hermitian positive on its well-conditioned part), a deterministic fit
+   start, then retest every root finder.
 
 ## Commits
 
@@ -816,6 +827,27 @@ Lambda not shifted.
   n 2: mu 1.5, one electron per spin.
 - Bug found while testing: np.trace(rho_c - rho_qp) broadcast the 1 x 1
   rho_c over the 3 x 3 rho_qp with ghosts (n 4.74 vs 2.77).
+
+Step 5 (item 33 under ThermalLatticeSolver; item 24 done above): no
+redundant ghosts. U = 2.4, B = 5, T = 0.005 from the default start reaches
+the metal (d 0.0531) with every ghost coupled (|R| on the Lambda
+eigenvectors 0.63, 0.19, 0.35, 0.19, 0.63; levels 0, +-0.09, +-1.18), the
+error 2e-5 by cycle 50, then wanders 1e-5 to 1e-3 without converging. The
+inner fits are fine (residuals <= 7e-15, 18 evaluations median, 42 max).
+DIIS history 6 vs 3, from the default start (cycles; FAIL = 300):
+U 2 B 3 T 0.005 13/13, 0.03 13/12, 0.1 12/12, 0.2 9/10, 0.5 133/73, 1 199/291,
+2 3/4; U 2.4 B 5 T 0.005 FAIL/16, 0.01 13/17, 0.03 53/28, 0.1 16/FAIL;
+n 0.9 24/20; cell T 0.1 9/10, 0.5 7/7; complex n 2 T 0.0025 35/46.
+LinearMixing converges B 5 T 0.005 in 39. So no history is better
+overall: each fails one B = 5 case.
+
+Step 6: examples/thermal_hubbard.py (Bethe, 1000 k, U = 2, B = 3, T 0.01 to
+10 in 13 log steps, continuation; d, E - mu N, S / ln 2; 5.5 s): d 0.0850 at
+T 0.01, minimum 0.0522 at T 0.18, 0.2375 at T 10; E -1.0891 to -0.5374; S /
+ln 2 0.189 to 1.997. Test in test_examples.py. Docs: finite-T section
+reviewed (Lambda start, n_target start, S.n_electrons in the energy, DIIS
+stall advice), pointers from the impurity-solver temperature section and the
+Hubbard tutorial. Remaining: the decision on the finite-T path (user).
 
 ## Item 26 notes (different ghost counts per block)
 

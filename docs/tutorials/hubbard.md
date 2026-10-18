@@ -216,7 +216,7 @@ Fermi-Dirac functions
 
 ```python
 # The smearing, in units of inverse temperature. It is an approximation
-# because RISB is at zero temperature
+# because LatticeSolver is at zero temperature (see ThermalLatticeSolver)
 beta = 40
 
 # 1 electron on average per unit cell, half-filling

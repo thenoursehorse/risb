@@ -116,7 +116,7 @@ calculates the density matrices described below for every block.
 
 `solve()` raises a `ValueError` if `h_imp` is not Hermitian, and
 {py:class}`scipy.sparse.linalg.ArpackNoConvergence` if `eigsh` does not
-converge, also after two retries that each double its `ncv`. If the ground state is degenerate, the solver returns one state in
+converge. If the ground state is degenerate, the solver returns one state in
 the degenerate subspace, and which one is not specified.
 
 ### Choosing the eigensolver
@@ -166,21 +166,12 @@ With permutation or onsite symmetries, the ground state is written in
 `impurity_solver.basis`, which only has the diagonal symmetries, to calculate
 the density matrices.
 
-The examples show each kind: $S_z$ in `examples/hubbard.py`, swapping the
-layers in `examples/bilayer_hubbard.py`, swapping the spins in
-`examples/kagome_hubbard.py`, and a $C_3$ rotation as on-site factors in the
-basis of the trimer orbitals in `examples/decorated_honeycomb_trimer_basis.py`
-and as a permutation of the sites in
-`examples/decorated_honeycomb_site_basis.py`.
-
 :::{warning}
 The solver finds the lowest state in the chosen sector, so choose the sector
 with the state you want, usually the ground state. Choosing another sector
 targets a higher state. The eigenvalue of a state also depends on the order of
-the fermion modes: the ground state is even under swapping the spins in
-`examples/bilayer_hubbard.py` and odd in `examples/kagome_hubbard.py`. The
-impurity Hamiltonian must have the symmetries at every step of the
-self-consistent loop, e.g., enforced with `symmetrizers` in `LatticeSolver`.
+the fermion modes. The impurity Hamiltonian must have the symmetries at every
+step of the self-consistent loop, e.g., enforced with `symmetrizers` in `LatticeSolver`.
 `solve()` raises a `ValueError` if it does not.
 :::
 
@@ -199,36 +190,22 @@ This finds two states instead of one, so it is slower.
 ### Temperature of the impurity problem
 
 By default the density matrices are from the ground state of the impurity
-problem. Giving an inverse temperature averages them over the eigenstates of
-the half-filled sector with Boltzmann weights
+problem. If you want them averaged over the eigenstates of the half-filled
+sector with Boltzmann weights
 
 ```python
 impurity_solver = FockitImpuritySolver(h_int, gf_struct, beta=40)
 ```
 
-This is a convergence aid for the zero-temperature solution. Use the same
-inverse temperature as the quasiparticles, e.g., in
-{py:class}`~risb.kweight.SmearingKWeight`. It can help in or near a Mott
-insulator. There the bath orbitals decouple from the impurity, and in its
-ground state they are completely full or empty, while the quasiparticles they
-must match are smeared by the temperature, which can make the self-consistent
-loop slow to converge or not converge. With `beta` it can converge to the
-atomic limit, where the self-consistency equations are still not satisfied,
-but the observables do not depend on them (see `self_consistency_tol` in
-`LatticeSolver.solve`). When the gap of the impurity problem is much larger
-than the temperature, the result is the same as with the ground state. A
-degenerate ground state is averaged over.
-
-`overlap` also gives thermal averages. Only the eigenstates with a Boltzmann
-weight above $10^{-14}$ relative to the ground state are found, so it is slower
-than the ground state when there are many low-lying states. A sector of at most
-2000 states is diagonalized as a dense matrix. In a larger one `eigsh` can
-miss a state of a degenerate level, so the solver also looks for missed states
-below the highest one it found.
+This can help `LatticeSolver` converge in or near a Mott insulator, and is
+not a finite-temperature solution. Use the same inverse temperature as in
+{py:class}`~risb.kweight.SmearingKWeight`. `overlap` then also gives thermal
+averages.
 
 ### Grand-canonical impurity problem
 
-For thermal averages over every particle number of the impurity problem
+If you want thermal averages over every particle number of the impurity
+problem, as `ThermalLatticeSolver` needs
 
 ```python
 impurity_solver = FockitImpuritySolver(h_int, gf_struct, beta=40, grand_canonical=True)
@@ -236,13 +213,9 @@ impurity_solver.set_h_imp(Lambda_c, D, h0_loc_matrix, mu=mu)
 ```
 
 The chemical potential `mu` is subtracted on the physical and bath orbitals.
-The states of each particle number are found from half filling outwards,
-until a particle number has a negligible weight. The `diagonal_symmetries`
-only split the Hamiltonian of each particle number into blocks, which are all
-in the average, and permutation and onsite symmetries cannot be used. The grand
-potential $-\log(\sum e^{-\beta E}) / \beta$ over the states is
-`impurity_solver.grand_potential`. `ThermalLatticeSolver` needs this mode,
-and `LatticeSolver` does not use it.
+The `diagonal_symmetries` only split the Hamiltonian into blocks, and
+permutation and onsite symmetries cannot be used. The grand potential is
+`impurity_solver.grand_potential`.
 
 ### Getting the density matrices
 
