@@ -210,6 +210,14 @@ user to review. Update this file as steps finish. Delete it when done.
    but Tr Delta 1.62 vs 1.50 and Sigma(i w_1) 2% apart. Investigate what the
    extra directions are, whether Sigma(i w_n) is then ill-defined, and how to
    pick a solution (e.g., continuation from low T).
+37. [ ] scipy root finders with ThermalLatticeSolver (user; from item 30
+   step 3b-ii): they converge only near a solution (krylov at T 0.005, 0.1;
+   not from the default start, not at T 0.5; hybr fails at T 0.1 and 0.5),
+   while DIIS and LinearMixing converge. Each bath fit starts from the
+   previous cycle, so the error is not a function of x alone, and at high T
+   the bath fit (E1-E2) has several solutions. Ideas: fix the bath gauge
+   (e.g., <f+b>_0emb Hermitian positive, unstable at low T where it is
+   nearly singular), or a deterministic start for the fit.
 
 ## Commits
 
@@ -759,7 +767,55 @@ Lambda (the T -> 0 limits of get_f1, get_f2).
   0.005 (B = 3 cold at T = 0.03 lands on it too, d 0.0268): likely the
   insulating branch of the coexistence region. Choosing needs Omega
   (step 4).
-- Not yet checked: item 24 two-site stall (projectors).
+- Item 24 stall model (two-site cubic cell, 4^3 k, U = 2 without the -U/2
+  n term, mu = 1, B = 3 on site 0, site 1 in no cluster): converges at every
+  beta 40 to 2 (continuation; err <= 4e-11, 8-15 cycles, 268 at beta 2),
+  and from the default start at beta 10 and 5 (9, 8 cycles, same numbers).
+  beta 40 / 10 / 5 / 2: d 0.1299 / 0.1206 / 0.1112 / 0.1158, n0 0.4949 /
+  0.4938 / 0.4954 / 0.4967, S_imp 0.10 / 1.19 / 1.73 / 2.69, ghost levels
+  stay spread (beta 10: 0.02, 0.98, 2.10), Tr Delta 1.49 vs Tr rho_f 1.46
+  (they need not agree at T > 0). LatticeSolver stalled for beta <= 30.
+
+Step 4: helpers.get_thermal_grand_potential (Eq. 196: Omega_qp from the qp
+energies + sum Omega_imp - sum Omega_0emb per block) and
+get_thermal_entropy (S_qp + sum S_imp - sum S_0emb, the explicit T
+derivative at a stationary point); _fermi_entropy shared with
+get_entropy_qp.
+- No mu n_ghost_electrons term (unlike get_lagrangian): Bethe, h = U n n, mu
+  = 1 (mu n_g = 2), beta 400: Omega = LatticeSolver's get_lagrangian to
+  5e-12 (beta 100: 2.6e-7). The ghost bands' -mu is cancelled by Omega_0emb.
+- S vs -dOmega/dT (central, h = 1e-3 T): Bethe U = 2, B = 3, T = 0.1: 4e-8;
+  item 24 model T = 0.1: 6e-9. T = 0.5: 2e-4 with h = 1e-3 T, 2e-5 with
+  1e-2 T: the neighbours land on other solutions (Tr Delta 1.52 / 1.49 vs
+  1.50) whose Omega differ by ~1e-6 (item 36).
+- Fig. 7, U = 2, B = 3: E = Omega + TS = -1.0896 (T 0.005), -1.0700 (0.1),
+  -0.6794 (2), -0.5374 (10); S / ln 2 = 0.092, 1.012, 1.937, 1.997.
+- Item 24 model at low T is not a good reference: 4^3 k (32 points),
+  thermal Omega vs LatticeSolver L 2.8e-5 (beta 40), 1.5e-3 (200), 4.7e-3
+  (1000, thermal err 9e-5), and Omega not monotonic in T: several close
+  solutions of a small system.
+
+Fixed filling: ThermalLatticeSolver(..., mu=None, n_target=n). The
+physical electrons per cell, n_electrons = sum of the bands' weights - sum
+Tr rho_qp + sum Tr rho_c (rho_c and the bands of orbitals in no cluster),
+is -dOmega/dmu (item 24 model, T 0.1: to 1e-8); at T > 0 the ghosts' extra
+electrons are not fixed, so mu cannot be found from the bands alone as in
+LatticeSolver. mu is the last entry of x: next guess mu + (n_target - n),
+error n - n_target (or the change of mu with 'recursion'). Default start:
+the mu at which the starting bands hold n_target + n_ghost_electrons, with
+Lambda not shifted.
+- Compared (Bethe U = 2, B = 3, n 0.9 unless said; impurity solves):
+  (A) mu in x 29 (T 0.1), 26 (0.01), 16 (0.5), 18 (n 0.7), complex n 2: 11,
+  n 1.6: 14; (B) outer brentq over fixed-mu solves 99, 99, 615, 93, 17, 77;
+  (C) brentq over mu inside each cycle (bath fit + impurity per trial): no
+  convergence after 9182. Same mu for A and B. Step factor k in mu + k
+  (n_target - n): 0.1 to 5 all converge in 14-29 solves, so k = 1.
+- In the code: DIIS 24 cycles (mu -0.41907516), LinearMixing 31, recursion
+  49, krylov from near a solution 300 evaluations, same mu; the fixed-mu
+  solve at that mu reproduces Z to 1e-12. Complex two-orbital U = 1.5,
+  n 2: mu 1.5, one electron per spin.
+- Bug found while testing: np.trace(rho_c - rho_qp) broadcast the 1 x 1
+  rho_c over the 3 x 3 rho_qp with ghosts (n 4.74 vs 2.77).
 
 ## Item 26 notes (different ghost counts per block)
 

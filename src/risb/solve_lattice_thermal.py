@@ -22,7 +22,7 @@ from typing import Literal, override
 
 import numpy as np
 from numpy.typing import NDArray
-from scipy.optimize import least_squares
+from scipy.optimize import brentq, least_squares
 from scipy.special import expit
 
 from risb import helpers
@@ -40,7 +40,7 @@ from risb.types import (
 
 class ThermalLatticeSolver(BaseLatticeSolver):
     """
-    Finite-temperature RISB lattice solver at a fixed chemical potential.
+    Finite-temperature RISB lattice solver at a fixed chemical potential or filling.
 
     It solves the finite-temperature ghost RISB equations of `arXiv:2603.20559
     <https://arxiv.org/abs/2603.20559>`__ at inverse temperature `beta`. The
@@ -62,8 +62,15 @@ class ThermalLatticeSolver(BaseLatticeSolver):
         ``grand_canonical=True``.
     beta : float
         Inverse temperature.
-    mu : float
-        Chemical potential.
+    mu : float, optional
+        Chemical potential, or with `n_target` the starting guess for it.
+        Default (only with `n_target`) is the chemical potential at which the
+        starting quasiparticle bands hold `n_target` plus
+        :attr:`n_ghost_electrons` electrons.
+    n_target : float, optional
+        Number of electrons per unit cell. The chemical potential :attr:`mu`
+        is then solved for with :attr:`Lambda` and :attr:`R`, and the root
+        functions include ``n_electrons - n_target``. Default is a fixed `mu`.
     error_fun : {'root', 'recursion'}, optional
         As in :class:`.BaseLatticeSolver`. Defaults to ``'root'``, because at
         high temperature many :attr:`Lambda` and :attr:`R` can solve the
@@ -83,7 +90,7 @@ class ThermalLatticeSolver(BaseLatticeSolver):
         gf_struct: GfStruct | list[GfStruct],
         impurity_solvers: ImpuritySolver | Sequence[ImpuritySolver],
         beta: float,
-        mu: float,
+        mu: float | None = None,
         root: RootFinder | None = None,
         projectors: Sequence[BlockMatrixLike] | None = None,
         gf_struct_mapping: Sequence[Mapping[str, str]] | None = None,
@@ -95,6 +102,7 @@ class ThermalLatticeSolver(BaseLatticeSolver):
         double_counting: Callable[[int, BlockMatrix], BlockMatrixLike] | None = None,
         *,
         bath_size: Sequence[Mapping[str, int]] | None = None,
+        n_target: float | None = None,
     ) -> None:
         super().__init__(
             h0_k,
@@ -114,14 +122,42 @@ class ThermalLatticeSolver(BaseLatticeSolver):
         )
         #: float : Inverse temperature.
         self.beta = beta
-        self.mu: float = mu
 
-        # The quasiparticle levels start at the chemical potential
-        for i in range(self.n_clusters):
-            for bl in self.Lambda[i]:
-                self.Lambda[i][bl] = self.Lambda[i][bl] + mu * np.eye(
-                    self.Lambda[i][bl].shape[0]
+        #: float or None : Number of electrons per unit cell to solve for.
+        self.n_target = n_target
+
+        #: float : Number of electrons per unit cell, those of the impurity
+        #: problems (:attr:`rho_c`) and of the quasiparticle bands of the
+        #: orbitals in no cluster, set each cycle.
+        self.n_electrons: float
+
+        self.mu: float
+        if mu is not None:
+            self.mu = mu
+            # The quasiparticle levels start at the chemical potential
+            for i in range(self.n_clusters):
+                for bl in self.Lambda[i]:
+                    self.Lambda[i][bl] = self.Lambda[i][bl] + mu * np.eye(
+                        self.Lambda[i][bl].shape[0]
+                    )
+        elif n_target is not None:
+            R_full, Lambda_full = helpers.upfold_r_lambda(
+                self.R,
+                self.Lambda,
+                self.h0_kin_k,
+                self._projectors_qp,
+                self.gf_struct_mapping,
+            )
+            energies = {
+                bl: np.linalg.eigvalsh(
+                    helpers.get_h_qp(R_full[bl], Lambda_full[bl], h0_kin)
                 )
+                for bl, h0_kin in self.h0_kin_k.items()
+            }
+            self.mu = _mu_of_filling(energies, beta, n_target + self.n_ghost_electrons)
+        else:
+            msg = "Need mu, or n_target to solve for it !"
+            raise ValueError(msg)
 
     @override
     def update_weights(self, energies: BlockRealArray) -> BlockRealArray:
@@ -170,6 +206,16 @@ class ThermalLatticeSolver(BaseLatticeSolver):
 
     @override
     def update_qp(self) -> None:
+        # The electrons of the bands of the orbitals in no cluster are those of
+        # all bands minus those of the clusters
+        self.n_electrons = float(
+            sum(np.sum(w) for w in self.kweights.values())
+            + sum(
+                np.trace(self.rho_c[i][bl]).real - np.trace(self.rho_qp[i][bl]).real
+                for i in range(self.n_clusters)
+                for bl in self.rho_c[i]
+            )
+        )
         for i in range(self.n_clusters):
             for bl, _ in self.gf_struct[i]:
                 R, Lambda = self.R[i][bl], self.Lambda[i][bl]
@@ -193,6 +239,34 @@ class ThermalLatticeSolver(BaseLatticeSolver):
             self.f2 = symmetrize(self.f2)
             self.Lambda = symmetrize(self.Lambda)
             self.R = symmetrize(self.R)
+
+    @override
+    def _get_x(self) -> NDArray[np.float64]:
+        x = super()._get_x()
+        if self.n_target is None:
+            return x
+        return np.append(x, self.mu)
+
+    @override
+    def _target_function(
+        self, x: NDArray[np.float64]
+    ) -> NDArray[np.float64] | tuple[NDArray[np.float64], NDArray[np.float64]]:
+        if self.n_target is None:
+            return super()._target_function(x)
+        # mu is the last entry of x, and its next guess is a step with the
+        # error of the filling
+        self.mu = float(x[-1])
+        result = super()._target_function(x[:-1])
+        mu_new = self.mu + self.n_target - self.n_electrons
+        mu_error = (
+            self.n_electrons - self.n_target
+            if self.error_fun == "root"
+            else mu_new - self.mu
+        )
+        if isinstance(result, tuple):
+            x_new, x_error = result
+            return np.append(x_new, mu_new), np.append(x_error, mu_error)
+        return np.append(result, mu_error)
 
     def _fit_bath(
         self,
@@ -245,6 +319,21 @@ class ThermalLatticeSolver(BaseLatticeSolver):
 
         y0 = self._flatten_block(Lambda, True) + self._flatten_block(R, False)
         return unflatten(_fit(residual, y0))
+
+
+def _mu_of_filling(
+    energies: Mapping[str, NDArray[np.floating]], beta: float, n: float
+) -> float:
+    # The chemical potential at which the bands hold n electrons
+    def excess(mu: float) -> float:
+        return float(
+            sum(np.sum(expit(-beta * (e - mu))) / e.shape[0] for e in energies.values())
+            - n
+        )
+
+    low = min(float(np.min(e)) for e in energies.values()) - 50 / beta
+    high = max(float(np.max(e)) for e in energies.values()) + 50 / beta
+    return float(brentq(excess, low, high))
 
 
 def _entries(*arrays: NDArray[np.inexact]) -> NDArray[np.float64]:

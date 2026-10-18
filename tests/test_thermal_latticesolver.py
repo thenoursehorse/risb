@@ -16,6 +16,7 @@ from risb import LatticeSolver, ThermalLatticeSolver, helpers
 from risb.helpers_fockit import h_int_kanamori
 from risb.impurity_solvers import FockitImpuritySolver
 from risb.kweight import SmearingKWeight
+from risb.optimize import LinearMixing
 from risb.types import BlockMatrixLike, GfStruct, RootFinder
 
 ONE_BAND: GfStruct = [("up", 1), ("dn", 1)]
@@ -26,15 +27,15 @@ def hubbard(U: float) -> OpSum:
 
 
 def bethe_lattice(
-    U: float,
+    h_int: OpSum,
     B: int,
     T: float,
+    *,
+    mu: float | None = 0.0,
+    n_target: float | None = None,
     root: RootFinder | None = None,
     return_x_new: bool = True,
-    mu: float = 0.0,
 ) -> tuple[ThermalLatticeSolver, FockitImpuritySolver]:
-    # Half filled at any mu
-    h_int = hubbard(U) + mu * (nc("up", 0) + nc("dn", 0))
     bath_size = {bl: B for bl, _ in ONE_BAND}
     impurity_solver = FockitImpuritySolver(
         h_int, ONE_BAND, bath_size=bath_size, beta=1 / T, grand_canonical=True
@@ -50,11 +51,14 @@ def bethe_lattice(
         bath_size=[bath_size],
         root=root,
         return_x_new=return_x_new,
+        n_target=n_target,
     )
     return S, impurity_solver
 
 
-def two_site_cell(T: float) -> tuple[ThermalLatticeSolver, FockitImpuritySolver]:
+def two_site_cell(
+    T: float, mu: float = 1.0
+) -> tuple[ThermalLatticeSolver, FockitImpuritySolver]:
     # One band on a cell of two sites, with two ghosts per orbital on site 0
     # and site 1 in no cluster
     spin_names = ["up", "dn"]
@@ -71,7 +75,7 @@ def two_site_cell(T: float) -> tuple[ThermalLatticeSolver, FockitImpuritySolver]
         gf_struct=ONE_BAND,
         impurity_solvers=impurity_solver,
         beta=1 / T,
-        mu=1.0,
+        mu=mu,
         projectors=[dict.fromkeys(spin_names, np.array([[1.0, 0.0]]))],
         bath_size=[bath_size],
     )
@@ -107,7 +111,10 @@ def entropy(S: ThermalLatticeSolver, impurity_solver: FockitImpuritySolver) -> f
 
 
 @pytest.mark.parametrize("model", ["complex_two_orbitals", "one_band_ghosts"])
-def test_low_temperature_solution_is_the_zero_temperature_solution(model: str) -> None:
+@pytest.mark.parametrize("fixed", ["mu", "filling"])
+def test_low_temperature_solution_is_the_zero_temperature_solution(
+    model: str, fixed: str
+) -> None:
     gf_struct: GfStruct
     h0_k: BlockMatrixLike
     if model == "complex_two_orbitals":
@@ -126,8 +133,10 @@ def test_low_temperature_solution_is_the_zero_temperature_solution(model: str) -
         gf_struct, h0_k, B = ONE_BAND, {bl: bethe_h0_k(400) for bl, _ in ONE_BAND}, 3
     beta = 400
     bath_size = {bl: B * size for bl, size in gf_struct}
-    n_target = sum(size for _, size in gf_struct) * B / 2
-    kweight = SmearingKWeight(beta=beta, n_target=n_target)
+    # Half filled. The quasiparticle bands of LatticeSolver also hold the
+    # ghost electrons
+    n_target = sum(size for _, size in gf_struct) / 2
+    kweight = SmearingKWeight(beta=beta, n_target=n_target * B)
     S0 = LatticeSolver(
         h0_k,
         gf_struct,
@@ -145,9 +154,10 @@ def test_low_temperature_solution_is_the_zero_temperature_solution(model: str) -
             h, gf_struct, bath_size=bath_size, beta=beta, grand_canonical=True
         ),
         beta=beta,
-        mu=kweight.mu,
+        mu=kweight.mu if fixed == "mu" else None,
         symmetrizers=[symmetrize_blocks],
         bath_size=[bath_size],
+        n_target=n_target if fixed == "filling" else None,
     )
     if model == "complex_two_orbitals":
         # A complex R, in another quasiparticle basis
@@ -155,6 +165,7 @@ def test_low_temperature_solution_is_the_zero_temperature_solution(model: str) -
             S.R[0][bl] = random_unitary(2, seed=1).conj().T
     S.solve(tol=1e-10)
     assert S.self_consistency_error < 1e-8
+    assert S.mu == pytest.approx(kweight.mu, abs=1e-8)
     for bl, _ in gf_struct:
         assert S.Z[0][bl] == pytest.approx(S0.Z[0][bl], abs=1e-8)
         assert S.rho_c[0][bl] == pytest.approx(S0.rho_c[0][bl], abs=1e-8)
@@ -167,7 +178,7 @@ def test_thermodynamics_follow_the_finite_temperature_ghost_paper() -> None:
     # the entropy approaches ln 4 at high T
     docc, energy, S_T = {}, {}, {}
     for T in [0.005, 0.2, 2.0, 10.0]:
-        S, impurity_solver = bethe_lattice(2.0, 3, T)
+        S, impurity_solver = bethe_lattice(hubbard(2.0), 3, T)
         S.solve(tol=1e-10)
         assert S.self_consistency_error < 1e-6
         docc[T] = float(np.real(impurity_solver.overlap(nc("up", 0) * nc("dn", 0))))
@@ -191,7 +202,7 @@ def test_entropy_is_minus_the_temperature_derivative_of_the_grand_potential(
         T: float, start: ThermalLatticeSolver | None = None
     ) -> tuple[ThermalLatticeSolver, FockitImpuritySolver]:
         if model == "one_band_ghosts":
-            S, impurity_solver = bethe_lattice(2.0, 3, T)
+            S, impurity_solver = bethe_lattice(hubbard(2.0), 3, T)
         else:
             S, impurity_solver = two_site_cell(T)
         if start is not None:
@@ -214,7 +225,8 @@ def test_grand_potential_at_low_temperature_is_the_zero_temperature_lagrangian()
     # Half filled at mu = 1, so the quasiparticle bands of the ghosts are
     # below mu
     beta, mu = 400, 1.0
-    S, impurity_solver = bethe_lattice(2.0, 3, 1 / beta, mu=mu)
+    h_int = hubbard(2.0) + mu * (nc("up", 0) + nc("dn", 0))
+    S, impurity_solver = bethe_lattice(h_int, 3, 1 / beta, mu=mu)
     S.solve(tol=1e-12)
     bath_size = {bl: 3 for bl, _ in ONE_BAND}
     impurity_solver_0 = FockitImpuritySolver(
@@ -251,9 +263,9 @@ def test_grand_potential_at_low_temperature_is_the_zero_temperature_lagrangian()
 
 def test_four_ghosts_per_orbital_converge_to_the_two_ghost_solution() -> None:
     U, T = 2.4, 0.005
-    S3, impurity_solver3 = bethe_lattice(U, 3, T)
+    S3, impurity_solver3 = bethe_lattice(hubbard(U), 3, T)
     S3.solve(tol=1e-10)
-    S5, impurity_solver5 = bethe_lattice(U, 5, T)
+    S5, impurity_solver5 = bethe_lattice(hubbard(U), 5, T)
     # Two more ghosts with a little of the weight, at levels outside those
     # of the other ghosts
     for bl, _ in ONE_BAND:
@@ -272,10 +284,10 @@ def test_four_ghosts_per_orbital_converge_to_the_two_ghost_solution() -> None:
 
 def test_scipy_root_converges_near_a_solution() -> None:
     T = 0.1
-    S, impurity_solver = bethe_lattice(2.0, 3, T)
+    S, impurity_solver = bethe_lattice(hubbard(2.0), 3, T)
     S.solve(tol=1e-10)
     S_root, impurity_solver_root = bethe_lattice(
-        2.0, 3, T, root=root, return_x_new=False
+        hubbard(2.0), 3, T, root=root, return_x_new=False
     )
     for bl, _ in ONE_BAND:
         S_root.R[0][bl] = 0.99 * S.R[0][bl]
@@ -288,3 +300,36 @@ def test_scipy_root_converges_near_a_solution() -> None:
         impurity_solver.overlap(docc), abs=1e-8
     )
     assert S_root.Z[0]["up"] == pytest.approx(S.Z[0]["up"], abs=1e-8)
+
+
+@pytest.mark.parametrize("optimizer", ["DIIS", "LinearMixing"])
+def test_fixed_filling_is_the_fixed_mu_solution_at_the_mu_it_finds(
+    optimizer: str,
+) -> None:
+    T, n_target = 0.1, 0.9
+    root = None if optimizer == "DIIS" else LinearMixing().solve
+    S, _ = bethe_lattice(hubbard(2.0), 3, T, mu=None, n_target=n_target, root=root)
+    S.solve(tol=1e-10)
+    assert S.n_electrons == pytest.approx(n_target, abs=1e-8)
+    assert S.mu < 0
+    S_mu, _ = bethe_lattice(hubbard(2.0), 3, T, mu=S.mu)
+    S_mu.solve(tol=1e-11)
+    assert S_mu.n_electrons == pytest.approx(n_target, abs=1e-8)
+    assert S_mu.Z[0]["up"] == pytest.approx(S.Z[0]["up"], abs=1e-7)
+    assert S_mu.rho_c[0]["up"] == pytest.approx(S.rho_c[0]["up"], abs=1e-7)
+
+
+def test_electrons_are_minus_the_mu_derivative_of_the_grand_potential() -> None:
+    # With site 1 in no cluster, its quasiparticle band holds electrons too
+    T, mu, h = 0.1, 1.0, 1e-4
+
+    def omega(mu: float) -> float:
+        S, impurity_solver = two_site_cell(T, mu)
+        S.solve(tol=1e-13)
+        return grand_potential(S, impurity_solver)
+
+    S, _ = two_site_cell(T, mu)
+    S.solve(tol=1e-13)
+    derivative = (omega(mu + h) - omega(mu - h)) / (2 * h)
+    assert S.n_electrons == pytest.approx(-derivative, abs=1e-6)
+    assert S.n_electrons > np.trace(S.rho_c[0]["up"] + S.rho_c[0]["dn"]).real + 1

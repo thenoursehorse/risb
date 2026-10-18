@@ -357,7 +357,7 @@ standard linear mixing or {{DIIS}} (which seems to work very well for
 {py:class}`~risb.kweight.SmearingKWeight` or in the impurity solver only
 smears them. {py:class}`~risb.ThermalLatticeSolver` solves the
 finite-temperature ghost {{RISB}} equations[^Giuli2026] at a fixed inverse
-temperature and chemical potential
+temperature, and a fixed chemical potential
 
 ```python
 from risb import ThermalLatticeSolver
@@ -380,6 +380,22 @@ every particle number (see the grand-canonical mode of
 solves the impurity problems, and then fits `Lambda` and `R` so that it has
 their density matrices. At low temperature the solution is that of
 `LatticeSolver` at the same `mu`.
+
+For a fixed filling instead, give the number of electrons per unit cell
+
+```python
+S = ThermalLatticeSolver(
+    h0_k, gf_struct, impurity_solver, beta=beta, n_target=0.9, bath_size=[bath_size]
+)
+S.solve(tol=1e-10)
+S.mu
+```
+
+The chemical potential is then solved for together with `R` and `Lambda`,
+starting from `mu` if it is given. The electrons are those of the impurity
+problems (`rho_c`) and of the quasiparticle bands of the orbitals in no
+cluster, `S.n_electrons`. Unlike in `LatticeSolver`, `n_target` does not
+include `S.n_ghost_electrons`.
 
 At high temperature several `R` and `Lambda` can solve the equations with the
 same physical results, so the default `error_fun` is `'root'`: with

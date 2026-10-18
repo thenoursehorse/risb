@@ -544,6 +544,13 @@ class BaseLatticeSolver(ABC):
 
         return h0_loc_matrix
 
+    def _get_x(self) -> NDArray[np.float64]:
+        # The starting vector of the root finder
+        return np.array(
+            self._flatten_matrix(self.Lambda, is_coeff_real=True)
+            + self._flatten_matrix(self.R, is_coeff_real=False)
+        )
+
     def _target_function(
         self, x: NDArray[np.float64]
     ) -> NDArray[np.float64] | tuple[NDArray[np.float64], NDArray[np.float64]]:
@@ -756,17 +763,10 @@ class BaseLatticeSolver(ABC):
         x: NDArray[np.float64] | OptimizeResult
         if one_shot:
             self.Lambda, self.R, _, _ = self.one_cycle()
-            x = np.array(
-                self._flatten_matrix(self.Lambda, is_coeff_real=True)
-                + self._flatten_matrix(self.R, is_coeff_real=False)
-            )
+            x = self._get_x()
 
         else:
-            x0 = np.array(
-                self._flatten_matrix(self.Lambda, is_coeff_real=True)
-                + self._flatten_matrix(self.R, is_coeff_real=False)
-            )
-            x = self.root(fun=self._target_function, x0=x0, **kwargs)
+            x = self.root(fun=self._target_function, x0=self._get_x(), **kwargs)
             self.self_consistency_error = max(
                 float(np.max(np.abs(f[i][bl])))
                 for f in (self.f1, self.f2)
