@@ -18,7 +18,7 @@
 """Solver for finite-temperature rotationally invariant slave-boson mean-field theory on a lattice."""
 
 from collections.abc import Callable, Mapping, Sequence
-from typing import override
+from typing import Any, override
 
 import numpy as np
 from numpy.typing import NDArray
@@ -26,7 +26,8 @@ from scipy.optimize import brentq, least_squares
 from scipy.special import expit
 
 from risb import helpers
-from risb.optimize import DIIS, NewtonSolver
+from risb.optimize import DIIS, NewtonSolver, OnPlateau, SolveResult
+from risb.optimize.driver import Callback
 from risb.solve_lattice_base import BaseLatticeSolver
 from risb.types import (
     BlockMatrix,
@@ -120,6 +121,10 @@ class ThermalLatticeSolver(BaseLatticeSolver):
         #: orbitals in no cluster, set each cycle.
         self.n_electrons: float
 
+        # The strength and the reference parameters of each fit after anchor()
+        self._anchor_alpha: float | None = None
+        self._anchors: dict[tuple[str, int, str], NDArray[np.float64]] = {}
+
         self.mu: float
         if mu is not None:
             self.mu = mu
@@ -183,7 +188,7 @@ class ThermalLatticeSolver(BaseLatticeSolver):
                     D = helpers.get_d(rho_qp, ke)
                     Lambda_c = helpers.get_lambda_c(rho_qp, R, Lambda, D)
                 self.D[i][bl], self.Lambda_c[i][bl] = self._fit_bath(
-                    R, Lambda, D, Lambda_c, rho_qp, ke
+                    R, Lambda, D, Lambda_c, rho_qp, ke, ("bath", i, bl)
                 )
 
         # Enforce matrix structure from symmetries
@@ -215,7 +220,13 @@ class ThermalLatticeSolver(BaseLatticeSolver):
                 self.f1[i][bl] = self.rho_cf[i][bl] - R.T @ rho_qpf
                 self.f2[i][bl] = self.rho_f[i][bl] - rho_f_emb
                 self.R[i][bl], self.Lambda[i][bl] = self._fit_qp(
-                    R, Lambda, D, Lambda_c, self.rho_f[i][bl], self.rho_cf[i][bl]
+                    R,
+                    Lambda,
+                    D,
+                    Lambda_c,
+                    self.rho_f[i][bl],
+                    self.rho_cf[i][bl],
+                    ("qp", i, bl),
                 )
 
         # Enforce matrix structure from symmetries
@@ -290,6 +301,74 @@ class ThermalLatticeSolver(BaseLatticeSolver):
         """
         return DIIS(error_fun="root")
 
+    @override
+    def default_callbacks(self) -> list[Callback]:
+        """
+        Return the callbacks that :meth:`solve` uses by default.
+
+        Returns
+        -------
+        list of callable
+            :class:`.OnPlateau` with its default options.
+
+        """
+        return [OnPlateau()]
+
+    @override
+    def solve(self, *args: Any, **kwargs: Any) -> SolveResult:
+        """
+        Solve as :meth:`.BaseLatticeSolver.solve`, after :meth:`release`.
+
+        Returns
+        -------
+        risb.optimize.SolveResult
+
+        """
+        self.release()
+        return super().solve(*args, **kwargs)
+
+    def anchor(self, alpha: float = 1e-8) -> None:
+        """
+        Anchor the fits of :attr:`D`, :attr:`Lambda_c`, :attr:`Lambda`, and :attr:`R` to their current values.
+
+        Each fit then also minimizes ``alpha`` times the squared distance of
+        its parameters from where its first fit after this starts. At high
+        temperature the equations barely fix some combinations of the
+        parameters, and the anchor pins them. The anchor holds until
+        :meth:`release` or the next :meth:`solve`.
+
+        Parameters
+        ----------
+        alpha : float, optional
+            Strength of the anchor. Default is ``1e-8``.
+
+        """
+        self._anchor_alpha = alpha
+        self._anchors = {}
+
+    def release(self) -> None:
+        """Remove the anchor of :meth:`anchor`."""
+        self._anchor_alpha = None
+        self._anchors = {}
+
+    def _fit(
+        self,
+        residual: Callable[[NDArray[np.float64]], NDArray[np.float64]],
+        y0: list[float],
+        key: tuple[str, int, str],
+    ) -> NDArray[np.float64]:
+        fun = residual
+        if self._anchor_alpha is not None:
+            anchor = self._anchors.setdefault(key, np.array(y0))
+            scale = np.sqrt(self._anchor_alpha)
+
+            def fun(y: NDArray[np.float64]) -> NDArray[np.float64]:
+                return np.concatenate([residual(y), scale * (y - anchor)])
+
+        result = least_squares(fun, y0, xtol=1e-15, ftol=1e-15, gtol=1e-15)
+        y: NDArray[np.float64] = result.x
+        return y
+
     def _fit_bath(
         self,
         R: NDArray[np.inexact],
@@ -298,6 +377,7 @@ class ThermalLatticeSolver(BaseLatticeSolver):
         Lambda_c: NDArray[np.inexact],
         rho_qp: NDArray[np.inexact],
         ke: NDArray[np.inexact],
+        key: tuple[str, int, str],
     ) -> tuple[NDArray[np.inexact], NDArray[np.inexact]]:
         def unflatten(
             y: NDArray[np.float64],
@@ -314,7 +394,7 @@ class ThermalLatticeSolver(BaseLatticeSolver):
             return _entries(rho_qp_emb - rho_qp, rho_qpf @ D_y - ke.T)
 
         y0 = self._flatten_block(Lambda_c, True) + self._flatten_block(D, False)
-        return unflatten(_fit(residual, y0))
+        return unflatten(self._fit(residual, y0, key))
 
     def _fit_qp(
         self,
@@ -324,6 +404,7 @@ class ThermalLatticeSolver(BaseLatticeSolver):
         Lambda_c: NDArray[np.inexact],
         rho_f: NDArray[np.inexact],
         rho_cf: NDArray[np.inexact],
+        key: tuple[str, int, str],
     ) -> tuple[NDArray[np.inexact], NDArray[np.inexact]]:
         def unflatten(
             y: NDArray[np.float64],
@@ -340,7 +421,7 @@ class ThermalLatticeSolver(BaseLatticeSolver):
             return _entries(rho_f_emb - rho_f, R_y.T @ rho_qpf - rho_cf)
 
         y0 = self._flatten_block(Lambda, True) + self._flatten_block(R, False)
-        return unflatten(_fit(residual, y0))
+        return unflatten(self._fit(residual, y0, key))
 
 
 def _mu_of_filling(
@@ -363,11 +444,3 @@ def _entries(*arrays: NDArray[np.inexact]) -> NDArray[np.float64]:
     return np.concatenate(
         [np.concatenate([A.real.ravel(), A.imag.ravel()]) for A in arrays]
     )
-
-
-def _fit(
-    residual: Callable[[NDArray[np.float64]], NDArray[np.float64]], y0: list[float]
-) -> NDArray[np.float64]:
-    result = least_squares(residual, y0, xtol=1e-15, ftol=1e-15, gtol=1e-15)
-    y: NDArray[np.float64] = result.x
-    return y

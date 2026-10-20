@@ -343,6 +343,15 @@ S.solve(callbacks=[progress])
 A callback can end the solve with `driver.stop()`, or replace
 `driver.optimizer`.
 
+For example, {py:class}`~risb.optimize.OnPlateau` restarts the optimizer when
+the error stops falling
+
+```python
+from risb.optimize import OnPlateau
+
+S.solve(callbacks=[OnPlateau(patience=20)])
+```
+
 ## Finite temperature
 
 `LatticeSolver` is at zero temperature. If you want ghost {{RISB}} at a finite
@@ -378,6 +387,16 @@ S = ThermalLatticeSolver(...
 
 and the chemical potential is `S.mu` after solving. `n_target` does not
 include `S.n_ghost_electrons`.
+
+By default the solve uses {py:class}`~risb.optimize.OnPlateau`. When the
+error stops falling it restarts {{DIIS}}, or, near a solution, anchors the
+fits with `S.anchor()`. At high temperature the equations barely fix some
+combinations of `Lambda`, `R`, `D` and `Lambda_c`, and the anchor pins them.
+If you want to turn this off
+
+```python
+S.solve(callbacks=[])
+```
 
 The grand potential and the entropy per unit cell are
 

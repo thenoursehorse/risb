@@ -247,6 +247,11 @@ user to review. Update this file as steps finish. Delete it when done.
    factors / site permutation) and the even/odd spin-swap eigenvalue of the
    bilayer / kagome ground states; examples/ghost_hubbard.py and
    examples/thermal_hubbard.py.
+40. [ ] Test the plateau schedule (OnPlateau) with LatticeSolver (user):
+   LatticeSolver had convergence problems before (e.g. items 18, 33, the
+   item 24 finite-T stalls); try OnPlateau (restart only, no anchor) on
+   those cases with the multi-start harness and decide whether it should be
+   LatticeSolver's default.
 
 ## Commits
 
@@ -2611,3 +2616,18 @@ DIIS(error_fun='root')); solve(optimizer, callbacks, tol, maxiter, one_shot,
 self_consistency_tol) returns SolveResult; S.optimize gone. Examples keep
 `result = S.solve(...)` where tests check convergence. 129 tests pass, the
 old ones unchanged in behaviour.
+
+Plateau schedule (implemented): risb.optimize.OnPlateau(patience=20,
+near=1e-6, factor=10) in callbacks.py: a plateau is `patience` cycles
+without the error falling by `factor`; if the smallest error since the last
+action is below `near` and the problem has an unused anchor(), it anchors and
+switches the optimizer to error_fun 'recursion', else it restarts (resets
+the optimizer history); attributes anchored, restarts.
+ThermalLatticeSolver.anchor(alpha=1e-8) / release(): the fits add alpha
+|y - y_ref|^2 with y_ref each fit's first start after anchor(); solve()
+releases first. default_callbacks(): [] for LatticeSolver, [OnPlateau()] for
+ThermalLatticeSolver; solve(callbacks=None) uses them, [] turns them off.
+Tests: OnPlateau on toy problems (anchors once near, restarts far or without
+anchor), default thermal solve at T 1 converges in < 100 cycles (B 3 Bethe,
+d 0.141837; two-site cell), an anchor does not carry over. Mutations
+(anchor a no-op, solve not releasing) fail the tests. 135 tests pass.

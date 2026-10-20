@@ -5,7 +5,15 @@ import numpy as np
 import pytest
 from numpy.typing import NDArray
 
-from risb.optimize import DIIS, Driver, LinearMixing, NewtonSolver, ScipyRoot, drive
+from risb.optimize import (
+    DIIS,
+    Driver,
+    LinearMixing,
+    NewtonSolver,
+    OnPlateau,
+    ScipyRoot,
+    drive,
+)
 from risb.types import FixedPointProblem
 
 
@@ -169,3 +177,50 @@ def test_scipy_root_solves_a_problem_in_one_shot() -> None:
     assert result.converged
     assert result.x == pytest.approx(Linear().solution, abs=1e-10)
     assert result.cycles == len(result.history)
+
+
+class Stuck:
+    """A problem whose residual stays at `level` until it is anchored, then is solved at once."""
+
+    def __init__(self, level: float, can_anchor: bool) -> None:
+        self.level = level
+        self.anchors = 0
+        self.x = np.ones(3)
+        if not can_anchor:
+            self.anchor = None  # type: ignore[assignment]
+
+    def get_x(self) -> NDArray[np.float64]:
+        return self.x
+
+    def anchor(self) -> None:
+        self.anchors += 1
+
+    def cycle(
+        self, x: NDArray[np.float64]
+    ) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
+        if self.anchors:
+            return x, np.zeros(3)
+        self.x = x + 0.1
+        return self.x, self.level * np.ones(3)
+
+
+def test_a_plateau_near_a_solution_anchors_the_problem_once() -> None:
+    problem = Stuck(1e-8, can_anchor=True)
+    on_plateau = OnPlateau(patience=5)
+    result = drive(problem, DIIS(error_fun="root"), callbacks=[on_plateau], tol=1e-12)
+    assert result.converged
+    assert problem.anchors == 1
+    assert on_plateau.anchored
+    assert on_plateau.restarts == 0
+
+
+@pytest.mark.parametrize(("level", "can_anchor"), [(1.0, True), (1e-8, False)])
+def test_a_plateau_far_from_a_solution_or_without_an_anchor_restarts(
+    level: float, can_anchor: bool
+) -> None:
+    problem = Stuck(level, can_anchor)
+    on_plateau = OnPlateau(patience=5)
+    result = drive(problem, DIIS(error_fun="root"), callbacks=[on_plateau], maxiter=20)
+    assert not result.converged
+    assert problem.anchors == 0
+    assert on_plateau.restarts > 0

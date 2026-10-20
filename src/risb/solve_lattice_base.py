@@ -561,6 +561,18 @@ class BaseLatticeSolver(ABC):
         """
         return DIIS()
 
+    def default_callbacks(self) -> list[Callback]:
+        """
+        Return the callbacks that :meth:`solve` uses by default.
+
+        Returns
+        -------
+        list of callable
+            None.
+
+        """
+        return []
+
     @abstractmethod
     def update_weights(self, energies: BlockRealArray) -> BlockRealArray:
         """
@@ -709,7 +721,7 @@ class BaseLatticeSolver(ABC):
     def solve(
         self,
         optimizer: NewtonSolver | ScipyRoot | None = None,
-        callbacks: Sequence[Callback] = (),
+        callbacks: Sequence[Callback] | None = None,
         tol: float = 1e-12,
         maxiter: int = 1000,
         one_shot: bool = False,
@@ -727,7 +739,8 @@ class BaseLatticeSolver(ABC):
             Gives the next :attr:`Lambda` and :attr:`R` of each cycle. Default
             is :meth:`default_optimizer`.
         callbacks : sequence of callable, optional
-            Called after every cycle, see :func:`risb.optimize.drive`.
+            Called after every cycle, see :func:`risb.optimize.drive`. Default
+            is :meth:`default_callbacks`, and ``[]`` is none.
         tol : float, optional
             Stop when the 2-norm of the error (see ``error_fun`` of the
             optimizer) is below this. Default is ``1e-12``.
@@ -758,6 +771,8 @@ class BaseLatticeSolver(ABC):
 
         if optimizer is None:
             optimizer = self.default_optimizer()
+        if callbacks is None:
+            callbacks = self.default_callbacks()
         result = drive(self, optimizer, callbacks, tol, maxiter)
         self.self_consistency_error = max(
             float(np.max(np.abs(f[i][bl])))

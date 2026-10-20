@@ -1,5 +1,6 @@
 """Optimizers for the root and minimization problems."""
 
+from .callbacks import OnPlateau
 from .diis import DIIS
 from .driver import Driver, ScipyRoot, SolveResult, drive
 from .linear_mixing import LinearMixing
@@ -10,6 +11,7 @@ __all__ = [
     "Driver",
     "LinearMixing",
     "NewtonSolver",
+    "OnPlateau",
     "ScipyRoot",
     "SolveResult",
     "drive",

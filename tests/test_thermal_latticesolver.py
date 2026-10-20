@@ -327,3 +327,35 @@ def test_electrons_are_minus_the_mu_derivative_of_the_grand_potential() -> None:
     derivative = (omega(mu + h) - omega(mu - h)) / (2 * h)
     assert S.n_electrons == pytest.approx(-derivative, abs=1e-6)
     assert S.n_electrons > np.trace(S.rho_c[0]["up"] + S.rho_c[0]["dn"]).real + 1
+
+
+@pytest.mark.parametrize("model", ["one_band_ghosts", "site_in_no_cluster"])
+def test_default_solve_converges_at_high_temperature(model: str) -> None:
+    # At T = 1 the equations barely fix some combinations of the ghost
+    # parameters, and plain DIIS takes hundreds of cycles or does not converge
+    T = 1.0
+    if model == "one_band_ghosts":
+        S, impurity_solver = bethe_lattice(hubbard(2.0), 3, T)
+    else:
+        S, impurity_solver = two_site_cell(T)
+    result = S.solve(tol=1e-10)
+    assert result.converged
+    assert result.cycles < 100
+    assert S.self_consistency_error < 1e-7
+    if model == "one_band_ghosts":
+        docc = impurity_solver.overlap(nc("up", 0) * nc("dn", 0))
+        assert docc == pytest.approx(0.141837, abs=1e-6)
+
+
+def test_an_anchor_does_not_carry_over_to_the_next_solve() -> None:
+    T = 0.1
+    S, impurity_solver = bethe_lattice(hubbard(2.0), 3, T)
+    S.anchor(alpha=1e6)
+    S.solve(tol=1e-10, callbacks=[])
+    fresh, fresh_impurity_solver = bethe_lattice(hubbard(2.0), 3, T)
+    fresh.solve(tol=1e-10, callbacks=[])
+    docc = nc("up", 0) * nc("dn", 0)
+    assert impurity_solver.overlap(docc) == pytest.approx(
+        fresh_impurity_solver.overlap(docc), abs=1e-8
+    )
+    assert S.Z[0]["up"] == pytest.approx(fresh.Z[0]["up"], abs=1e-8)
