@@ -166,7 +166,7 @@ user to review. Update this file as steps finish. Delete it when done.
    the conversation (e.g., "ARPACK can fail (error 3, no shifts could be
    applied)") and to use phrases that do not make sense (e.g., "Renormalization
    matrix in the blocks of the lattice, quasiparticles by orbitals").
-30. [ ] Ghost RISB at finite temperature (user; from item 24 step 5). In the
+30. [x] (done (user): ThermalLatticeSolver is the finite-T path, LatticeSolver stays the T = 0 solver; follow-ups in items 34, 36, 37, 38; see Item 30 notes) Ghost RISB at finite temperature (user; from item 24 step 5). In the
    4c model (two-site cubic cell, U = 2, fixed mu = 1, B = 3) the cycle does
    not converge above T ~ 0.03, with a thermal or a ground-state impurity.
    risb's finite T (Gibbs weights in the half-filled sector) is not Lanata's
@@ -203,7 +203,7 @@ user to review. Update this file as steps finish. Delete it when done.
    item 30 step 2): the two modes treat symmetries differently, e.g.
    diagonal_symmetries take a value (fockit's convention) that has no
    meaning in the grand-canonical mode, where they only split blocks.
-36. [ ] Non-unique finite-T ghost solutions at high T (user; from item 30
+36. [ ] (direction 2 found: extra near-flat deformations, count B (B - 1) like the gauge, physically negligible, cause open; convergence work in item 38) Non-unique finite-T ghost solutions at high T (user; from item 30
    step 3): above T ~ 0.1 (one band, B = 3, U = 2) the Jacobian of Eqs.
    200-203 has more zero directions than the 6 of the gauge (about 4 more
    at T = 1). Two T = 1 solutions have the same d, E and L_beta to 6 digits
@@ -229,6 +229,24 @@ user to review. Update this file as steps finish. Delete it when done.
    (items 36, 37). Ideas: fix the bath gauge after each fit (<f+b>
    Hermitian positive on its well-conditioned part), a deterministic fit
    start, then retest every root finder.
+39. [ ] A separate docs page of tips and tricks (user): practical advice kept
+   out of the how-tos. Removed from the how-tos on 2026-10-18, to go there:
+   when DIIS stalls near a solution try another history_size (e.g., 10) or
+   LinearMixing (item 38 table); scipy root finders with ThermalLatticeSolver
+   only converge near a solution and not at high T (item 37); error_fun
+   'root' is the thermal default because 'recursion' keeps changing at high
+   T; at fixed mu several solutions can exist, so start R and Lambda near the
+   wanted one or continue from a nearby T; the half-filled thermal impurity
+   (beta) as a Mott convergence aid, why it helps (decoupled bath orbitals
+   full or empty vs smeared quasiparticles) and the atomic-limit caveat
+   (self_consistency_tol); thermal overlap only keeps states with weight >
+   1e-14, sectors <= 2000 states go dense, eigsh retries ncv twice and looks
+   for missed degenerate states; the grand-canonical search goes outward from
+   half filling; which example shows which impurity symmetry (hubbard Sz,
+   bilayer layer swap, kagome spin swap, decorated honeycomb C3 as on-site
+   factors / site permutation) and the even/odd spin-swap eigenvalue of the
+   bilayer / kagome ground states; examples/ghost_hubbard.py and
+   examples/thermal_hubbard.py.
 
 ## Commits
 
@@ -2358,3 +2376,238 @@ Problems:
   with Dummy clusters (a unitary rotation does not change the entropy, so
   the referenced solver's value is the right one). Done: `entropy` is in
   the `ImpuritySolver` protocol, and DummyImpuritySolver.solve copies it.
+
+## Items 37-38 notes (scipy root finders; robust convergence)
+
+Literature (2026-10-19):
+- DFT SCF: robust because (i) it mixes the density, which has no gauge
+  freedom (orbital rotations drop out); (ii) the Jacobian is the dielectric
+  operator, whose structure is known, so Kerker / LDOS preconditioners make
+  the map nearly contractive (charge sloshing); (iii) the energy is minimized,
+  so energy-based safeguards exist: EDIIS/ADIIS (Kudin, Scuseria, Cances 2002;
+  Hu, Yang 2010) far from the solution then DIIS, the optimal damping
+  algorithm (Cances, Le Bris 2000), adaptive damping by a line search on an
+  energy model (Herbst, Levitt, JCP 2022, arXiv:2109.14018); level shifting
+  provably converges for a large enough shift; (iv) second-order SCF with the
+  exact orbital Hessian and a trust region (Bacskay QC-SCF; TRAH-SCF,
+  Helmich-Paris 2021, arXiv:2012.08306) when DIIS fails. Newton-Krylov with
+  Jacobian-vector products from linear response (Sternheimer) is used for
+  response, rarely for SCF. Anderson/DIIS theory: Walker-Ni 2011, Toth-Kelley
+  2015 (local, does not worsen a contraction); safeguarded/restarted Anderson
+  (Zhang, O'Donoghue, Boyd); periodic Pulay (Banerjee, Suryanarayana, Pask
+  2016; an independent thesis, arXiv:1803.01763, found it less robust).
+  Review: Woods, Payne, Hasnip, arXiv:1905.02332.
+- DMFT: Zitko, PRB 80, 125125 (2009): modified Broyden on the hybridization
+  (a gauge-invariant object), x3 near the Mott transition, also finds
+  unstable solutions. RISB: Lechermann et al. 2007 used modified Broyden;
+  convergence depends on the start.
+- Ghost GA: GEM (Giuli et al., arXiv:2609.32633, App. A) does the same
+  finite-T fits as risb with Gauss-Newton and an analytic Jacobian
+  (Daleckii-Krein derivative of the matrix Fermi function), plus a proximal
+  penalty alpha_p |y - y0|^2 (1e-8 to 1e-6, adaptive) that pins the gauge
+  directions to the previous iterate; outer loop plain mixing, convergence
+  on gauge-invariant eig(Lambda), |U R|; mu fitted each cycle by re-solving
+  the impurity. Tagliente, Pasqua, Fabrizio (arXiv:2607.27156): the
+  embedding loop is fragile at degenerate Mott states; direct minimization
+  of the functional is robust there.
+
+Item 37 experiments (scipy root; U = 2, B = 3, T = 0.1 unless said):
+- All of (Lambda, R, Lambda_c, D) as root variables, residuals E1-E4 (no
+  inner fits, an exact function): lm converges with 1066 impurity solves,
+  hybr 9e-7 at 1568, krylov / broyden1 / anderson fail. DIIS needs 12.
+- Bath fit always started from the T = 0 formulas (f a function of x):
+  anderson converges (543), hybr / lm / krylov / broyden1 fail at T 0.1;
+  at T 0.5 hybr and lm report success at |f| 3e-2.
+So making f a function of x does not make scipy's methods work; they cost
+10-100 times DIIS.
+
+Item 38 experiments (cycles from the default start, FAIL = 300; base in the
+item 38 entry):
+- Jacobian of the actual iteration map on (x, bath) without a penalty:
+  eigenvalues up to ~800 at T 0.5, 1: the fits stop at a point of a flat
+  solution set that depends on the optimizer's path, so the map is not
+  smooth. With the proximal penalty 1e-6 it is clean: T 0.1 six eigenvalues
+  1 (the f and b gauges, 3 + 3) and the rest <= 0.87; T 0.5 seven ~1 and
+  0.998, 0.996, 0.986 (near-flat modes); T 1 twelve exactly 1 (six beyond
+  the gauge: item 36) and 0.96, 0.95.
+- f and b gauges are independent: rotating only (R, Lambda) or only (D,
+  Lambda_c) keeps E1-E4; the new R, Lambda of a cycle do not depend on the
+  bath gauge, f1, f2 do (they are in the bath basis).
+- Canonical bath gauge (Lambda_c diagonal, sorted, D phases) h6/h3/h10:
+  B 3 T 0.1 78/13/17, T 0.5 100/F/101, T 1 193/F/111, B 5 T 0.005 27/16/42.
+- Proximal penalty 1e-6, h6/h3/h10: T 0.1 21/16/22, T 0.5 79/F/45, T 1
+  F/F/F, B 5 T 0.005 29/29/32, 0.03 F/F/F. Penalty 1e-8, h6: T 0.1 11, 0.5 73, 1 F;
+  B 5 T 0.005 14, 0.03 93, 0.1 F; n 0.9 18; complex n 2 36.
+- Canonical quasiparticle gauge (Lambda diagonal, sorted, R phases), h6/h10:
+  B 3 T 0.1 12/14, 0.5 F/F, 1 97/F; B 5 T 0.005 13/14, 0.03 20/19, 0.1
+  F/15; n 0.9 17/17; complex n 2 41/23.
+- Newton with a finite-difference Jacobian of the penalized map (lstsq,
+  neutral directions dropped): from the default start the steps are huge
+  (|dx| 2, 17, 31) and it fails; DIIS until 1e-4 then trust-region Newton:
+  T 0.1 converges with 167 solves (DIIS 12), T 0.5 fails.
+None of these is better than plain DIIS overall. The near-flat and flat
+directions at higher T (item 36) look like the real obstacle: DIIS, Newton
+and scipy all need isolated solutions or a way to remove the flat
+directions.
+
+Direction 2 (what item 36's extra flat directions are; U = 2, B = 3,
+T = 1 unless said; cycle-map Jacobian with the proximal penalty 1e-6):
+- Count: B = 1: 0 neutral; B = 2: 2 gauge + 2 extra; B = 3: 6 gauge + 6
+  extra. The extra count equals the gauge count, B (B - 1) for real
+  matrices (unexplained). None at T 0.1; near-flat at T 0.5 (eigenvalues
+  0.986-0.998); at T 1 singular values of J - 1 of 1e-5 to 2e-4 vs exactly 0
+  for the gauge. Also there when doped (mu = -0.5), so not particle-hole
+  symmetry. The paper's enlarged gauge group (Sec. III E, IV C) is only the
+  independent u, v rotations, i.e. our 6.
+- Walking 0.05 to 0.2 along each and re-converging (err 1e-13, |dz| up to
+  0.5): d changes <= 3e-10, Omega <= 1e-5, S <= 3e-6, Sigma(iw_0..3) <=
+  1e-4, Tr Delta up to 0.04. Directions 0, 2, 3 mostly Lambda_c, 1, 4, 5
+  mostly Lambda. Moments of Sigma: m0 = sum r 0.9984 and m2 0.668 fixed,
+  m1 (-0.005 to +0.009) and m3, m4 move; Delta likewise (even fixed, odd
+  move). So at high T the solution is pinned only up to deformations the
+  thermodynamics barely sees.
+- DIIS does not just slide along them: at T 1 the residual reaches 4e-8 at
+  cycle 75 and climbs back to 1e-5 to 3e-4; d, Omega, Sigma, Delta only
+  settle to 1e-4 at cycles 165-198 of 199. So a stopping criterion on
+  physical quantities does not help; DIIS extrapolation along the
+  near-flat directions leaves the solution.
+- DIIS restarted from its best iterate when the error exceeds 10 x the best
+  (bath state not restored), h6/h10: B 3 T 0.1 12/14, 0.5 F (80 restarts)/F,
+  1 13/F, B 5 T 0.005 31/17, 0.03 36/23, 0.1 16/F, n 0.9 24/23, complex
+  35/118.
+- Not artifacts of the map: the exact residual E1-E4 of all of (Lambda, R,
+  Lambda_c, D) has, beyond the symmetrizer zeros and the 6 gauge zeros,
+  small singular values at every T that collapse with T (B 3): T 0.1
+  2.9e-4, 5.4e-4, 1.0e-3, 2.8e-3 then 1e-2; T 0.5 5.9e-9, 9.3e-9, 8.4e-7,
+  1.7e-6, 4.7e-5, 1.1e-4 then 4e-3; T 1 1.3e-9, 1.4e-9, 2.1e-9, 7.4e-9,
+  9.7e-7, 2.1e-6 then 1.9e-4. B 4, T 1: 14 symmetrizer, 12 gauge, then 10
+  below 5e-6: the count is 2 (2B - 3), not the gauge count (equal only for
+  B = 2, 3). Not rotations of Lambda or Lambda_c alone (angles 78-90 deg).
+  Mechanism: the equations match thermal one-body density matrices
+  f(beta H) = 1/2 - x/4 + x^3/48 - x^5/480 + ..., so at high T they barely
+  see the higher powers (moments) of the quadratic Hamiltonians; each side
+  resolves about three moment-like numbers, the remaining 2B - 3 ghost
+  parameters per side are ill-determined. Ill-conditioning, not degeneracy.
+- GEM recipe (penalty 1e-6, LinearMixing alpha 0.8 / 1): B 3 T 0.1 44/33,
+  0.5 F/F, 1 F/F; B 5 T 0.005 57/44, 0.03 F/F.
+- Prototype safeguarded DIIS (restart from best with its bath state,
+  factor 10), h6/h10 (restarts): T 0.1 12/14, 0.5 F(98)/F(82), 1
+  F(49)/F(58), B 5 T 0.005 30/17, 0.03 37/23. With a regularized coefficient
+  solve (1e-6): T 0.1 16/22, 0.5 F/F, 1 F/F, B 5 18/30, 30/42; the
+  regularization alone: same. Not a fix.
+- Option 2 prototype (both fits anchored with alpha |y - y_ref|^2, y_ref
+  the first starting point of each fit, error x_new - x, DIIS h6; ref DIIS
+  h10). Cycles for alpha 1e-12 / 1e-10 / 1e-8 / 1e-6 (ref): B 3 T 0.1
+  38/54/42/162 (14); T 0.5 118/14/12/23 (111); T 1 10/24/38/7 (186); B 5 T
+  0.005 89/106/76/52 (35); T 0.03 F/219/133/98 (23); T 0.1 F/F/62/113 (78);
+  n 0.9 112/70/190/60 (134); complex n 2 134/120/F/F (102). Shift vs ref
+  roughly proportional to alpha: B 3 T 0.5, 1 at alpha <= 1e-10: d <= 5e-7,
+  S <= 1e-5, Omega <= 2e-5, Sigma(iw_n) 2e-3 to 7e-3; alpha 1e-8 at T 1:
+  Sigma 0.4; complex at alpha >= 1e-8: d off 3e-2, not converged. Fixes the
+  high-T one-band cases, hurts low T, B 5 and complex: the anchor (default
+  start) is far from the solution and fights the equations where nothing
+  is poorly determined. Next idea: re-anchor near the solution (plain DIIS
+  until it stalls, then fix the anchor at the current iterate).
+- Re-anchoring (plain DIIS h6 until |err| < 1e-6 or 30 cycles without a 10x
+  improvement, then anchors fixed at the current iterate and bath state,
+  fresh DIIS h6 on x_new - x), total cycles for alpha 1e-12 / 1e-10 / 1e-8
+  (ref DIIS h10; plain h6): B 3 T 0.1 15/15/15 (14; 12); T 0.5 12/18/12
+  (111; 133); T 1 19/11/7 (186; 199); B 5 T 0.005 362*/120/91 (35; F); T
+  0.03 184/148/119 (23; 53); T 0.1 97/103/27 (78; 16); n 0.9 38/28/45 (134;
+  24); complex 36/36/36 (102; 35). * at the solution (|f| 3e-15) but x_new -
+  x never below 1e-10. All converge. Shifts <= 1e-9 except B 3 T 0.5 (Sigma
+  2e-4), T 1 (Omega 2e-5, Sigma 3e-3, the same for every alpha: the
+  difference between two members of the near-flat family), B 5 T 0.1 (Omega
+  2e-5, Sigma 5e-4). Slower than plain DIIS on B 5 T 0.03 and n 0.9: the
+  1e-6 switch fires while DIIS is still converging.
+- Re-anchoring switching only on a stall (no 10x improvement for p
+  cycles), alpha 1e-8, phase 2 stops when the unregularized |f| or |x_new -
+  x| < 1e-10; total cycles p 20 / p 30 (ref DIIS h10; plain h6): B 3 T 0.1
+  12/12 (14; 12), T 0.5 32/39 (111; 133), T 1 28/38 (186; 199); B 5 T 0.005
+  59/70 (35; F), T 0.03 53/53 (23; 53), T 0.1 16/16 (78; 16); n 0.9 24/24
+  (134; 24); complex 35/35 (102; 35). All converge; cases plain DIIS
+  converges are untouched; shifts <= 2e-9 in d, Sigma within the near-flat
+  family spread at T 0.5, 1 (1e-4 to 3e-3).
+- Validation of re-anchoring (alpha 1e-8, patience 20), cold starts, plain
+  DIIS h6 vs re-anchoring: B 3 U 2 T 0.01-10 (13 T): identical everywhere
+  except T 0.56 67 -> 30 and T 1 199 -> 28; B 5 U 2.4 T 0.005 F -> 59, 0.01
+  13, 0.02 105 -> F (|f| 2e-6), 0.03 53, 0.05 20, 0.1 16, 0.2 13 (0.5, 1
+  pending); two-site cell T 0.025-0.5 identical, T 1 F -> 33; two orbitals
+  (complex hopping, B 2, n 2) T 0.02 89 -> 174 stopped at |f| 4e-6 with d
+  off 8e-4 and Omega off 4e-3 (biased), T 0.1 18, T 0.5 12. B 5 T 0.5: F -> 40,
+  B 5 T 1: F -> 30 (|f| 3e-10)
+  (|f| 2e-9). d identical
+  wherever both converge. Sweep alpha 1e-10/1e-8/1e-6 x patience 10/20/40
+  on B 3 T 0.5, 1 and B 5 T 0.005: all converge (16-101 cycles); patience
+  10 fastest; B 5 T 0.005 alpha 1e-6 patience 10 stops at |f| 1e-6.
+  Failures: switching while plain DIIS is still slowly converging at low T
+  anchors a non-solution and holds it there.
+- Option 1 prototype (one orbital per block): DIIS on the Lanczos chain
+  (|R|, a_k, b_k of Lambda in the Krylov basis of R; gauge free), steps
+  damped by gamma^depth; gamma 1 / 0.5 / 0.25 (ref DIIS h10): B 3 T 0.1
+  14/15/15 (14), T 0.5 133/F/F (111), T 1 9/57/F (186); B 5 T 0.005
+  12/23/74 (35), T 0.03 45/45/F (23), T 0.1 F/F/F (78); n 0.9 17/26/32
+  (134). Gauge-free variables alone help a lot at B 3 T 1 and B 5 T 0.005,
+  hurt B 5 T 0.03, 0.1; depth damping only slows.
+- Moving anchor (proximal point: rounds of the regularized solve, alpha
+  1e-8, each round until |x_new - x| < 1e-8, then re-anchor at the result;
+  stop at the unregularized |f| < 1e-10; 20 rounds, 600 cycles): B 5 U 2.4
+  T 0.02 F (600 cycles, 4 rounds, |f| 4e-7; plain 105); two orbitals T 0.02
+  converges (299, 6 rounds, |f| 1e-10) but to another exact solution than
+  plain DIIS (d 0.110081 vs 0.110925, Omega -4e-3); B 3 T 0.56, T 1 and the
+  cell T 1 use all 20 rounds and stop at |f| 2e-9, 3e-10, 4e-9 (the high-T
+  residual floor, each round gains little); B 5 T 0.005 59 (2 rounds). Not
+  an improvement on the fixed anchor. Plain DIIS h6 at B 3 T 0.5623413252
+  FAIL here vs 67 at np.geomspace's 0.5623413251903491: chaotic.
+- Multi-start harness (scratchpad robust/harness.py): each case from 3-5
+  starts with the starting (Lambda, R) perturbed by 1e-3 (seed 0
+  unperturbed); methods: plain DIIS h6; re-anchor (stall after 20 cycles
+  without a 10x gain, then anchors at the current state, alpha 1e-8, DIIS
+  on x_new - x); gated (re-anchor only if the best error at the stall is <
+  1e-6, else restart plain DIIS); DIIS then scipy krylov on f; DIIS then
+  krylov on the regularized map. Converged starts (|f| < 1e-9) / starts:
+  B 3 T 0.1 all 5/5 in 12. B 3 T 1: plain 5/5 (43-256, Omega spread 1e-4),
+  re-anchor 5/5 (27-29, Omega spread 1e-9), gated same, krylov 0/5,
+  krylov_reg 5/5 (35-47). B 3 T 0.56: plain 1/5 (finals 5e-5, 8e-7, 2e-6,
+  2e-5, 2e-11), re-anchor and gated 3/5 with finals 1e-10 to 2e-9 (the
+  floor; 5/5 at 3e-9), krylov 0/5 (finals 5e-8 to 2), krylov_reg 3/5. Cell
+  T 1: plain 1/5 (finals 9e-12 to 9e-7), re-anchor, gated and krylov_reg
+  finals 4e-9 to 1e-8 for all 5 (floor ~1e-8, 4^3 k), krylov 0/5 (3e-7 to
+  4e-5). B 5 T 0.1: all 3/3 in 16-17. B 5 T 0.005: plain 2/3, re-anchor 3/3
+  (17, 27, 59), gated 3/3 (17, 27, 58: the stall at 4e-6 restarted plain
+  DIIS), krylov 3/3, krylov_reg 3/3. B 5 T 0.02: plain 3/3 (54-105),
+  re-anchor 1/3 (stalls at 2e-3, 4e-3), gated 3/3 (54, 59, 99), krylov and
+  krylov_reg 1/3. Two orbitals T 0.02: plain 3/3 but d spread 8e-4, Omega
+  spread 4e-3 (two solutions, start dependent), re-anchor 1/3 (stalls at
+  9e-3, 9e-4), gated 3/3 (38, 63, 166).
+  The failures of re-anchoring are stalls far from a solution (2e-3 to
+  9e-3); the rescues are stalls at 4e-6 to 1e-8 or below. Restarting plain
+  DIIS after a stall also helps (gated B 5 T 0.005 seed 0). Krylov only
+  works on the regularized map.
+- Restart DIIS on a stall (fresh history, up to 10 restarts in 300 cycles),
+  from the current iterate (restart) or the best iterate with its bath
+  state (restart_best), cycles per start (vs gated): B 3 T 1 restart
+  48-247, one start 2e-5; restart_best 41-245 (gated 27-29). B 3 T 0.56
+  restart 145-263, finals 3e-11 to 1e-7; restart_best 246 all, 1e-8 to
+  3e-7 (gated 29-35). Cell T 1 restart 128-245, restart_best 244 all (gated
+  31-38). B 5 T 0.005 both 17-58 (= gated). B 5 T 0.02 restart 54-111,
+  restart_best 54-76 (gated 54-99). Two orbitals T 0.02 restart 38-137
+  (gated 38-166). Restarting fixes the low-T stalls far from a solution but
+  not the high-T near-flat stalls; those need the anchor. So the schedule
+  is the gated one: restart on a stall far from a solution, anchor on a
+  stall near one.
+
+Refactor (before the plateau schedule; user commits it): the solve loop is
+split. risb.optimize: NewtonSolver gets reset(), step(x, g_x, residual),
+error_of() and error_fun ('recursion' | 'root', moved from the solvers);
+solve(fun, x0) loops over step. New driver.py: drive(problem, optimizer,
+callbacks, tol, maxiter) -> SolveResult (x, converged, cycles, error,
+history); Driver (cycle, error, history, optimizer, x, stop()); ScipyRoot
+(one-shot adapter for scipy.optimize.root, error_fun + root kwargs, no
+callbacks). risb.types.FixedPointProblem: get_x(), cycle(x) -> (x_new,
+residual). Solvers: root=, return_x_new=, error_fun= removed; get_x, cycle
+public; default_optimizer() (LatticeSolver DIIS(), ThermalLatticeSolver
+DIIS(error_fun='root')); solve(optimizer, callbacks, tol, maxiter, one_shot,
+self_consistency_tol) returns SolveResult; S.optimize gone. Examples keep
+`result = S.solve(...)` where tests check convergence. 129 tests pass, the
+old ones unchanged in behaviour.

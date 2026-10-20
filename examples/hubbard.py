@@ -83,7 +83,7 @@ for U in U_arr:
     impurity_solver.set_h_int(hubbard(U=U, n_orb=n_orb))
 
     # Solve
-    S.solve(tol=1e-6)
+    result = S.solve(tol=1e-6)
 
     total_number.append(impurity_solver.overlap(total_number_Op))
     total_spin.append(impurity_solver.overlap(total_spin_Op))

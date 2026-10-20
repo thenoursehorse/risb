@@ -18,7 +18,7 @@
 """Solver for finite-temperature rotationally invariant slave-boson mean-field theory on a lattice."""
 
 from collections.abc import Callable, Mapping, Sequence
-from typing import Literal, override
+from typing import override
 
 import numpy as np
 from numpy.typing import NDArray
@@ -26,6 +26,7 @@ from scipy.optimize import brentq, least_squares
 from scipy.special import expit
 
 from risb import helpers
+from risb.optimize import DIIS, NewtonSolver
 from risb.solve_lattice_base import BaseLatticeSolver
 from risb.types import (
     BlockMatrix,
@@ -33,7 +34,6 @@ from risb.types import (
     BlockRealArray,
     GfStruct,
     ImpuritySolver,
-    RootFinder,
     Symmetrize,
 )
 
@@ -71,15 +71,10 @@ class ThermalLatticeSolver(BaseLatticeSolver):
         Number of electrons per unit cell. The chemical potential :attr:`mu`
         is then solved for with :attr:`Lambda` and :attr:`R`, and the root
         functions include ``n_electrons - n_target``. Default is a fixed `mu`.
-    error_fun : {'root', 'recursion'}, optional
-        As in :class:`.BaseLatticeSolver`. Defaults to ``'root'``, because at
-        high temperature many :attr:`Lambda` and :attr:`R` can solve the
-        equations, so that the consecutive ones of ``'recursion'`` can keep
-        changing at a solution.
 
     Other Parameters
     ----------------
-    h0_k, gf_struct, root, projectors, gf_struct_mapping, symmetrizers, force_real, return_x_new, check_projectors, double_counting, bath_size
+    h0_k, gf_struct, projectors, gf_struct_mapping, symmetrizers, force_real, check_projectors, double_counting, bath_size
         As in :class:`.BaseLatticeSolver`.
 
     """
@@ -91,13 +86,10 @@ class ThermalLatticeSolver(BaseLatticeSolver):
         impurity_solvers: ImpuritySolver | Sequence[ImpuritySolver],
         beta: float,
         mu: float | None = None,
-        root: RootFinder | None = None,
         projectors: Sequence[BlockMatrixLike] | None = None,
         gf_struct_mapping: Sequence[Mapping[str, str]] | None = None,
         symmetrizers: Sequence[Symmetrize] = (),
         force_real: bool = False,
-        error_fun: Literal["root", "recursion"] = "root",
-        return_x_new: bool = True,
         check_projectors: bool = False,
         double_counting: Callable[[int, BlockMatrix], BlockMatrixLike] | None = None,
         *,
@@ -108,13 +100,10 @@ class ThermalLatticeSolver(BaseLatticeSolver):
             h0_k,
             gf_struct,
             impurity_solvers,
-            root=root,
             projectors=projectors,
             gf_struct_mapping=gf_struct_mapping,
             symmetrizers=symmetrizers,
             force_real=force_real,
-            error_fun=error_fun,
-            return_x_new=return_x_new,
             check_projectors=check_projectors,
             double_counting=double_counting,
             bath_size=bath_size,
@@ -241,32 +230,65 @@ class ThermalLatticeSolver(BaseLatticeSolver):
             self.R = symmetrize(self.R)
 
     @override
-    def _get_x(self) -> NDArray[np.float64]:
-        x = super()._get_x()
+    def get_x(self) -> NDArray[np.float64]:
+        """
+        Return :attr:`Lambda`, :attr:`R`, and with ``n_target`` :attr:`mu`, as the vector that :meth:`cycle` takes.
+
+        Returns
+        -------
+        numpy.ndarray
+
+        """
+        x = super().get_x()
         if self.n_target is None:
             return x
         return np.append(x, self.mu)
 
     @override
-    def _target_function(
+    def cycle(
         self, x: NDArray[np.float64]
-    ) -> NDArray[np.float64] | tuple[NDArray[np.float64], NDArray[np.float64]]:
+    ) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
+        """
+        Run :meth:`one_cycle` from the :attr:`Lambda`, :attr:`R`, and with ``n_target`` :attr:`mu`, in ``x``.
+
+        Parameters
+        ----------
+        x : numpy.ndarray
+            As from :meth:`get_x`.
+
+        Returns
+        -------
+        x_new : numpy.ndarray
+            The new :attr:`Lambda` and :attr:`R`, and with ``n_target`` the
+            next guess for :attr:`mu`, moved by the error of the filling.
+        residual : numpy.ndarray
+            The root functions :attr:`f2` and :attr:`f1`, and with
+            ``n_target`` ``n_electrons - n_target``, zero at a solution.
+
+        """
         if self.n_target is None:
-            return super()._target_function(x)
-        # mu is the last entry of x, and its next guess is a step with the
-        # error of the filling
+            return super().cycle(x)
         self.mu = float(x[-1])
-        result = super()._target_function(x[:-1])
+        x_new, residual = super().cycle(x[:-1])
         mu_new = self.mu + self.n_target - self.n_electrons
-        mu_error = (
-            self.n_electrons - self.n_target
-            if self.error_fun == "root"
-            else mu_new - self.mu
+        return np.append(x_new, mu_new), np.append(
+            residual, self.n_electrons - self.n_target
         )
-        if isinstance(result, tuple):
-            x_new, x_error = result
-            return np.append(x_new, mu_new), np.append(x_error, mu_error)
-        return np.append(result, mu_error)
+
+    @override
+    def default_optimizer(self) -> NewtonSolver:
+        """
+        Return the optimizer that :meth:`solve` uses by default.
+
+        Returns
+        -------
+        risb.optimize.NewtonSolver
+            :class:`.DIIS` with ``error_fun='root'``. At high temperature
+            :attr:`Lambda` and :attr:`R` can keep changing at a solution, so
+            their change is not a good error.
+
+        """
+        return DIIS(error_fun="root")
 
     def _fit_bath(
         self,

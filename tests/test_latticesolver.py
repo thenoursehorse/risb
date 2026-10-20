@@ -5,8 +5,6 @@ import numpy as np
 import pytest
 from fockit.algebra import OpSum, nc, zero
 from numpy.typing import NDArray
-from scipy.optimize import OptimizeResult
-from scipy.optimize import root as root_fun
 from test_common import (
     bethe_h0_k,
     build_cubic_h0_k,
@@ -20,6 +18,7 @@ from risb import LatticeSolver, helpers
 from risb.helpers_fockit import h_int_kanamori
 from risb.impurity_solvers import FockitImpuritySolver
 from risb.kweight import SmearingKWeight
+from risb.optimize import ScipyRoot, SolveResult
 from risb.types import BlockMatrix, GfStruct, ImpuritySolver
 
 # FIXME add one_shot test
@@ -230,15 +229,12 @@ def test_scipy_root(
         impurity_solvers=[impurity_solver],
         update_weights=kweight.update_weights,
         symmetrizers=[symmetrize_blocks],
-        root=root_fun,
-        return_x_new=False,
     )
     for i in range(S.n_clusters):
         for bl, _ in S.gf_struct[i]:
             np.fill_diagonal(S.Lambda[i][bl], mu_expected)
-    result = S.solve(method=root_method, options={"fatol": 1e-10})
-    assert isinstance(result, OptimizeResult)
-    assert result.success, result.message
+    result = S.solve(optimizer=ScipyRoot(method=root_method, options={"fatol": 1e-10}))
+    assert result.converged
     mu_calculated = kweight.mu
     do_assert(
         subtests, mu_calculated, S.Lambda, S.Z, mu_expected, Lambda_expected, Z_expected
@@ -269,8 +265,7 @@ def test_three_orbital_kanamori_is_a_paramagnetic_mott_insulator() -> None:
         update_weights=SmearingKWeight(beta=40, n_target=n_orb).update_weights,
         symmetrizers=[symmetrize_blocks],
     )
-    S.solve(tol=1e-8)
-    assert S.optimize.success
+    assert S.solve(tol=1e-8).converged
     for bl in S.Z[0]:
         assert S.Z[0][bl] == pytest.approx(np.zeros((n_orb, n_orb)), abs=1e-6)
     # The ground state of the impurity is a spin multiplet, and the symmetrizer
@@ -308,8 +303,7 @@ def test_quasiparticle_basis_of_the_starting_guess_does_not_change_the_physics()
         for bl in ["up", "dn"]:
             S.Lambda[0][bl] = 1.5 * np.eye(2)
             S.R[0][bl] = u.conj().T
-        S.solve(tol=1e-10)
-        assert S.optimize.success
+        assert S.solve(tol=1e-10).converged
         results.append((kweight.mu, S.Z[0]["up"]))
     for mu, weight in results[1:]:
         assert mu == pytest.approx(results[0][0], abs=1e-8)
@@ -321,9 +315,9 @@ def test_rotated_copy_of_the_non_interacting_solution_is_converged() -> None:
     u = random_unitary(2, seed=3)
     for bl in ["up", "dn"]:
         S.R[0][bl] = u.conj().T
-    S.solve(tol=1e-10)
-    assert S.optimize.success
-    assert S.optimize.n <= 2
+    result = S.solve(tol=1e-10)
+    assert result.converged
+    assert result.cycles <= 3
     for bl in ["up", "dn"]:
         assert S.Z[0][bl] == pytest.approx(np.eye(2), abs=1e-8)
 
@@ -349,7 +343,7 @@ def test_completely_full_orbital_decouples_and_leaves_the_one_band_solution() ->
     )
     for bl, _ in gf_struct:
         S.Lambda[0][bl] = np.diag([0.0, 6.0])
-    S.solve(tol=1e-10)
+    result = S.solve(tol=1e-10)
 
     gf_struct_one = [(bl, 1) for bl in spin_names]
     one_band = LatticeSolver(
@@ -364,7 +358,7 @@ def test_completely_full_orbital_decouples_and_leaves_the_one_band_solution() ->
         one_band.Lambda[0][bl] = np.array([[1.0]])
     one_band.solve(tol=1e-10)
 
-    assert S.optimize.success
+    assert result.converged
     assert S.self_consistency_error < 1e-8
     for bl, _ in gf_struct:
         assert np.linalg.eigvalsh(S.Z[0][bl]) == pytest.approx(
@@ -503,12 +497,11 @@ def test_orbital_in_no_cluster_keeps_its_band() -> None:
         for i in range(S.n_clusters):
             for bl in spin_names:
                 S.Lambda[i][bl] = np.array([[2.0 if i == 0 else 0.0]])
-        S.solve(tol=1e-12)
+        assert S.solve(tol=1e-12).converged
         return S
 
     one_cluster = solve([site_a])
     two_clusters = solve([site_a, site_b])
-    assert one_cluster.optimize.success
     for bl in spin_names:
         assert one_cluster.Z[0][bl] == pytest.approx(two_clusters.Z[0][bl], abs=1e-8)
         assert two_clusters.Z[1][bl] == pytest.approx(np.eye(1), abs=1e-8)
@@ -541,7 +534,7 @@ def test_projectors_that_depend_on_k_give_the_same_solution() -> None:
         for i in range(2):
             for bl in spin_names:
                 S.Lambda[i][bl] = np.array([[2.0]])
-        S.solve(tol=1e-12)
+        assert S.solve(tol=1e-12).converged
         return S
 
     fixed = solve(h0, sites)
@@ -549,7 +542,6 @@ def test_projectors_that_depend_on_k_give_the_same_solution() -> None:
         rotations @ h0 @ np.swapaxes(rotations.conj(), -1, -2),
         [P @ np.swapaxes(rotations.conj(), -1, -2) for P in sites],
     )
-    assert rotated.optimize.success
     for i in range(2):
         for bl in spin_names:
             assert rotated.Z[i][bl] == pytest.approx(fixed.Z[i][bl], abs=1e-8)
@@ -576,7 +568,7 @@ def test_constant_double_counting_is_a_shift_of_the_local_energies() -> None:
 
     def solve(
         h0_k: dict[str, NDArray[np.complex128]], with_hook: bool
-    ) -> LatticeSolver:
+    ) -> tuple[LatticeSolver, SolveResult]:
         S = LatticeSolver(
             h0_k=h0_k,
             gf_struct=gf_struct,
@@ -586,18 +578,17 @@ def test_constant_double_counting_is_a_shift_of_the_local_energies() -> None:
         )
         for bl, _ in gf_struct:
             S.Lambda[0][bl] = 1.5 * np.eye(2)
-        S.solve(tol=1e-12)
-        return S
+        return S, S.solve(tol=1e-12)
 
     h0_k = build_two_orbital_complex_h0_k()
-    hook = solve(h0_k, with_hook=True)
-    shifted = solve({bl: h - potential for bl, h in h0_k.items()}, with_hook=False)
-    assert hook.optimize.success
+    hook, result = solve(h0_k, with_hook=True)
+    shifted, _ = solve({bl: h - potential for bl, h in h0_k.items()}, with_hook=False)
+    assert result.converged
     for bl, _ in gf_struct:
         assert hook.Z[0][bl] == pytest.approx(shifted.Z[0][bl], abs=1e-8)
         assert hook.Lambda[0][bl] == pytest.approx(shifted.Lambda[0][bl], abs=1e-8)
     # Called every cycle with the cluster index and a matrix for each block
-    assert len(calls) == hook.optimize.n + 1
+    assert len(calls) == result.cycles
     assert all(i == 0 and set(rho) == {"up", "dn"} for i, rho in calls)
 
 

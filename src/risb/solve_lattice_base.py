@@ -21,21 +21,20 @@ import warnings
 from abc import ABC, abstractmethod
 from collections.abc import Callable, Mapping, Sequence
 from itertools import product
-from typing import Literal, TypeIs
+from typing import TypeIs
 
 import numpy as np
 from numpy.typing import NDArray
-from scipy.optimize import OptimizeResult
 
 from risb import helpers
-from risb.optimize import DIIS
+from risb.optimize import DIIS, NewtonSolver, ScipyRoot, SolveResult, drive
+from risb.optimize.driver import Callback
 from risb.types import (
     BlockMatrix,
     BlockMatrixLike,
     BlockRealArray,
     GfStruct,
     ImpuritySolver,
-    RootFinder,
     Symmetrize,
 )
 
@@ -70,12 +69,6 @@ class BaseLatticeSolver(ABC):
         already store the interacting Hamiltonian ``h_int`` of the physical
         orbitals on a cluster, and implement :class:`risb.types.ImpuritySolver`.
         See class :class:`.FockitImpuritySolver`.
-    root : risb.types.RootFinder, optional
-        The function that drives the self-consistent procedure. It is called
-        as ``root(fun, x0, **kwargs)``, where ``x0`` is the initial
-        guess vector, and ``fun`` is the function to minimize,
-        where ``fun = self._target_function``.
-        Defaults to :meth:`.DIIS.solve` method of :class:`.DIIS`.
     projectors : sequence of risb.types.BlockMatrixLike, optional
         The projectors onto the subspace of each cluster. ``projectors[i][bl]``
         has a row for each orbital of block ``bl`` of cluster ``i`` and a
@@ -94,14 +87,6 @@ class BaseLatticeSolver(ABC):
         E.g., ``[R_cluster1, R_cluster2, ...]``.
     force_real : bool, optional
         True if the mean-field matrices are forced to be real
-    error_fun : {'root', 'recursion'}, optional
-        At each self-consistent cycle, whether the returned error function is
-        the f1 and f2 root functions (``'root'``) or the difference between
-        consecutive :attr:`Lambda` and :attr:`R` (``'recursion'``).
-        Defaults to ``'recursion'``.
-    return_x_new : bool, optional
-        Whether to return a new guess for ``x`` and the ``error`` at each iteration or
-        only the ``error``. :func:`scipy.optimize.root` should only use the ``error``.
     check_projectors : bool, optional
         Raise a ValueError if `projectors` do not have orthonormal rows or
         overlap. Default is False.
@@ -138,13 +123,10 @@ class BaseLatticeSolver(ABC):
         h0_k: BlockMatrixLike,
         gf_struct: GfStruct | list[GfStruct],
         impurity_solvers: ImpuritySolver | Sequence[ImpuritySolver],
-        root: RootFinder | None = None,
         projectors: Sequence[BlockMatrixLike] | None = None,
         gf_struct_mapping: Sequence[Mapping[str, str]] | None = None,
         symmetrizers: Sequence[Symmetrize] = (),
         force_real: bool = False,
-        error_fun: Literal["root", "recursion"] = "recursion",
-        return_x_new: bool = True,
         check_projectors: bool = False,
         double_counting: Callable[[int, BlockMatrix], BlockMatrixLike] | None = None,
         *,
@@ -175,11 +157,6 @@ class BaseLatticeSolver(ABC):
             msg = f"Need an impurity solver (got {len(self.impurity_solvers)}) for each cluster (got {self.n_clusters}) !"
             raise ValueError(msg)
 
-        if root is None:
-            self.optimize = DIIS()
-            root = self.optimize.solve
-        self._root: RootFinder = root
-
         self.projectors = projectors
         if (self.projectors is not None) and (len(self.projectors) != self.n_clusters):
             msg = f"Need a projector (got {len(self.projectors)}) for each cluster (got {self.n_clusters}) !"
@@ -205,11 +182,6 @@ class BaseLatticeSolver(ABC):
 
         self.symmetrizers = symmetrizers
         self.force_real = force_real
-        if error_fun not in {"root", "recursion"}:
-            msg = "Unrecognized error functions for root !"
-            raise ValueError(msg)
-        self.error_fun = error_fun
-        self.return_x_new = return_x_new
 
         # The Hermitian basis of each size of square matrix
         self._H_basis: dict[int, list[NDArray[np.inexact]]] = {}
@@ -359,19 +331,6 @@ class BaseLatticeSolver(ABC):
         self.Lambda_full: BlockMatrix = {}
 
         self.iteration = 0
-
-    def root(
-        self, *args: object, **kwargs: object
-    ) -> NDArray[np.float64] | OptimizeResult:
-        """
-        Root function that drives the self-consistent procedure. It is called the same as :func:`scipy.optimize.root`.
-
-        Returns
-        -------
-        numpy.ndarray or scipy.optimize.OptimizeResult
-
-        """
-        return self._root(*args, **kwargs)
 
     @staticmethod
     def _hermitian_basis(N: int, is_real: bool = False) -> list[NDArray[np.inexact]]:
@@ -544,16 +503,39 @@ class BaseLatticeSolver(ABC):
 
         return h0_loc_matrix
 
-    def _get_x(self) -> NDArray[np.float64]:
-        # The starting vector of the root finder
+    def get_x(self) -> NDArray[np.float64]:
+        """
+        Return :attr:`Lambda` and :attr:`R` as the vector that :meth:`cycle` takes.
+
+        Returns
+        -------
+        numpy.ndarray
+
+        """
         return np.array(
             self._flatten_matrix(self.Lambda, is_coeff_real=True)
             + self._flatten_matrix(self.R, is_coeff_real=False)
         )
 
-    def _target_function(
+    def cycle(
         self, x: NDArray[np.float64]
-    ) -> NDArray[np.float64] | tuple[NDArray[np.float64], NDArray[np.float64]]:
+    ) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
+        """
+        Run :meth:`one_cycle` from the :attr:`Lambda` and :attr:`R` in ``x``.
+
+        Parameters
+        ----------
+        x : numpy.ndarray
+            :attr:`Lambda` and :attr:`R` as from :meth:`get_x`.
+
+        Returns
+        -------
+        x_new : numpy.ndarray
+            The new :attr:`Lambda` and :attr:`R`.
+        residual : numpy.ndarray
+            The root functions :attr:`f2` and :attr:`f1`, zero at a solution.
+
+        """
         self.Lambda, offset = self._unflatten_matrix(
             x, is_coeff_real=True, like=self.Lambda
         )
@@ -561,23 +543,23 @@ class BaseLatticeSolver(ABC):
             x, is_coeff_real=False, like=self.R, offset=offset
         )
         self.Lambda, self.R, self.f1, self.f2 = self.one_cycle()
-        x_new: NDArray[np.float64] = np.array(
-            self._flatten_matrix(self.Lambda, is_coeff_real=True)
-            + self._flatten_matrix(self.R, is_coeff_real=False)
+        residual = np.array(
+            self._flatten_matrix(self.f2, is_coeff_real=True)
+            + self._flatten_matrix(self.f1, is_coeff_real=False)
         )
+        return BaseLatticeSolver.get_x(self), residual
 
-        x_error: NDArray[np.float64]
-        if self.error_fun == "root":
-            x_error = np.array(
-                self._flatten_matrix(self.f2, is_coeff_real=True)
-                + self._flatten_matrix(self.f1, is_coeff_real=False)
-            )
-        else:
-            x_error = x_new - x
+    def default_optimizer(self) -> NewtonSolver:
+        """
+        Return the optimizer that :meth:`solve` uses by default.
 
-        if self.return_x_new:
-            return x_new, x_error
-        return x_error
+        Returns
+        -------
+        risb.optimize.NewtonSolver
+            :class:`.DIIS` with its default options.
+
+        """
+        return DIIS()
 
     @abstractmethod
     def update_weights(self, energies: BlockRealArray) -> BlockRealArray:
@@ -726,63 +708,73 @@ class BaseLatticeSolver(ABC):
 
     def solve(
         self,
+        optimizer: NewtonSolver | ScipyRoot | None = None,
+        callbacks: Sequence[Callback] = (),
+        tol: float = 1e-12,
+        maxiter: int = 1000,
         one_shot: bool = False,
         self_consistency_tol: float = 1e-6,
-        **kwargs: object,
-    ) -> NDArray[np.float64] | OptimizeResult:
+    ) -> SolveResult:
         """
         Solve for the renormalization matrix :attr:`R` and correlation potential matrix :attr:`Lambda`.
 
-        Sets the self-consistent solutions :attr:`Lambda` and :attr:`R`.
+        Starts from the current :attr:`Lambda` and :attr:`R`, and sets the
+        self-consistent solutions.
 
         Parameters
         ----------
+        optimizer : risb.optimize.NewtonSolver or risb.optimize.ScipyRoot, optional
+            Gives the next :attr:`Lambda` and :attr:`R` of each cycle. Default
+            is :meth:`default_optimizer`.
+        callbacks : sequence of callable, optional
+            Called after every cycle, see :func:`risb.optimize.drive`.
+        tol : float, optional
+            Stop when the 2-norm of the error (see ``error_fun`` of the
+            optimizer) is below this. Default is ``1e-12``.
+        maxiter : int, optional
+            Maximum number of cycles. Default is ``1000``.
         one_shot : bool, optional
-            True if the calcualtion is just one shot and not self consistent.
-            Default is False.
+            Run a single cycle instead of solving. Default is False.
         self_consistency_tol : float, optional
             Warn if :attr:`self_consistency_error` is above this after a
-            self-consistent solve. The root finder can stop where the guess of
+            self-consistent solve. The optimizer can stop where the guess of
             :attr:`Lambda` and :attr:`R` no longer changes but the
             self-consistency equations are not satisfied, e.g., at
             :attr:`R` = 0. In the atomic limit (:attr:`R` = 0 at a Mott
             insulator) the equations are not satisfied either, but there the
             bath of the impurity problem decouples and the observables do not
             depend on it. Default is ``1e-6``.
-        **kwargs
-            kwarg options to pass to :meth:`root`.
 
         Returns
         -------
-        numpy.ndarray or scipy.optimize.OptimizeResult
-            The flattened x vector of :attr:`Lambda` and :attr:`R`. If using
-            :func:`scipy.optimize.root` the :class:`scipy.optimize.OptimizeResult`
-            object will be returned.
+        risb.optimize.SolveResult
 
         """
-        x: NDArray[np.float64] | OptimizeResult
         if one_shot:
-            self.Lambda, self.R, _, _ = self.one_cycle()
-            x = self._get_x()
+            x = self.get_x()
+            _, residual = self.cycle(x)
+            error = float(np.linalg.norm(residual))
+            return SolveResult(x, False, 1, error, [error])
 
-        else:
-            x = self.root(fun=self._target_function, x0=self._get_x(), **kwargs)
-            self.self_consistency_error = max(
-                float(np.max(np.abs(f[i][bl])))
-                for f in (self.f1, self.f2)
-                for i in range(self.n_clusters)
-                for bl in f[i]
+        if optimizer is None:
+            optimizer = self.default_optimizer()
+        result = drive(self, optimizer, callbacks, tol, maxiter)
+        self.self_consistency_error = max(
+            float(np.max(np.abs(f[i][bl])))
+            for f in (self.f1, self.f2)
+            for i in range(self.n_clusters)
+            for bl in f[i]
+        )
+        if self.self_consistency_error > self_consistency_tol:
+            msg = (
+                "The RISB self-consistency equations are not satisfied: "
+                f"max |f1|, |f2| = {self.self_consistency_error:.1e}. In the "
+                "atomic limit (R = 0, e.g., a Mott insulator) the bath of the "
+                "impurity problem decouples and this does not change the "
+                "observables. Otherwise the result is not a solution."
             )
-            if self.self_consistency_error > self_consistency_tol:
-                msg = (
-                    "The RISB self-consistency equations are not satisfied: "
-                    f"max |f1|, |f2| = {self.self_consistency_error:.1e}. In the "
-                    "atomic limit (R = 0, e.g., a Mott insulator) the bath of the "
-                    "impurity problem decouples and this does not change the "
-                    "observables. Otherwise the result is not a solution."
-                )
-                warnings.warn(msg, RuntimeWarning, stacklevel=2)
-        return x
+            warnings.warn(msg, RuntimeWarning, stacklevel=2)
+        return result
 
     @property
     def Z(self) -> list[BlockMatrix]:

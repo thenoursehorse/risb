@@ -279,73 +279,69 @@ S = LatticeSolver(...
 
 and are called in the sequence they are given in the list.
 
-## Using other functions to find a root
+## Choosing the optimizer
 
-If you want to change the function that finds the roots of the
-self-consistent procedure you can specify it with
+`S.solve()` uses {py:class}`~risb.optimize.DIIS` by default. If you want
+another optimizer, or other options for it
 
 ```python
-S = LatticeSolver(...
-                  root = root,
-                  ...
-)
+from risb.optimize import DIIS, LinearMixing
+
+S.solve(optimizer=DIIS(history_size=10, alpha=0.5), tol=1e-10, maxiter=500)
+S.solve(optimizer=LinearMixing(alpha=0.3))
 ```
 
-`root` is called exactly the same as what {py:func}`scipy.optimize.root`
-requires. It must be a callable function that takes as input
-`root(S._target_function, x0, **kwargs)`. Here `S._target_function`
-by default returns a `tuple[ndarray,ndarray]` of a flattened ndarray `x_new`
-of a new `Lambda` and `R` matrix and a flattened ndarray `x_err` of the error,
-which by default is the change `x_new - x` (see `error_fun` below).
-
-If you do not want `S._target_function` to return `x_new` and only return
-`x_err` then you can specify
+The optimizer decides when the solve has converged: when `Lambda` and `R`
+stop changing (`error_fun="recursion"`, the default), or when the root
+functions `f1` and `f2` are zero (`error_fun="root"`, the default of
+`ThermalLatticeSolver`)
 
 ```python
-S = LatticeSolver(...
-                  root = root,
-                  return_x_new = False,
-                  ...
-)
+S.solve(optimizer=DIIS(error_fun="root"))
 ```
 
-You can change whether `x_err` is from the root functions `f1` and
-`f2` or as a recursion from successive changes to `x` as
-`x_err = x_new - x` with
+If you want to use {py:func}`scipy.optimize.root`, give its keyword arguments
+to {py:class}`~risb.optimize.ScipyRoot`
 
 ```python
-S = LatticeSolver(...
-                  root = root,
-                  error_fun = 'root' or 'recursion',
-                  ...
-)
-```
+from risb.optimize import ScipyRoot
 
-For example, to use {py:func}`scipy.optimize.root`
-
-```python
-from scipy.optimize import root
-S = LatticeSolver(...
-                  root = root,
-                  return_x_new = False,
-                  ...
-)
-S.solve(tol = , method = 'broyden1, hybr, krylov, etc', other kwargs = )
+S.solve(optimizer=ScipyRoot(method="krylov", options={"fatol": 1e-10}))
 ```
 
 For `krylov`, `broyden1`, `broyden2`, `anderson`, `linearmixing`,
-`diagbroyden` and `excitingmixing`, scipy stops on the size of the step,
-which need not shrink in {{RISB}}. Stop on the size of the error instead
-
-```python
-S.solve(method="krylov", options={"fatol": 1e-10})
-```
+`diagbroyden` and `excitingmixing`, give `fatol` as above, so that scipy
+stops on the size of the error and not of the step.
 
 :::{warning}
 In our experience scipy's `root` functions do not work as well as either
 standard linear mixing or {{DIIS}} (which seems to work very well for
 {{RISB}}, and is the default method).
 :::
+
+`S.solve()` returns a {py:class}`~risb.optimize.SolveResult`
+
+```python
+result = S.solve(tol=1e-10)
+result.converged, result.cycles, result.error
+```
+
+## Running code during the solve
+
+If you want to run your own code after every cycle, e.g., to print the
+progress or change the optimizer, give a function that takes the
+{py:class}`~risb.optimize.Driver` and the lattice solver
+
+```python
+def progress(driver, S):
+    print(driver.cycle, driver.error)
+
+
+S.solve(callbacks=[progress])
+```
+
+A callback can end the solve with `driver.stop()`, or replace
+`driver.optimizer`.
 
 ## Finite temperature
 

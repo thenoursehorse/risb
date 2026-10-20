@@ -131,7 +131,7 @@ S = LatticeSolver(
 )
 
 # Solve
-S.solve(tol=1e-8)
+result = S.solve(tol=1e-8)
 
 # Average number of particles on a cluster
 total_number = impurity_solver.overlap(N_op(spin_names, n_orb))

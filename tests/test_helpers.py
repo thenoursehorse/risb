@@ -217,8 +217,7 @@ def test_converged_solution_is_a_stationary_point_of_the_lagrangian() -> None:
     for bl, _ in gf_struct:
         S.Lambda[0][bl] = 1.5 * np.eye(2)
         S.R[0][bl] = u.conj().T
-    S.solve(tol=1e-8)
-    assert S.optimize.success
+    assert S.solve(tol=1e-8).converged
     assert_lagrangian_is_stationary(S, [impurity_solver], kweight)
 
 
@@ -248,8 +247,7 @@ def test_converged_solution_with_a_thermal_impurity_is_a_stationary_point_of_the
     )
     for bl, _ in gf_struct:
         S.Lambda[0][bl] = 1.5 * np.eye(2)
-    S.solve(tol=1e-8)
-    assert S.optimize.success
+    assert S.solve(tol=1e-8).converged
     assert impurity_solver.entropy > 0.01
     assert_lagrangian_is_stationary(S, [impurity_solver], kweight)
 
@@ -280,8 +278,7 @@ def test_converged_solution_with_several_clusters_is_a_stationary_point_of_the_l
     for i in range(2):
         for bl in spin_names:
             S.Lambda[i][bl] = np.array([[2.0]])
-    S.solve(tol=1e-8)
-    assert S.optimize.success
+    assert S.solve(tol=1e-8).converged
     assert_lagrangian_is_stationary(S, impurity_solvers, kweight)
 
 
@@ -321,8 +318,7 @@ def test_converged_solution_with_an_orbital_in_no_cluster_is_a_stationary_point_
     )
     for bl in spin_names:
         S.Lambda[0][bl] = np.array([[2.0]])
-    S.solve(tol=1e-8)
-    assert S.optimize.success
+    assert S.solve(tol=1e-8).converged
     assert_lagrangian_is_stationary(S, impurity_solvers, kweight)
 
 
@@ -348,8 +344,7 @@ def test_converged_solution_with_ghosts_is_a_stationary_point_of_the_lagrangian(
         projectors=[dict.fromkeys(spin_names, np.array([[1.0, 0.0]]))],
         bath_size=bath_size,
     )
-    S.solve(tol=1e-8)
-    assert S.optimize.success
+    assert S.solve(tol=1e-8).converged
     assert S.self_consistency_error < 1e-8
     assert_lagrangian_is_stationary(S, impurity_solvers, kweight)
 
@@ -394,8 +389,7 @@ def test_entropy_is_minus_the_temperature_derivative_of_the_lagrangian(
         for i in range(n_clusters):
             for bl in spin_names:
                 S.Lambda[i][bl] = S.Lambda[i][bl] + mu * np.eye(n_qp)
-        S.solve(tol=1e-12)
-        assert S.optimize.success
+        assert S.solve(tol=1e-12).converged
         impurity_entropy = [s.entropy for s in impurity_solvers]
         lagrangian = helpers.get_lagrangian(
             h0_kin_k=S.h0_kin_k,
@@ -476,8 +470,7 @@ def solved_lattice(
     )
     for bl in spin_names:
         S.Lambda[0][bl] = S.Lambda[0][bl] + start
-    S.solve(tol=1e-12)
-    assert S.optimize.success
+    assert S.solve(tol=1e-12).converged
     return S, impurity_solvers, kweight, n_target
 
 

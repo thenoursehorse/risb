@@ -86,7 +86,7 @@ S = LatticeSolver(
 #    np.fill_diagonal(S.Lambda[bl], 0)
 
 # Solve
-S.solve(tol=1e-6)
+result = S.solve(tol=1e-6)
 
 # Average number of particles on a cluster
 total_number = impurity_solver.overlap(N_op(spin_names, n_orb))

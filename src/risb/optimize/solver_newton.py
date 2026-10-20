@@ -21,7 +21,7 @@ import logging
 from abc import ABC, abstractmethod
 from collections.abc import Callable
 from copy import deepcopy
-from typing import Concatenate
+from typing import Concatenate, Literal
 
 import numpy as np
 from numpy.typing import NDArray
@@ -29,10 +29,13 @@ from numpy.typing import NDArray
 logger = logging.getLogger(__name__)
 
 
-# TODO fix up verbose messages
 class NewtonSolver(ABC):
     """
     Base class for quasi-Newton methods to find the root of a function.
+
+    Use :meth:`step` to take one iteration at a time, as
+    :func:`risb.optimize.drive` does, or :meth:`solve` to run until it
+    converges.
 
     Parameters
     ----------
@@ -40,6 +43,10 @@ class NewtonSolver(ABC):
         Maximum size of subspace.
     n_restart : int, optional
         Fully reset subspace after this many iterations. Defaults to never.
+    error_fun : {'recursion', 'root'}, optional
+        The error of an iteration: the change ``g_x - x`` of the fixed-point
+        function (``'recursion'``), or the residual of the root functions
+        (``'root'``). Default is ``'recursion'``.
 
     Notes
     -----
@@ -47,9 +54,18 @@ class NewtonSolver(ABC):
 
     """
 
-    def __init__(self, history_size: int = 6, n_restart: int | None = None) -> None:
+    def __init__(
+        self,
+        history_size: int = 6,
+        n_restart: int | None = None,
+        error_fun: Literal["recursion", "root"] = "recursion",
+    ) -> None:
         self.history_size = history_size
         self.n_restart = n_restart
+        if error_fun not in {"recursion", "root"}:
+            msg = f"Unrecognized error_fun {error_fun} !"
+            raise ValueError(msg)
+        self.error_fun = error_fun
 
         #: list of numpy.ndarray : History of guesses to the root problem.
         self.x: list[NDArray[np.float64]] = []
@@ -68,24 +84,6 @@ class NewtonSolver(ABC):
 
         # float : 2-norm of :attr:`error`.
         self.norm: float = np.inf
-
-    @staticmethod
-    def _load_history(
-        x: list[NDArray[np.float64]], error: list[NDArray[np.float64]], max_size: int
-    ) -> tuple[list[NDArray[np.float64]], list[NDArray[np.float64]]]:
-        if (len(x) != len(error)) and (len(x) != (len(error) + 1)):
-            msg = "x and error are the wrong lengths !"
-            raise ValueError(msg)
-
-        x_out = deepcopy(x)
-        error_out = deepcopy(error)
-
-        while len(x_out) > max_size:
-            x_out.pop()
-        while len(error_out) > max_size:
-            error_out.pop()
-
-        return x_out, error_out
 
     @staticmethod
     def _insert_vector(
@@ -113,6 +111,81 @@ class NewtonSolver(ABC):
 
         """
 
+    def reset(self) -> None:
+        """Clear the history, so that the next :meth:`step` starts afresh."""
+        self.x = []
+        self.g_x = []
+        self.error = []
+        self.n = 0
+        self.success = False
+        self.norm = np.inf
+
+    def error_of(
+        self,
+        x: NDArray[np.float64],
+        g_x: NDArray[np.float64],
+        residual: NDArray[np.float64],
+    ) -> NDArray[np.float64]:
+        """
+        Return the error vector of an iteration, as chosen by :attr:`error_fun`.
+
+        Parameters
+        ----------
+        x : numpy.ndarray
+            The input of the iteration.
+        g_x : numpy.ndarray
+            The fixed-point function of ``x``.
+        residual : numpy.ndarray
+            The residual of the root functions at ``x``.
+
+        Returns
+        -------
+        numpy.ndarray
+            ``g_x - x`` or ``residual``.
+
+        """
+        if self.error_fun == "root":
+            return residual
+        error: NDArray[np.float64] = g_x - x
+        return error
+
+    def step(
+        self,
+        x: NDArray[np.float64],
+        g_x: NDArray[np.float64],
+        residual: NDArray[np.float64],
+    ) -> NDArray[np.float64]:
+        """
+        Add an iteration to the history and return the next guess.
+
+        Parameters
+        ----------
+        x : numpy.ndarray
+            The input of the iteration.
+        g_x : numpy.ndarray
+            The fixed-point function of ``x``.
+        residual : numpy.ndarray
+            The residual of the root functions at ``x``.
+
+        Returns
+        -------
+        numpy.ndarray
+            The next guess for x.
+
+        """
+        error = self.error_of(x, g_x, residual)
+        if self.history_size > 0:
+            self._insert_vector(self.x, x, self.history_size)
+            self._insert_vector(self.g_x, g_x, self.history_size)
+            self._insert_vector(self.error, error, self.history_size)
+        x_next = self.update_x()
+        if self.n_restart is not None and (self.n + 1) % self.n_restart == 0:
+            self.x = []
+            self.g_x = []
+            self.error = []
+        self.n += 1
+        return x_next
+
     def solve(
         self,
         fun: Callable[
@@ -125,22 +198,21 @@ class NewtonSolver(ABC):
         maxiter: int = 1000,
     ) -> NDArray[np.float64]:
         """
-        Find the root of a function. It is called similarly to :func:`scipy.optimize.root`.
+        Find the root of a function.
 
         Parameters
         ----------
         fun : callable
-            The function to find the root of. It must be callable as
-            ``fun(x, *args)`` and return ``(g_x, error)``, the fixed-point
-            function and the error vector of ``x``.
+            Called as ``fun(x, *args)``, it returns ``(g_x, residual)``: the
+            fixed-point function and the residual of the root functions at
+            ``x``.
         x0 : numpy.ndarray
-            Initial guess of the parameters. This does not neccessarily have to
-            be flattened, but it usually is.
+            Initial guess of the parameters.
         args : tuple, optional
             Additional arguments to pass to ``fun``.
         tol : float, optional
-            The tolerance. When the 2-norm difference of the return of ``fun``
-            is less than this, the solver stops.
+            Stop when the 2-norm of the error (see :attr:`error_fun`) is below
+            this.
         maxiter : int, optional
             Maximum number of iterations.
 
@@ -150,42 +222,14 @@ class NewtonSolver(ABC):
             Root of ``fun``.
 
         """
-        self.success = False
-        self.x = []
-        self.g_x = []
-        self.error = []
+        self.reset()
         x = deepcopy(x0)
-        if self.history_size > 0:
-            self._insert_vector(self.x, x, self.history_size)
-
-        for self.n in range(maxiter):
-            g_x, error = fun(x, *args)
-
-            if self.history_size > 0:
-                self._insert_vector(self.g_x, g_x, self.history_size)
-                self._insert_vector(self.error, error, self.history_size)
-
-            self.norm = np.linalg.norm(error)
-            logger.info(f"n: {self.n}, rms(risb): {self.norm}")
+        for _ in range(maxiter):
+            g_x, residual = fun(x, *args)
+            self.norm = float(np.linalg.norm(self.error_of(x, g_x, residual)))
+            logger.info(f"n: {self.n}, error: {self.norm}")
             if self.norm < tol:
                 self.success = True
                 break
-
-            x = self.update_x()
-
-            if self.n_restart is not None and (self.n + 1) % self.n_restart == 0:
-                self.x = []
-                self.g_x = []
-                self.error = []
-
-            if self.history_size > 0:
-                self._insert_vector(self.x, x, self.history_size)
-
-        if self.success:
-            logger.info(f"The solution converged. nit: {self.n}, tol: {self.norm}")
-        else:
-            logger.info(
-                f"The solution did NOT converge. nit: {self.n} tol: {self.norm}"
-            )
-
+            x = self.step(x, g_x, residual)
         return x

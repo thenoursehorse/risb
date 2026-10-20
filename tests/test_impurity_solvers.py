@@ -518,8 +518,8 @@ def test_complex_two_orbital_model_reaches_the_mott_state_with_a_thermal_impurit
     # In the atomic limit the bath decouples, and the self-consistency
     # equations are not satisfied
     with pytest.warns(RuntimeWarning, match="self-consistency"):
-        S.solve(tol=1e-8)
-    assert S.optimize.success
+        result = S.solve(tol=1e-8)
+    assert result.converged
     for bl, _ in gf_struct:
         assert S.Z[0][bl] == pytest.approx(np.zeros((2, 2)), abs=1e-6)
 

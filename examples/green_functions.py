@@ -52,7 +52,7 @@ S = LatticeSolver(
 )
 
 # Solve
-S.solve(tol=1e-6)
+result = S.solve(tol=1e-6)
 assert kweight.mu is not None
 mu = kweight.mu
 

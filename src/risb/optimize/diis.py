@@ -18,7 +18,7 @@
 """DIIS optimizers."""
 
 from collections.abc import Sequence
-from typing import override
+from typing import Literal, override
 
 import numpy as np
 import scipy
@@ -42,6 +42,8 @@ class DIIS(NewtonSolver):
         to round(history_size / 2).
     alpha : float, optional
         Step size of the linear mixing step.
+    error_fun : {'recursion', 'root'}, optional
+        The error of an iteration, see :class:`.NewtonSolver`.
 
     Notes
     -----
@@ -57,8 +59,11 @@ class DIIS(NewtonSolver):
         n_restart: int | None = None,
         n_period: int | None = None,
         alpha: float = 1.0,
+        error_fun: Literal["recursion", "root"] = "recursion",
     ) -> None:
-        super().__init__(history_size=history_size, n_restart=n_restart)
+        super().__init__(
+            history_size=history_size, n_restart=n_restart, error_fun=error_fun
+        )
         self.alpha = alpha
 
         if n_period is None:

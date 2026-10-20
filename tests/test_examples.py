@@ -27,7 +27,7 @@ def test_bilayer_hubbard_example() -> None:
     Z_expected = 0.4528461698 * np.eye(2)
     Lambda_expected = np.array([[2.0000000442, 0.1145696892], [0.1145696892, 2.0]])
 
-    assert S.optimize.success
+    assert g["result"].converged
     assert g["total_number"] == pytest.approx(g["n_target"], abs=abs)
     for bl in ["up", "dn"]:
         assert S.Z[0][bl] == pytest.approx(Z_expected, abs=abs)
@@ -38,7 +38,7 @@ def test_bilayer_hubbard_example() -> None:
 def test_green_functions_example() -> None:
     g = run_example("green_functions")
 
-    assert g["S"].optimize.success
+    assert g["result"].converged
     for bl in g["spin_names"]:
         assert g["G_iw_loc"][bl] == pytest.approx(g["G_iw_loc2"][bl], abs=1e-10)
     # The broadened spectral function loses a little weight outside the window
@@ -61,7 +61,7 @@ def test_hubbard_example() -> None:
         *[0.0] * 22,
     ]
 
-    assert g["S"].optimize.success
+    assert g["result"].converged
     assert g["total_number"] == pytest.approx(
         [g["n_target"]] * len(g["U_arr"]), abs=abs
     )
@@ -133,7 +133,7 @@ def test_kagome_hubbard_example() -> None:
     Z_expected = 0.4767757344
     Lambda_expected = 5.0000000047
 
-    assert S.optimize.success
+    assert g["result"].converged
     assert g["total_number"] == pytest.approx(1.0, abs=abs)
     for i in [1, 2]:
         for bl in ["up", "dn"]:
@@ -169,7 +169,7 @@ def test_decorated_honeycomb_trimer_basis_example() -> None:
     Z_expected = decorated_honeycomb_Z
     Lambda_expected = decorated_honeycomb_Lambda
 
-    assert S.optimize.success
+    assert g["result"].converged
     for i in range(2):
         for spin in ["up", "dn"]:
             for irrep in ["A", "E1", "E2"]:
@@ -183,7 +183,7 @@ def test_decorated_honeycomb_site_basis_example() -> None:
     S = g["S"]
     abs = 1e-3
 
-    assert S.optimize.success
+    assert g["result"].converged
     # In the basis of the sites the eigenvalues are those of the trimer orbitals
     for i in range(2):
         for bl in ["up", "dn"]:

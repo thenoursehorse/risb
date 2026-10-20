@@ -5,7 +5,6 @@ from typing import Protocol
 
 import numpy as np
 from numpy.typing import NDArray
-from scipy.optimize import OptimizeResult
 
 type GfStruct = list[tuple[str, int]]
 """Block structure of one cluster: (block name, block size) pairs."""
@@ -27,9 +26,6 @@ type Symmetrize = Callable[[list[BlockMatrix]], list[BlockMatrix]]
 
 type SmearFunction = Callable[[NDArray[np.float64], float, float], NDArray[np.float64]]
 """Smears band energies at inverse temperature beta and chemical potential mu into occupations."""
-
-type RootFinder = Callable[..., NDArray[np.float64] | OptimizeResult]
-"""Root finder called as ``root(fun, x0, **kwargs)``, e.g. DIIS.solve or scipy.optimize.root."""
 
 
 class ImpuritySolver(Protocol):
@@ -75,3 +71,20 @@ class ImpuritySolver(Protocol):
 
     def get_rho_c(self, bl: str) -> NDArray[np.inexact]:
         """Return the c-electron density matrix of block ``bl``."""
+
+
+class FixedPointProblem(Protocol):
+    """
+    A problem that :func:`risb.optimize.drive` can solve, e.g., :class:`risb.LatticeSolver`.
+
+    One cycle maps an input vector ``x`` to a new guess, which is ``x`` at a
+    solution.
+    """
+
+    def get_x(self) -> NDArray[np.float64]:
+        """Return the current guess, where a solve starts."""
+
+    def cycle(
+        self, x: NDArray[np.float64]
+    ) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
+        """Return the new guess and the residual of the root functions after one cycle from ``x``."""

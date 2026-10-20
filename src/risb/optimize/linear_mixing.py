@@ -1,6 +1,6 @@
 # noqa: D100
 
-from typing import override
+from typing import Literal, override
 
 import numpy as np
 from numpy.typing import NDArray
@@ -22,11 +22,15 @@ class LinearMixing(NewtonSolver):
     ----------
     alpha : float, optional
         Step size of the linear mixing.
+    error_fun : {'recursion', 'root'}, optional
+        The error of an iteration, see :class:`.NewtonSolver`.
 
     """
 
-    def __init__(self, alpha: float = 1.0) -> None:
-        super().__init__(history_size=1)
+    def __init__(
+        self, alpha: float = 1.0, error_fun: Literal["recursion", "root"] = "recursion"
+    ) -> None:
+        super().__init__(history_size=1, error_fun=error_fun)
         self.alpha = alpha
 
     @override

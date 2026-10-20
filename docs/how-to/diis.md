@@ -56,7 +56,7 @@ optimize = LinearMixing(alpha=...)
 ## Arguments to `solve()`
 
 ```
-optimize.solve(fun = function to minimize,
+optimize.solve(fun = function returning (g_x, residual),
                x0 = initial guess for x,
                args = args for fun,
                tol = stop solver when the error is less than this,
@@ -64,32 +64,24 @@ optimize.solve(fun = function to minimize,
 )
 ```
 
+The error is the change `g_x - x` by default. If you want it to be the
+residual instead
+
+```python
+optimize = DIIS(error_fun="root")
+```
+
 ## Using with `LatticeSolver`
 
 :::{seealso}
-[Using `LatticeSolver`](lattice_solver.md#using-other-functions-to-find-a-root).
+[Using `LatticeSolver`](lattice_solver.md#choosing-the-optimizer).
 :::
 
 If you want to use your customized {{DIIS}} solver
 
 ```python
-from risb import LatticeSolver
-
-S = LatticeSolver(..., root=DIIS(alpha=...).solve)
+S.solve(optimizer=DIIS(alpha=...), tol=..., maxiter=...)
 ```
-
-To pass keyword arguments to `optimize.solve()`
-
-```python
-S.solve(
-    ...,
-    tol=...,
-    maxiter=...,
-)
-```
-
-If you want to access the default `DIIS` instance that is used it is stored
-in `S.optimize`.
 
 [^Chupin2021]:
     [M. Chupin, M.-S. Dupuy, G. Legendre and É. Séré,

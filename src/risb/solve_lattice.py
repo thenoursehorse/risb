@@ -18,7 +18,7 @@
 """Solver for rotationally invariant slave-boson mean-field theory on a lattice."""
 
 from collections.abc import Callable, Mapping, Sequence
-from typing import Literal, override
+from typing import override
 
 import numpy as np
 from numpy.typing import NDArray
@@ -31,7 +31,6 @@ from risb.types import (
     BlockRealArray,
     GfStruct,
     ImpuritySolver,
-    RootFinder,
     Symmetrize,
     UpdateWeights,
 )
@@ -53,7 +52,7 @@ class LatticeSolver(BaseLatticeSolver):
 
     Other Parameters
     ----------------
-    h0_k, gf_struct, impurity_solvers, root, projectors, gf_struct_mapping, symmetrizers, force_real, error_fun, return_x_new, check_projectors, double_counting, bath_size
+    h0_k, gf_struct, impurity_solvers, projectors, gf_struct_mapping, symmetrizers, force_real, check_projectors, double_counting, bath_size
         As in :class:`.BaseLatticeSolver`.
 
     """
@@ -64,13 +63,10 @@ class LatticeSolver(BaseLatticeSolver):
         gf_struct: GfStruct | list[GfStruct],
         impurity_solvers: ImpuritySolver | Sequence[ImpuritySolver],
         update_weights: UpdateWeights,
-        root: RootFinder | None = None,
         projectors: Sequence[BlockMatrixLike] | None = None,
         gf_struct_mapping: Sequence[Mapping[str, str]] | None = None,
         symmetrizers: Sequence[Symmetrize] = (),
         force_real: bool = False,
-        error_fun: Literal["root", "recursion"] = "recursion",
-        return_x_new: bool = True,
         check_projectors: bool = False,
         double_counting: Callable[[int, BlockMatrix], BlockMatrixLike] | None = None,
         *,
@@ -80,13 +76,10 @@ class LatticeSolver(BaseLatticeSolver):
             h0_k,
             gf_struct,
             impurity_solvers,
-            root=root,
             projectors=projectors,
             gf_struct_mapping=gf_struct_mapping,
             symmetrizers=symmetrizers,
             force_real=force_real,
-            error_fun=error_fun,
-            return_x_new=return_x_new,
             check_projectors=check_projectors,
             double_counting=double_counting,
             bath_size=bath_size,

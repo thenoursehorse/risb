@@ -3,7 +3,6 @@
 import numpy as np
 import pytest
 from fockit.algebra import OpSum, nc
-from scipy.optimize import OptimizeResult, root
 from test_common import (
     bethe_h0_k,
     build_two_orbital_complex_h0_k,
@@ -16,8 +15,8 @@ from risb import LatticeSolver, ThermalLatticeSolver, helpers
 from risb.helpers_fockit import h_int_kanamori
 from risb.impurity_solvers import FockitImpuritySolver
 from risb.kweight import SmearingKWeight
-from risb.optimize import LinearMixing
-from risb.types import BlockMatrixLike, GfStruct, RootFinder
+from risb.optimize import LinearMixing, ScipyRoot
+from risb.types import BlockMatrixLike, GfStruct
 
 ONE_BAND: GfStruct = [("up", 1), ("dn", 1)]
 
@@ -33,8 +32,6 @@ def bethe_lattice(
     *,
     mu: float | None = 0.0,
     n_target: float | None = None,
-    root: RootFinder | None = None,
-    return_x_new: bool = True,
 ) -> tuple[ThermalLatticeSolver, FockitImpuritySolver]:
     bath_size = {bl: B for bl, _ in ONE_BAND}
     impurity_solver = FockitImpuritySolver(
@@ -49,8 +46,6 @@ def bethe_lattice(
         symmetrizers=[symmetrize_blocks],
         force_real=True,
         bath_size=[bath_size],
-        root=root,
-        return_x_new=return_x_new,
         n_target=n_target,
     )
     return S, impurity_solver
@@ -286,15 +281,12 @@ def test_scipy_root_converges_near_a_solution() -> None:
     T = 0.1
     S, impurity_solver = bethe_lattice(hubbard(2.0), 3, T)
     S.solve(tol=1e-10)
-    S_root, impurity_solver_root = bethe_lattice(
-        hubbard(2.0), 3, T, root=root, return_x_new=False
-    )
+    S_root, impurity_solver_root = bethe_lattice(hubbard(2.0), 3, T)
     for bl, _ in ONE_BAND:
         S_root.R[0][bl] = 0.99 * S.R[0][bl]
         S_root.Lambda[0][bl] = 1.01 * S.Lambda[0][bl]
-    result = S_root.solve(method="krylov", options={"fatol": 1e-10})
-    assert isinstance(result, OptimizeResult)
-    assert result.success, result.message
+    optimizer = ScipyRoot(error_fun="root", method="krylov", options={"fatol": 1e-10})
+    assert S_root.solve(optimizer=optimizer).converged
     docc = nc("up", 0) * nc("dn", 0)
     assert impurity_solver_root.overlap(docc) == pytest.approx(
         impurity_solver.overlap(docc), abs=1e-8
@@ -307,9 +299,11 @@ def test_fixed_filling_is_the_fixed_mu_solution_at_the_mu_it_finds(
     optimizer: str,
 ) -> None:
     T, n_target = 0.1, 0.9
-    root = None if optimizer == "DIIS" else LinearMixing().solve
-    S, _ = bethe_lattice(hubbard(2.0), 3, T, mu=None, n_target=n_target, root=root)
-    S.solve(tol=1e-10)
+    S, _ = bethe_lattice(hubbard(2.0), 3, T, mu=None, n_target=n_target)
+    if optimizer == "DIIS":
+        S.solve(tol=1e-10)
+    else:
+        S.solve(optimizer=LinearMixing(error_fun="root"), tol=1e-10)
     assert S.n_electrons == pytest.approx(n_target, abs=1e-8)
     assert S.mu < 0
     S_mu, _ = bethe_lattice(hubbard(2.0), 3, T, mu=S.mu)
