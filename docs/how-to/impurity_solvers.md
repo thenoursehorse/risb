@@ -217,16 +217,22 @@ impurity_solver.set_h_imp(Lambda_c, D, h0_loc_matrix, mu=mu)
 ```
 
 The chemical potential `mu` is subtracted on the physical and bath orbitals.
-The grand potential is `impurity_solver.grand_potential`. The diagonal
-symmetries are given without values, because every value is in the average
+The grand potential is `impurity_solver.grand_potential`. The symmetries are
+given without eigenvalues, because every eigenvalue is in the average
 
 ```python
 impurity_solver = FockitThermalImpuritySolver(
-    h_int, gf_struct, beta=40, diagonal_symmetries=[Sz]
+    h_int,
+    gf_struct,
+    beta=40,
+    diagonal_symmetries=[Sz],
+    permutation_symmetries=[layer_swap],
 )
 ```
 
-Permutation and onsite symmetries cannot be used.
+The diagonal symmetries must be sums of number operators, like $S_z$, and the
+permutation and onsite symmetries must not change them, so use either $S_z$
+or the spin swap.
 
 ### Getting the density matrices
 

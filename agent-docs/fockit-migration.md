@@ -2698,3 +2698,38 @@ of the thermal example at T 1.78 moved 4e-5 (non-unique solution), tolerance
    bath fit residuals (E1-E2, not in self_consistency_error) and whether
    get_thermal_grand_potential matches the equations. Same with the old
    impurity solver (it lands on one point by its path).
+
+43. [ ] Tests match error and warning messages (user: fragile; fockit 0.5.0
+   rewording broke one): test_kweight.py:26 "mu or n_target",
+   test_impurity_solvers.py:275 "not Hermitian", :408 "does not have the
+   permutation", :419 "does not conserve", :432 warning "degenerate", :520
+   warning "self-consistency", test_latticesolver.py:464 "projectors", :735
+   "no half-filled sector", :737 "1 ghosts". Proposal: risb exception and
+   warning classes (subclasses of ValueError / RuntimeWarning, e.g.
+   SymmetryError, NotHermitianError, DegenerateGroundStateWarning,
+   SelfConsistencyWarning) and pytest.raises on the class.
+
+44. [ ] Dense or eigsh in the thermal solve (user; from item 34 step B):
+   _DENSE_DIM = 2000 diagonalizes every block of <= 2000 states densely
+   (item 26: for robustness). Symmetries shrink blocks below it. 2 orbitals
+   B 3 Kanamori, 3 solves (s): beta 10 Sz 7.7/2.8/6.0 (2000), 7.1/1.1/3.6
+   (500), 6.2/1.0/3.4 (200); with orbital swap 64/30/66, 16/3.0/8.1,
+   15/2.6/7.7. beta 2 Sz 146/123/154 (2000), 227/192/226 (500); swap
+   323/371/426, 488/360/423. No single size fits: choose by the number of
+   states a block needs, not its size. _lowest_energy uses the same
+   threshold for one eigenvalue.
+
+## Item 34 step B notes (thermal permutation / onsite symmetries)
+
+Symmetries without eigenvalues; sectors found from the vacuum with the phases
+of the parts of each c^dag_j (from symmetry_components on a reference basis
+with eigenvalues 1), no bases built until a sector is solved; sizes per set
+of diagonal values checked against counts from the shifts (missing sectors
+raise; a mutation keeping only the vacuum eigenvalues fails the tests).
+Raises if a symmetry changes a diagonal symmetry or N (user: use one or the
+other) and if they do not commute (user). Needed fockit 0.5.1 (onsite order
+from the symmetry, not the sector) and 0.5.3 (to_matrix real when the
+imaginary parts are round-off; before it every swap-sector H was complex).
+2 orbitals B 3 Kanamori, orbital swap, 3 solves (s): beta 2 Sz 137/113/157
+(4.0 GB), swap 23/17/20 (2.3 GB); beta 10 Sz 7.8/2.9/7.5, swap 11/5.8/9.6
+(item 44: blocks under _DENSE_DIM go dense). Grand potentials agree to 1e-10.

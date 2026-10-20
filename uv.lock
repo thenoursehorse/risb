@@ -351,15 +351,15 @@ wheels = [
 
 [[package]]
 name = "fockit"
-version = "0.5.0"
+version = "0.5.3"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "numpy" },
     { name = "scipy" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/71/77/65f96a33a914aef4d32281cfeeb3c65c046ff72c6b9f1b96848ba2f56418/fockit-0.5.0.tar.gz", hash = "sha256:735e6db5a7a4f7a499a4790eb7b71752c852be6f833f865a0fbd2db611534f8e", size = 64720, upload-time = "2026-10-20T07:19:28.292Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/5c/48/72bfca7e99ad999e15e25536dd460c625236c4ef9e0931898d909cd5eba2/fockit-0.5.3.tar.gz", hash = "sha256:ee7f81f4343c162ce0327602bbdb2e5fbf8b591d3e9fe1fffcf6933741733852", size = 65763, upload-time = "2026-10-20T15:47:44.524Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/e9/61/2b586f56b8dd21ce2ace4a4bcbb678117bd529b4d95add5b8ff2f7ca2126/fockit-0.5.0-py3-none-any.whl", hash = "sha256:0ba4c179dbea3ea558a3e3b2edfcf92caa0b3801c1b1b6ba881c89e4fa9e6bf9", size = 46490, upload-time = "2026-10-20T07:19:26.868Z" },
+    { url = "https://files.pythonhosted.org/packages/89/4e/e178e949eb38c75ae0c2a8b89680c5c3f0c34848ba31d5c32f54ca7258e7/fockit-0.5.3-py3-none-any.whl", hash = "sha256:745bbd6cb3808e4fe595e744427e5039efe672805fceadf4f446739e3dbc929d", size = 46733, upload-time = "2026-10-20T15:47:43.354Z" },
 ]
 
 [[package]]
@@ -1180,7 +1180,7 @@ test = [
 
 [package.metadata]
 requires-dist = [
-    { name = "fockit", specifier = ">=0.5.0" },
+    { name = "fockit", specifier = ">=0.5.3" },
     { name = "numpy" },
     { name = "scipy" },
 ]

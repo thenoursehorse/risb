@@ -684,3 +684,87 @@ def test_a_second_solve_with_new_terms_matches_a_new_solver(thermal: bool) -> No
             assert getattr(impurity_solver, rho)[bl] == pytest.approx(
                 getattr(fresh, rho)[bl], abs=1e-12
             )
+
+
+@pytest.mark.parametrize("symmetry", ["layer swap", "onsite phases"])
+def test_grand_canonical_impurity_keeps_every_eigenvalue_of_a_symmetry(
+    symmetry: str,
+) -> None:
+    # Two orbitals per spin, each with one bath orbital. The layer swap
+    # exchanges the orbitals and their bath orbitals. The onsite phases
+    # multiply each particle in orbital 1 or its bath orbital by i
+    beta, mu = 2.0, 0.2
+    spins = ["up", "dn"]
+    gf_struct = [(s, 2) for s in spins]
+    bath_size = dict.fromkeys(spins, 2)
+    rng = np.random.default_rng(5)
+    a, b, d, e = rng.normal(size=4)
+    if symmetry == "layer swap":
+        Lambda_c = np.array([[a, b], [b, a]])
+        D = 0.4 * np.array([[d, e], [e, d]])
+    else:
+        Lambda_c = np.diag([a, b])
+        D = 0.4 * np.diag([d, e])
+    h_int = zero()
+    for o in range(2):
+        h_int += 2.0 * nc("up", o) * nc("dn", o)
+    h_int += 0.5 * (nc("up", 0) + nc("dn", 0)) * (nc("up", 1) + nc("dn", 1))
+    Sz = zero()
+    for s, sign in [("up", 0.5), ("dn", -0.5)]:
+        for o in range(2):
+            Sz += sign * (nc(s, o) + nc("bath_" + s, o))
+    kw: dict[str, Any] = {}
+    if symmetry == "layer swap":
+        swap = {
+            (bl, o): (bl, 1 - o)
+            for bl in [*spins, "bath_up", "bath_dn"]
+            for o in range(2)
+        }
+        kw["permutation_symmetries"] = [swap]
+    else:
+        modes = [(bl, 1) for bl in [*spins, "bath_up", "bath_dn"]]
+        kw["onsite_symmetries"] = [
+            [c(*m) * cdag(*m) + 1j * cdag(*m) * c(*m) for m in modes]
+        ]
+    impurity_solver = FockitThermalImpuritySolver(
+        h_int, gf_struct, beta, diagonal_symmetries=[Sz], bath_size=bath_size, **kw
+    )
+    impurity_solver.set_h_imp(
+        dict.fromkeys(spins, Lambda_c), dict.fromkeys(spins, D), mu=mu
+    )
+    impurity_solver.solve()
+
+    expected, omega = thermal_average_over_the_fock_space(
+        impurity_solver, impurity_solver.h_imp, beta
+    )
+    for rho in ["rho_f", "rho_cf", "rho_c"]:
+        for bl in spins:
+            assert getattr(impurity_solver, rho)[bl] == pytest.approx(
+                expected[rho][bl], abs=1e-10
+            )
+    assert impurity_solver.grand_potential == pytest.approx(omega, abs=1e-10)
+
+
+def test_grand_canonical_impurity_rejects_symmetries_it_cannot_split_by() -> None:
+    gf_struct = [("up", 1), ("dn", 1)]
+    Sz = 0.5 * (nc("up", 0) - nc("dn", 0) + nc("bath_up", 0) - nc("bath_dn", 0))
+    swap = {"up": "dn", "dn": "up", "bath_up": "bath_dn", "bath_dn": "bath_up"}
+    spin_swap = {(bl, 0): (other, 0) for bl, other in swap.items()}
+    # The spin swap changes Sz
+    with pytest.raises(ValueError, match="Use one or the other"):
+        FockitThermalImpuritySolver(
+            zero(),
+            gf_struct,
+            1.0,
+            diagonal_symmetries=[Sz],
+            permutation_symmetries=[spin_swap],
+        )
+    # A cyclic shift and a reflection of three sites do not commute
+    shift = {("s", i): ("s", (i + 1) % 3) for i in range(3)}
+    shift |= {("bath_s", i): ("bath_s", (i + 1) % 3) for i in range(3)}
+    reflect = {("s", i): ("s", (3 - i) % 3) for i in range(3)}
+    reflect |= {("bath_s", i): ("bath_s", (3 - i) % 3) for i in range(3)}
+    with pytest.raises(ValueError, match="commute"):
+        FockitThermalImpuritySolver(
+            zero(), [("s", 3)], 1.0, permutation_symmetries=[shift, reflect]
+        )

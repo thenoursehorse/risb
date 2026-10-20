@@ -354,29 +354,30 @@ class _FockitBase(ImpuritySolver):
         if key not in self._bases:
             values, eigenvalues = key
             n_permutation = len(self._permutation)
-            self._bases[key] = build_basis(
-                {FermionSpace(): self._modes},
-                diagonal_symmetries={
-                    Q: v
-                    for Q, v in zip(self._diagonal, values, strict=True)
-                    if v is not None
-                },
-                permutation_symmetries=[]
-                if eigenvalues is None
-                else [
+            permutation, onsite = [], []
+            if eigenvalues is not None:
+                permutation = [
                     (m, e)
                     for (m, _), e in zip(
                         self._permutation, eigenvalues[:n_permutation], strict=True
                     )
-                ],
-                onsite_symmetries=[]
-                if eigenvalues is None
-                else [
+                ]
+                onsite = [
                     (f, e)
                     for (f, _), e in zip(
                         self._onsite, eigenvalues[n_permutation:], strict=True
                     )
-                ],
+                ]
+            diagonal = {
+                Q: v
+                for Q, v in zip(self._diagonal, values, strict=True)
+                if v is not None
+            }
+            self._bases[key] = build_basis(
+                {FermionSpace(): self._modes},
+                diagonal_symmetries=diagonal,
+                permutation_symmetries=permutation,
+                onsite_symmetries=onsite,
             )
         return self._bases[key]
 
@@ -773,6 +774,15 @@ class FockitThermalImpuritySolver(_FockitBase):
         e.g. ``[Sz]``. They split the Hamiltonian into blocks, and every block
         is in the average. Modes of the bath orbitals are
         ``("bath_" + block, index)``.
+    permutation_symmetries : sequence, optional
+        Mode relabellings that commute with the impurity Hamiltonian, as the
+        maps of ``fockit.hilbert.build_basis`` without eigenvalues, e.g.
+        ``[layer_swap]``. They split the blocks further, and every eigenvalue
+        is in the average.
+    onsite_symmetries : sequence, optional
+        Products of single-mode operators that commute with the impurity
+        Hamiltonian, as the factors of ``fockit.hilbert.build_basis`` without
+        eigenvalues.
     bath_size : mapping, optional
         Number of bath orbitals of each block, ``B`` times its size for ghost
         RISB with ``B`` quasiparticle orbitals per orbital, e.g.,
@@ -780,6 +790,14 @@ class FockitThermalImpuritySolver(_FockitBase):
         that are not given have as many bath orbitals as physical orbitals
         (``B = 1``). The total number of physical and bath orbitals must be
         even.
+
+    Raises
+    ------
+    ValueError
+        If a diagonal symmetry is not a sum of number operators, if a
+        permutation or onsite symmetry changes a diagonal symmetry or the
+        particle number, or if the permutation and onsite symmetries do not
+        commute with each other.
 
     """
 
@@ -791,15 +809,29 @@ class FockitThermalImpuritySolver(_FockitBase):
         method: Literal["eigsh", "eigh"] = "eigsh",
         method_options: Mapping[str, Any] | None = None,
         diagonal_symmetries: Sequence[OpSum] = (),
+        permutation_symmetries: Sequence[Mapping[Any, Any]] = (),
+        onsite_symmetries: Sequence[Sequence[OpSum]] = (),
         *,
         bath_size: Mapping[str, int] | None = None,
     ) -> None:
         if method not in ("eigsh", "eigh"):
             msg = f"Unknown method {method!r}."
             raise ValueError(msg)
-        super().__init__(h_int, gf_struct, diagonal_symmetries, bath_size)
+        super().__init__(
+            h_int,
+            gf_struct,
+            diagonal_symmetries,
+            bath_size,
+            [(m, 1) for m in permutation_symmetries],
+            [(f, 1) for f in onsite_symmetries],
+        )
         if any(shift is None for shift in self._shifts):
-            msg = "Each diagonal symmetry must be a sum of number operators, like Sz."
+            msg = (
+                "Each diagonal symmetry must be a sum of number operators, like "
+                "Sz, and the permutation and onsite symmetries must not change it "
+                "or the particle number. Use one or the other, e.g., Sz or the "
+                "spin swap."
+            )
             raise ValueError(msg)
 
         #: float : Inverse temperature of the impurity problem.
@@ -818,22 +850,72 @@ class FockitThermalImpuritySolver(_FockitBase):
         #: :meth:`solve`.
         self.grand_potential: float
 
-        # The sectors of each particle number, from the values that the
-        # diagonal symmetries take on the states
-        offsets = [_one_body(Q, self._index)[1] for Q in self._diagonal]
-        values = {tuple(round(offset, 8) for offset in offsets)}
+        # The number of states with each set of values of the diagonal
+        # symmetries, adding the modes one at a time
+        vacuum = tuple(round(_constant(Q).real, 8) for Q in self._diagonal)
+        self._counts: dict[tuple[float | None, ...], int] = {vacuum: 1}
         for j in range(len(self._modes)):
-            values |= {
-                tuple(
-                    round(v + shift[j], 8)
-                    for v, shift in zip(vs, self._shifts, strict=True)
-                    if shift is not None
-                )
-                for vs in values
-            }
+            counts = dict(self._counts)
+            for vs, count in self._counts.items():
+                vs_j = self._raised(vs, j)
+                counts[vs_j] = counts.get(vs_j, 0) + count
+            self._counts = counts
+
+        # How the parts of the creation operator of each mode change the
+        # eigenvalues of the permutation and onsite symmetries
+        self._phases: list[list[tuple[complex, ...]]] = [[] for _ in self._modes]
+        eigenvalues: tuple[complex, ...] | None = None
+        if self._permutation or self._onsite:
+            reference = self._basis(
+                (vacuum, (1,) * len(self._permutation + self._onsite))
+            )
+            for j, mode in enumerate(self._modes):
+                try:
+                    self._phases[j] = list(symmetry_components(cdag(*mode), reference))
+                except ValueError:
+                    msg = "The permutation and onsite symmetries must commute with each other."
+                    raise ValueError(msg) from None
+            eigenvalues = tuple(
+                [1] * len(self._permutation)
+                + [
+                    np.prod([_constant(f) for f in factors])
+                    for factors, _ in self._onsite
+                ]
+            )
+
+        # Every sector, from the vacuum: each state is a product of creation
+        # operators on it, so the sectors their parts reach are all of them
+        found: set[_Key] = {(vacuum, eigenvalues)}
+        frontier = list(found)
+        while frontier:
+            vs, eigs = frontier.pop()
+            for j in range(len(self._modes)):
+                targets: list[_Key] = [(self._raised(vs, j), None)]
+                if eigs is not None:
+                    targets = [
+                        (
+                            self._raised(vs, j),
+                            _rounded([a * b for a, b in zip(eigs, phase, strict=True)]),
+                        )
+                        for phase in self._phases[j]
+                    ]
+                for target in targets:
+                    if target[0] in self._counts and target not in found:
+                        found.add(target)
+                        frontier.append(target)
         self._sectors: dict[int, list[_Key]] = {}
-        for vs in sorted(values):
-            self._sectors.setdefault(round(vs[0]), []).append((vs, None))
+        for key in sorted(found, key=str):
+            n = key[0][0]
+            assert n is not None  # every sector has a particle number
+            self._sectors.setdefault(round(n), []).append(key)
+
+    def _raised(self, values: tuple[float | None, ...], j: int) -> tuple[float, ...]:
+        # The values of the diagonal symmetries after adding a particle in mode j
+        return tuple(
+            round(v + shift[j], 8)
+            for v, shift in zip(values, self._shifts, strict=True)
+            if v is not None and shift is not None
+        )
 
     @override
     def _find_states(self) -> list[_Key]:
@@ -843,10 +925,20 @@ class FockitThermalImpuritySolver(_FockitBase):
         lowest = {}
 
         def lowest_of(n: int) -> float:
+            dims: dict[tuple[float | None, ...], int] = {}
             for key in self._sectors[n]:
-                hamiltonians[key] = self._hamiltonian(key, *one_body)
-                lowest[key] = _lowest_energy(hamiltonians[key], self.method_options)
-            return min(lowest[key] for key in self._sectors[n])
+                dim = self._basis(key).dim
+                dims[key[0]] = dims.get(key[0], 0) + dim
+                if dim:
+                    hamiltonians[key] = self._hamiltonian(key, *one_body)
+                    lowest[key] = _lowest_energy(hamiltonians[key], self.method_options)
+            if any(dim != self._counts[vs] for vs, dim in dims.items()):
+                msg = (
+                    "Some states are in no sector of the symmetries. The "
+                    "permutation and onsite symmetries must commute with each other."
+                )
+                raise ValueError(msg)
+            return min(lowest[key] for key in self._sectors[n] if key in lowest)
 
         # The lowest energy of each particle number, from half filling
         # outwards until it has a negligible weight. This assumes the lowest
@@ -1029,3 +1121,23 @@ def _one_body(
         msg = "h_imp is not Hermitian."
         raise ValueError(msg)
     return (T if np.any(T.imag) else T.real), const.real, OpSum(rest)
+
+
+def _constant(op: OpSum) -> complex:
+    # The coefficient of the identity in op
+    return sum(
+        (
+            complex(coeff)
+            for mono, coeff in normal_order(op).terms.items()
+            if not mono.ops
+        ),
+        start=0j,
+    )
+
+
+def _rounded(eigenvalues: Sequence[complex]) -> tuple[complex, ...]:
+    # As fockit rounds the eigenvalues of the sectors it reaches
+    return tuple(
+        complex(round(complex(e).real, 10) + 0.0, round(complex(e).imag, 10) + 0.0)
+        for e in eigenvalues
+    )
