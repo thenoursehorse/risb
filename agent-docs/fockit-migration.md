@@ -229,7 +229,7 @@ user to review. Update this file as steps finish. Delete it when done.
    (items 36, 37). Ideas: fix the bath gauge after each fit (<f+b>
    Hermitian positive on its well-conditioned part), a deterministic fit
    start, then retest every root finder.
-39. [ ] A separate docs page of tips and tricks (user): practical advice kept
+39. [x] (done: docs/how-to/tips.md; the bilayer example's symmetry is a layer swap, not a spin swap as the removed text said) A separate docs page of tips and tricks (user): practical advice kept
    out of the how-tos. Removed from the how-tos on 2026-10-18, to go there:
    when DIIS stalls near a solution try another history_size (e.g., 10) or
    LinearMixing (item 38 table); scipy root finders with ThermalLatticeSolver
@@ -247,11 +247,20 @@ user to review. Update this file as steps finish. Delete it when done.
    factors / site permutation) and the even/odd spin-swap eigenvalue of the
    bilayer / kagome ground states; examples/ghost_hubbard.py and
    examples/thermal_hubbard.py.
-40. [ ] Test the plateau schedule (OnPlateau) with LatticeSolver (user):
+40. [x] (closed (user): OnPlateau does not help LatticeSolver, whose failures are stops at non-solutions, not plateaus; stays off; see Item 40 notes and item 41) Test the plateau schedule (OnPlateau) with LatticeSolver (user):
    LatticeSolver had convergence problems before (e.g. items 18, 33, the
    item 24 finite-T stalls); try OnPlateau (restart only, no anchor) on
    those cases with the multi-start harness and decide whether it should be
    LatticeSolver's default.
+41. [ ] LatticeSolver stops at non-solutions with the default error (user;
+   from item 40): with error_fun 'recursion' DIIS stops where Lambda and R no
+   longer change but f1, f2 are not zero, e.g. one band B = 2 U = 1.5 (|f|
+   2e-2), B = 5 U = 2.4 with impurity beta 200 (1e-2), the item 24 two-site
+   cell (0.3-0.6). DIIS(error_fun='root') finds a true solution for B = 2 U =
+   1.5 (3/3 starts) and sometimes for the others; 'root' cannot be the
+   default because f1, f2 stay nonzero in the atomic limit. Ideas: switch to
+   'root' when the stop is not the atomic limit; the item 18 / 33 treatment
+   of decoupled ghosts.
 
 ## Commits
 
@@ -2631,3 +2640,25 @@ Tests: OnPlateau on toy problems (anchors once near, restarts far or without
 anchor), default thermal solve at T 1 converges in < 100 cycles (B 3 Bethe,
 d 0.141837; two-site cell), an anchor does not carry over. Mutations
 (anchor a no-op, solve not releasing) fail the tests. 135 tests pass.
+
+## Item 40 notes (OnPlateau with LatticeSolver)
+
+3 perturbed starts each, LatticeSolver, tol 1e-10, 300 cycles; Bethe 1000 k,
+SmearingKWeight beta 200, n_target B; cell = item 24 two-site cell, U 2, mu
+1, B 3, thermal half-filled impurity. Converged / max|f| at the end:
+- Default DIIS (error_fun 'recursion'), plain and with OnPlateau p20, p10:
+  B 3 U 2.4 control converges (|f| <= 1e-12); B 5 U 2.4 impurity beta 2000
+  converges (18-29, |f| <= 4e-11, unlike item 33); B 2 U 1.5 "converges" in
+  13-14 with |f| 2e-2; B 5 impurity beta 200 in 13-14 with |f| 6e-3 to 1e-2;
+  cell beta 10, 20 in 11-22 with |f| 0.3-0.6. OnPlateau never triggers: the
+  change of x stops at points that are not solutions. B 5 ground-state
+  impurity: plain 0/3 (|f| 0.4-0.5); OnPlateau p20 0/3 after 11-13 restarts
+  (one start 3e-5), p10 0/3 (22-24 restarts).
+- DIIS(error_fun='root'): B 2 U 1.5 plain 3/3 true solutions (32-124,
+  |f| 1e-14), with OnPlateau 2/3; B 5 impurity beta 200 plain 1/3 (others
+  1e-4, 6e-5); cell beta 20 plain 1/3, OnPlateau 0/3; cell beta 10 plain 1/3,
+  OnPlateau 1/3; B 5 ground state plain 0/3 (2e-5 to 4e-5), OnPlateau 0/3.
+LatticeSolver's failures are not plateaus but stops at non-solutions of the
+recursion; restarts do not help, so OnPlateau stays off for LatticeSolver.
+The 'root' error finds real solutions in some of them (B 2 U 1.5), but it
+cannot be the default: in the atomic limit (Mott, R = 0) f1, f2 stay nonzero.
