@@ -5,7 +5,7 @@ from fockit.algebra import OpSum, nc
 from numpy.typing import NDArray
 
 from risb import ThermalLatticeSolver, helpers
-from risb.impurity_solvers import FockitImpuritySolver
+from risb.impurity_solvers import FockitThermalImpuritySolver
 from risb.types import BlockMatrix
 
 
@@ -43,8 +43,8 @@ entropy = []
 start = None
 for T in T_arr:
     # The thermal state over every particle number of the impurity problem
-    impurity_solver = FockitImpuritySolver(
-        hubbard(U), gf_struct, bath_size=bath_size, beta=1 / T, grand_canonical=True
+    impurity_solver = FockitThermalImpuritySolver(
+        hubbard(U), gf_struct, bath_size=bath_size, beta=1 / T
     )
     S = ThermalLatticeSolver(
         h0_k=h0_k,

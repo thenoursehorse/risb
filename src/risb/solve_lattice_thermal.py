@@ -59,8 +59,7 @@ class ThermalLatticeSolver(BaseLatticeSolver):
     impurity_solvers : risb.types.ImpuritySolver or sequence of risb.types.ImpuritySolver
         As in :class:`.BaseLatticeSolver`, but each must solve the thermal
         state at `beta` over every particle number, e.g.,
-        :class:`.FockitImpuritySolver` with ``beta`` and
-        ``grand_canonical=True``.
+        :class:`.FockitThermalImpuritySolver`.
     beta : float
         Inverse temperature.
     mu : float, optional

@@ -199,7 +199,7 @@ user to review. Update this file as steps finish. Delete it when done.
    dimensions add up to the particle-number dimension (non-commuting
    symmetries leave states in no sector). An optimization: smaller blocks,
    and symmetry-degenerate states in different blocks.
-35. [ ] Revisit a separate grand-canonical impurity solver class (user; from
+35. [x] (done (user names): FockitThermalImpuritySolver(h_int, gf_struct, beta, method, method_options, diagonal_symmetries=[ops], *, bath_size), no degenerate options; shared private _FockitBase; grand_canonical removed from FockitImpuritySolver) Revisit a separate grand-canonical impurity solver class (user; from
    item 30 step 2): the two modes treat symmetries differently, e.g.
    diagonal_symmetries take a value (fockit's convention) that has no
    meaning in the grand-canonical mode, where they only split blocks.

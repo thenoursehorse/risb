@@ -13,7 +13,7 @@ from test_common import (
 
 from risb import LatticeSolver, ThermalLatticeSolver, helpers
 from risb.helpers_fockit import h_int_kanamori
-from risb.impurity_solvers import FockitImpuritySolver
+from risb.impurity_solvers import FockitImpuritySolver, FockitThermalImpuritySolver
 from risb.kweight import SmearingKWeight
 from risb.optimize import LinearMixing, ScipyRoot
 from risb.types import BlockMatrixLike, GfStruct
@@ -32,10 +32,10 @@ def bethe_lattice(
     *,
     mu: float | None = 0.0,
     n_target: float | None = None,
-) -> tuple[ThermalLatticeSolver, FockitImpuritySolver]:
+) -> tuple[ThermalLatticeSolver, FockitThermalImpuritySolver]:
     bath_size = {bl: B for bl, _ in ONE_BAND}
-    impurity_solver = FockitImpuritySolver(
-        h_int, ONE_BAND, bath_size=bath_size, beta=1 / T, grand_canonical=True
+    impurity_solver = FockitThermalImpuritySolver(
+        h_int, ONE_BAND, bath_size=bath_size, beta=1 / T
     )
     S = ThermalLatticeSolver(
         h0_k={bl: bethe_h0_k(400) for bl, _ in ONE_BAND},
@@ -53,17 +53,13 @@ def bethe_lattice(
 
 def two_site_cell(
     T: float, mu: float = 1.0
-) -> tuple[ThermalLatticeSolver, FockitImpuritySolver]:
+) -> tuple[ThermalLatticeSolver, FockitThermalImpuritySolver]:
     # One band on a cell of two sites, with two ghosts per orbital on site 0
     # and site 1 in no cluster
     spin_names = ["up", "dn"]
     bath_size = dict.fromkeys(spin_names, 3)
-    impurity_solver = FockitImpuritySolver(
-        2.0 * nc("up", 0) * nc("dn", 0),
-        ONE_BAND,
-        bath_size=bath_size,
-        beta=1 / T,
-        grand_canonical=True,
+    impurity_solver = FockitThermalImpuritySolver(
+        2.0 * nc("up", 0) * nc("dn", 0), ONE_BAND, bath_size=bath_size, beta=1 / T
     )
     S = ThermalLatticeSolver(
         h0_k=dict.fromkeys(spin_names, one_band_cubic_h0_k(4, supercell=True)),
@@ -78,7 +74,7 @@ def two_site_cell(
 
 
 def grand_potential(
-    S: ThermalLatticeSolver, impurity_solver: FockitImpuritySolver
+    S: ThermalLatticeSolver, impurity_solver: FockitThermalImpuritySolver
 ) -> float:
     return helpers.get_thermal_grand_potential(
         energies=S.energies_qp,
@@ -92,7 +88,9 @@ def grand_potential(
     )
 
 
-def entropy(S: ThermalLatticeSolver, impurity_solver: FockitImpuritySolver) -> float:
+def entropy(
+    S: ThermalLatticeSolver, impurity_solver: FockitThermalImpuritySolver
+) -> float:
     return helpers.get_thermal_entropy(
         energies=S.energies_qp,
         R=S.R,
@@ -145,9 +143,7 @@ def test_low_temperature_solution_is_the_zero_temperature_solution(
     S = ThermalLatticeSolver(
         h0_k,
         gf_struct,
-        FockitImpuritySolver(
-            h, gf_struct, bath_size=bath_size, beta=beta, grand_canonical=True
-        ),
+        FockitThermalImpuritySolver(h, gf_struct, bath_size=bath_size, beta=beta),
         beta=beta,
         mu=kweight.mu if fixed == "mu" else None,
         symmetrizers=[symmetrize_blocks],
@@ -195,7 +191,7 @@ def test_entropy_is_minus_the_temperature_derivative_of_the_grand_potential(
 
     def solve(
         T: float, start: ThermalLatticeSolver | None = None
-    ) -> tuple[ThermalLatticeSolver, FockitImpuritySolver]:
+    ) -> tuple[ThermalLatticeSolver, FockitThermalImpuritySolver]:
         if model == "one_band_ghosts":
             S, impurity_solver = bethe_lattice(hubbard(2.0), 3, T)
         else:

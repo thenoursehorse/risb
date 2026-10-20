@@ -13,7 +13,7 @@ from test_common import (
 
 from risb import LatticeSolver
 from risb.helpers_fockit import N_op, S2_op, h_int_kanamori
-from risb.impurity_solvers import FockitImpuritySolver
+from risb.impurity_solvers import FockitImpuritySolver, FockitThermalImpuritySolver
 from risb.kweight import SmearingKWeight
 from risb.types import BlockMatrix
 
@@ -525,7 +525,7 @@ def test_complex_two_orbital_model_reaches_the_mott_state_with_a_thermal_impurit
 
 
 def thermal_average_over_the_fock_space(
-    impurity_solver: FockitImpuritySolver, h: OpSum, beta: float
+    impurity_solver: FockitThermalImpuritySolver, h: OpSum, beta: float
 ) -> tuple[dict[str, BlockMatrix], float]:
     # The density matrices and grand potential from all eigenstates of h in the
     # whole Fock space of the impurity problem
@@ -580,12 +580,8 @@ def test_grand_canonical_impurity_is_the_thermal_state_over_every_particle_numbe
     Lambda_c = {"s": 0.5 * (A + A.conj().T)}
     D = {"s": 0.5 * (rng.normal(size=(4, 2)) + 1j * rng.normal(size=(4, 2)))}
     h0_loc = {"s": np.array([[0.2, 0.3 - 0.1j], [0.3 + 0.1j, -0.1]])}
-    impurity_solver = FockitImpuritySolver(
-        2 * nc("s", 0) * nc("s", 1),
-        gf_struct,
-        beta=beta,
-        bath_size={"s": 4},
-        grand_canonical=True,
+    impurity_solver = FockitThermalImpuritySolver(
+        2 * nc("s", 0) * nc("s", 1), gf_struct, beta=beta, bath_size={"s": 4}
     )
     # The chemical potential is on the physical and bath orbitals
     impurity_solver.set_h_imp(Lambda_c, D, h0_loc)
@@ -618,13 +614,12 @@ def test_grand_canonical_impurity_keeps_every_value_of_a_diagonal_symmetry() -> 
     Sz = nc("up", 0) - nc("dn", 0)
     for a in range(3):
         Sz += nc("bath_up", a) - nc("bath_dn", a)
-    impurity_solver = FockitImpuritySolver(
+    impurity_solver = FockitThermalImpuritySolver(
         2 * nc("up", 0) * nc("dn", 0),
         gf_struct,
-        diagonal_symmetries={Sz: 0},
+        diagonal_symmetries=[Sz],
         beta=beta,
         bath_size=bath_size,
-        grand_canonical=True,
     )
     impurity_solver.set_h_imp(Lambda_c, D, h0_loc, mu=mu)
     impurity_solver.solve()

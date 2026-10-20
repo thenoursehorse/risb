@@ -208,14 +208,23 @@ If you want thermal averages over every particle number of the impurity
 problem, as `ThermalLatticeSolver` needs
 
 ```python
-impurity_solver = FockitImpuritySolver(h_int, gf_struct, beta=40, grand_canonical=True)
+from risb.impurity_solvers import FockitThermalImpuritySolver
+
+impurity_solver = FockitThermalImpuritySolver(h_int, gf_struct, beta=40)
 impurity_solver.set_h_imp(Lambda_c, D, h0_loc_matrix, mu=mu)
 ```
 
 The chemical potential `mu` is subtracted on the physical and bath orbitals.
-The `diagonal_symmetries` only split the Hamiltonian into blocks, and
-permutation and onsite symmetries cannot be used. The grand potential is
-`impurity_solver.grand_potential`.
+The grand potential is `impurity_solver.grand_potential`. The diagonal
+symmetries are given without values, because every value is in the average
+
+```python
+impurity_solver = FockitThermalImpuritySolver(
+    h_int, gf_struct, beta=40, diagonal_symmetries=[Sz]
+)
+```
+
+Permutation and onsite symmetries cannot be used.
 
 ### Getting the density matrices
 

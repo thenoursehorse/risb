@@ -77,7 +77,7 @@ weight above $10^{-14}$ relative to the ground state, so at high temperature
 it needs many states and is slower. A sector of at most 2000 states is
 diagonalized as a dense matrix. In a larger one it uses `eigsh`, retries
 twice with a larger `ncv` if `eigsh` does not converge, and looks for states
-of a degenerate level that `eigsh` missed. In the grand-canonical mode it
+of a degenerate level that `eigsh` missed. `FockitThermalImpuritySolver`
 goes through the particle numbers outwards from half filling, until a
 particle number has a negligible weight. Symmetries make the sectors smaller
 and the solve faster.

@@ -356,13 +356,15 @@ S.solve(callbacks=[OnPlateau(patience=20)])
 
 `LatticeSolver` is at zero temperature. If you want ghost {{RISB}} at a finite
 temperature[^Giuli2026], use {py:class}`~risb.ThermalLatticeSolver` with an
-impurity solver in the grand-canonical mode at the same inverse temperature
+impurity solver of the thermal state over every particle number at the same
+inverse temperature
 
 ```python
 from risb import ThermalLatticeSolver
+from risb.impurity_solvers import FockitThermalImpuritySolver
 
-impurity_solver = FockitImpuritySolver(
-    h_int, gf_struct, bath_size=bath_size, beta=beta, grand_canonical=True
+impurity_solver = FockitThermalImpuritySolver(
+    h_int, gf_struct, beta=beta, bath_size=bath_size
 )
 S = ThermalLatticeSolver(
     h0_k=h0_k,
