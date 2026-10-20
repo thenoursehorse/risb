@@ -17,8 +17,9 @@ class OnPlateau:
 
     The error is on a plateau when it has not fallen by `factor` for
     `patience` cycles. If the smallest error so far is below `near`, and the
-    problem has an ``anchor`` method that has not been called yet, the problem
-    is anchored and the optimizer switches to ``error_fun='recursion'``.
+    problem has an ``anchor`` method that has not been called yet, the solve
+    goes back to the guess with the smallest error so far, the problem is
+    anchored there, and the optimizer switches to ``error_fun='recursion'``.
     Otherwise the optimizer restarts its history from the current guess.
 
     Parameters
@@ -63,6 +64,7 @@ class OnPlateau:
         if self._smallest < self.near and anchor is not None and not self.anchored:
             # At the anchored solution the root functions need not be zero,
             # but the guess stops changing
+            driver.x = driver.best_x
             anchor()
             driver.optimizer.error_fun = "recursion"
             self.anchored = True

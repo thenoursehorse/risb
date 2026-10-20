@@ -325,11 +325,13 @@ def test_electrons_are_minus_the_mu_derivative_of_the_grand_potential() -> None:
     assert S.n_electrons > np.trace(S.rho_c[0]["up"] + S.rho_c[0]["dn"]).real + 1
 
 
-@pytest.mark.parametrize("model", ["one_band_ghosts", "site_in_no_cluster"])
-def test_default_solve_converges_at_high_temperature(model: str) -> None:
-    # At T = 1 the equations barely fix some combinations of the ghost
+@pytest.mark.parametrize(
+    ("model", "T"),
+    [("one_band_ghosts", 1.0), ("site_in_no_cluster", 1.0), ("one_band_ghosts", 10.0)],
+)
+def test_default_solve_converges_at_high_temperature(model: str, T: float) -> None:
+    # At high T the equations barely fix some combinations of the ghost
     # parameters, and plain DIIS takes hundreds of cycles or does not converge
-    T = 1.0
     if model == "one_band_ghosts":
         S, impurity_solver = bethe_lattice(hubbard(2.0), 3, T)
     else:
@@ -338,7 +340,7 @@ def test_default_solve_converges_at_high_temperature(model: str) -> None:
     assert result.converged
     assert result.cycles < 100
     assert S.self_consistency_error < 1e-7
-    if model == "one_band_ghosts":
+    if (model, T) == ("one_band_ghosts", 1.0):
         docc = impurity_solver.overlap(nc("up", 0) * nc("dn", 0))
         assert docc == pytest.approx(0.141837, abs=1e-6)
 

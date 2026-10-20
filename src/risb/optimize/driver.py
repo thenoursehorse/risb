@@ -68,7 +68,7 @@ class Driver:
     The loop of :func:`drive`.
 
     After every cycle, each callback gets the driver. It can read
-    :attr:`cycle`, :attr:`error`, and :attr:`history`, replace
+    :attr:`cycle`, :attr:`error`, :attr:`history`, and :attr:`best_x`, replace
     :attr:`optimizer` or the next input :attr:`x`, or end the loop with
     :meth:`stop`.
 
@@ -113,6 +113,10 @@ class Driver:
         #: list of float : 2-norm of the error of every cycle.
         self.history: list[float] = []
 
+        #: numpy.ndarray : The input of the cycle with the smallest error so
+        #: far.
+        self.best_x = self.x
+
         self._stopped = False
 
     def stop(self) -> None:
@@ -138,6 +142,8 @@ class Driver:
             self.error = float(
                 np.linalg.norm(self.optimizer.error_of(x, x_new, residual))
             )
+            if self.error < min(self.history, default=np.inf):
+                self.best_x = x
             self.history.append(self.error)
             logger.info(f"cycle: {self.cycle}, error: {self.error}")
             if self.error < self.tol:

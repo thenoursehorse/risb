@@ -180,12 +180,14 @@ def test_scipy_root_solves_a_problem_in_one_shot() -> None:
 
 
 class Stuck:
-    """A problem whose residual stays at `level` until it is anchored, then is solved at once."""
+    """A problem whose residual grows from `level` until it is anchored, then is solved at once."""
 
     def __init__(self, level: float, can_anchor: bool) -> None:
         self.level = level
         self.anchors = 0
         self.x = np.ones(3)
+        self.cycles = 0
+        self.anchored_at: NDArray[np.float64] | None = None
         if not can_anchor:
             self.anchor = None  # type: ignore[assignment]
 
@@ -199,9 +201,12 @@ class Stuck:
         self, x: NDArray[np.float64]
     ) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
         if self.anchors:
+            if self.anchored_at is None:
+                self.anchored_at = x
             return x, np.zeros(3)
         self.x = x + 0.1
-        return self.x, self.level * np.ones(3)
+        self.cycles += 1
+        return self.x, self.level * self.cycles * np.ones(3)
 
 
 def test_a_plateau_near_a_solution_anchors_the_problem_once() -> None:
@@ -210,6 +215,8 @@ def test_a_plateau_near_a_solution_anchors_the_problem_once() -> None:
     result = drive(problem, DIIS(error_fun="root"), callbacks=[on_plateau], tol=1e-12)
     assert result.converged
     assert problem.anchors == 1
+    # The first guess has the smallest error
+    assert problem.anchored_at == pytest.approx(np.ones(3))
     assert on_plateau.anchored
     assert on_plateau.restarts == 0
 
@@ -223,4 +230,6 @@ def test_a_plateau_far_from_a_solution_or_without_an_anchor_restarts(
     result = drive(problem, DIIS(error_fun="root"), callbacks=[on_plateau], maxiter=20)
     assert not result.converged
     assert problem.anchors == 0
-    assert on_plateau.restarts > 0
+    # A plateau is 6 cycles without progress, counted from the first cycle
+    # after a restart: restarts at cycles 7 and 14
+    assert on_plateau.restarts == 2
