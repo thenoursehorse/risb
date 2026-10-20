@@ -203,14 +203,14 @@ user to review. Update this file as steps finish. Delete it when done.
    item 30 step 2): the two modes treat symmetries differently, e.g.
    diagonal_symmetries take a value (fockit's convention) that has no
    meaning in the grand-canonical mode, where they only split blocks.
-36. [ ] (direction 2 found: extra near-flat deformations, count B (B - 1) like the gauge, physically negligible, cause open; convergence work in item 38) Non-unique finite-T ghost solutions at high T (user; from item 30
+36. [x] (closed (user): written up in notes/non-unique-ghost-solutions.md; OnPlateau's anchor handles it) Non-unique finite-T ghost solutions at high T (user; from item 30
    step 3): above T ~ 0.1 (one band, B = 3, U = 2) the Jacobian of Eqs.
    200-203 has more zero directions than the 6 of the gauge (about 4 more
    at T = 1). Two T = 1 solutions have the same d, E and L_beta to 6 digits
    but Tr Delta 1.62 vs 1.50 and Sigma(i w_1) 2% apart. Investigate what the
    extra directions are, whether Sigma(i w_n) is then ill-defined, and how to
    pick a solution (e.g., continuation from low T).
-37. [ ] scipy root finders with ThermalLatticeSolver (user; from item 30
+37. [x] (closed (user): krylov only works on the anchored map and gives nothing over DIIS; ScipyRoot stays as a one-shot option) scipy root finders with ThermalLatticeSolver (user; from item 30
    step 3b-ii): they converge only near a solution (krylov at T 0.005, 0.1;
    not from the default start, not at T 0.5; hybr fails at T 0.1 and 0.5),
    while DIIS and LinearMixing converge. Each bath fit starts from the
