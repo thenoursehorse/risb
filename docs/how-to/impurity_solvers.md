@@ -162,9 +162,11 @@ impurity_solver = FockitImpuritySolver(
 )
 ```
 
-With permutation or onsite symmetries, the ground state is written in
-`impurity_solver.basis`, which only has the diagonal symmetries, to calculate
-the density matrices.
+A permutation or onsite symmetry that changes a diagonal symmetry, like the
+spin swap with $S_z$, makes the solve use more memory. If a permutation or
+onsite symmetry changes the particle number, or the symmetries do not commute
+with each other, the ground state is written in a basis without the
+permutation and onsite symmetries, which is slower.
 
 :::{warning}
 The solver finds the lowest state in the chosen sector, so choose the sector

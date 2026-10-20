@@ -2662,3 +2662,39 @@ LatticeSolver's failures are not plateaus but stops at non-solutions of the
 recursion; restarts do not help, so OnPlateau stays off for LatticeSolver.
 The 'root' error finds real solutions in some of them (B 2 U 1.5), but it
 cannot be the default: in the atomic limit (Mott, R = 0) f1, f2 stay nonzero.
+
+## Item 34 step A notes (rectangular operators, fockit 0.5.0)
+
+fockit 0.5.0 (= local main): to_matrix(op, target, source=) and
+symmetry_components(op, basis). Old solver, 3 orbitals B 3 Sz (dim 853776):
+solve 60 s (to_matrix(h_imp) 25 s, 60M nnz; overlap 16 s; eigsh 15 s), RSS
+4.9 GB; with spin swap 47 s, 3.3 GB. Prototype: rho from (C_i psi)^H (C_j psi)
+1.8 s (C build 1.7 s, once), H = h_int + sum T_ij C_i^H C_j 3.5 s per cycle
+(h_int matrix 7.9 s once), eigsh 6 s; matrix-free H 1.8 GB but eigsh 16.5 s
+(user: explicit). Done: _FockitBase caches bases, annihilators (C_j into each
+sector, split by symmetry_components) and h_int matrices per sector;
+_one_body splits h_imp - h_int into const, T, rest. Fallback (a) (user): a
+diagonal symmetry not kept by the permutation / onsite ones (spin swap, Sz)
+is dropped from the target sectors; if N is not kept (particle-hole) or
+symmetry_components raises (non-commuting), the old path (to_matrix(h_imp),
+states expanded to the sector without permutation / onsite). Thermal: sectors
+(N, values) enumerated from the shifts, diagonal symmetries must be sums of
+number operators. Equal to the old solver to 2e-15. After: 3 orbitals B 3 Sz
+11.4 s per solve (first 18.9 s), 2.6 GB; with spin swap 15.5 s (first 18.7),
+3.1 GB (Sz dropped from targets, so Sz alone is now faster). Thermal 2
+orbitals B 3 beta 10: 3.8-7.6 s, 0.5 GB.
+Exposed: OnPlateau anchored at the current guess (T 10, sc 1.1e-5). Fix (user:
+separate commit): Driver.best_x, OnPlateau moves to it before anchoring.
+Anchor reference from an unanchored fit made no difference, dropped. Energy
+of the thermal example at T 1.78 moved 4e-5 (non-unique solution), tolerance
+1e-4.
+
+42. [ ] Omega differs between exact solutions at high T (from item 34 step A):
+   thermal example setup, T 1.78, 8 starts (R perturbed 1e-3), all sc
+   ~1e-12: docc spread 1.1e-8, entropy 8e-7, Omega 1.6e-5 (continuous: 0,
+   -6.7e-6, -1.7e-6, -1.5e-6, -3.8e-7, -1.6e-5, ...); at T 1 Omega 1.6e-8.
+   If the solved equations were the stationarity conditions of the evaluated
+   Omega, Omega would be constant along a family of solutions. Check the
+   bath fit residuals (E1-E2, not in self_consistency_error) and whether
+   get_thermal_grand_potential matches the equations. Same with the old
+   impurity solver (it lands on one point by its path).

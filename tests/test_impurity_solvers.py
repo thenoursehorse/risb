@@ -405,7 +405,7 @@ def test_fockit_solver_rejects_symmetries_h_imp_does_not_have() -> None:
         permutation_symmetries=[(spin_swap(1), -1)],
     )
     impurity_solver.set_h_imp(Lambda_c, D, field)
-    with pytest.raises(ValueError, match="not symmetric"):
+    with pytest.raises(ValueError, match="does not have the permutation"):
         impurity_solver.solve()
 
     # A spin flip breaks Sz conservation
@@ -633,3 +633,54 @@ def test_grand_canonical_impurity_keeps_every_value_of_a_diagonal_symmetry() -> 
                 expected[rho][bl], abs=1e-10
             )
     assert impurity_solver.grand_potential == pytest.approx(omega, abs=1e-10)
+
+
+@pytest.mark.parametrize("thermal", [False, True])
+def test_a_second_solve_with_new_terms_matches_a_new_solver(thermal: bool) -> None:
+    gf_struct = [("up", 1), ("dn", 1)]
+    bath_size = {"up": 3, "dn": 3}
+    Sz = 0.5 * (nc("up", 0) - nc("dn", 0))
+    for a in range(3):
+        Sz += 0.5 * (nc("bath_up", a) - nc("bath_dn", a))
+    swap = {"up": "dn", "dn": "up", "bath_up": "bath_dn", "bath_dn": "bath_up"}
+    spin_swap = {
+        (bl, o): (swap[bl], o) for bl in swap for o in range(3) if o < 1 or "bath" in bl
+    }
+
+    def new_solver(h_int: OpSum) -> FockitImpuritySolver | FockitThermalImpuritySolver:
+        if thermal:
+            return FockitThermalImpuritySolver(
+                h_int, gf_struct, 3.0, diagonal_symmetries=[Sz], bath_size=bath_size
+            )
+        return FockitImpuritySolver(
+            h_int,
+            gf_struct,
+            diagonal_symmetries={Sz: 0},
+            permutation_symmetries=[(spin_swap, 1)],
+            bath_size=bath_size,
+        )
+
+    def terms(seed: int) -> tuple[BlockMatrix, BlockMatrix]:
+        rng = np.random.default_rng(seed)
+        A = rng.normal(size=(3, 3))
+        D = 0.4 * rng.normal(size=(3, 1))
+        return {bl: 0.5 * (A + A.T) for bl in swap if "bath" not in bl}, {
+            bl: D for bl in swap if "bath" not in bl
+        }
+
+    h_int = 2 * nc("up", 0) * nc("dn", 0)
+    impurity_solver = new_solver(h_int)
+    impurity_solver.set_h_imp(*terms(0), mu=0.1)
+    impurity_solver.solve()
+    impurity_solver.set_h_int(3 * h_int)
+    impurity_solver.set_h_imp(*terms(1), mu=0.2)
+    impurity_solver.solve()
+
+    fresh = new_solver(3 * h_int)
+    fresh.set_h_imp(*terms(1), mu=0.2)
+    fresh.solve()
+    for rho in ["rho_f", "rho_cf", "rho_c"]:
+        for bl, _ in gf_struct:
+            assert getattr(impurity_solver, rho)[bl] == pytest.approx(
+                getattr(fresh, rho)[bl], abs=1e-12
+            )

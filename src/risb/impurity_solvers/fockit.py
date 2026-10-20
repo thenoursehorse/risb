@@ -24,16 +24,32 @@ from typing import Any, Literal, override
 
 import numpy as np
 import scipy.linalg
-from fockit.algebra import OpSum, c, cdag, commutator, hc, nc, normal_order, zero
+import scipy.sparse as sp
+from fockit.algebra import (
+    Ladder,
+    OpSum,
+    c,
+    cdag,
+    commutator,
+    hc,
+    nc,
+    normal_order,
+    zero,
+)
 from fockit.hilbert import (
     Basis,
     FermionSpace,
     build_basis,
     expand_state,
     expectation,
+    symmetry_components,
     to_matrix,
 )
-from fockit.hilbert.symmetries import OnsiteSymmetry, PermutationSymmetry
+from fockit.hilbert.symmetries import (
+    OnsiteSymmetry,
+    PermutationSymmetry,
+    symmetry_phases,
+)
 from numpy.typing import NDArray
 from scipy.sparse.linalg import ArpackNoConvergence, aslinearoperator, eigsh
 
@@ -52,6 +68,15 @@ _ARPACK_RETRIES = 2
 # Energy below the highest state found by eigsh at which a state was missed
 _MISSED_TOL = 1e-10
 
+# A symmetry sector: the values of the diagonal symmetries, None where a
+# sector does not fix one, and the eigenvalues of the permutation and on-site
+# symmetries, or None without them
+type _Key = tuple[tuple[float | None, ...], tuple[complex, ...] | None]
+
+# The annihilators of the modes into one sector they reach: the indices of the
+# modes and the matrices
+type _Annihilators = tuple[list[int], list[Any]]
+
 
 class _FockitBase(ImpuritySolver):
     # The impurity Hamiltonian, density matrices and expectation values of the
@@ -63,6 +88,8 @@ class _FockitBase(ImpuritySolver):
         gf_struct: GfStruct,
         conserved: Sequence[OpSum],
         bath_size: Mapping[str, int] | None,
+        permutation_symmetries: Sequence[PermutationSymmetry] = (),
+        onsite_symmetries: Sequence[OnsiteSymmetry] = (),
     ) -> None:
         #: fockit.algebra.OpSum : Interaction Hamiltonian.
         self.h_int = h_int
@@ -89,8 +116,22 @@ class _FockitBase(ImpuritySolver):
         for mode in modes:
             N += nc(*mode)
         self._modes = modes
+        self._index = {mode: j for j, mode in enumerate(modes)}
         self._N = N
-        self._conserved = list(conserved)
+        self._permutation = list(permutation_symmetries)
+        self._onsite = list(onsite_symmetries)
+
+        # The diagonal symmetries, the particle number first, and how much the
+        # annihilator of each mode lowers each, or None if the sectors it
+        # reaches do not have one value of it
+        self._diagonal = [N, *conserved]
+        self._shifts = [self._shift(Q) for Q in self._diagonal]
+
+        # Built once: the bases of the sectors, the annihilators from them,
+        # and the matrices of h_int in them
+        self._bases: dict[_Key, Basis] = {}
+        self._annihilators: dict[_Key, list[_Annihilators] | None] = {}
+        self._h_int_matrices: dict[_Key, Any] = {}
 
         #: float : Lowest energy of the impurity problem, set by :meth:`solve`.
         self.gs_energy: float
@@ -165,6 +206,7 @@ class _FockitBase(ImpuritySolver):
 
         """
         self.h_int = h_int
+        self._h_int_matrices = {}
 
     def set_h_bath(self, Lambda_c: BlockMatrixLike) -> None:
         """
@@ -261,49 +303,139 @@ class _FockitBase(ImpuritySolver):
             of the basis.
 
         """
-        for Q in self._conserved:
+        for Q in self._diagonal[1:]:
             terms = normal_order(commutator(self.h_imp, Q)).terms.values()
             if any(abs(complex(coeff)) > 1e-10 for coeff in terms):
                 msg = "h_imp does not conserve a diagonal symmetry."
                 raise ValueError(msg)
-        self._find_states()
+        keys = self._find_states()
         self.entropy = get_entropy_impurity(self.weights)
+
+        # <c_i^dag c_j> of every pair of modes, as the sum over the sectors
+        # c_j reaches of (c_i psi)^dag (c_j psi)
+        G = np.zeros((len(self._modes), len(self._modes)), dtype=complex)
+        for key, (_, states, weights) in zip(keys, self.ensemble, strict=True):
+            scaled = states * np.sqrt(weights)
+            annihilators = self._annihilators_of(key)
+            assert annihilators is not None  # the states are in a basis with them
+            for modes, matrices in annihilators:
+                A = np.stack([(C @ scaled).ravel() for C in matrices])
+                G[np.ix_(modes, modes)] += A.conj() @ A.T
+
         for (bl, bl_size), (bl_bath, n_bath) in zip(
             self.gf_struct, self.gf_struct_bath, strict=True
         ):
-            sites = range(bl_size)
-            baths = range(n_bath)
-            self.rho_f[bl] = np.array(
-                [
-                    [
-                        self.overlap(c(bl_bath, b) * cdag(bl_bath, a), False)
-                        for b in baths
-                    ]
-                    for a in baths
-                ]
-            )
-            self.rho_cf[bl] = np.array(
-                [
-                    [
-                        self.overlap(cdag(bl, alpha) * c(bl_bath, a), False)
-                        for a in baths
-                    ]
-                    for alpha in sites
-                ]
-            )
-            self.rho_c[bl] = np.array(
-                [
-                    [
-                        self.overlap(cdag(bl, alpha) * c(bl, beta), False)
-                        for beta in sites
-                    ]
-                    for alpha in sites
-                ]
-            )
+            cs = [self._index[(bl, alpha)] for alpha in range(bl_size)]
+            fs = [self._index[(bl_bath, a)] for a in range(n_bath)]
+            self.rho_f[bl] = np.eye(n_bath) - G[np.ix_(fs, fs)]
+            self.rho_cf[bl] = G[np.ix_(cs, fs)]
+            self.rho_c[bl] = G[np.ix_(cs, cs)]
 
     @abstractmethod
-    def _find_states(self) -> None:
-        """Set gs_energy, weights and ensemble."""
+    def _find_states(self) -> list[_Key]:
+        """Set gs_energy, weights and ensemble, and return the sector of each entry of ensemble."""
+
+    def _shift(self, Q: OpSum) -> NDArray[np.float64] | None:
+        # q_j with [Q, c_j] = -q_j c_j, if Q is a sum of number operators that
+        # the permutation and on-site symmetries keep
+        T, _, rest = _one_body(Q, self._index)
+        if rest.terms or np.any(T - np.diag(np.diag(T))):
+            return None
+        if self._permutation or self._onsite:
+            try:
+                phases = symmetry_phases(Q, self._permutation, self._onsite)
+            except ValueError:
+                return None
+            if not np.allclose(phases, 1):
+                return None
+        return np.diag(T).real
+
+    def _basis(self, key: _Key) -> Basis:
+        if key not in self._bases:
+            values, eigenvalues = key
+            n_permutation = len(self._permutation)
+            self._bases[key] = build_basis(
+                {FermionSpace(): self._modes},
+                diagonal_symmetries={
+                    Q: v
+                    for Q, v in zip(self._diagonal, values, strict=True)
+                    if v is not None
+                },
+                permutation_symmetries=[]
+                if eigenvalues is None
+                else [
+                    (m, e)
+                    for (m, _), e in zip(
+                        self._permutation, eigenvalues[:n_permutation], strict=True
+                    )
+                ],
+                onsite_symmetries=[]
+                if eigenvalues is None
+                else [
+                    (f, e)
+                    for (f, _), e in zip(
+                        self._onsite, eigenvalues[n_permutation:], strict=True
+                    )
+                ],
+            )
+        return self._bases[key]
+
+    def _annihilators_of(self, key: _Key) -> list[_Annihilators] | None:
+        # The matrices of the annihilators of the modes from the sector into
+        # each sector they reach, or None if the permutation and on-site
+        # symmetries do not keep the particle number, or do not split them
+        # into parts that reach one sector each
+        if key not in self._annihilators:
+            values, eigenvalues = key
+            if eigenvalues is not None and self._shifts[0] is None:
+                self._annihilators[key] = None
+                return None
+            source = self._basis(key)
+            reached: dict[_Key, _Annihilators] = {}
+            for j, mode in enumerate(self._modes):
+                target_values = tuple(
+                    None if v is None or shift is None else round(v - shift[j], 8)
+                    for v, shift in zip(values, self._shifts, strict=True)
+                )
+                parts: dict[tuple[complex, ...] | None, OpSum] = {None: c(*mode)}
+                if eigenvalues is not None:
+                    try:
+                        parts = dict(symmetry_components(c(*mode), source).items())
+                    except ValueError:
+                        self._annihilators[key] = None
+                        return None
+                for target_eigenvalues, part in parts.items():
+                    target = (target_values, target_eigenvalues)
+                    modes, matrices = reached.setdefault(target, ([], []))
+                    modes.append(j)
+                    matrices.append(
+                        to_matrix(part, self._basis(target), source=source).tocsr()
+                    )
+            self._annihilators[key] = list(reached.values())
+        return self._annihilators[key]
+
+    def _hamiltonian(
+        self, key: _Key, T: NDArray[np.inexact], const: float, rest: OpSum
+    ) -> Any:
+        # h_int + const + sum_ij T_ij c_i^dag c_j + rest in the sector, with
+        # the one-body terms from the annihilators if it has them
+        basis = self._basis(key)
+        annihilators = self._annihilators_of(key)
+        if annihilators is None:
+            return _hermitian_matrix(self.h_imp, basis)
+        if key not in self._h_int_matrices:
+            self._h_int_matrices[key] = _hermitian_matrix(self.h_int, basis)
+        H = self._h_int_matrices[key] + const * sp.identity(basis.dim, format="csr")
+        if rest.terms:
+            H = H + _hermitian_matrix(rest, basis)
+        for modes, matrices in annihilators:
+            block = T[np.ix_(modes, modes)]
+            for a, C in enumerate(matrices):
+                nonzero = np.flatnonzero(block[a])
+                if len(nonzero):
+                    Y = sum(block[a, b] * matrices[b] for b in nonzero)
+                    H = H + C.conj().T @ Y
+        return H.tocsr()
 
     @override
     def get_rho_f(self, bl: str) -> NDArray[np.inexact]:
@@ -380,7 +512,21 @@ class _FockitBase(ImpuritySolver):
         """
         res = 0j
         for basis, states, weights in self.ensemble:
-            Op_matrix = to_matrix(Op, basis)
+            # The parts of Op that leave the sector have no expectation value
+            part = Op
+            if len(basis.group) > 1 or basis.onsite_symmetries:
+                eigenvalues = [
+                    e
+                    for _, e in (
+                        *basis.permutation_symmetries,
+                        *basis.onsite_symmetries,
+                    )
+                ]
+                part = zero()
+                for key, piece in symmetry_components(Op, basis).items():
+                    if np.allclose(key, eigenvalues):
+                        part = piece
+            Op_matrix = to_matrix(part, basis)
             res += complex(
                 sum(
                     weight * expectation(Op_matrix, state)
@@ -463,7 +609,14 @@ class FockitImpuritySolver(_FockitBase):
         if degenerate not in ("ignore", "warn"):
             msg = f"Unknown degenerate {degenerate!r}."
             raise ValueError(msg)
-        super().__init__(h_int, gf_struct, list(diagonal_symmetries or {}), bath_size)
+        super().__init__(
+            h_int,
+            gf_struct,
+            list(diagonal_symmetries or {}),
+            bath_size,
+            permutation_symmetries,
+            onsite_symmetries,
+        )
 
         #: str : Method that finds the ground state.
         self.method = method
@@ -484,24 +637,24 @@ class FockitImpuritySolver(_FockitBase):
         #: ``None`` for its ground state.
         self.beta = beta
 
-        diagonal = {self._N: len(self._modes) // 2, **self.diagonal_symmetries}
-
-        #: fockit.hilbert.Basis : Half-filled particle sector of the impurity
-        #: problem, restricted by :attr:`diagonal_symmetries`.
-        self.basis: Basis = build_basis(
-            {FermionSpace(): self._modes}, diagonal_symmetries=diagonal
+        values = (len(self._modes) // 2, *self.diagonal_symmetries.values())
+        eigenvalues = [e for _, e in (*permutation_symmetries, *onsite_symmetries)]
+        self._key: _Key = (
+            tuple(round(float(np.real(v)), 8) for v in values),
+            tuple(complex(e) for e in eigenvalues) if eigenvalues else None,
         )
 
-        # The states are found in this basis, which also has the permutation
-        # and on-site symmetries, and then written in basis
-        self._symmetric_basis = self.basis
-        if permutation_symmetries or onsite_symmetries:
-            self._symmetric_basis = build_basis(
-                {FermionSpace(): self._modes},
-                diagonal_symmetries=diagonal,
-                permutation_symmetries=permutation_symmetries,
-                onsite_symmetries=onsite_symmetries,
-            )
+        # The states are found in the sector of _key. If its symmetries do not
+        # split the annihilators into parts that reach one sector each, they
+        # are written in the sector without the permutation and on-site
+        # symmetries
+        self._states_key = self._key
+        if self._annihilators_of(self._key) is None:
+            self._states_key = (self._key[0], None)
+
+        #: fockit.hilbert.Basis : Half-filled particle sector of the impurity
+        #: problem that the states are in, restricted by the symmetries.
+        self.basis: Basis = self._basis(self._states_key)
 
         #: numpy.ndarray : Ground state of the impurity problem in
         #: :attr:`basis`, set by :meth:`solve`.
@@ -537,8 +690,18 @@ class FockitImpuritySolver(_FockitBase):
         super().solve()
 
     @override
-    def _find_states(self) -> None:
-        H = _hermitian_matrix(self.h_imp, self._symmetric_basis)
+    def _find_states(self) -> list[_Key]:
+        if self._permutation or self._onsite:
+            try:
+                phases = symmetry_phases(self.h_imp, self._permutation, self._onsite)
+            except ValueError:
+                phases = [np.nan]
+            if not np.allclose(phases, 1):
+                msg = "h_imp does not have the permutation and onsite symmetries."
+                raise ValueError(msg)
+        H = self._hamiltonian(
+            self._key, *_one_body(self.h_imp - self.h_int, self._index)
+        )
         energies, states = _lowest_states(
             H,
             self.beta,
@@ -566,14 +729,15 @@ class FockitImpuritySolver(_FockitBase):
             keep = weights > _WEIGHT_TOL
             states = states[:, keep]
             self.weights = weights[keep] / np.sum(weights[keep])
-        if self._symmetric_basis is not self.basis:
+        if self._states_key != self._key:
             states = np.column_stack(
-                [expand_state(v, self._symmetric_basis, self.basis) for v in states.T]
+                [expand_state(v, self._basis(self._key), self.basis) for v in states.T]
             )
         self.states = np.asarray(states, dtype=complex)
         self.gs_energy = float(energies[0])
         self.ensemble = [(self.basis, self.states, self.weights)]
         self.gs_vector = self.states[:, 0]
+        return [self._states_key]
 
 
 class FockitThermalImpuritySolver(_FockitBase):
@@ -605,9 +769,10 @@ class FockitThermalImpuritySolver(_FockitBase):
     method_options : mapping, optional
         Keyword arguments passed to ``method``, e.g. ``{"ncv": 60}``.
     diagonal_symmetries : sequence, optional
-        Operators that commute with the impurity Hamiltonian, e.g. ``[Sz]``.
-        They split the Hamiltonian into blocks, and every block is in the
-        average. Modes of the bath orbitals are ``("bath_" + block, index)``.
+        Sums of number operators that commute with the impurity Hamiltonian,
+        e.g. ``[Sz]``. They split the Hamiltonian into blocks, and every block
+        is in the average. Modes of the bath orbitals are
+        ``("bath_" + block, index)``.
     bath_size : mapping, optional
         Number of bath orbitals of each block, ``B`` times its size for ghost
         RISB with ``B`` quasiparticle orbitals per orbital, e.g.,
@@ -633,6 +798,9 @@ class FockitThermalImpuritySolver(_FockitBase):
             msg = f"Unknown method {method!r}."
             raise ValueError(msg)
         super().__init__(h_int, gf_struct, diagonal_symmetries, bath_size)
+        if any(shift is None for shift in self._shifts):
+            msg = "Each diagonal symmetry must be a sum of number operators, like Sz."
+            raise ValueError(msg)
 
         #: float : Inverse temperature of the impurity problem.
         self.beta = beta
@@ -650,79 +818,65 @@ class FockitThermalImpuritySolver(_FockitBase):
         #: :meth:`solve`.
         self.grand_potential: float
 
-        # Bases of the particle numbers that a solve needs
-        self._sector_bases: dict[int, Basis] = {}
+        # The sectors of each particle number, from the values that the
+        # diagonal symmetries take on the states
+        offsets = [_one_body(Q, self._index)[1] for Q in self._diagonal]
+        values = {tuple(round(offset, 8) for offset in offsets)}
+        for j in range(len(self._modes)):
+            values |= {
+                tuple(
+                    round(v + shift[j], 8)
+                    for v, shift in zip(vs, self._shifts, strict=True)
+                    if shift is not None
+                )
+                for vs in values
+            }
+        self._sectors: dict[int, list[_Key]] = {}
+        for vs in sorted(values):
+            self._sectors.setdefault(round(vs[0]), []).append((vs, None))
 
     @override
-    def _find_states(self) -> None:
+    def _find_states(self) -> list[_Key]:
         beta = self.beta
-        n_modes = len(self._modes)
-        half = n_modes // 2
+        one_body = _one_body(self.h_imp - self.h_int, self._index)
+        hamiltonians = {}
+        lowest = {}
 
-        # The Hamiltonian of a particle number in blocks, one for each set of
-        # values of the diagonal symmetries on the basis states
-        def blocks(n: int) -> list[tuple[NDArray[np.intp], Any]]:
-            if n not in self._sector_bases:
-                self._sector_bases[n] = build_basis(
-                    {FermionSpace(): self._modes}, diagonal_symmetries={self._N: n}
-                )
-            basis = self._sector_bases[n]
-            H = _hermitian_matrix(self.h_imp, basis).tocsr()
-            values = [
-                np.round(to_matrix(Q, basis).diagonal().real, 8)
-                for Q in self._conserved
-            ]
-            labels = np.stack(values, axis=1) if values else np.zeros((basis.dim, 0))
-            groups = np.unique(labels, axis=0, return_inverse=True)[1].ravel()
-            return [
-                (idx, H[idx][:, idx])
-                for idx in (np.flatnonzero(groups == g) for g in np.unique(groups))
-            ]
+        def lowest_of(n: int) -> float:
+            for key in self._sectors[n]:
+                hamiltonians[key] = self._hamiltonian(key, *one_body)
+                lowest[key] = _lowest_energy(hamiltonians[key], self.method_options)
+            return min(lowest[key] for key in self._sectors[n])
 
         # The lowest energy of each particle number, from half filling
         # outwards until it has a negligible weight. This assumes the lowest
         # energy has no other minimum as a function of the particle number
-        lowest: dict[int, float] = {}
-        sectors = {half: blocks(half)}
-        lowest[half] = min(
-            _lowest_energy(H, self.method_options) for _, H in sectors[half]
-        )
+        half = len(self._modes) // 2
+        lowest_n = {half: lowest_of(half)}
         for step in (1, -1):
             n = half + step
-            while 0 <= n <= n_modes:
-                sectors[n] = blocks(n)
-                lowest[n] = min(
-                    _lowest_energy(H, self.method_options) for _, H in sectors[n]
-                )
-                if np.exp(-beta * (lowest[n] - min(lowest.values()))) <= _WEIGHT_TOL:
+            while n in self._sectors:
+                lowest_n[n] = lowest_of(n)
+                if (
+                    np.exp(-beta * (lowest_n[n] - min(lowest_n.values())))
+                    <= _WEIGHT_TOL
+                ):
                     break
                 n += step
-        e0 = min(lowest.values())
+        e0 = min(lowest_n.values())
 
+        keys = []
         ensemble = []
-        all_energies = []
-        for n in sorted(sectors, key=lambda n: lowest[n]):
-            if np.exp(-beta * (lowest[n] - e0)) <= _WEIGHT_TOL:
+        for key in sorted(lowest, key=lambda key: lowest[key]):
+            if np.exp(-beta * (lowest[key] - e0)) <= _WEIGHT_TOL:
                 continue
-            dim = self._sector_bases[n].dim
-            energies_n = []
-            states_n = []
-            for idx, H in sectors[n]:
-                energies, states = _lowest_states(
-                    H, beta, 1, self.method, self.method_options, e0
-                )
-                keep = _weight(energies, beta, e0) > _WEIGHT_TOL
-                full = np.zeros((dim, int(np.sum(keep))), dtype=complex)
-                full[idx] = states[:, keep]
-                energies_n.append(energies[keep])
-                states_n.append(full)
-            energies = np.concatenate(energies_n)
-            order = np.argsort(energies)
-            ensemble.append(
-                (self._sector_bases[n], np.hstack(states_n)[:, order], energies[order])
+            energies, states = _lowest_states(
+                hamiltonians[key], beta, 1, self.method, self.method_options, e0
             )
-            all_energies.append(energies[order])
-        weights = _weight(np.concatenate(all_energies), beta, e0)
+            keep = _weight(energies, beta, e0) > _WEIGHT_TOL
+            keys.append(key)
+            ensemble.append((self._basis(key), states[:, keep], energies[keep]))
+        weights = _weight(np.concatenate([e for _, _, e in ensemble]), beta, e0)
         self.weights = weights / np.sum(weights)
         self.ensemble = [
             (basis, states, _weight(energies, beta, e0) / np.sum(weights))
@@ -730,6 +884,7 @@ class FockitThermalImpuritySolver(_FockitBase):
         ]
         self.gs_energy = e0
         self.grand_potential = e0 - float(np.log(np.sum(weights))) / beta
+        return keys
 
 
 def _eigsh(
@@ -849,3 +1004,28 @@ def _lowest_states(
     if 1 < len(energies) < dim:
         energies, states = _add_missed_states(H, states, method_options)
     return energies, states
+
+
+def _one_body(
+    op: OpSum, index: Mapping[Any, int]
+) -> tuple[NDArray[np.inexact], float, OpSum]:
+    # op as const + sum_ij T_ij c_i^dag c_j + rest, with rest the other terms
+    T = np.zeros((len(index), len(index)), dtype=complex)
+    const = 0j
+    rest = {}
+    for mono, coeff in normal_order(op).terms.items():
+        ops = mono.ops
+        if not ops:
+            const += complex(coeff)
+        elif (
+            len(ops) == 2
+            and ops[0].kind == Ladder.CREATE
+            and ops[1].kind == Ladder.ANNIHILATE
+        ):
+            T[index[ops[0].mode], index[ops[1].mode]] += complex(coeff)
+        else:
+            rest[mono] = coeff
+    if abs(T - T.conj().T).max(initial=0) > 1e-10 or abs(const.imag) > 1e-10:
+        msg = "h_imp is not Hermitian."
+        raise ValueError(msg)
+    return (T if np.any(T.imag) else T.real), const.real, OpSum(rest)
