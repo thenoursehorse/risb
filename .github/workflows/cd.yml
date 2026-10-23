@@ -68,7 +68,7 @@ jobs:
           python-version: "3.14"
 
       - name: Install risb and docs dependencies
-        run: uv sync --locked --no-dev --group docs
+        run: uv sync --locked --no-dev --group docs --extra block2
 
       - name: Build docs
         run: uv run sphinx-build -b html -n -T -W --keep-going docs docs/_build

@@ -50,6 +50,8 @@ appropriately cited.
 % Fix class links
 
 1. `FockitImpuritySolver` uses the [fockit](https://github.com/thenoursehorse/fockit) library.
+1. `Block2ImpuritySolver` uses the [block2](https://block2.readthedocs.io)
+   library[^Zhai2023], and the mixing sweeps of Wolf, et al.[^Wolf2015].
 
 ## License
 
@@ -88,3 +90,16 @@ appropriately cited.
     _Operatorial formulation of the ghost rotationally invariant slave-boson
     theory_,
     Phys. Rev. B **105**, 045111 (2022)](https://doi.org/10.1103/PhysRevB.105.045111)
+
+[^Zhai2023]:
+    [H. Zhai, H. R. Larsson, S. Lee, Z.-H. Cui, T. Zhu, C. Sun, L. Peng, R. Peng,
+    K. Liao, J. Tölle, J. Yang, S. Li, and G. K.-L. Chan,
+    _Block2: A comprehensive open source framework to develop and apply
+    state-of-the-art DMRG algorithms in electronic structure and beyond_,
+    J. Chem. Phys. **159**, 234801 (2023)](https://doi.org/10.1063/5.0180424)
+
+[^Wolf2015]:
+    [F. A. Wolf, A. Go, I. P. McCulloch, A. J. Millis, and U. Schollwöck,
+    _Imaginary-Time Matrix Product State Impurity Solver for Dynamical
+    Mean-Field Theory_,
+    Phys. Rev. X **5**, 041032 (2015)](https://doi.org/10.1103/PhysRevX.5.041032)

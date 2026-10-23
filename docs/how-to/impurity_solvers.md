@@ -286,6 +286,110 @@ To get observables in the $f$ electrons, their modes are
 impurity_solver.gf_struct_bath
 ```
 
+## `Block2ImpuritySolver`
+
+This solver finds the ground state of the impurity problem with the density
+matrix renormalization group (DMRG) from
+[block2](https://block2.readthedocs.io), for impurity problems too large for
+exact diagonalization. It needs the optional dependency block2, installed with
+
+```shell
+pip install "risb[block2]"
+```
+
+The impurity problem must be collinear and real: each block of `gf_struct` is
+one spin, and `h_int` conserves the total spin projection.
+
+### Constructor
+
+The solver is instantiated as
+
+```python
+from risb.impurity_solvers import Block2ImpuritySolver
+
+impurity_solver = Block2ImpuritySolver(h_int, gf_struct, bond_dim=500)
+```
+
+`bond_dim` is the bond dimension of the matrix product state. The larger it
+is, the closer the state is to the exact ground state, and the longer a solve
+takes.
+
+The spin-up and spin-down block of each pair of blocks with the same orbitals
+is given as
+
+```python
+gf_struct = [("up_eg", 2), ("dn_eg", 2), ("up_t2g", 3), ("dn_t2g", 3)]
+impurity_solver = Block2ImpuritySolver(
+    h_int, gf_struct, spin_blocks=[("up_eg", "dn_eg"), ("up_t2g", "dn_t2g")]
+)
+```
+
+The default is `[("up", "dn")]`.
+
+### Symmetries
+
+By default only the particle number is conserved, and the solver finds the
+lowest state at half filling. The total spin projection `"sz"` and the total
+spin `"s"` can be conserved as well, with the sector of each
+
+```python
+# The lowest state with Sz = 0
+impurity_solver = Block2ImpuritySolver(h_int, gf_struct, symmetries={"sz": 0})
+
+# The lowest singlet
+impurity_solver = Block2ImpuritySolver(h_int, gf_struct, symmetries={"s": 0})
+```
+
+With `None` as the sector, every sector is solved and the lowest is kept
+
+```python
+impurity_solver = Block2ImpuritySolver(h_int, gf_struct, symmetries={"s": None})
+```
+
+With `"s"`, the density matrices average over the states of the spin
+multiplet. Adding `"sz"` picks one of them, e.g., `{"s": 1, "sz": 1}`. The
+sector of the ground state is stored in `impurity_solver.sector`.
+
+With `"s"`, `solve()` raises a `ValueError` if the spin-up and spin-down terms
+of `h_imp` differ.
+
+### Mixing sweeps
+
+DMRG keeps a state in the sectors of every quantity that the Hamiltonian
+conserves, also the ones the solver does not, such as the parity of each
+orbital with its bath orbitals in a Kanamori impurity. It can then end in an
+excited state. Each solve therefore starts with the sweeps of Appendix A1 of
+Wolf, et al.[^Wolf2015], with extra random hoppings between the orbitals that
+connect these sectors, at 10 % and then 1 % of the largest one-body coupling.
+They keep the symmetries in `symmetries`. They are turned off with
+
+```python
+impurity_solver = Block2ImpuritySolver(h_int, gf_struct, mix=False)
+```
+
+### Setting `h_imp` and solving
+
+As for `FockitImpuritySolver`,
+
+```python
+impurity_solver.set_h_imp(Lambda_c, D, h0_loc_matrix)
+impurity_solver.solve()
+```
+
+`solve()` stores the ground state energy in `impurity_solver.gs_energy`, and
+the largest weight discarded in the last sweep in
+`impurity_solver.discarded_weight`. The density matrices, `set_h_int` and
+`overlap` are as described for `FockitImpuritySolver`. The operators of
+`overlap` have at most two-body terms. With `"s"` and no `"sz"`, expectation
+values average over the states of the spin multiplet, as the density
+matrices do.
+
+[^Wolf2015]:
+    [F. A. Wolf, A. Go, I. P. McCulloch, A. J. Millis, and U. Schollwöck,
+    _Imaginary-Time Matrix Product State Impurity Solver for Dynamical
+    Mean-Field Theory_,
+    Phys. Rev. X **5**, 041032 (2015)](https://doi.org/10.1103/PhysRevX.5.041032)
+
 ## `DummyImpuritySolver`
 
 If you want to have some correlated subspaces $\mathcal{C}_i$ as inequivalent,

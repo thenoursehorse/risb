@@ -191,7 +191,7 @@ user to review. Update this file as steps finish. Delete it when done.
    decoupled orbitals of item 18 and the U = 0 ghosts of item 24. Options to
    investigate: the core treatment for ghosts, or detecting and removing
    ghosts that decouple.
-34. [ ] Permutation and onsite symmetries in the grand-canonical impurity
+34. [x] (done: steps A and B, see Item 34 notes; needs fockit 0.5.3) Permutation and onsite symmetries in the grand-canonical impurity
    solve (user; from item 30 step 2): fockit builds one eigenvalue of each.
    Idea: enumerate each symmetry's eigenvalues (2m-th roots of unity for
    order m, since fermion signs can make g^m = -1), build every sector,

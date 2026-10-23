@@ -1,10 +1,49 @@
 # ruff: noqa: D100, D103
+from importlib.util import find_spec
 from itertools import product
+from typing import Any
 
 import numpy as np
+import pytest
+from fockit.algebra import OpSum
 from numpy.typing import NDArray
 
+from risb.impurity_solvers import FockitImpuritySolver
 from risb.types import BlockMatrix, GfStruct
+
+# The ground-state impurity solvers, block2 with each kind of symmetry
+_needs_block2 = pytest.mark.skipif(find_spec("pyblock2") is None, reason="needs block2")
+SOLVERS = [
+    "fockit",
+    pytest.param("block2", marks=_needs_block2),
+    pytest.param("block2 sz", marks=_needs_block2),
+    pytest.param("block2 s", marks=_needs_block2),
+]
+
+# How close each solver gets to the exact ground state
+TOLERANCE = {"fockit": 1e-12, "block2": 1e-7}
+
+
+def make_impurity_solver(
+    name: str, h_int: OpSum, gf_struct: GfStruct, **kwargs: Any
+) -> Any:
+    if name == "fockit":
+        return FockitImpuritySolver(h_int, gf_struct, **kwargs)
+    from risb.impurity_solvers import Block2ImpuritySolver  # noqa: PLC0415
+
+    all_symmetries: dict[str, dict[str, float | None]] = {
+        "block2": {},
+        "block2 sz": {"sz": 0},
+        "block2 s": {"s": None},
+    }
+    symmetries = all_symmetries[name]
+    return Block2ImpuritySolver(
+        h_int, gf_struct, bond_dim=200, symmetries=symmetries, **kwargs
+    )
+
+
+def tolerance(name: str) -> float:
+    return TOLERANCE[name.split(maxsplit=1)[0]]
 
 
 def symmetrize_blocks(A: list[BlockMatrix]) -> list[BlockMatrix]:

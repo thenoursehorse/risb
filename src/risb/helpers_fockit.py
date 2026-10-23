@@ -19,9 +19,10 @@
 
 from collections.abc import Mapping, Sequence
 from itertools import product
+from typing import Any
 
 import numpy as np
-from fockit.algebra import OpSum, c, cdag, hc, nc, zero
+from fockit.algebra import Ladder, OpSum, c, cdag, hc, nc, normal_order, zero
 from numpy.typing import NDArray
 
 from risb.helpers import get_h0_loc_matrix
@@ -206,3 +207,63 @@ def get_h0_loc(
     for Op in matrix_to_Op(h0_loc_matrix).values():
         h0_loc += Op
     return h0_loc
+
+
+def Op_to_tensors(
+    op: OpSum, index: Mapping[Any, int]
+) -> tuple[complex, NDArray[np.inexact], NDArray[np.inexact]]:
+    """
+    Return the coefficients of an operator as a constant, a one-body matrix and a two-body tensor.
+
+    The operator is
+    ``const + sum h1[p, q] c_p^dag c_q + sum V[p, q, r, s] c_p^dag c_q^dag c_r c_s``.
+    The three are real if every coefficient of ``op`` is.
+
+    Parameters
+    ----------
+    op : fockit.algebra.OpSum
+        Operator with at most two-body terms.
+    index : mapping
+        Index of each mode ``(block, index)`` of ``op`` in the arrays.
+
+    Returns
+    -------
+    const : float or complex
+        Constant term.
+    h1 : numpy.ndarray
+        One-body part.
+    V : numpy.ndarray
+        Two-body part, antisymmetric under swapping the first two or the last
+        two indices.
+
+    Raises
+    ------
+    ValueError
+        If a term is not zero-, one- or two-body.
+
+    """
+    n = len(index)
+    h1 = np.zeros((n, n), dtype=complex)
+    V = np.zeros((n, n, n, n), dtype=complex)
+    const = 0j
+    two_body = [Ladder.CREATE] * 2 + [Ladder.ANNIHILATE] * 2
+    for mono, coeff in normal_order(op).terms.items():
+        kinds = [o.kind for o in mono.ops]
+        js = [index[o.mode] for o in mono.ops]
+        if not js:
+            const += complex(coeff)
+        elif kinds == [Ladder.CREATE, Ladder.ANNIHILATE]:
+            h1[js[0], js[1]] += complex(coeff)
+        elif kinds == two_body:
+            p, q, r, s = js
+            v = complex(coeff) / 4
+            V[p, q, r, s] += v
+            V[q, p, r, s] -= v
+            V[p, q, s, r] -= v
+            V[q, p, s, r] += v
+        else:
+            msg = f"The term {mono} is not zero-, one- or two-body."
+            raise ValueError(msg)
+    if const.imag or np.any(h1.imag) or np.any(V.imag):
+        return const, h1, V
+    return const.real, h1.real, V.real

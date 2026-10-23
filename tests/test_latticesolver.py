@@ -6,9 +6,11 @@ import pytest
 from fockit.algebra import OpSum, nc, zero
 from numpy.typing import NDArray
 from test_common import (
+    SOLVERS,
     bethe_h0_k,
     build_cubic_h0_k,
     build_two_orbital_complex_h0_k,
+    make_impurity_solver,
     one_band_cubic_h0_k,
     random_unitary,
     symmetrize_blocks,
@@ -42,9 +44,9 @@ def do_assert(
     mu_expected: float,
     Lambda_expected: NDArray[np.float64],
     Z_expected: NDArray[np.float64],
+    abs: float = 1e-10,
 ) -> None:
     n_clusters = len(Lambda)
-    abs = 1e-10
     with subtests.test(msg="mu"):
         assert mu == pytest.approx(mu_expected, abs=abs)
     # Lambda and Z depend on the gauge of the quasiparticles; their eigenvalues do not
@@ -63,7 +65,12 @@ def do_assert(
 
 
 @pytest.fixture
-def one_band() -> Model:
+def solver() -> str:
+    return "fockit"
+
+
+@pytest.fixture
+def one_band(solver: str) -> Model:
     n_orb = 1
     spatial_dim = 3
     nkx = 10
@@ -74,7 +81,7 @@ def one_band() -> Model:
     gf_struct = [(bl, n_orb) for bl in ["up", "dn"]]
     h0_k = build_cubic_h0_k(gf_struct=gf_struct, nkx=nkx, spatial_dim=spatial_dim)
     h_int = U * nc("up", 0) * nc("dn", 0)
-    impurity_solver = FockitImpuritySolver(h_int, gf_struct)
+    impurity_solver = make_impurity_solver(solver, h_int, gf_struct)
     # kweight = SmearingKWeight(beta=beta, mu=mu)
     kweight = SmearingKWeight(beta=beta, n_target=n_target)
     Lambda_expected = np.array([[2.0]])
@@ -83,7 +90,7 @@ def one_band() -> Model:
 
 
 @pytest.fixture
-def bilayer() -> Model:
+def bilayer(solver: str) -> Model:
     U = 4
     V = 0.25
     mu = U / 2.0  # half-filling
@@ -101,7 +108,7 @@ def bilayer() -> Model:
     h_int = zero()
     for o in range(n_orb):
         h_int += U * nc("up", o) * nc("dn", o)
-    impurity_solver = FockitImpuritySolver(h_int, gf_struct)
+    impurity_solver = make_impurity_solver(solver, h_int, gf_struct)
     # kweight = SmearingKWeight(beta=beta, mu=mu)
     kweight = SmearingKWeight(beta=beta, n_target=n_target)
     Lambda_expected = np.array([[2.0, 0.114569681915], [0.114569681915, 2.0]])
@@ -110,7 +117,7 @@ def bilayer() -> Model:
 
 
 @pytest.fixture
-def kanamori() -> Model:
+def kanamori(solver: str) -> Model:
     coeff = 0.2
     U = 3
     J = coeff * U
@@ -132,7 +139,7 @@ def kanamori() -> Model:
         Uprime=np.array([[U, Up], [Up, U]]),
         J_hund=J,
     )
-    impurity_solver = FockitImpuritySolver(h_int, gf_struct)
+    impurity_solver = make_impurity_solver(solver, h_int, gf_struct)
     kweight = SmearingKWeight(beta=beta, mu=mu)
     kweight = SmearingKWeight(beta=beta, n_target=n_target)
     Lambda_expected = np.array([[3.0, 0.0], [0.0, 3.0]])
@@ -140,9 +147,10 @@ def kanamori() -> Model:
     return gf_struct, h0_k, impurity_solver, kweight, mu, Lambda_expected, Z_expected
 
 
+@pytest.mark.parametrize("solver", SOLVERS)
 @pytest.mark.parametrize("model", ["one_band", "bilayer", "kanamori"])
 def test_diis_symmetrize(
-    subtests: pytest.Subtests, request: pytest.FixtureRequest, model: str
+    subtests: pytest.Subtests, request: pytest.FixtureRequest, model: str, solver: str
 ) -> None:
     (
         gf_struct,
@@ -163,16 +171,24 @@ def test_diis_symmetrize(
     for i in range(S.n_clusters):
         for bl, _ in S.gf_struct[i]:
             np.fill_diagonal(S.Lambda[i][bl], mu_expected)
-    S.solve()
+    S.solve(tol=1e-12 if solver == "fockit" else 1e-7)
     mu_calculated = kweight.mu
     do_assert(
-        subtests, mu_calculated, S.Lambda, S.Z, mu_expected, Lambda_expected, Z_expected
+        subtests,
+        mu_calculated,
+        S.Lambda,
+        S.Z,
+        mu_expected,
+        Lambda_expected,
+        Z_expected,
+        1e-10 if solver == "fockit" else 1e-6,
     )
 
 
+@pytest.mark.parametrize("solver", SOLVERS)
 @pytest.mark.parametrize("model", ["one_band", "bilayer", "kanamori"])
 def test_diis_nosymmetrize(
-    subtests: pytest.Subtests, request: pytest.FixtureRequest, model: str
+    subtests: pytest.Subtests, request: pytest.FixtureRequest, model: str, solver: str
 ) -> None:
     (
         gf_struct,
@@ -192,13 +208,22 @@ def test_diis_nosymmetrize(
     for i in range(S.n_clusters):
         for bl, _ in S.gf_struct[i]:
             np.fill_diagonal(S.Lambda[i][bl], mu_expected)
-    S.solve()
+    S.solve(tol=1e-12 if solver == "fockit" else 1e-7)
     mu_calculated = kweight.mu
     do_assert(
-        subtests, mu_calculated, S.Lambda, S.Z, mu_expected, Lambda_expected, Z_expected
+        subtests,
+        mu_calculated,
+        S.Lambda,
+        S.Z,
+        mu_expected,
+        Lambda_expected,
+        Z_expected,
+        1e-10 if solver == "fockit" else 1e-6,
     )
 
 
+# Finite-difference Jacobians need the exact map of exact diagonalization, so
+# only the default solver
 @pytest.mark.parametrize(
     ("model", "root_method"),
     [

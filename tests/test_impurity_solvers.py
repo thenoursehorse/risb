@@ -8,7 +8,10 @@ from fockit.algebra import OpSum, c, cdag, nc, zero
 from fockit.hilbert import FermionSpace, build_basis, to_matrix
 from numpy.typing import NDArray
 from test_common import (
+    SOLVERS,
     build_two_orbital_complex_h0_k,
+    make_impurity_solver,
+    tolerance,
 )
 
 from risb import LatticeSolver
@@ -44,8 +47,8 @@ def do_assert(
     gs_energy_expected: float,
     N_expected: float,
     S2_expected: float,
+    abs: float = 1e-12,
 ) -> None:
-    abs = 1e-12
     with subtests.test(msg="rho_f"):
         for bl in rho_f:
             assert rho_f[bl] == pytest.approx(rho_f_expected, abs=abs)
@@ -213,6 +216,7 @@ def dh_trimer_expected() -> Expected:
     )
 
 
+@pytest.mark.parametrize("solver", SOLVERS)
 @pytest.mark.parametrize(
     ("model", "model_expected"),
     [
@@ -226,6 +230,7 @@ def test_solve(
     request: pytest.FixtureRequest,
     model: str,
     model_expected: str,
+    solver: str,
 ) -> None:
     spin_names, n_orb, Lambda_c, D, h0_loc_mat, h_int = request.getfixturevalue(model)
     (
@@ -237,7 +242,7 @@ def test_solve(
         S2_expected,
     ) = request.getfixturevalue(model_expected)
     gf_struct = [(bl, n_orb) for bl in spin_names]
-    impurity_solver = FockitImpuritySolver(h_int, gf_struct)
+    impurity_solver = make_impurity_solver(solver, h_int, gf_struct)
     impurity_solver.set_h_imp(Lambda_c, D, h0_loc_mat)
     impurity_solver.solve()
     rho_f: BlockMatrix = {}
@@ -264,12 +269,16 @@ def test_solve(
         gs_energy_expected,
         N_expected,
         S2_expected,
+        tolerance(solver),
     )
 
 
-def test_fockit_solver_rejects_non_hermitian_hamiltonian() -> None:
+@pytest.mark.parametrize("solver", SOLVERS[:2])
+def test_solver_rejects_non_hermitian_hamiltonian(solver: str) -> None:
     gf_struct = [("up", 1), ("dn", 1)]
-    impurity_solver = FockitImpuritySolver(cdag("up", 0) * c("dn", 0), gf_struct)
+    impurity_solver = make_impurity_solver(
+        solver, cdag("up", 0) * c("dn", 0), gf_struct
+    )
     one = {bl: np.array([[1.0]]) for bl, _ in gf_struct}
     impurity_solver.set_h_imp(one, one)
     with pytest.raises(ValueError, match="not Hermitian"):
@@ -357,12 +366,15 @@ def test_particle_hole_sector_gives_the_same_ground_state() -> None:
         assert symmetric.rho_c[bl] == pytest.approx(plain.rho_c[bl], abs=1e-12)
 
 
-def test_decoupled_extra_bath_orbitals_leave_the_impurity_unchanged() -> None:
+@pytest.mark.parametrize("solver", SOLVERS)
+def test_decoupled_extra_bath_orbitals_leave_the_impurity_unchanged(
+    solver: str,
+) -> None:
     U = 4.0
     gf_struct = [("up", 1), ("dn", 1)]
     h_int = U * nc("up", 0) * nc("dn", 0)
     h0_loc_mat = {bl: np.array([[-U / 2]]) for bl, _ in gf_struct}
-    one_bath = FockitImpuritySolver(h_int, gf_struct)
+    one_bath = make_impurity_solver(solver, h_int, gf_struct)
     one_bath.set_h_imp(
         {bl: np.array([[0.1]]) for bl, _ in gf_struct},
         {bl: np.array([[-0.4]]) for bl, _ in gf_struct},
@@ -372,8 +384,8 @@ def test_decoupled_extra_bath_orbitals_leave_the_impurity_unchanged() -> None:
     # The bath term is f Lambda_c f^dag, so a level of +10 (-10) fills (empties)
     # the orbital, and the half-filled sector keeps one electron per spin for
     # the impurity and the coupled bath orbital
-    three_baths = FockitImpuritySolver(
-        h_int, gf_struct, bath_size={bl: 3 for bl, _ in gf_struct}
+    three_baths = make_impurity_solver(
+        solver, h_int, gf_struct, bath_size={bl: 3 for bl, _ in gf_struct}
     )
     three_baths.set_h_imp(
         {bl: np.diag([0.1, 10.0, -10.0]) for bl, _ in gf_struct},
@@ -382,12 +394,14 @@ def test_decoupled_extra_bath_orbitals_leave_the_impurity_unchanged() -> None:
     )
     three_baths.solve()
     for bl, _ in gf_struct:
-        assert three_baths.rho_c[bl] == pytest.approx(one_bath.rho_c[bl], abs=1e-12)
+        assert three_baths.rho_c[bl] == pytest.approx(
+            one_bath.rho_c[bl], abs=tolerance(solver)
+        )
         assert three_baths.rho_cf[bl] == pytest.approx(
-            np.array([[one_bath.rho_cf[bl][0, 0], 0, 0]]), abs=1e-12
+            np.array([[one_bath.rho_cf[bl][0, 0], 0, 0]]), abs=tolerance(solver)
         )
         assert three_baths.rho_f[bl] == pytest.approx(
-            np.diag([one_bath.rho_f[bl][0, 0], 0, 1]), abs=1e-12
+            np.diag([one_bath.rho_f[bl][0, 0], 0, 1]), abs=tolerance(solver)
         )
 
 
@@ -635,8 +649,8 @@ def test_grand_canonical_impurity_keeps_every_value_of_a_diagonal_symmetry() -> 
     assert impurity_solver.grand_potential == pytest.approx(omega, abs=1e-10)
 
 
-@pytest.mark.parametrize("thermal", [False, True])
-def test_a_second_solve_with_new_terms_matches_a_new_solver(thermal: bool) -> None:
+@pytest.mark.parametrize("solver", ["fockit", "fockit thermal", *SOLVERS[1:]])
+def test_a_second_solve_with_new_terms_matches_a_new_solver(solver: str) -> None:
     gf_struct = [("up", 1), ("dn", 1)]
     bath_size = {"up": 3, "dn": 3}
     Sz = 0.5 * (nc("up", 0) - nc("dn", 0))
@@ -647,18 +661,20 @@ def test_a_second_solve_with_new_terms_matches_a_new_solver(thermal: bool) -> No
         (bl, o): (swap[bl], o) for bl in swap for o in range(3) if o < 1 or "bath" in bl
     }
 
-    def new_solver(h_int: OpSum) -> FockitImpuritySolver | FockitThermalImpuritySolver:
-        if thermal:
+    def new_solver(h_int: OpSum) -> Any:
+        if solver == "fockit thermal":
             return FockitThermalImpuritySolver(
                 h_int, gf_struct, 3.0, diagonal_symmetries=[Sz], bath_size=bath_size
             )
-        return FockitImpuritySolver(
-            h_int,
-            gf_struct,
-            diagonal_symmetries={Sz: 0},
-            permutation_symmetries=[(spin_swap, 1)],
-            bath_size=bath_size,
-        )
+        if solver == "fockit":
+            return FockitImpuritySolver(
+                h_int,
+                gf_struct,
+                diagonal_symmetries={Sz: 0},
+                permutation_symmetries=[(spin_swap, 1)],
+                bath_size=bath_size,
+            )
+        return make_impurity_solver(solver, h_int, gf_struct, bath_size=bath_size)
 
     def terms(seed: int) -> tuple[BlockMatrix, BlockMatrix]:
         rng = np.random.default_rng(seed)
@@ -682,7 +698,7 @@ def test_a_second_solve_with_new_terms_matches_a_new_solver(thermal: bool) -> No
     for rho in ["rho_f", "rho_cf", "rho_c"]:
         for bl, _ in gf_struct:
             assert getattr(impurity_solver, rho)[bl] == pytest.approx(
-                getattr(fresh, rho)[bl], abs=1e-12
+                getattr(fresh, rho)[bl], abs=tolerance(solver)
             )
 
 

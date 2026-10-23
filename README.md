@@ -56,6 +56,11 @@ Lastly, the appropriate original theory outlined in the [documentation](https://
 - [scipy](https://scipy.org/)
 - [fockit](https://github.com/thenoursehorse/fockit)
 
+Optional
+
+- [block2](https://block2.readthedocs.io) for `Block2ImpuritySolver`,
+  installed with `pip install "risb[block2]"`
+
 ## Installation
 
 (Optional) Create a
