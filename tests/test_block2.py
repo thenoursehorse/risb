@@ -6,9 +6,12 @@ import numpy as np
 import pytest
 from fockit.algebra import OpSum, c, cdag, hc, nc, zero
 from numpy.typing import NDArray
+from test_common import build_cubic_h0_k, symmetrize_blocks
 
-from risb.helpers_fockit import h_int_kanamori
+from risb import LatticeSolver
+from risb.helpers_fockit import N_op, S2_op, h_int_kanamori
 from risb.impurity_solvers import FockitImpuritySolver
+from risb.kweight import SmearingKWeight
 
 pytest.importorskip("pyblock2")
 from risb.impurity_solvers import Block2ImpuritySolver
@@ -75,10 +78,15 @@ def test_ground_state_of_a_ghost_impurity_is_the_exact_one(
     expected = solved(
         FockitImpuritySolver(h_int, gf_struct, bath_size=bath_size), problem
     )
-    solver = Block2ImpuritySolver(
-        h_int, gf_struct, bond_dim=200, symmetries=symmetries, bath_size=bath_size
+    solver = solved(
+        Block2ImpuritySolver(
+            h_int, gf_struct, bond_dim=200, symmetries=symmetries, bath_size=bath_size
+        ),
+        problem,
     )
-    assert_same_state(solved(solver, problem), expected)
+    assert_same_state(solver, expected)
+    for Op in (N_op(["up", "dn"], 2), S2_op(["up", "dn"], 2)):
+        assert solver.overlap(Op) == pytest.approx(expected.overlap(Op), abs=1e-6)
 
 
 def test_state_of_a_spin_multiplet_is_the_lowest_with_its_spin_projection() -> None:
@@ -123,6 +131,7 @@ def test_spin_symmetry_of_a_spin_polarized_impurity_is_rejected() -> None:
 def test_total_spin_of_a_triplet_is_that_of_the_multiplet_or_of_its_state(
     sz: int | None,
 ) -> None:
+    symmetries: dict[str, float | None] = {"s": 1} if sz is None else {"s": 1, "sz": sz}
     problem = ghost_problem(2, 1)
     h_int, gf_struct, bath_size = problem[:3]
     solver = solved(
@@ -130,7 +139,7 @@ def test_total_spin_of_a_triplet_is_that_of_the_multiplet_or_of_its_state(
             h_int,
             gf_struct,
             bond_dim=200,
-            symmetries={"s": 1, "sz": sz},
+            symmetries=symmetries,
             bath_size=bath_size,
         ),
         problem,
@@ -142,3 +151,44 @@ def test_total_spin_of_a_triplet_is_that_of_the_multiplet_or_of_its_state(
     S2 = S_plus * hc(S_plus) + Sz * Sz - Sz
     assert solver.overlap(S2) == pytest.approx(2, abs=1e-8)
     assert solver.overlap(Sz) == pytest.approx(sz or 0, abs=1e-8)
+
+
+@pytest.mark.parametrize(
+    "h_int",
+    [cdag("up", 0) * c("dn", 0), nc("up", 0) * nc("dn", 0) + 0.1j],
+    ids=["spin flip", "imaginary constant"],
+)
+def test_non_hermitian_impurity_is_rejected(h_int: OpSum) -> None:
+    gf_struct = [("up", 1), ("dn", 1)]
+    one = {bl: np.array([[1.0]]) for bl, _ in gf_struct}
+
+    def solve() -> None:
+        solver = Block2ImpuritySolver(h_int, gf_struct)
+        solver.set_h_imp(one, one)
+        solver.solve()
+
+    with pytest.raises(ValueError, match="not Hermitian"):
+        solve()
+
+
+def test_two_orbital_kanamori_lattice_has_the_exact_quasiparticle_weight() -> None:
+    gf_struct = [("up", 2), ("dn", 2)]
+    h0_k = build_cubic_h0_k(gf_struct=gf_struct, nkx=10, spatial_dim=3)
+    Z = []
+    for solver in (
+        FockitImpuritySolver(kanamori(2, 3.0, 0.6), gf_struct),
+        Block2ImpuritySolver(
+            kanamori(2, 3.0, 0.6), gf_struct, bond_dim=100, symmetries={"sz": 0}
+        ),
+    ):
+        kweight = SmearingKWeight(beta=40, n_target=2)
+        S = LatticeSolver(
+            h0_k=h0_k,
+            gf_struct=gf_struct,
+            impurity_solvers=solver,
+            update_weights=kweight.update_weights,
+            symmetrizers=[symmetrize_blocks],
+        )
+        assert S.solve(tol=1e-8).converged
+        Z.append(np.linalg.eigvalsh(S.Z[0]["up"]))
+    assert Z[1] == pytest.approx(Z[0], abs=1e-6)

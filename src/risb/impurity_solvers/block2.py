@@ -242,7 +242,8 @@ class Block2ImpuritySolver(ImpuritySolver):
         ------
         ValueError
             If ``h_int`` does not conserve the quantities in
-            :attr:`symmetries`, or is complex.
+            :attr:`symmetries`, has an imaginary constant term, or is
+            complex.
 
         """
         if self.symmetries:
@@ -259,6 +260,9 @@ class Block2ImpuritySolver(ImpuritySolver):
         #: fockit.algebra.OpSum : Interaction Hamiltonian.
         self.h_int = h_int
         const, h1, V = Op_to_tensors(h_int, self._index)
+        if abs(np.imag(const)) > 1e-10:
+            msg = "h_int is not Hermitian."
+            raise ValueError(msg)
         self._const_int, self._h1_int, self._V = (
             float(np.real(const)),
             _real(h1),
