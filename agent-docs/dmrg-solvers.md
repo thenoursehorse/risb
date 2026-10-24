@@ -375,3 +375,10 @@ tests/test_block2.py (2 orbitals, U = 3, J = 0.6, mu = 1.5), grand canonical.
 - Shared code in _Block2Base (layout, set_h_int/set_h_imp, checks, rho, MPO).
 - Tests: 2 orb B=1 beta=10 vs FockitThermalImpuritySolver (sz, s), N-only rejected; ~4-5 s each.
 - [ ] ThermalLatticeSolver run with Block2ThermalImpuritySolver (smoothness for the loop).
+
+### Thermal RISB loop with Block2ThermalImpuritySolver
+- block2 td_dmrg default n_sub_sweeps=2 leaves each rk4 step unconverged (drho 1e-5 at M exact, worse with smaller dt); 4 -> 4e-8. Solver now uses 4 (_SUB_SWEEPS). The d-shell M scans above used 2: recheck.
+- Kanamori 2 orb B=1 cubic, half filling (n_target=2): T=0.1 S/Sz M200 dt0.05: same 18 cycles as fockit, Z 1e-7, docc 2e-8, Omega 6e-7, mu 3e-7 (65/95 s). T=0.5 dt0.1: 7 s, ~1e-6. -> test.
+- Bethe U=2 B=3 (ghosts): T=0.2 S M200 dt0.05 converges in 10 cycles (fockit 7), docc 3e-8, Z 4e-6. T=0.5: some runs converge, some stall at 1e-6..5e-5 for 600+ cycles; run-to-run variation (threads). At a stalled point err 8e-8, block2 impurity error 1e-7, yet lattice Omega off fockit by 1.4e-3: near-flat direction of the B=3 ghost solution (fockit itself does not reach tol 1e-12 at T=0.5; warm-started fockit moves 31 cycles). Map smooth at the solution (line scan error 7e-8, repeat spread 8e-9).
+- Sz at M200 on Bethe B=3 (needs 256): truncation noise ~1e-5, DIIS stalls. Truncation sets the reachable tol.
+- [ ] B=3 ghost soft direction at T~0.5: understand (gauge? redundant ghost?) and whether OnPlateau/anchoring should handle it.

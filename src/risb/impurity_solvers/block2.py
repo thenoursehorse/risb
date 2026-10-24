@@ -44,6 +44,10 @@ _SU2_TOL = 1e-6
 # Strengths of the symmetry-mixing hoppings in the warm-up sweeps
 _MIX_STRENGTHS = (0.1, 0.01)
 
+# Sweeps of each imaginary time step. block2's default of two leaves the
+# targeted states of a step unconverged
+_SUB_SWEEPS = 4
+
 # A sector: two times the total spin and two times its projection, None where
 # it is not fixed
 type _Sector = tuple[int | None, int | None]
@@ -775,6 +779,7 @@ class Block2ThermalImpuritySolver(_Block2Base):
             n_steps=max(1, math.ceil(self.beta / 2 / self.time_step)),
             bond_dims=[self.bond_dim],
             te_type="rk4",
+            n_sub_sweeps=_SUB_SWEEPS,
             normalize_mps=True,
             hermitian=True,
             final_mps_tag="KET",

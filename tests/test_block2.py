@@ -8,7 +8,7 @@ from fockit.algebra import OpSum, c, cdag, hc, nc, zero
 from numpy.typing import NDArray
 from test_common import build_cubic_h0_k, symmetrize_blocks
 
-from risb import LatticeSolver
+from risb import LatticeSolver, ThermalLatticeSolver
 from risb.helpers_fockit import N_op, S2_op, h_int_kanamori
 from risb.impurity_solvers import FockitImpuritySolver, FockitThermalImpuritySolver
 from risb.kweight import SmearingKWeight
@@ -234,3 +234,37 @@ def test_thermal_state_without_a_conserved_spin_is_rejected() -> None:
         Block2ThermalImpuritySolver(
             h_int, gf_struct, 10, symmetries=[], bath_size=bath_size
         )
+
+
+def test_two_orbital_kanamori_lattice_at_finite_temperature_is_the_exact_one() -> None:
+    gf_struct = [("up", 2), ("dn", 2)]
+    h0_k = build_cubic_h0_k(gf_struct=gf_struct, nkx=10, spatial_dim=3)
+    beta = 2.0
+    results = []
+    for solver in (
+        FockitThermalImpuritySolver(kanamori(2, 3.0, 0.6), gf_struct, beta),
+        Block2ThermalImpuritySolver(
+            kanamori(2, 3.0, 0.6),
+            gf_struct,
+            beta,
+            bond_dim=200,
+            time_step=0.1,
+            symmetries=["s"],
+        ),
+    ):
+        S = ThermalLatticeSolver(
+            h0_k=h0_k,
+            gf_struct=gf_struct,
+            impurity_solvers=solver,
+            beta=beta,
+            symmetrizers=[symmetrize_blocks],
+            force_real=True,
+            n_target=2,
+        )
+        assert S.solve(tol=1e-7).converged
+        docc = solver.overlap(nc("up", 0) * nc("dn", 0))
+        results.append((np.linalg.eigvalsh(S.Z[0]["up"]), S.mu, docc))
+    (Z, mu, docc), (Z_b2, mu_b2, docc_b2) = results
+    assert Z_b2 == pytest.approx(Z, abs=1e-5)
+    assert mu_b2 == pytest.approx(mu, abs=1e-6)
+    assert docc_b2 == pytest.approx(docc, abs=1e-6)
