@@ -10,11 +10,11 @@ from test_common import build_cubic_h0_k, symmetrize_blocks
 
 from risb import LatticeSolver
 from risb.helpers_fockit import N_op, S2_op, h_int_kanamori
-from risb.impurity_solvers import FockitImpuritySolver
+from risb.impurity_solvers import FockitImpuritySolver, FockitThermalImpuritySolver
 from risb.kweight import SmearingKWeight
 
 pytest.importorskip("pyblock2")
-from risb.impurity_solvers import Block2ImpuritySolver
+from risb.impurity_solvers import Block2ImpuritySolver, Block2ThermalImpuritySolver
 
 type Problem = tuple[
     OpSum,
@@ -61,6 +61,10 @@ def solved(solver: Any, problem: Problem) -> Any:
 
 def assert_same_state(solver: Any, expected: FockitImpuritySolver) -> None:
     assert solver.gs_energy == pytest.approx(expected.gs_energy, abs=1e-8)
+    assert_same_rho(solver, expected)
+
+
+def assert_same_rho(solver: Any, expected: Any) -> None:
     for bl, _ in expected.gf_struct:
         assert solver.rho_f[bl] == pytest.approx(expected.rho_f[bl], abs=1e-6)
         assert solver.rho_cf[bl] == pytest.approx(expected.rho_cf[bl], abs=1e-6)
@@ -192,3 +196,41 @@ def test_two_orbital_kanamori_lattice_has_the_exact_quasiparticle_weight() -> No
         assert S.solve(tol=1e-8).converged
         Z.append(np.linalg.eigvalsh(S.Z[0]["up"]))
     assert Z[1] == pytest.approx(Z[0], abs=1e-6)
+
+
+@pytest.mark.parametrize("symmetries", [["sz"], ["s"]])
+def test_thermal_state_of_a_ghost_impurity_is_the_exact_one(
+    symmetries: list[str],
+) -> None:
+    problem = ghost_problem(2, 1)
+    h_int, gf_struct, bath_size = problem[:3]
+    expected = solved(
+        FockitThermalImpuritySolver(h_int, gf_struct, 10, bath_size=bath_size),
+        problem,
+    )
+    solver = solved(
+        Block2ThermalImpuritySolver(
+            h_int,
+            gf_struct,
+            10,
+            bond_dim=200,
+            time_step=0.05,
+            symmetries=symmetries,
+            bath_size=bath_size,
+        ),
+        problem,
+    )
+    assert_same_rho(solver, expected)
+    assert solver.energy == pytest.approx(expected.overlap(expected.h_imp), abs=1e-6)
+    assert solver.grand_potential == pytest.approx(expected.grand_potential, abs=1e-6)
+    assert solver.entropy == pytest.approx(expected.entropy, abs=1e-4)
+    for Op in (N_op(["up", "dn"], 2), S2_op(["up", "dn"], 2)):
+        assert solver.overlap(Op) == pytest.approx(expected.overlap(Op), abs=1e-6)
+
+
+def test_thermal_state_without_a_conserved_spin_is_rejected() -> None:
+    h_int, gf_struct, bath_size = ghost_problem(2, 1)[:3]
+    with pytest.raises(ValueError, match="symmetries"):
+        Block2ThermalImpuritySolver(
+            h_int, gf_struct, 10, symmetries=[], bath_size=bath_size
+        )

@@ -292,3 +292,86 @@ tolerance; extrapolation of converged RISB results as a comparison.
   mode dE <= 4e-13, drho <= 8e-9 (2.2e-7 for the projected S = 1 state).
 - Later: MPI (block2-mpi, mpi=True; single-rank speed unknown, Linux-only
   wheels), parities, finite T, SOC, outer extrapolation helper.
+
+## Finite T prototype (block2, vs FockitThermalImpuritySolver)
+Scripts: scratchpad/thermal/route_a.py, route_b.py. Ghost Kanamori impurity of
+tests/test_block2.py (2 orbitals, U = 3, J = 0.6, mu = 1.5), grand canonical.
+- Route B, purification: get_ancilla_mps (beta = 0, grand canonical), MPO with
+  ancilla=True, td_dmrg rk4 to beta/2 with normalize_mps=True; ln Z = L ln 4 +
+  sum ln(normsqs); 1-RDM from the MPS read as 2L sites (physical even) / norm
+  (needs bket.save_data() and info.save_data under its tag).
+  - B = 1: drho <= 2e-7, dOmega <= 1e-6, dS <= 5e-6 at beta 1, 10, 100;
+    RK4 error ~ dt^4 (dt 0.05 -> 0.025: 15x); beta = 100 17 s (1000 steps).
+  - B = 3: beta 1 M 200: drho 1.3e-4, dOmega 7.7e-4, dS 1.5e-3, 3.9 s;
+    beta 10 M 200/500: drho 1.5e-5/1.2e-6, dS 9e-3/3e-3, 22/61 s;
+    beta 100 M 200/500: drho 8e-8/2e-10, dS 1e-2/3e-3, 97/487 s.
+    ln Z from the integral of <H> over beta gives the same error: the
+    truncated purified state, not the norm bookkeeping.
+- Route A, lowest states per (N, Sz) sector, excited states with proj_mpss
+  (weight 20), until Boltzmann weight < 1e-14; fockit formulas.
+  - B = 1: beta 10, 100: drho 4e-9, dOmega 1e-15, dS 1e-13; 2-6 s.
+  - B = 3: beta 100: drho 2e-8, dS 0, 4.1 s (47 sectors, 1 state each);
+    beta 10: drho 1.6e-7, dOmega 2e-8, dS 3e-6, 222 states, 110 s.
+- FockitThermalImpuritySolver itself at B = 3, beta = 1: 2424 s.
+- Route B stepping: block2's td_dmrg; "rk4" is time-step targeting with RK4,
+  "tdvp" is worse here (B = 3, beta 1: dS 4e-2; slower). Graded RK4 steps
+  (dt/4 to beta 1, dt/2 to beta 3, then dt) cut the error 60x at beta 1
+  (dS 1.2e-5, M 500) and 20x at beta 10 (dS 1.5e-4); the rest at beta 10 is
+  the bond dimension (M 1000: dS 3.5e-5, 390 s; dt/2 no change).
+- Entropy: S = beta (<H> - Omega) with ln Z from the norm accumulated since
+  beta = 0, so every error in the evolution enters S; the SVD at a bond gives
+  entanglement entropy of a chain cut, not the physical-ancilla entropy.
+- Route A Sz pruning (|Sz| outward, stop at negligible weight; exact for
+  spin-rotation invariant H): 47 -> 23 sectors at B = 3, same result.
+- User: both routes, user picks (method). d-shell benchmark running
+  (scratchpad/thermal/dshell.sh, dshell.log, 1 h cap per run).
+- User (finite T design): defaults target fast, accurate energies and density
+  matrices for the RISB loop; the entropy is only needed after convergence (a
+  final, more accurate solve). ThermalLatticeSolver's loop does not use the
+  impurity entropy or grand potential. Goal: d and f shells, B = 3 (B = 5 if
+  feasible), well below 30 min per iteration.
+- Fast route B for density matrices (2 orb B = 3 vs fockit): beta 10: M 100
+  dt 0.1 drho 2.4e-4 2.8 s; M 200 dt 0.1 3.9e-5 6.1 s; M 200 dt 0.2 1.5e-4
+  3.1 s (M 500 dt 0.05: 1.2e-6). beta 100: M 100 dt 0.1 1.9e-6 25 s; M 200
+  dt 0.2 6.8e-8 29 s. Low T washes out early errors; beta ~ 10 needs the bond
+  dimension.
+
+### d-shell finite-T benchmark (ghost_problem, mu = 1.5, 4 threads, no fockit reference)
+| case | route A (eigenstates, M500) | route B (purification) |
+|---|---|---|
+| d B=1 beta=100 | 4.3 s, <N>=10.00004 (correct) | M200 dt0.2: 43 s, <N>=10.144 (wrong), S=-0.27 |
+| d B=1 beta=10 | 2527 s, 427 states | M500 dt0.1: 65 s |
+| d B=3 beta=100 | 3452 s, <N>=27 (wrong) | M200 dt0.2: 125 s, <N>=30, S=-11 |
+| d B=3 beta=10 | timeout > 1 h | M500 dt0.1: 207 s |
+- T=0 DMRG E_min(N): d B=1: N=9..12 -16.72, -18.45, -18.30, -17.67 (gap 0.154 -> N=11 weight ~1e-7 at beta=100, so route B's 10.144 is wrong).
+  d B=3: N=26..31 -49.49, -50.33, -49.20, -51.99, -52.82, -51.54: E_min(N) not convex, so route A's outward N walk stopped at 28 and missed N=30.
+- Route A: not viable at d B=3 (cost and the N walk). Route B: fast enough; low-T accuracy (sector weights) broken at d size.
+- ghost_problem at mu=1.5 sits far from half filling for d (<N>=30/40): not RISB-like; benchmark at half filling next.
+
+### Route B at half filling, d B=1 beta=100 (reference: lowest eigenstates, nondegenerate ground state, S=0)
+| M | dt | max dw | max drho | S (exact 0) | time |
+|---|---|---|---|---|---|
+| 200 | 0.2 | 3.4e-1 | 7.2e-4 | -1.81 | 35 s |
+| 200 | 0.1 | 5.3e-3 | 9.7e-4 | -0.26 | 87 s |
+| 200 | 0.05 | 2.1e-4 | 7.0e-4 | -0.29 | 162 s |
+| 500 | 0.2 | 2.4e-1 | 2.3e-4 | -1.03 | 199 s |
+| 500 | 0.1 | 4.6e-3 | 2.5e-4 | -0.10 | 469 s |
+| 1000 | 0.2 | 7.0e-2 | 8.1e-5 | -0.56 | 1090 s |
+- rho error set by M, not dt; T=0 DMRG at M=500 gives 1e-8 for the same state.
+- Cause: at low T the purification is |GS>_P |GS*>_A, and interleaved P/A sites make every cut carry both, so M_purif ~ M_GS^2.
+- Fix candidate: ancilla disentangler (Hauschild et al., PRB 98, 235163 (2018)); not in block2 as far as known.
+
+### Todo (finite T, later)
+- [ ] Low T: switch to the T=0 ground-state multiplet average when beta * gap is large (gap from extra T=0 solves; heuristic). Purification only for now.
+- [ ] Ancilla disentangler (Hauschild et al. 2018): not in block2; own two-site unitary optimizer on block-sparse tensors, non-neighbour ancillas.
+- [ ] Graded time steps (dt/4 to beta=1, dt/2 to beta=3, then dt): fixes the entropy / grand potential time-step error; ~5% extra at beta=100, ~4x at beta=1.
+- [ ] N-only (SGF) purification wrong with any hopping (reproducer scratchpad/thermal/sgf_debug.py: 1 orbital + 1 bath, exact without hopping, dE 0.39 with hopping only; Sz mode exact). Suspect our site ordering (P/A interleaved per spin orbital: odd-parity pairs) rather than block2; check, else report to block2.
+- [ ] SOC at finite T: needs N-only (or parity-only) purification working.
+- [ ] Parity-only purification (block2 SAny, Z2 fermion parity; even-parity P/A pairs): candidate fix for the above and for N-breaking impurities.
+
+### Block2ThermalImpuritySolver (done)
+- Purification only; symmetries ["sz"] (default) or ["s"]; N-only rejected. Defaults bond_dim 500, time_step 0.1 (equal steps to beta/2).
+- Outputs rho_*, energy, grand_potential, entropy; overlap (ancilla MPO on the Sz state; S state converted to Sz after the evolution).
+- Shared code in _Block2Base (layout, set_h_int/set_h_imp, checks, rho, MPO).
+- Tests: 2 orb B=1 beta=10 vs FockitThermalImpuritySolver (sz, s), N-only rejected; ~4-5 s each.
+- [ ] ThermalLatticeSolver run with Block2ThermalImpuritySolver (smoothness for the loop).

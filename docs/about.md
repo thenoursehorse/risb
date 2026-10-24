@@ -52,6 +52,8 @@ appropriately cited.
 1. `FockitImpuritySolver` uses the [fockit](https://github.com/thenoursehorse/fockit) library.
 1. `Block2ImpuritySolver` uses the [block2](https://block2.readthedocs.io)
    library[^Zhai2023], and the mixing sweeps of Wolf, et al.[^Wolf2015].
+1. `Block2ThermalImpuritySolver` uses the [block2](https://block2.readthedocs.io)
+   library[^Zhai2023], and the purification of Feiguin and White[^Feiguin2005].
 
 ## License
 
@@ -103,3 +105,9 @@ appropriately cited.
     _Imaginary-Time Matrix Product State Impurity Solver for Dynamical
     Mean-Field Theory_,
     Phys. Rev. X **5**, 041032 (2015)](https://doi.org/10.1103/PhysRevX.5.041032)
+
+[^Feiguin2005]:
+    [A. E. Feiguin and S. R. White,
+    _Finite-temperature density matrix renormalization using an enlarged
+    Hilbert space_,
+    Phys. Rev. B **72**, 220401(R) (2005)](https://doi.org/10.1103/PhysRevB.72.220401)

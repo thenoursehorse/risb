@@ -384,11 +384,42 @@ the largest weight discarded in the last sweep in
 values average over the states of the spin multiplet, as the density
 matrices do.
 
+### Grand-canonical impurity problem
+
+If you want thermal averages over every particle number of the impurity
+problem, as `ThermalLatticeSolver` needs
+
+```python
+from risb.impurity_solvers import Block2ThermalImpuritySolver
+
+impurity_solver = Block2ThermalImpuritySolver(
+    h_int, gf_struct, beta=40, bond_dim=500, time_step=0.1
+)
+impurity_solver.set_h_imp(Lambda_c, D, h0_loc_matrix, mu=mu)
+impurity_solver.solve()
+```
+
+The thermal state is a matrix product state of the orbitals and an ancilla
+next to each, evolved in imaginary time from infinite
+temperature[^Feiguin2005] in steps of at most `time_step`. `symmetries` is
+`["sz"]` (the default) or `["s"]`, and every sector is in the average.
+`spin_blocks` and `bath_size` are as for `Block2ImpuritySolver`.
+
+`solve()` stores the thermal average of `h_imp` in `impurity_solver.energy`,
+the grand potential in `impurity_solver.grand_potential`, and the entropy in
+`impurity_solver.entropy`. `overlap` gives thermal averages.
+
 [^Wolf2015]:
     [F. A. Wolf, A. Go, I. P. McCulloch, A. J. Millis, and U. Schollwöck,
     _Imaginary-Time Matrix Product State Impurity Solver for Dynamical
     Mean-Field Theory_,
     Phys. Rev. X **5**, 041032 (2015)](https://doi.org/10.1103/PhysRevX.5.041032)
+
+[^Feiguin2005]:
+    [A. E. Feiguin and S. R. White,
+    _Finite-temperature density matrix renormalization using an enlarged
+    Hilbert space_,
+    Phys. Rev. B **72**, 220401(R) (2005)](https://doi.org/10.1103/PhysRevB.72.220401)
 
 ## `DummyImpuritySolver`
 

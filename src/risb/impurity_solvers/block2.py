@@ -15,11 +15,12 @@
 #
 # Authors: H. L. Nourse
 
-"""Impurity solver using DMRG from block2."""
+"""Impurity solvers using DMRG from block2."""
 
 import logging
+import math
 import tempfile
-from collections.abc import Mapping, Sequence
+from collections.abc import Collection, Mapping, Sequence
 from itertools import combinations, product
 from typing import Any, override
 
@@ -48,82 +49,19 @@ _MIX_STRENGTHS = (0.1, 0.01)
 type _Sector = tuple[int | None, int | None]
 
 
-class Block2ImpuritySolver(ImpuritySolver):
-    """
-    Impurity solver using the density matrix renormalization group (DMRG) from block2.
+class _Block2Base(ImpuritySolver):
+    # The chain of spatial orbitals, the impurity Hamiltonian as tensors, and
+    # the density matrices, shared by the solvers
 
-    It finds the ground state of the impurity problem at half filling as a
-    matrix product state, for a collinear (spin-diagonal) impurity problem
-    with real terms. It needs the optional dependency
-    `block2 <https://block2.readthedocs.io>`__.
-
-    Each physical orbital is on the DMRG chain next to its bath orbitals. Each
-    solve starts with the sweeps of Appendix A1 of F. A. Wolf, A. Go, I. P.
-    McCulloch, A. J. Millis, and U. Schollwoeck, Phys. Rev. X 5, 041032 (2015)
-    (`arXiv:1507.08650 <https://arxiv.org/abs/1507.08650>`__), with extra
-    random hoppings at 10 %, then 1 %, of the largest one-body coupling. DMRG
-    otherwise does not leave the sectors of quantities that the Hamiltonian
-    conserves and the solver does not, e.g. the total spin and the parity of
-    each orbital with its bath orbitals in a Kanamori impurity, and can end in
-    an excited state. The extra hoppings keep the symmetries in
-    ``symmetries``.
-
-    Parameters
-    ----------
-    h_int : fockit.algebra.OpSum
-        Interaction Hamiltonian of the physical orbitals. Its modes are
-        ``(block, index)``, e.g. ``nc("up", 0) * nc("dn", 0)``.
-    gf_struct : risb.types.GfStruct
-        Structure of the matrices. It must be a
-        list of pairs, each containing the name of the
-        matrix block as a string and the size of that block.
-        For example: ``[ ('up', 3), ('dn', 3) ]``.
-    bond_dim : int, optional
-        Bond dimension of the matrix product state.
-    symmetries : mapping, optional
-        Conserved quantities besides the particle number, ``"sz"`` (total
-        spin projection) and ``"s"`` (total spin), and the sector of each. A
-        number, e.g. ``{"sz": 0}``, is the sector of the ground state. With
-        ``None``, e.g. ``{"s": None}``, every sector is solved and the lowest
-        is kept. With ``"s"``, ``"sz"`` picks the state of the spin multiplet,
-        and without it the density matrices average over the multiplet. The
-        default ``{}`` conserves only the particle number. A spin-rotation
-        invariant impurity problem has its ground state in ``{"sz": 0}`` (or
-        ``1/2``), and is fastest with ``{"s": 0}`` when its ground state is a
-        singlet.
-    spin_blocks : sequence of tuple, optional
-        The names of the spin-up and spin-down block of each pair of blocks
-        in ``gf_struct`` with the same orbitals. Default is
-        ``[("up", "dn")]``.
-    mix : bool, optional
-        Whether to start each solve with the symmetry-mixing sweeps. Default
-        is ``True``.
-    bath_size : mapping, optional
-        Number of bath orbitals of each block, ``B`` times its size for ghost
-        RISB with ``B`` quasiparticle orbitals per orbital, e.g.,
-        ``{"up": 3, "dn": 3}`` for ``B = 3`` and one orbital per spin. Blocks
-        that are not given have as many bath orbitals as physical orbitals
-        (``B = 1``).
-
-    Raises
-    ------
-    ValueError
-        If ``spin_blocks`` does not pair every block of ``gf_struct`` with one
-        of the same size, if ``symmetries`` has an unknown key or a sector
-        with the wrong half-integer, or if ``h_int`` does not conserve them.
-
-    """
+    #: Conserved quantities besides the particle number.
+    symmetries: Collection[str]
 
     def __init__(
         self,
-        h_int: OpSum,
         gf_struct: GfStruct,
-        bond_dim: int = 500,
-        symmetries: Mapping[str, float | None] | None = None,
-        spin_blocks: Sequence[tuple[str, str]] = (("up", "dn"),),
-        mix: bool = True,
-        *,
-        bath_size: Mapping[str, int] | None = None,
+        bond_dim: int,
+        spin_blocks: Sequence[tuple[str, str]],
+        bath_size: Mapping[str, int] | None,
     ) -> None:
         #: risb.types.GfStruct : Block matrix structure of the physical orbitals
         #: (c-electrons).
@@ -131,12 +69,6 @@ class Block2ImpuritySolver(ImpuritySolver):
 
         #: int : Bond dimension of the matrix product state.
         self.bond_dim = bond_dim
-
-        #: dict : Conserved quantities and their sectors.
-        self.symmetries = dict(symmetries or {})
-
-        #: bool : Whether each solve starts with the symmetry-mixing sweeps.
-        self.mix = mix
 
         sizes = dict(gf_struct)
         bath_sizes = {bl: (bath_size or {}).get(bl, n) for bl, n in gf_struct}
@@ -159,63 +91,14 @@ class Block2ImpuritySolver(ImpuritySolver):
                 self._sites.append(((up, alpha), (dn, alpha)))
                 for a in range(alpha, n_bath, n):
                     self._sites.append(((_bath(up), a), (_bath(dn), a)))
-        L = len(self._sites)
         # The spin orbitals (site j, spin s) are 2 * j + s
         self._index = {
             mode: 2 * j + s
             for j, modes in enumerate(self._sites)
             for s, mode in enumerate(modes)
         }
-        unknown = set(self.symmetries) - {"s", "sz"}
-        if unknown:
-            msg = f"Unknown symmetries {sorted(unknown)}."
-            raise ValueError(msg)
-        twice = {
-            key: None if v is None else round(2 * v)
-            for key, v in self.symmetries.items()
-        }
-        if any(v is not None and (v - L) % 2 for v in twice.values()):
-            msg = f"The sectors of {L} electrons have {'half-' if L % 2 else ''}integer spin."
-            raise ValueError(msg)
-        twos, twosz = twice.get("s"), twice.get("sz")
-        if "s" in twice:
-            S_values = [twos] if twos is not None else list(range(L % 2, L + 1, 2))
-            Sz_values = [twosz]
-            self._sectors: list[_Sector] = [
-                (s, sz)
-                for s, sz in product(S_values, Sz_values)
-                if sz is None or abs(sz) <= s
-            ]
-        elif "sz" in twice:
-            Sz_values = [twosz] if twosz is not None else list(range(-L, L + 1, 2))
-            self._sectors = [(None, sz) for sz in Sz_values]
-        else:
-            self._sectors = [(None, None)]
-        if not self._sectors:
-            msg = "No sector has the spin projection in symmetries."
-            raise ValueError(msg)
-
         self._bath_sizes = bath_sizes
         self._h0_loc: BlockMatrixLike = {bl: np.zeros((n, n)) for bl, n in gf_struct}
-        self._previous: _Sector | None = None
-        # The directory with the matrix product state of the ground state, and
-        # its sector
-        self._state: tuple[tempfile.TemporaryDirectory[str], _Sector] | None = None
-        self.set_h_int(h_int)
-
-        #: float : Lowest energy of the impurity problem, set by :meth:`solve`.
-        self.gs_energy: float
-
-        #: float : Largest weight discarded in the last sweep, set by
-        #: :meth:`solve`.
-        self.discarded_weight: float
-
-        #: dict : Sector of the ground state, with ``"s"`` and ``"sz"`` where
-        #: they are conserved, set by :meth:`solve`.
-        self.sector: dict[str, float] = {}
-
-        #: float : Entropy of the ground state, zero.
-        self.entropy = 0.0
 
         #: risb.types.BlockMatrix : f-electron density matrix, set by
         #: :meth:`solve`.
@@ -324,6 +207,217 @@ class Block2ImpuritySolver(ImpuritySolver):
         self._const, self._h1 = _real(np.array(const)).item(), _real(h1)
 
     @override
+    def get_rho_f(self, bl: str) -> NDArray[np.inexact]:
+        return self.rho_f[bl]
+
+    @override
+    def get_rho_cf(self, bl: str) -> NDArray[np.inexact]:
+        return self.rho_cf[bl]
+
+    @override
+    def get_rho_c(self, bl: str) -> NDArray[np.inexact]:
+        return self.rho_c[bl]
+
+    def _check_h_imp(self) -> None:
+        h1, V = self._h1, self._V
+        if (
+            np.abs(h1 - h1.T).max() > 1e-10
+            or np.abs(V - V.transpose(3, 2, 1, 0)).max(initial=0) > 1e-10
+        ):
+            msg = "h_imp is not Hermitian."
+            raise ValueError(msg)
+        if "s" in self.symmetries:
+            diff = np.abs(h1[0::2, 0::2] - h1[1::2, 1::2]).max()
+            if diff > _SU2_TOL:
+                msg = f"The spin-up and spin-down terms of h_imp differ by {diff:.1e}."
+                raise ValueError(msg)
+
+    def _set_rho(self, G: NDArray[np.float64]) -> None:
+        # The density matrices from <c_p^dag c_q> of the spin orbitals
+        for bl, n in self.gf_struct:
+            cs = [self._index[bl, i] for i in range(n)]
+            fs = [self._index[_bath(bl), a] for a in range(self._bath_sizes[bl])]
+            self.rho_f[bl] = np.eye(len(fs)) - G[np.ix_(fs, fs)]
+            self.rho_cf[bl] = G[np.ix_(cs, fs)]
+            self.rho_c[bl] = G[np.ix_(cs, cs)]
+
+    def _mpo(
+        self,
+        driver: DMRGDriver,
+        symm_type: Any,
+        const: float,
+        h1: NDArray[np.float64],
+        V: NDArray[np.float64],
+        ancilla: bool = False,
+    ) -> Any:
+        # The MPO of const + sum h1 c^dag c + sum V c^dag c^dag c c, with an
+        # identity on an ancilla next to each site if ancilla. (ij|kl) is the
+        # coefficient of c_i^dag c_k^dag c_l c_j / 2, summed over every i, j,
+        # k, l (and spins with a conserved spin). With a conserved spin
+        # projection the terms that change it are dropped, which have no
+        # expectation value in its sectors
+        if symm_type == SymmetryTypes.SGF:
+            return driver.get_qc_mpo(
+                h1e=h1,
+                g2e=2 * V.transpose(0, 3, 1, 2),
+                ecore=const,
+                ancilla=ancilla,
+                iprint=0,
+            )
+        up, dn = slice(0, None, 2), slice(1, None, 2)
+        g_ud = 4 * V[up, dn, dn, up].transpose(0, 3, 1, 2)
+        if symm_type == SymmetryTypes.SU2:
+            h1e = (h1[up, up] + h1[dn, dn]) / 2
+            return driver.get_qc_mpo(
+                h1e=h1e, g2e=g_ud, ecore=const, ancilla=ancilla, iprint=0
+            )
+        g_uu = 2 * V[up, up, up, up].transpose(0, 3, 1, 2)
+        g_dd = 2 * V[dn, dn, dn, dn].transpose(0, 3, 1, 2)
+        return driver.get_qc_mpo(
+            h1e=(h1[up, up], h1[dn, dn]),
+            g2e=(g_uu, g_ud, g_dd),
+            ecore=const,
+            ancilla=ancilla,
+            iprint=0,
+        )
+
+
+class Block2ImpuritySolver(_Block2Base):
+    """
+    Impurity solver using the density matrix renormalization group (DMRG) from block2.
+
+    It finds the ground state of the impurity problem at half filling as a
+    matrix product state, for a collinear (spin-diagonal) impurity problem
+    with real terms. It needs the optional dependency
+    `block2 <https://block2.readthedocs.io>`__.
+
+    Each physical orbital is on the DMRG chain next to its bath orbitals. Each
+    solve starts with the sweeps of Appendix A1 of F. A. Wolf, A. Go, I. P.
+    McCulloch, A. J. Millis, and U. Schollwoeck, Phys. Rev. X 5, 041032 (2015)
+    (`arXiv:1507.08650 <https://arxiv.org/abs/1507.08650>`__), with extra
+    random hoppings at 10 %, then 1 %, of the largest one-body coupling. DMRG
+    otherwise does not leave the sectors of quantities that the Hamiltonian
+    conserves and the solver does not, e.g. the total spin and the parity of
+    each orbital with its bath orbitals in a Kanamori impurity, and can end in
+    an excited state. The extra hoppings keep the symmetries in
+    ``symmetries``.
+
+    Parameters
+    ----------
+    h_int : fockit.algebra.OpSum
+        Interaction Hamiltonian of the physical orbitals. Its modes are
+        ``(block, index)``, e.g. ``nc("up", 0) * nc("dn", 0)``.
+    gf_struct : risb.types.GfStruct
+        Structure of the matrices. It must be a
+        list of pairs, each containing the name of the
+        matrix block as a string and the size of that block.
+        For example: ``[ ('up', 3), ('dn', 3) ]``.
+    bond_dim : int, optional
+        Bond dimension of the matrix product state.
+    symmetries : mapping, optional
+        Conserved quantities besides the particle number, ``"sz"`` (total
+        spin projection) and ``"s"`` (total spin), and the sector of each. A
+        number, e.g. ``{"sz": 0}``, is the sector of the ground state. With
+        ``None``, e.g. ``{"s": None}``, every sector is solved and the lowest
+        is kept. With ``"s"``, ``"sz"`` picks the state of the spin multiplet,
+        and without it the density matrices average over the multiplet. The
+        default ``{}`` conserves only the particle number. A spin-rotation
+        invariant impurity problem has its ground state in ``{"sz": 0}`` (or
+        ``1/2``), and is fastest with ``{"s": 0}`` when its ground state is a
+        singlet.
+    spin_blocks : sequence of tuple, optional
+        The names of the spin-up and spin-down block of each pair of blocks
+        in ``gf_struct`` with the same orbitals. Default is
+        ``[("up", "dn")]``.
+    mix : bool, optional
+        Whether to start each solve with the symmetry-mixing sweeps. Default
+        is ``True``.
+    bath_size : mapping, optional
+        Number of bath orbitals of each block, ``B`` times its size for ghost
+        RISB with ``B`` quasiparticle orbitals per orbital, e.g.,
+        ``{"up": 3, "dn": 3}`` for ``B = 3`` and one orbital per spin. Blocks
+        that are not given have as many bath orbitals as physical orbitals
+        (``B = 1``).
+
+    Raises
+    ------
+    ValueError
+        If ``spin_blocks`` does not pair every block of ``gf_struct`` with one
+        of the same size, if ``symmetries`` has an unknown key or a sector
+        with the wrong half-integer, or if ``h_int`` does not conserve them.
+
+    """
+
+    def __init__(
+        self,
+        h_int: OpSum,
+        gf_struct: GfStruct,
+        bond_dim: int = 500,
+        symmetries: Mapping[str, float | None] | None = None,
+        spin_blocks: Sequence[tuple[str, str]] = (("up", "dn"),),
+        mix: bool = True,
+        *,
+        bath_size: Mapping[str, int] | None = None,
+    ) -> None:
+        super().__init__(gf_struct, bond_dim, spin_blocks, bath_size)
+
+        #: dict : Conserved quantities and their sectors.
+        self.symmetries = dict(symmetries or {})
+
+        #: bool : Whether each solve starts with the symmetry-mixing sweeps.
+        self.mix = mix
+
+        L = len(self._sites)
+        unknown = set(self.symmetries) - {"s", "sz"}
+        if unknown:
+            msg = f"Unknown symmetries {sorted(unknown)}."
+            raise ValueError(msg)
+        twice = {
+            key: None if v is None else round(2 * v)
+            for key, v in self.symmetries.items()
+        }
+        if any(v is not None and (v - L) % 2 for v in twice.values()):
+            msg = f"The sectors of {L} electrons have {'half-' if L % 2 else ''}integer spin."
+            raise ValueError(msg)
+        twos, twosz = twice.get("s"), twice.get("sz")
+        if "s" in twice:
+            S_values = [twos] if twos is not None else list(range(L % 2, L + 1, 2))
+            Sz_values = [twosz]
+            self._sectors: list[_Sector] = [
+                (s, sz)
+                for s, sz in product(S_values, Sz_values)
+                if sz is None or abs(sz) <= s
+            ]
+        elif "sz" in twice:
+            Sz_values = [twosz] if twosz is not None else list(range(-L, L + 1, 2))
+            self._sectors = [(None, sz) for sz in Sz_values]
+        else:
+            self._sectors = [(None, None)]
+        if not self._sectors:
+            msg = "No sector has the spin projection in symmetries."
+            raise ValueError(msg)
+
+        self._previous: _Sector | None = None
+        # The directory with the matrix product state of the ground state, and
+        # its sector
+        self._state: tuple[tempfile.TemporaryDirectory[str], _Sector] | None = None
+        self.set_h_int(h_int)
+
+        #: float : Lowest energy of the impurity problem, set by :meth:`solve`.
+        self.gs_energy: float
+
+        #: float : Largest weight discarded in the last sweep, set by
+        #: :meth:`solve`.
+        self.discarded_weight: float
+
+        #: dict : Sector of the ground state, with ``"s"`` and ``"sz"`` where
+        #: they are conserved, set by :meth:`solve`.
+        self.sector: dict[str, float] = {}
+
+        #: float : Entropy of the ground state, zero.
+        self.entropy = 0.0
+
+    @override
     def solve(self) -> None:
         """
         Solve for the ground state in the half-filled particle sector of the impurity problem.
@@ -338,19 +432,7 @@ class Block2ImpuritySolver(ImpuritySolver):
             has ``"s"`` and its spin-up and spin-down terms differ.
 
         """
-        h1, V = self._h1, self._V
-        if (
-            np.abs(h1 - h1.T).max() > 1e-10
-            or np.abs(V - V.transpose(3, 2, 1, 0)).max(initial=0) > 1e-10
-        ):
-            msg = "h_imp is not Hermitian."
-            raise ValueError(msg)
-        if "s" in self.symmetries:
-            diff = np.abs(h1[0::2, 0::2] - h1[1::2, 1::2]).max()
-            if diff > _SU2_TOL:
-                msg = f"The spin-up and spin-down terms of h_imp differ by {diff:.1e}."
-                raise ValueError(msg)
-
+        self._check_h_imp()
         results = {sector: self._run(sector) for sector in self._sectors}
         energies = {sector: result[0] for sector, result in results.items()}
         lowest = min(energies, key=energies.__getitem__)
@@ -381,25 +463,7 @@ class Block2ImpuritySolver(ImpuritySolver):
             self.sector["s"] = twos / 2
         if twosz is not None:
             self.sector["sz"] = twosz / 2
-
-        for bl, n in self.gf_struct:
-            cs = [self._index[bl, i] for i in range(n)]
-            fs = [self._index[_bath(bl), a] for a in range(self._bath_sizes[bl])]
-            self.rho_f[bl] = np.eye(len(fs)) - G[np.ix_(fs, fs)]
-            self.rho_cf[bl] = G[np.ix_(cs, fs)]
-            self.rho_c[bl] = G[np.ix_(cs, cs)]
-
-    @override
-    def get_rho_f(self, bl: str) -> NDArray[np.inexact]:
-        return self.rho_f[bl]
-
-    @override
-    def get_rho_cf(self, bl: str) -> NDArray[np.inexact]:
-        return self.rho_cf[bl]
-
-    @override
-    def get_rho_c(self, bl: str) -> NDArray[np.inexact]:
-        return self.rho_c[bl]
+        self._set_rho(G)
 
     def overlap(self, Op: OpSum, force_real: bool = True) -> float | complex:
         """
@@ -579,36 +643,206 @@ class Block2ImpuritySolver(ImpuritySolver):
                 mixing[2 * j, 2 * j + 1] = scale * rng.uniform(-1, 1)
         return mixing + mixing.T
 
-    def _mpo(
+
+class Block2ThermalImpuritySolver(_Block2Base):
+    """
+    Grand-canonical impurity solver at finite temperature using purification from block2.
+
+    The density matrices are thermal averages over every particle number of
+    the impurity problem, with the chemical potential of :meth:`set_h_imp`, as
+    :class:`risb.ThermalLatticeSolver` needs. The thermal state is a matrix
+    product state of the orbitals and an ancilla next to each, evolved in
+    imaginary time from infinite temperature, as in A. E. Feiguin and S. R.
+    White, Phys. Rev. B 72, 220401(R) (2005)
+    (`arXiv:cond-mat/0510124 <https://arxiv.org/abs/cond-mat/0510124>`__),
+    with time-step targeting fourth-order Runge-Kutta steps. It is for a
+    collinear (spin-diagonal) impurity problem with real terms, and needs the
+    optional dependency `block2 <https://block2.readthedocs.io>`__.
+
+    Parameters
+    ----------
+    h_int : fockit.algebra.OpSum
+        Interaction Hamiltonian of the physical orbitals. Its modes are
+        ``(block, index)``, e.g. ``nc("up", 0) * nc("dn", 0)``.
+    gf_struct : risb.types.GfStruct
+        Structure of the matrices. It must be a
+        list of pairs, each containing the name of the
+        matrix block as a string and the size of that block.
+        For example: ``[ ('up', 3), ('dn', 3) ]``.
+    beta : float
+        Inverse temperature of the impurity problem.
+    bond_dim : int, optional
+        Bond dimension of the matrix product state.
+    time_step : float, optional
+        Largest step in imaginary time. The state evolves to ``beta / 2`` in
+        equal steps.
+    symmetries : sequence of str, optional
+        Conserved quantity besides the particle number, ``"sz"``
+        (:math:`S_z`) or ``"s"`` (:math:`S`). Every sector is in the average.
+        Default is ``["sz"]``.
+    spin_blocks : sequence of tuple, optional
+        The names of the spin-up and spin-down block of each pair of blocks
+        in ``gf_struct`` with the same orbitals. Default is
+        ``[("up", "dn")]``.
+    bath_size : mapping, optional
+        Number of bath orbitals of each block, ``B`` times its size for ghost
+        RISB with ``B`` quasiparticle orbitals per orbital, e.g.,
+        ``{"up": 3, "dn": 3}`` for ``B = 3`` and one orbital per spin. Blocks
+        that are not given have as many bath orbitals as physical orbitals
+        (``B = 1``).
+
+    Raises
+    ------
+    ValueError
+        If ``spin_blocks`` does not pair every block of ``gf_struct`` with one
+        of the same size, if ``symmetries`` is not ``"sz"`` or ``"s"``, or if
+        ``h_int`` does not conserve it.
+
+    """
+
+    def __init__(
         self,
-        driver: DMRGDriver,
-        symm_type: Any,
-        const: float,
-        h1: NDArray[np.float64],
-        V: NDArray[np.float64],
-    ) -> Any:
-        # The MPO of const + sum h1 c^dag c + sum V c^dag c^dag c c. (ij|kl)
-        # is the coefficient of c_i^dag c_k^dag c_l c_j / 2, summed over every
-        # i, j, k, l (and spins with a conserved spin). With a conserved spin
-        # projection the terms that change it are dropped, which have no
-        # expectation value in its sectors
-        if symm_type == SymmetryTypes.SGF:
-            return driver.get_qc_mpo(
-                h1e=h1, g2e=2 * V.transpose(0, 3, 1, 2), ecore=const, iprint=0
-            )
-        up, dn = slice(0, None, 2), slice(1, None, 2)
-        g_ud = 4 * V[up, dn, dn, up].transpose(0, 3, 1, 2)
-        if symm_type == SymmetryTypes.SU2:
-            h1e = (h1[up, up] + h1[dn, dn]) / 2
-            return driver.get_qc_mpo(h1e=h1e, g2e=g_ud, ecore=const, iprint=0)
-        g_uu = 2 * V[up, up, up, up].transpose(0, 3, 1, 2)
-        g_dd = 2 * V[dn, dn, dn, dn].transpose(0, 3, 1, 2)
-        return driver.get_qc_mpo(
-            h1e=(h1[up, up], h1[dn, dn]),
-            g2e=(g_uu, g_ud, g_dd),
-            ecore=const,
+        h_int: OpSum,
+        gf_struct: GfStruct,
+        beta: float,
+        bond_dim: int = 500,
+        time_step: float = 0.1,
+        symmetries: Sequence[str] = ("sz",),
+        spin_blocks: Sequence[tuple[str, str]] = (("up", "dn"),),
+        *,
+        bath_size: Mapping[str, int] | None = None,
+    ) -> None:
+        super().__init__(gf_struct, bond_dim, spin_blocks, bath_size)
+
+        #: float : Inverse temperature of the impurity problem.
+        self.beta = beta
+
+        #: float : Largest step in imaginary time.
+        self.time_step = time_step
+
+        #: list : Conserved quantities besides the particle number.
+        self.symmetries = list(symmetries)
+
+        if self.symmetries not in (["sz"], ["s"]):
+            msg = 'symmetries must be ["sz"] or ["s"].'
+            raise ValueError(msg)
+
+        # The directory with the thermal state, and its tag
+        self._state: tuple[tempfile.TemporaryDirectory[str], str] | None = None
+        self.set_h_int(h_int)
+
+        #: float : Thermal average of the impurity Hamiltonian, set by
+        #: :meth:`solve`.
+        self.energy: float
+
+        #: float : ``-log(Z) / beta`` with ``Z`` the partition function, set by
+        #: :meth:`solve`.
+        self.grand_potential: float
+
+        #: float : Entropy ``beta * (energy - grand_potential)`` of the impurity
+        #: problem, set by :meth:`solve`.
+        self.entropy: float
+
+    @override
+    def solve(self) -> None:
+        """
+        Solve for the thermal state of the impurity problem.
+
+        Sets the density matrices :attr:`rho_f`, :attr:`rho_cf`, and
+        :attr:`rho_c` of every block, :attr:`energy`, :attr:`grand_potential`,
+        and :attr:`entropy`.
+
+        Raises
+        ------
+        ValueError
+            If the impurity Hamiltonian is not Hermitian, or if ``symmetries``
+            has ``"s"`` and its spin-up and spin-down terms differ.
+
+        """
+        self._check_h_imp()
+        L = len(self._sites)
+        scratch = tempfile.TemporaryDirectory()
+        symm_type = SymmetryTypes.SU2 if "s" in self.symmetries else SymmetryTypes.SZ
+        driver = DMRGDriver(scratch=scratch.name, symm_type=symm_type)
+        driver.initialize_system(n_sites=L, n_elec=L, spin=0)
+        mpo = self._mpo(driver, symm_type, self._const, self._h1, self._V, ancilla=True)
+        # exp(-beta H / 2) on the infinite-temperature state, normalized
+        # after each step
+        ket = driver.td_dmrg(
+            mpo,
+            driver.get_ancilla_mps("KET0"),
+            target_t=self.beta / 2,
+            n_steps=max(1, math.ceil(self.beta / 2 / self.time_step)),
+            bond_dims=[self.bond_dim],
+            te_type="rk4",
+            normalize_mps=True,
+            hermitian=True,
+            final_mps_tag="KET",
             iprint=0,
         )
+        # Z is 4^L times the product of the squared norms before each
+        # normalization
+        log_Z = L * np.log(4) + float(np.sum(np.log(np.real(driver._te.normsqs))))
+        self.energy = float(driver.expectation(ket, mpo, ket))
+        self.grand_potential = -log_Z / self.beta
+        self.entropy = self.beta * (self.energy - self.grand_potential)
+
+        # The thermal state as a state of the orbitals and the ancillas, with
+        # only a conserved spin projection, and its 1-RDM of the orbitals
+        driver.initialize_system(n_sites=2 * L, n_elec=2 * L, spin=0)
+        if symm_type == SymmetryTypes.SU2:
+            driver.align_mps_center(ket, ref=0)
+            ket = driver.mps_change_to_sz(ket, "ZKET", sz=0)
+            driver.symm_type = SymmetryTypes.SZ
+            driver.initialize_system(n_sites=2 * L, n_elec=2 * L, spin=0)
+        ket.save_data()
+        ket.info.save_data(f"{scratch.name}/{ket.info.tag}-mps_info.bin")
+        dm_up, dm_dn = driver.get_1pdm(ket)
+        G = np.zeros((2 * L, 2 * L))
+        G[0::2, 0::2], G[1::2, 1::2] = dm_up[0::2, 0::2], dm_dn[0::2, 0::2]
+        self._set_rho(G)
+        if self._state is not None:
+            self._state[0].cleanup()
+        self._state = (scratch, ket.info.tag)
+
+    def overlap(self, Op: OpSum, force_real: bool = True) -> float | complex:
+        """
+        Calculate the thermal average of an operator in the impurity problem.
+
+        Parameters
+        ----------
+        Op : fockit.algebra.OpSum
+            Operator to take expectation of, with at most two-body terms. The
+            bath modes are ``("bath_" + block, index)``.
+        force_real : bool, optional
+            Whether the result should be real or complex.
+
+        Returns
+        -------
+        float or complex
+            Expectation value.
+
+        """
+        const, h1, V = Op_to_tensors(Op, self._index)
+        res = complex(self._expectation(np.real(const), h1.real, V.real))
+        if np.iscomplexobj(h1):
+            res += 1j * self._expectation(np.imag(const), h1.imag, V.imag)
+        if force_real:
+            return res.real
+        return res
+
+    def _expectation(
+        self, const: float, h1: NDArray[np.float64], V: NDArray[np.float64]
+    ) -> float:
+        # <const + sum h1 c^dag c + sum V c^dag c^dag c c> in the thermal state
+        assert self._state is not None  # set by solve
+        scratch, tag = self._state
+        L = len(self._sites)
+        driver = DMRGDriver(scratch=scratch.name, symm_type=SymmetryTypes.SZ)
+        driver.initialize_system(n_sites=L, n_elec=L, spin=0)
+        ket = driver.load_mps(tag)
+        mpo = self._mpo(driver, SymmetryTypes.SZ, const, h1, V, ancilla=True)
+        return float(driver.expectation(ket, mpo, ket))
 
 
 def _bath(bl: str) -> str:

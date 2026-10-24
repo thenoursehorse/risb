@@ -6,10 +6,11 @@ from .dummy import DummyImpuritySolver
 from .fockit import FockitImpuritySolver, FockitThermalImpuritySolver
 
 if TYPE_CHECKING:
-    from .block2 import Block2ImpuritySolver
+    from .block2 import Block2ImpuritySolver, Block2ThermalImpuritySolver
 
 __all__ = [
     "Block2ImpuritySolver",
+    "Block2ThermalImpuritySolver",
     "DummyImpuritySolver",
     "FockitImpuritySolver",
     "FockitThermalImpuritySolver",
@@ -17,11 +18,12 @@ __all__ = [
 
 
 def __getattr__(name: str) -> object:
-    # Block2ImpuritySolver needs the optional block2, so it is only imported when used
-    if name == "Block2ImpuritySolver":
-        from .block2 import Block2ImpuritySolver  # noqa: PLC0415
+    # The block2 solvers need the optional block2, so they are only imported
+    # when used
+    if name in ("Block2ImpuritySolver", "Block2ThermalImpuritySolver"):
+        from . import block2  # noqa: PLC0415
 
-        return Block2ImpuritySolver
+        return getattr(block2, name)
     msg = f"module {__name__!r} has no attribute {name!r}"
     raise AttributeError(msg)
 

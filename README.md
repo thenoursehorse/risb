@@ -58,7 +58,8 @@ Lastly, the appropriate original theory outlined in the [documentation](https://
 
 Optional
 
-- [block2](https://block2.readthedocs.io) for `Block2ImpuritySolver`,
+- [block2](https://block2.readthedocs.io) for `Block2ImpuritySolver` and
+  `Block2ThermalImpuritySolver`,
   installed with `pip install "risb[block2]"`
 
 ## Installation
