@@ -48,6 +48,11 @@ _MIX_STRENGTHS = (0.1, 0.01)
 # targeted states of a step unconverged
 _SUB_SWEEPS = 4
 
+# Energy tolerance of the screening of the sectors of the lowest states, and
+# of state-averaged DMRG, which converges slowly in its highest states
+_SCREEN_TOL = 1e-6
+_ROOTS_TOL = 1e-8
+
 # Imaginary time and order of the Taylor series of the first step without a
 # conserved spin
 _SEED_TIME = 0.01
@@ -295,10 +300,49 @@ class _Block2Base(ImpuritySolver):
         # discarded weight, and the directory with the states
         twosz = sector[1]
         L = len(self._sites)
-        M = self.bond_dim
         scratch = tempfile.TemporaryDirectory()
         driver, symm_type = self._driver(scratch.name, sector, n_elec)
+        tol = 1e-12 if nroots == 1 else _ROOTS_TOL
+        ket, energies = self._optimize(
+            driver, symm_type, nroots, self.bond_dim, mix, tol
+        )
+        discarded_weight = float(driver.get_dmrg_results()[1][-1])
+        kets = [ket]
+        if nroots > 1:
+            kets = [driver.split_mps(ket, i, f"KET{i}") for i in range(nroots)]
+            for k in kets:
+                k.save_data()
 
+        Gs = []
+        for k in kets:
+            G = np.zeros((2 * L, 2 * L))
+            if symm_type == SymmetryTypes.SGF:
+                G[:] = driver.get_1pdm(k)
+            elif symm_type == SymmetryTypes.SZ:
+                G[0::2, 0::2], G[1::2, 1::2] = driver.get_1pdm(k)
+            elif twosz is None:
+                # Spin summed: the average over the multiplet has half in each
+                # spin
+                G[0::2, 0::2] = G[1::2, 1::2] = np.asarray(driver.get_1pdm(k)) / 2
+            else:
+                zket, norm = self._sz_state(driver, k, twosz, n_elec)
+                dm_up, dm_dn = driver.get_1pdm(zket)
+                G[0::2, 0::2], G[1::2, 1::2] = dm_up / norm, dm_dn / norm
+            Gs.append(G)
+        tags = [k.info.tag for k in kets]
+        return energies, Gs, tags, discarded_weight, scratch
+
+    def _optimize(
+        self,
+        driver: DMRGDriver,
+        symm_type: Any,
+        nroots: int,
+        M: int,
+        mix: bool,
+        tol: float,
+    ) -> tuple[Any, list[float]]:
+        # The lowest nroots states of the sector of driver at bond dimension
+        # M, and their energies, converged to tol
         m1, m2 = max(M // 4, min(M, 25)), max(M // 2, min(M, 50))
         ket = driver.get_random_mps(tag="KET", bond_dim=m1, nroots=nroots)
         if mix:
@@ -342,36 +386,12 @@ class _Block2Base(ImpuritySolver):
                 ket,
                 n_sweeps=40,
                 thrds=[1e-15],
-                tol=1e-12,
+                tol=tol,
                 iprint=0,
                 **schedule,
             )
         ).tolist()
-        discarded_weight = float(driver.get_dmrg_results()[1][-1])
-        kets = [ket]
-        if nroots > 1:
-            kets = [driver.split_mps(ket, i, f"KET{i}") for i in range(nroots)]
-            for k in kets:
-                k.save_data()
-
-        Gs = []
-        for k in kets:
-            G = np.zeros((2 * L, 2 * L))
-            if symm_type == SymmetryTypes.SGF:
-                G[:] = driver.get_1pdm(k)
-            elif symm_type == SymmetryTypes.SZ:
-                G[0::2, 0::2], G[1::2, 1::2] = driver.get_1pdm(k)
-            elif twosz is None:
-                # Spin summed: the average over the multiplet has half in each
-                # spin
-                G[0::2, 0::2] = G[1::2, 1::2] = np.asarray(driver.get_1pdm(k)) / 2
-            else:
-                zket, norm = self._sz_state(driver, k, twosz, n_elec)
-                dm_up, dm_dn = driver.get_1pdm(zket)
-                G[0::2, 0::2], G[1::2, 1::2] = dm_up / norm, dm_dn / norm
-            Gs.append(G)
-        tags = [k.info.tag for k in kets]
-        return energies, Gs, tags, discarded_weight, scratch
+        return ket, energies
 
     def _sz_state(
         self, driver: DMRGDriver, ket: Any, twosz: int, n_elec: int
@@ -729,7 +749,8 @@ class Block2ThermalImpuritySolver(_Block2Base):
 
     With ``method="lowest"``, the thermal average is over the lowest states of
     each sector within ``delta`` particles of half filling, found together by
-    state-averaged DMRG, and keeps the states with
+    state-averaged DMRG after a screening of the sectors at a quarter of the
+    bond dimension, and keeps the states with
     ``beta * (E - E0) <= eta`` above the lowest energy ``E0``, as in L.
     Giordano, Y. Tan, Z.-H. Cui, and C. Sun,
     `arXiv:2601.01641 <https://arxiv.org/abs/2601.01641>`__. It is for low
@@ -1025,24 +1046,46 @@ class Block2ThermalImpuritySolver(_Block2Base):
 
     def _lowest(self) -> _ThermalResult:
         # The thermal average over the lowest states of the sectors within
-        # delta particles of half filling, with beta (E - E0) <= eta. Each
-        # sector doubles its number of states until the highest is above the
+        # delta particles of half filling, with beta (E - E0) <= eta. A
+        # screening at a smaller bond dimension keeps the sectors within twice
+        # the window and counts their states in it. Each kept sector then
+        # solves for one state more, doubled until the highest is above the
         # window or every state of the sector is found
         L = len(self._sites)
         window = self.eta / self.beta
-        runs = {
-            (n_elec, sector): self._run(sector, n_elec, 1, mix=True)
+        screened = {
+            (n_elec, sector): self._screen(sector, n_elec, 1)
             for n_elec in range(max(0, L - self.delta), min(2 * L, L + self.delta) + 1)
             for sector in self._spin_sectors(min(n_elec, 2 * L - n_elec))
+        }
+        E0 = min(es[0] for es in screened.values())
+        nroots = {}
+        for (n_elec, sector), lowest in screened.items():
+            if lowest[0] - E0 > 2 * window:
+                continue
+            size = _sector_size(L, n_elec, sector)
+            es = lowest
+            while max(es) - E0 <= window and len(es) < size:
+                es = self._screen(sector, n_elec, min(2 * len(es), size))
+            n_in = sum(e - E0 <= window for e in es)
+            nroots[n_elec, sector] = min(n_in + 1, size)
+
+        runs = {
+            (n_elec, sector): self._run(sector, n_elec, n, mix=True)
+            for (n_elec, sector), n in nroots.items()
         }
         E0 = min(run[0][0] for run in runs.values())
         for n_elec, sector in runs:
             size = _sector_size(L, n_elec, sector)
-            nroots = 1
-            while max(runs[n_elec, sector][0]) - E0 <= window and nroots < size:
+            while (
+                max(runs[n_elec, sector][0]) - E0 <= window
+                and nroots[n_elec, sector] < size
+            ):
                 runs[n_elec, sector][4].cleanup()
-                nroots = min(2 * nroots, size)
-                runs[n_elec, sector] = self._run(sector, n_elec, nroots, mix=True)
+                nroots[n_elec, sector] = min(2 * nroots[n_elec, sector], size)
+                runs[n_elec, sector] = self._run(
+                    sector, n_elec, nroots[n_elec, sector], mix=True
+                )
             logger.debug(
                 "Sector %d, %s: energies above the lowest %s",
                 n_elec,
@@ -1077,6 +1120,14 @@ class Block2ThermalImpuritySolver(_Block2Base):
         energy = float(p @ np.array([k[1] for k in kept]))
         states = [(float(w), *k[3][1:]) for w, k in zip(p, kept, strict=True)]
         return G, energy, -self.beta * E0 + np.log(Z), dirs, states
+
+    def _screen(self, sector: _Sector, n_elec: int, nroots: int) -> list[float]:
+        # Energies of the lowest nroots states of sector with n_elec electrons
+        # at a quarter of the bond dimension, converged to _SCREEN_TOL
+        with tempfile.TemporaryDirectory() as scratch:
+            driver, symm_type = self._driver(scratch, sector, n_elec)
+            M = max(self.bond_dim // 4, min(self.bond_dim, 50))
+            return self._optimize(driver, symm_type, nroots, M, True, _SCREEN_TOL)[1]
 
     def _spin_sectors(self, top: int) -> list[_Sector]:
         # The spin sectors of a particle number with top unpaired electrons at

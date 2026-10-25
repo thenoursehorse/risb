@@ -415,7 +415,12 @@ tests/test_block2.py (2 orbitals, U = 3, J = 0.6, mu = 1.5), grand canonical.
   - N 20.0506, E -39.2650, Omega -39.3211, S 0.56, 11 multiplets (21 states).
   - Purification vs this: rho_f 5.8e-3 / 7.5e-3 / 3.4e-3 at M 200 / 500 / 1000 (rho_cf 3e-3, rho_c 2e-4); purification N 20.003: truncation under-weights the excited sectors. Purification misses 1e-3 at d B=3 beta 10 even at M 1000 (29 min).
   - Time: ~900 s single-root solves of all ~50 (N, S) sectors (most far above the window), rest the 1->2->4->8-root reruns at N=19, 21.
-- [ ] Speed up "lowest": screen sectors at small M (window + margin) before full M; fewer restarts when doubling roots; sectors in parallel.
+- [x] Speed up "lowest" (d B=3 beta 10 M 200: 1403 -> 484 s, rho within 1-3e-4 of the earlier runs):
+  - Screening: every sector at M/4 (min 50), tol 1e-6 (_screen, _SCREEN_TOL): 51 sectors in 138 s (2-5 s each, mostly the mixing sweeps). Keep sectors within 2 * window; count states in the window by state-averaged screens (doubling); full M with count + 1 roots, still doubled while the highest is in the window.
+  - Full-M state-averaged DMRG at tol 1e-8 (_ROOTS_TOL) instead of 1e-12: 6 roots 226 -> 65 s; in-window energies agree to 1e-4, rho of the 5 states to 8e-5. Single root at 1e-12 takes 6 s; 6 roots at 1e-12 took 50x that (slow convergence of the highest roots).
+  - Remaining time: screening 138 s, N=19 still 4 -> 8 roots at full M (screen count low).
+- [ ] Robustness: state-averaged DMRG with fewer roots than a near-degenerate group can skip members (N=19, 4 roots at M 50/100: 3 of the 5 doublets + a state at 1.04; at M 200 fine). Likely the orbital parities Kanamori conserves and block2 does not. The doubling stop (highest root above the window) does not detect it; a check by one more doubling would.
+- [ ] Sectors in parallel (independent; cluster): estimate ~2-3 min at d B=3 beta 10 M 200, bound by the 5-6-root solves (65-80 s at 1e-8, ~10 threads).
 - [ ] Check "lowest" at eta 12 / M 500 on d B=3 beta 10 (accuracy of eta 8 and of state-averaged roots).
 - [ ] METTS prototype (scratchpad): grand canonical via purified ghost sites (Cao et al.), noise vs 1e-3.
 
