@@ -57,6 +57,20 @@ _SEED_ORDER = 6
 # it is not fixed
 type _Sector = tuple[int | None, int | None]
 
+# A pure state of a thermal state: its weight, directory, tag, sector (None
+# for a purified state) and particle number
+type _ThermalState = tuple[float, str, str, _Sector | None, int]
+
+# Density matrix, energy, log of the partition function, directories, and pure
+# states of a thermal state
+type _ThermalResult = tuple[
+    NDArray[np.float64],
+    float,
+    float,
+    list[tempfile.TemporaryDirectory[str]],
+    list[_ThermalState],
+]
+
 
 class _Block2Base(ImpuritySolver):
     # The chain of spatial orbitals, the impurity Hamiltonian as tensors, and
@@ -250,6 +264,182 @@ class _Block2Base(ImpuritySolver):
             self.rho_cf[bl] = G[np.ix_(cs, fs)]
             self.rho_c[bl] = G[np.ix_(cs, cs)]
 
+    def _driver(
+        self, scratch: str, sector: _Sector, n_elec: int
+    ) -> tuple[DMRGDriver, Any]:
+        # A driver of the sector with n_elec electrons, and its symmetry type
+        twos, twosz = sector
+        L = len(self._sites)
+        if twos is not None:
+            symm_type, n_sites, spin = SymmetryTypes.SU2, L, twos
+        elif twosz is not None:
+            symm_type, n_sites, spin = SymmetryTypes.SZ, L, twosz
+        else:
+            symm_type, n_sites, spin = SymmetryTypes.SGF, 2 * L, 0
+        driver = DMRGDriver(scratch=scratch, symm_type=symm_type)
+        driver.initialize_system(n_sites=n_sites, n_elec=n_elec, spin=spin)
+        return driver, symm_type
+
+    def _run(
+        self, sector: _Sector, n_elec: int, nroots: int, mix: bool
+    ) -> tuple[
+        list[float],
+        list[NDArray[np.float64]],
+        list[str],
+        float,
+        tempfile.TemporaryDirectory[str],
+    ]:
+        # The energies, <c_p^dag c_q> of the spin orbitals, and tags of the
+        # lowest nroots states in sector with n_elec electrons, by
+        # state-averaged DMRG (block Davidson) for more than one, the
+        # discarded weight, and the directory with the states
+        twosz = sector[1]
+        L = len(self._sites)
+        M = self.bond_dim
+        scratch = tempfile.TemporaryDirectory()
+        driver, symm_type = self._driver(scratch.name, sector, n_elec)
+
+        m1, m2 = max(M // 4, min(M, 25)), max(M // 2, min(M, 50))
+        ket = driver.get_random_mps(tag="KET", bond_dim=m1, nroots=nroots)
+        if mix:
+            mixing = self._mixing(symm_type)
+            for strength, bond_dims, noises in zip(
+                _MIX_STRENGTHS,
+                ([m1] * 2 + [m2] * 4, [m2] * 6),
+                ([1e-4] * 2 + [1e-5] * 4, [1e-5] * 6),
+                strict=True,
+            ):
+                mpo = self._mpo(
+                    driver,
+                    symm_type,
+                    self._const,
+                    self._h1 + strength * mixing,
+                    self._V,
+                )
+                driver.dmrg(
+                    mpo,
+                    ket,
+                    n_sweeps=6,
+                    bond_dims=bond_dims,
+                    noises=noises,
+                    thrds=[1e-12],
+                    tol=0.0,
+                    iprint=0,
+                )
+            schedule: dict[str, Any] = {
+                "bond_dims": [M],
+                "noises": [1e-6] * 2 + [0.0],
+            }
+        else:
+            schedule = {
+                "bond_dims": [m1] * 2 + [m2] * 2 + [M],
+                "noises": [1e-4] * 2 + [1e-5] * 2 + [1e-6] * 2 + [0.0],
+            }
+        mpo = self._mpo(driver, symm_type, self._const, self._h1, self._V)
+        energies = np.atleast_1d(
+            driver.dmrg(
+                mpo,
+                ket,
+                n_sweeps=40,
+                thrds=[1e-15],
+                tol=1e-12,
+                iprint=0,
+                **schedule,
+            )
+        ).tolist()
+        discarded_weight = float(driver.get_dmrg_results()[1][-1])
+        kets = [ket]
+        if nroots > 1:
+            kets = [driver.split_mps(ket, i, f"KET{i}") for i in range(nroots)]
+            for k in kets:
+                k.save_data()
+
+        Gs = []
+        for k in kets:
+            G = np.zeros((2 * L, 2 * L))
+            if symm_type == SymmetryTypes.SGF:
+                G[:] = driver.get_1pdm(k)
+            elif symm_type == SymmetryTypes.SZ:
+                G[0::2, 0::2], G[1::2, 1::2] = driver.get_1pdm(k)
+            elif twosz is None:
+                # Spin summed: the average over the multiplet has half in each
+                # spin
+                G[0::2, 0::2] = G[1::2, 1::2] = np.asarray(driver.get_1pdm(k)) / 2
+            else:
+                zket, norm = self._sz_state(driver, k, twosz, n_elec)
+                dm_up, dm_dn = driver.get_1pdm(zket)
+                G[0::2, 0::2], G[1::2, 1::2] = dm_up / norm, dm_dn / norm
+            Gs.append(G)
+        tags = [k.info.tag for k in kets]
+        return energies, Gs, tags, discarded_weight, scratch
+
+    def _sz_state(
+        self, driver: DMRGDriver, ket: Any, twosz: int, n_elec: int
+    ) -> tuple[Any, float]:
+        # The state of the spin multiplet ket with spin projection twosz / 2
+        # and n_elec electrons, and its norm, with driver changed to that
+        # sector without a conserved total spin
+        L = len(self._sites)
+        driver.align_mps_center(ket, ref=0)
+        zket = driver.mps_change_to_sz(ket, "ZKET", sz=twosz)
+        driver.symm_type = SymmetryTypes.SZ
+        driver.initialize_system(n_sites=L, n_elec=n_elec, spin=twosz)
+        return zket, float(driver.expectation(zket, driver.get_identity_mpo(), zket))
+
+    def _state_expectation(
+        self,
+        scratch: str,
+        tag: str,
+        sector: _Sector,
+        n_elec: int,
+        const: float,
+        h1: NDArray[np.float64],
+        V: NDArray[np.float64],
+    ) -> float:
+        # <const + sum h1 c^dag c + sum V c^dag c^dag c c> in the state tag of
+        # sector with n_elec electrons, averaged over the spin multiplet with a
+        # conserved total spin and no spin projection
+        twos, twosz = sector
+        if twos is None:
+            driver, symm_type = self._driver(scratch, sector, n_elec)
+            ket = driver.load_mps(tag)
+            mpo = self._mpo(driver, symm_type, const, h1, V)
+            return float(driver.expectation(ket, mpo, ket))
+        twoszs = [twosz] if twosz is not None else list(range(-twos, twos + 1, 2))
+        total = 0.0
+        for m in twoszs:
+            driver, _ = self._driver(scratch, (twos, None), n_elec)
+            zket, norm = self._sz_state(driver, driver.load_mps(tag), m, n_elec)
+            mpo = self._mpo(driver, SymmetryTypes.SZ, const, h1, V)
+            total += float(driver.expectation(zket, mpo, zket)) / norm
+        return total / len(twoszs)
+
+    def _mixing(self, symm_type: Any) -> NDArray[np.float64]:
+        # Random hoppings between every pair of physical orbitals, which can
+        # be far apart on the chain, and between neighbours on the chain, as a
+        # one-body matrix of the spin orbitals. Spin flips without a conserved
+        # spin, the same in both spins with a conserved total spin
+        off = self._h1.copy()
+        np.fill_diagonal(off, 0)
+        scale = np.abs(off).max()
+        L = len(self._sites)
+        pairs = set(combinations(self._physical, 2)) | {
+            (j, j + 1) for j in range(L - 1)
+        }
+        rng = np.random.default_rng(0)
+        mixing = np.zeros((2 * L, 2 * L))
+        for i, j in sorted(pairs):
+            r = rng.uniform(-1, 1, size=(2, 2))
+            if symm_type == SymmetryTypes.SU2:
+                r[1, 1] = r[0, 0]
+            if symm_type != SymmetryTypes.SGF:
+                r[0, 1] = r[1, 0] = 0
+            mixing[2 * i : 2 * i + 2, 2 * j : 2 * j + 2] = scale * r
+        if symm_type == SymmetryTypes.SGF:
+            for j in range(L):
+                mixing[2 * j, 2 * j + 1] = scale * rng.uniform(-1, 1)
+        return mixing + mixing.T
+
     def _mpo(
         self,
         driver: DMRGDriver,
@@ -442,8 +632,11 @@ class Block2ImpuritySolver(_Block2Base):
 
         """
         self._check_h_imp()
-        results = {sector: self._run(sector) for sector in self._sectors}
-        energies = {sector: result[0] for sector, result in results.items()}
+        L = len(self._sites)
+        results = {
+            sector: self._run(sector, L, 1, self.mix) for sector in self._sectors
+        }
+        energies = {sector: result[0][0] for sector, result in results.items()}
         lowest = min(energies, key=energies.__getitem__)
         if (
             self._previous in results
@@ -461,10 +654,11 @@ class Block2ImpuritySolver(_Block2Base):
             )
         for sector, result in results.items():
             if sector != lowest:
-                result[3].cleanup()
+                result[4].cleanup()
         if self._state is not None:
             self._state[0].cleanup()
-        self.gs_energy, G, self.discarded_weight, scratch = results[lowest]
+        energies_lowest, Gs, _, self.discarded_weight, scratch = results[lowest]
+        self.gs_energy, G = energies_lowest[0], Gs[0]
         self._state = (scratch, lowest)
         twos, twosz = lowest
         self.sector = {}
@@ -503,107 +697,6 @@ class Block2ImpuritySolver(_Block2Base):
             return res.real
         return res
 
-    def _driver(self, scratch: str, sector: _Sector) -> tuple[DMRGDriver, Any]:
-        # A driver of the sector, and its symmetry type
-        twos, twosz = sector
-        L = len(self._sites)
-        if twos is not None:
-            symm_type, n_sites, spin = SymmetryTypes.SU2, L, twos
-        elif twosz is not None:
-            symm_type, n_sites, spin = SymmetryTypes.SZ, L, twosz
-        else:
-            symm_type, n_sites, spin = SymmetryTypes.SGF, 2 * L, 0
-        driver = DMRGDriver(scratch=scratch, symm_type=symm_type)
-        driver.initialize_system(n_sites=n_sites, n_elec=L, spin=spin)
-        return driver, symm_type
-
-    def _run(
-        self, sector: _Sector
-    ) -> tuple[float, NDArray[np.float64], float, tempfile.TemporaryDirectory[str]]:
-        # The energy, <c_p^dag c_q> of the spin orbitals, the discarded
-        # weight, and the directory with the state "KET" of the lowest state
-        # in sector
-        twosz = sector[1]
-        L = len(self._sites)
-        M = self.bond_dim
-        scratch = tempfile.TemporaryDirectory()
-        driver, symm_type = self._driver(scratch.name, sector)
-
-        m1, m2 = max(M // 4, min(M, 25)), max(M // 2, min(M, 50))
-        ket = driver.get_random_mps(tag="KET", bond_dim=m1)
-        if self.mix:
-            mixing = self._mixing(symm_type)
-            for strength, bond_dims, noises in zip(
-                _MIX_STRENGTHS,
-                ([m1] * 2 + [m2] * 4, [m2] * 6),
-                ([1e-4] * 2 + [1e-5] * 4, [1e-5] * 6),
-                strict=True,
-            ):
-                mpo = self._mpo(
-                    driver,
-                    symm_type,
-                    self._const,
-                    self._h1 + strength * mixing,
-                    self._V,
-                )
-                driver.dmrg(
-                    mpo,
-                    ket,
-                    n_sweeps=6,
-                    bond_dims=bond_dims,
-                    noises=noises,
-                    thrds=[1e-12],
-                    tol=0.0,
-                    iprint=0,
-                )
-            schedule: dict[str, Any] = {
-                "bond_dims": [M],
-                "noises": [1e-6] * 2 + [0.0],
-            }
-        else:
-            schedule = {
-                "bond_dims": [m1] * 2 + [m2] * 2 + [M],
-                "noises": [1e-4] * 2 + [1e-5] * 2 + [1e-6] * 2 + [0.0],
-            }
-        mpo = self._mpo(driver, symm_type, self._const, self._h1, self._V)
-        energy = float(
-            driver.dmrg(
-                mpo,
-                ket,
-                n_sweeps=40,
-                thrds=[1e-15],
-                tol=1e-12,
-                iprint=0,
-                **schedule,
-            )
-        )
-        discarded_weight = float(driver.get_dmrg_results()[1][-1])
-
-        G = np.zeros((2 * L, 2 * L))
-        if symm_type == SymmetryTypes.SGF:
-            G[:] = driver.get_1pdm(ket)
-        elif symm_type == SymmetryTypes.SZ:
-            G[0::2, 0::2], G[1::2, 1::2] = driver.get_1pdm(ket)
-        elif twosz is None:
-            # Spin summed: the average over the multiplet has half in each spin
-            G[0::2, 0::2] = G[1::2, 1::2] = np.asarray(driver.get_1pdm(ket)) / 2
-        else:
-            zket, norm = self._sz_state(driver, ket, twosz)
-            dm_up, dm_dn = driver.get_1pdm(zket)
-            G[0::2, 0::2], G[1::2, 1::2] = dm_up / norm, dm_dn / norm
-        return energy, G, discarded_weight, scratch
-
-    def _sz_state(self, driver: DMRGDriver, ket: Any, twosz: int) -> tuple[Any, float]:
-        # The state of the spin multiplet ket with spin projection twosz / 2,
-        # and its norm, with driver changed to that sector without a
-        # conserved total spin
-        L = len(self._sites)
-        driver.align_mps_center(ket, ref=0)
-        zket = driver.mps_change_to_sz(ket, "ZKET", sz=twosz)
-        driver.symm_type = SymmetryTypes.SZ
-        driver.initialize_system(n_sites=L, n_elec=L, spin=twosz)
-        return zket, float(driver.expectation(zket, driver.get_identity_mpo(), zket))
-
     def _expectation(
         self, const: float, h1: NDArray[np.float64], V: NDArray[np.float64]
     ) -> float:
@@ -611,62 +704,36 @@ class Block2ImpuritySolver(_Block2Base):
         # averaged over the spin multiplet with a conserved total spin and no
         # spin projection
         assert self._state is not None  # set by solve
-        scratch, (twos, twosz) = self._state[0].name, self._state[1]
-        if twos is None:
-            driver, symm_type = self._driver(scratch, self._state[1])
-            ket = driver.load_mps("KET")
-            mpo = self._mpo(driver, symm_type, const, h1, V)
-            return float(driver.expectation(ket, mpo, ket))
-        twoszs = [twosz] if twosz is not None else list(range(-twos, twos + 1, 2))
-        total = 0.0
-        for m in twoszs:
-            driver, _ = self._driver(scratch, (twos, None))
-            zket, norm = self._sz_state(driver, driver.load_mps("KET"), m)
-            mpo = self._mpo(driver, SymmetryTypes.SZ, const, h1, V)
-            total += float(driver.expectation(zket, mpo, zket)) / norm
-        return total / len(twoszs)
-
-    def _mixing(self, symm_type: Any) -> NDArray[np.float64]:
-        # Random hoppings between every pair of physical orbitals, which can
-        # be far apart on the chain, and between neighbours on the chain, as a
-        # one-body matrix of the spin orbitals. Spin flips without a conserved
-        # spin, the same in both spins with a conserved total spin
-        off = self._h1.copy()
-        np.fill_diagonal(off, 0)
-        scale = np.abs(off).max()
-        L = len(self._sites)
-        pairs = set(combinations(self._physical, 2)) | {
-            (j, j + 1) for j in range(L - 1)
-        }
-        rng = np.random.default_rng(0)
-        mixing = np.zeros((2 * L, 2 * L))
-        for i, j in sorted(pairs):
-            r = rng.uniform(-1, 1, size=(2, 2))
-            if symm_type == SymmetryTypes.SU2:
-                r[1, 1] = r[0, 0]
-            if symm_type != SymmetryTypes.SGF:
-                r[0, 1] = r[1, 0] = 0
-            mixing[2 * i : 2 * i + 2, 2 * j : 2 * j + 2] = scale * r
-        if symm_type == SymmetryTypes.SGF:
-            for j in range(L):
-                mixing[2 * j, 2 * j + 1] = scale * rng.uniform(-1, 1)
-        return mixing + mixing.T
+        scratch, sector = self._state
+        return self._state_expectation(
+            scratch.name, "KET", sector, len(self._sites), const, h1, V
+        )
 
 
 class Block2ThermalImpuritySolver(_Block2Base):
     """
-    Grand-canonical impurity solver at finite temperature using purification from block2.
+    Grand-canonical impurity solver at finite temperature using DMRG from block2.
 
     The density matrices are thermal averages over every particle number of
     the impurity problem, with the chemical potential of :meth:`set_h_imp`, as
-    :class:`risb.ThermalLatticeSolver` needs. The thermal state is a matrix
-    product state of the orbitals and an ancilla next to each, evolved in
-    imaginary time from infinite temperature, as in A. E. Feiguin and S. R.
-    White, Phys. Rev. B 72, 220401(R) (2005)
+    :class:`risb.ThermalLatticeSolver` needs. It is for a collinear
+    (spin-diagonal) impurity problem with real terms, and needs the optional
+    dependency `block2 <https://block2.readthedocs.io>`__.
+
+    With ``method="purification"``, the thermal state is a matrix product
+    state of the orbitals and an ancilla next to each, evolved in imaginary
+    time from infinite temperature, as in A. E. Feiguin and S. R. White, Phys.
+    Rev. B 72, 220401(R) (2005)
     (`arXiv:cond-mat/0510124 <https://arxiv.org/abs/cond-mat/0510124>`__),
-    with time-step targeting fourth-order Runge-Kutta steps. It is for a
-    collinear (spin-diagonal) impurity problem with real terms, and needs the
-    optional dependency `block2 <https://block2.readthedocs.io>`__.
+    with time-step targeting fourth-order Runge-Kutta steps.
+
+    With ``method="lowest"``, the thermal average is over the lowest states of
+    each sector within ``delta`` particles of half filling, found together by
+    state-averaged DMRG, and keeps the states with
+    ``beta * (E - E0) <= eta`` above the lowest energy ``E0``, as in L.
+    Giordano, Y. Tan, Z.-H. Cui, and C. Sun,
+    `arXiv:2601.01641 <https://arxiv.org/abs/2601.01641>`__. It is for low
+    temperatures, where few states have a weight.
 
     Parameters
     ----------
@@ -681,10 +748,10 @@ class Block2ThermalImpuritySolver(_Block2Base):
     beta : float
         Inverse temperature of the impurity problem.
     bond_dim : int, optional
-        Bond dimension of the matrix product state.
+        Bond dimension of the matrix product states.
     time_step : float, optional
-        Largest step in imaginary time. The state evolves to ``beta / 2`` in
-        equal steps.
+        Largest step in imaginary time of ``"purification"``. The state
+        evolves to ``beta / 2`` in equal steps.
     symmetries : sequence of str, optional
         Conserved quantity besides the particle number, ``"sz"``
         (:math:`S_z`) or ``"s"`` (:math:`S`), or empty for the particle
@@ -693,6 +760,13 @@ class Block2ThermalImpuritySolver(_Block2Base):
         The names of the spin-up and spin-down block of each pair of blocks
         in ``gf_struct`` with the same orbitals. Default is
         ``[("up", "dn")]``.
+    method : str, optional
+        ``"purification"`` (the default) or ``"lowest"``.
+    eta : float, optional
+        Largest ``beta * (E - E0)`` of a state in ``"lowest"``. Default is 8.
+    delta : int, optional
+        Largest difference of the particle number from half filling of a
+        sector in ``"lowest"``. Default is 2.
     bath_size : mapping, optional
         Number of bath orbitals of each block, ``B`` times its size for ghost
         RISB with ``B`` quasiparticle orbitals per orbital, e.g.,
@@ -705,7 +779,8 @@ class Block2ThermalImpuritySolver(_Block2Base):
     ValueError
         If ``spin_blocks`` does not pair every block of ``gf_struct`` with one
         of the same size, if ``symmetries`` is not empty, ``"sz"`` or ``"s"``,
-        or if ``h_int`` does not conserve it.
+        if ``method`` is unknown, or if ``h_int`` does not conserve the
+        symmetries.
 
     """
 
@@ -718,6 +793,9 @@ class Block2ThermalImpuritySolver(_Block2Base):
         time_step: float = 0.1,
         symmetries: Sequence[str] = ("sz",),
         spin_blocks: Sequence[tuple[str, str]] = (("up", "dn"),),
+        method: str = "purification",
+        eta: float = 8.0,
+        delta: int = 2,
         *,
         bath_size: Mapping[str, int] | None = None,
     ) -> None:
@@ -736,8 +814,24 @@ class Block2ThermalImpuritySolver(_Block2Base):
             msg = 'symmetries must be [], ["sz"] or ["s"].'
             raise ValueError(msg)
 
-        # The directory with the thermal state, and its tag
-        self._state: tuple[tempfile.TemporaryDirectory[str], str] | None = None
+        #: str : How the thermal state is found.
+        self.method = method
+
+        #: float : Largest ``beta * (E - E0)`` of a state in ``"lowest"``.
+        self.eta = eta
+
+        #: int : Largest difference of the particle number from half filling
+        #: of a sector in ``"lowest"``.
+        self.delta = delta
+
+        if method not in ("purification", "lowest"):
+            msg = 'method must be "purification" or "lowest".'
+            raise ValueError(msg)
+
+        # The directories of the thermal state, and its pure states with their
+        # weights: the purified state, without a sector, or the lowest states
+        self._dirs: list[tempfile.TemporaryDirectory[str]] = []
+        self._states: list[_ThermalState] = []
         self.set_h_int(h_int)
 
         #: float : Thermal average of the impurity Hamiltonian, set by
@@ -769,6 +863,56 @@ class Block2ThermalImpuritySolver(_Block2Base):
 
         """
         self._check_h_imp()
+        for d in self._dirs:
+            d.cleanup()
+        solve = self._lowest if self.method == "lowest" else self._purify
+        G, self.energy, log_Z, self._dirs, self._states = solve()
+        self.grand_potential = -log_Z / self.beta
+        self.entropy = self.beta * (self.energy - self.grand_potential)
+        self._set_rho(G)
+
+    def overlap(self, Op: OpSum, force_real: bool = True) -> float | complex:
+        """
+        Calculate the thermal average of an operator in the impurity problem.
+
+        Parameters
+        ----------
+        Op : fockit.algebra.OpSum
+            Operator to take expectation of, with at most two-body terms. The
+            bath modes are ``("bath_" + block, index)``.
+        force_real : bool, optional
+            Whether the result should be real or complex.
+
+        Returns
+        -------
+        float or complex
+            Expectation value.
+
+        """
+        const, h1, V = Op_to_tensors(Op, self._index)
+        res = complex(self._expectation(np.real(const), h1.real, V.real))
+        if np.iscomplexobj(h1):
+            res += 1j * self._expectation(np.imag(const), h1.imag, V.imag)
+        if force_real:
+            return res.real
+        return res
+
+    def _expectation(
+        self, const: float, h1: NDArray[np.float64], V: NDArray[np.float64]
+    ) -> float:
+        # <const + sum h1 c^dag c + sum V c^dag c^dag c c> in the thermal state
+        total = 0.0
+        for weight, scratch, tag, sector, n_elec in self._states:
+            if sector is None:
+                total += weight * self._purified_expectation(scratch, tag, const, h1, V)
+            else:
+                total += weight * self._state_expectation(
+                    scratch, tag, sector, n_elec, const, h1, V
+                )
+        return total
+
+    def _purify(self) -> _ThermalResult:
+        # The thermal state by purification
         L = len(self._sites)
         scratch = tempfile.TemporaryDirectory()
         symm_type = SymmetryTypes.SU2 if "s" in self.symmetries else SymmetryTypes.SZ
@@ -836,9 +980,7 @@ class Block2ThermalImpuritySolver(_Block2Base):
             + log_norm
             + float(np.sum(np.log(np.real(driver._te.normsqs))))
         )
-        self.energy = float(driver.expectation(ket, mpo, ket))
-        self.grand_potential = -log_Z / self.beta
-        self.entropy = self.beta * (self.energy - self.grand_potential)
+        energy = float(driver.expectation(ket, mpo, ket))
 
         # The thermal state as a state of the orbitals and the ancillas, with
         # at most a conserved spin projection, and its 1-RDM of the orbitals
@@ -857,54 +999,93 @@ class Block2ThermalImpuritySolver(_Block2Base):
             G[0::2, 0::2], G[1::2, 1::2] = dm_up[0::2, 0::2], dm_dn[0::2, 0::2]
         else:
             G = np.asarray(driver.get_1pdm(ket))[0::2, 0::2]
-        self._set_rho(G)
-        if self._state is not None:
-            self._state[0].cleanup()
-        self._state = (scratch, ket.info.tag)
+        return G, energy, log_Z, [scratch], [(1.0, scratch.name, ket.info.tag, None, L)]
 
-    def overlap(self, Op: OpSum, force_real: bool = True) -> float | complex:
-        """
-        Calculate the thermal average of an operator in the impurity problem.
-
-        Parameters
-        ----------
-        Op : fockit.algebra.OpSum
-            Operator to take expectation of, with at most two-body terms. The
-            bath modes are ``("bath_" + block, index)``.
-        force_real : bool, optional
-            Whether the result should be real or complex.
-
-        Returns
-        -------
-        float or complex
-            Expectation value.
-
-        """
-        const, h1, V = Op_to_tensors(Op, self._index)
-        res = complex(self._expectation(np.real(const), h1.real, V.real))
-        if np.iscomplexobj(h1):
-            res += 1j * self._expectation(np.imag(const), h1.imag, V.imag)
-        if force_real:
-            return res.real
-        return res
-
-    def _expectation(
-        self, const: float, h1: NDArray[np.float64], V: NDArray[np.float64]
+    def _purified_expectation(
+        self,
+        scratch: str,
+        tag: str,
+        const: float,
+        h1: NDArray[np.float64],
+        V: NDArray[np.float64],
     ) -> float:
-        # <const + sum h1 c^dag c + sum V c^dag c^dag c c> in the thermal state
-        assert self._state is not None  # set by solve
-        scratch, tag = self._state
+        # <const + sum h1 c^dag c + sum V c^dag c^dag c c> in the purified
+        # state tag
         L = len(self._sites)
         if self.symmetries:
-            driver = DMRGDriver(scratch=scratch.name, symm_type=SymmetryTypes.SZ)
+            driver = DMRGDriver(scratch=scratch, symm_type=SymmetryTypes.SZ)
             driver.initialize_system(n_sites=L, n_elec=L, spin=0)
             mpo = self._mpo(driver, SymmetryTypes.SZ, const, h1, V, ancilla=True)
         else:
-            driver = DMRGDriver(scratch=scratch.name, symm_type=SymmetryTypes.SGF)
+            driver = DMRGDriver(scratch=scratch, symm_type=SymmetryTypes.SGF)
             driver.initialize_system(n_sites=4 * L, n_elec=2 * L, spin=0)
             mpo = self._doubled_mpo(driver, const, h1, V)
         ket = driver.load_mps(tag)
         return float(driver.expectation(ket, mpo, ket))
+
+    def _lowest(self) -> _ThermalResult:
+        # The thermal average over the lowest states of the sectors within
+        # delta particles of half filling, with beta (E - E0) <= eta. Each
+        # sector doubles its number of states until the highest is above the
+        # window or every state of the sector is found
+        L = len(self._sites)
+        window = self.eta / self.beta
+        runs = {
+            (n_elec, sector): self._run(sector, n_elec, 1, mix=True)
+            for n_elec in range(max(0, L - self.delta), min(2 * L, L + self.delta) + 1)
+            for sector in self._spin_sectors(min(n_elec, 2 * L - n_elec))
+        }
+        E0 = min(run[0][0] for run in runs.values())
+        for n_elec, sector in runs:
+            size = _sector_size(L, n_elec, sector)
+            nroots = 1
+            while max(runs[n_elec, sector][0]) - E0 <= window and nroots < size:
+                runs[n_elec, sector][4].cleanup()
+                nroots = min(2 * nroots, size)
+                runs[n_elec, sector] = self._run(sector, n_elec, nroots, mix=True)
+            logger.debug(
+                "Sector %d, %s: energies above the lowest %s",
+                n_elec,
+                sector,
+                np.round(np.array(runs[n_elec, sector][0]) - E0, 6),
+            )
+
+        dirs = []
+        kept: list[tuple[float, float, NDArray[np.float64], _ThermalState]] = []
+        for (n_elec, sector), (es, run_Gs, tags, _, scratch) in runs.items():
+            if min(es) - E0 > window:
+                scratch.cleanup()
+                continue
+            dirs.append(scratch)
+            # Every state of a spin multiplet has the same weight
+            multiplicity = 1 if sector[0] is None else sector[0] + 1
+            kept += [
+                (
+                    multiplicity * np.exp(-self.beta * (e - E0)),
+                    e,
+                    G,
+                    (0.0, scratch.name, tag, sector, n_elec),
+                )
+                for e, G, tag in zip(es, run_Gs, tags, strict=True)
+                if e - E0 <= window
+            ]
+        logger.info("%d states in the thermal average", len(kept))
+        weights = np.array([k[0] for k in kept])
+        Z = float(weights.sum())
+        p = weights / Z
+        G = np.einsum("i,ipq->pq", p, np.array([k[2] for k in kept]))
+        energy = float(p @ np.array([k[1] for k in kept]))
+        states = [(float(w), *k[3][1:]) for w, k in zip(p, kept, strict=True)]
+        return G, energy, -self.beta * E0 + np.log(Z), dirs, states
+
+    def _spin_sectors(self, top: int) -> list[_Sector]:
+        # The spin sectors of a particle number with top unpaired electrons at
+        # most
+        if "s" in self.symmetries:
+            return [(twos, None) for twos in range(top % 2, top + 1, 2)]
+        if "sz" in self.symmetries:
+            return [(None, twosz) for twosz in range(-top, top + 1, 2)]
+        return [(None, None)]
 
     def _doubled_mpo(
         self,
@@ -933,3 +1114,20 @@ def _real(A: NDArray[np.inexact]) -> NDArray[np.float64]:
         msg = "Block2ImpuritySolver needs a real impurity Hamiltonian."
         raise ValueError(msg)
     return np.asarray(A.real, dtype=np.float64)
+
+
+def _sector_size(L: int, n_elec: int, sector: _Sector) -> int:
+    # Number of states (spin multiplets with a conserved total spin) of
+    # n_elec electrons in L spatial orbitals in sector
+    twos, twosz = sector
+    if twos is not None:
+        # Weyl-Paldus formula
+        return (
+            (twos + 1)
+            * math.comb(L + 1, (n_elec - twos) // 2)
+            * math.comb(L + 1, (n_elec + twos) // 2 + 1)
+            // (L + 1)
+        )
+    if twosz is not None:
+        return math.comb(L, (n_elec + twosz) // 2) * math.comb(L, (n_elec - twosz) // 2)
+    return math.comb(2 * L, n_elec)

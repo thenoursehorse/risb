@@ -406,6 +406,19 @@ temperature[^Feiguin2005] in steps of at most `time_step`. `symmetries` is
 every sector is in the average.
 `spin_blocks` and `bath_size` are as for `Block2ImpuritySolver`.
 
+If you want the thermal average over the lowest states instead, for low
+temperatures
+
+```python
+impurity_solver = Block2ThermalImpuritySolver(
+    h_int, gf_struct, beta=40, bond_dim=500, method="lowest", eta=8, delta=2
+)
+```
+
+The lowest states of every sector within `delta` particles of half filling
+are found together by DMRG, and the states with
+$\beta (E - E_0) \le$ `eta` are in the average[^Giordano2026].
+
 `solve()` stores the thermal average of `h_imp` in `impurity_solver.energy`,
 the grand potential in `impurity_solver.grand_potential`, and the entropy in
 `impurity_solver.entropy`. `overlap` gives thermal averages.
@@ -421,6 +434,12 @@ the grand potential in `impurity_solver.grand_potential`, and the entropy in
     _Finite-temperature density matrix renormalization using an enlarged
     Hilbert space_,
     Phys. Rev. B **72**, 220401(R) (2005)](https://doi.org/10.1103/PhysRevB.72.220401)
+
+[^Giordano2026]:
+    [L. Giordano, Y. Tan, Z.-H. Cui, and C. Sun,
+    _Ab initio quantum embedding at finite temperature with density matrix
+    embedding theory_,
+    arXiv:2601.01641](https://arxiv.org/abs/2601.01641)
 
 ## `DummyImpuritySolver`
 

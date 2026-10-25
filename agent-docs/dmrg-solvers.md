@@ -372,8 +372,8 @@ tests/test_block2.py (2 orbitals, U = 3, J = 0.6, mu = 1.5), grand canonical.
   - Fix (option 2, works): first step exp(-tau H) psi0 by a Taylor series of exact MPO applications (Horner, driver.addition fits onto a random full-sector MPS of bond dim M on a plain 2n-site SGF driver with the physical H embedded on even sites), then td_dmrg to beta/2 - tau with the default cutoff. ln Z gets ln <phi|phi>. Script scratchpad/thermal/seed.py. tau 0.01, K 4..8 equal.
     - 1 orb B=3: drho 8e-7 (12 s); 2 orb B=1: 1.2e-6 (10 s).
     - 2 orb B=3: M300 drho 1.0e-5 dE 1.1e-5 dOmega 4.3e-4 (94 s; Sz M300 7e-6, 5.5e-4, 63 s); M600 drho 1.1e-6 dOmega 3.0e-4 (364 s). Converges in M; dOmega is the time-step error, as in Sz.
-- [ ] SOC at finite T: needs N-only (or parity-only) purification working.
-- [ ] Parity-only purification (block2 SAny, Z2 fermion parity; even-parity P/A pairs): candidate fix for the above and for N-breaking impurities.
+- [ ] SOC (T=0 and finite T): N-only purification now works; still needs one block with both spins (no spin_blocks pairing), complex terms (block2 SGFCPX; _real rejects them now), and the seed/MPO in complex mode.
+- [ ] Parity-only purification (block2 SAny, Z2 fermion parity): only for N-breaking (superconducting) impurities now; SOC uses N only.
 
 ### Block2ThermalImpuritySolver (done)
 - Purification only; symmetries ["sz"] (default) or ["s"]; N-only rejected. Defaults bond_dim 500, time_step 0.1 (equal steps to beta/2).
@@ -384,8 +384,40 @@ tests/test_block2.py (2 orbitals, U = 3, J = 0.6, mu = 1.5), grand canonical.
 
 ### Thermal RISB loop with Block2ThermalImpuritySolver
 - block2 td_dmrg default n_sub_sweeps=2 leaves each rk4 step unconverged (drho 1e-5 at M exact, worse with smaller dt); 4 -> 4e-8. Solver now uses 4 (_SUB_SWEEPS). The d-shell M scans above used 2.
-- [ ] Recheck the d-shell finite-T M/dt scans with 4 sub-sweeps.
+- [x] Recheck the d-shell finite-T M scan with 4 sub-sweeps (d B=1 beta=100 half filling, dt 0.1, 4 threads, vs route A reference; scratchpad/thermal/dscan.py, dscan1.log):
+
+  | M | S drho | S entropy (0) | S time | Sz drho | Sz entropy | Sz time |
+  |---|---|---|---|---|---|---|
+  | 200 | 1.0e-4 | 1.11 | 125 s | 8.5e-4 | 2.30 | 142 s |
+  | 500 | 6.4e-5 | 0.31 | 817 s | 1.5e-4 | 1.06 | 958 s |
+  | 1000 | 1.2e-5 | 0.027 | 3251 s | 4.7e-5 | 0.46 | 3783 s |
+
+  - Sz M200 same as the 2-sub-sweep run (7e-4..9.7e-4); M500 2.5e-4 -> 1.5e-4. The slow M convergence is real (low-T purification, M ~ M_GS^2), not the sub-sweep bug. S mode ~3-10x better at equal M.
+  - drho 1e-5 at beta=100 needs M=1000 S, ~1 h per solve: low T needs the T=0 switch (or a disentangler).
+- d B=3 beta=10 half filling, S mode, dt 0.1, 4 threads (dscan2.log; no reference):
+
+  | M | N | E | Omega | S | time | max drho vs M1000 (f / cf / c) |
+  |---|---|---|---|---|---|---|
+  | 200 | 20.0026 | -39.3012 | -39.934 | 6.33 | 40 s | 5.1e-3 / 1.0e-3 / 1.9e-4 |
+  | 500 | 20.0024 | -39.2980 | -39.643 | 3.46 | 285 s | 4.7e-3 / 9.2e-4 / 6.0e-5 |
+  | 1000 | 20.0058 | -39.3026 | -39.522 | 2.19 | 1715 s | - |
+
+  - Not converged at M=1000 (29 min per solve): rho_f moves 5e-3, N and E non-monotone, Omega/S still drifting by 0.1. Purification at d B=3 beta=10 is past the 30 min budget without reaching RISB accuracy.
 - Kanamori 2 orb B=1 cubic, half filling (n_target=2): T=0.1 S/Sz M200 dt0.05: same 18 cycles as fockit, Z 1e-7, docc 2e-8, Omega 6e-7, mu 3e-7 (65/95 s). T=0.5 dt0.1: 7 s, ~1e-6. -> test.
 - Bethe U=2 B=3 (ghosts): T=0.2 S M200 dt0.05 converges in 10 cycles (fockit 7), docc 3e-8, Z 4e-6. T=0.5: some runs converge, some stall at 1e-6..5e-5 for 600+ cycles; run-to-run variation (threads). At a stalled point err 8e-8, block2 impurity error 1e-7, yet lattice Omega off fockit by 1.4e-3: near-flat direction of the B=3 ghost solution (fockit itself does not reach tol 1e-12 at T=0.5; warm-started fockit moves 31 cycles). Map smooth at the solution (line scan error 7e-8, repeat spread 8e-9).
 - Sz at M200 on Bethe B=3 (needs 256): truncation noise ~1e-5, DIIS stalls. Truncation sets the reachable tol.
 - [ ] B=3 ghost soft direction at T~0.5: understand (gauge? redundant ghost?) and whether OnPlateau/anchoring should handle it.
+
+### method="lowest" (LT-DMRG, Giordano et al.) in Block2ThermalImpuritySolver
+- Sectors: N within delta of half filling, every S (S mode) / Sz (Sz mode); one root each, then state-averaged DMRG (block Davidson) with nroots doubled until the highest root is past eta/beta or the sector is exhausted (Weyl-Paldus size). Weights (2S+1) e^{-beta(E-E0)}, beta(E-E0) <= eta. Helpers: _lowest, _spin_sectors, _sector_size; _run/_driver/_sz_state/_state_expectation moved to the base with n_elec, nroots.
+- Exact vs fockit with every sector (1 orb B=1, 2 orb B=1, eta 40): 1e-12. Defaults eta 8, delta 2, 2 orb B=1 beta 10: drho 2e-7.
+- d B=3 beta 10 half filling, S mode, M 200 (4 threads): 1403 s. Spectrum: singlet ground state; N=21: 5 doublets at 0.48-0.49; N=19: 5 doublets at 0.60-0.62 (5 near-degenerate d orbitals); N=20 S=1 0.84, N=22 S=1 0.96 (outside eta=8). Projected one-at-a-time DMRG had found only 1 of each 5 (stuck), so block Davidson needed.
+  - N 20.0506, E -39.2650, Omega -39.3211, S 0.56, 11 multiplets (21 states).
+  - Purification vs this: rho_f 5.8e-3 / 7.5e-3 / 3.4e-3 at M 200 / 500 / 1000 (rho_cf 3e-3, rho_c 2e-4); purification N 20.003: truncation under-weights the excited sectors. Purification misses 1e-3 at d B=3 beta 10 even at M 1000 (29 min).
+  - Time: ~900 s single-root solves of all ~50 (N, S) sectors (most far above the window), rest the 1->2->4->8-root reruns at N=19, 21.
+- [ ] Speed up "lowest": screen sectors at small M (window + margin) before full M; fewer restarts when doubling roots; sectors in parallel.
+- [ ] Check "lowest" at eta 12 / M 500 on d B=3 beta 10 (accuracy of eta 8 and of state-averaged roots).
+- [ ] METTS prototype (scratchpad): grand canonical via purified ghost sites (Cao et al.), noise vs 1e-3.
+
+## Solver survey
+See agent-docs/impurity-solvers.md.

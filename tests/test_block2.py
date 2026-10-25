@@ -233,6 +233,38 @@ def test_thermal_state_of_a_ghost_impurity_is_the_exact_one(
         assert solver.overlap(Op) == pytest.approx(expected.overlap(Op), abs=1e-6)
 
 
+@pytest.mark.parametrize("symmetries", [[], ["sz"], ["s"]])
+def test_lowest_states_of_every_sector_give_the_exact_thermal_state(
+    symmetries: list[str],
+) -> None:
+    problem = ghost_problem(1, 1)
+    h_int, gf_struct, bath_size = problem[:3]
+    expected = solved(
+        FockitThermalImpuritySolver(h_int, gf_struct, 10, bath_size=bath_size),
+        problem,
+    )
+    solver = solved(
+        Block2ThermalImpuritySolver(
+            h_int,
+            gf_struct,
+            10,
+            bond_dim=50,
+            symmetries=symmetries,
+            method="lowest",
+            eta=40,
+            delta=2,
+            bath_size=bath_size,
+        ),
+        problem,
+    )
+    assert_same_rho(solver, expected)
+    assert solver.energy == pytest.approx(expected.overlap(expected.h_imp), abs=1e-8)
+    assert solver.grand_potential == pytest.approx(expected.grand_potential, abs=1e-8)
+    assert solver.entropy == pytest.approx(expected.entropy, abs=1e-8)
+    for Op in (N_op(["up", "dn"], 1), S2_op(["up", "dn"], 1)):
+        assert solver.overlap(Op) == pytest.approx(expected.overlap(Op), abs=1e-8)
+
+
 def test_thermal_state_with_both_spin_symmetries_is_rejected() -> None:
     h_int, gf_struct, bath_size = ghost_problem(2, 1)[:3]
     with pytest.raises(ValueError, match="symmetries"):
