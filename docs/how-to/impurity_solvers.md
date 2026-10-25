@@ -402,7 +402,8 @@ impurity_solver.solve()
 The thermal state is a matrix product state of the orbitals and an ancilla
 next to each, evolved in imaginary time from infinite
 temperature[^Feiguin2005] in steps of at most `time_step`. `symmetries` is
-`["sz"]` (the default) or `["s"]`, and every sector is in the average.
+`["sz"]` (the default), `["s"]`, or `[]` for the particle number only, and
+every sector is in the average.
 `spin_blocks` and `bath_size` are as for `Block2ImpuritySolver`.
 
 `solve()` stores the thermal average of `h_imp` in `impurity_solver.energy`,

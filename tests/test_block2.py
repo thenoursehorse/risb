@@ -198,9 +198,11 @@ def test_two_orbital_kanamori_lattice_has_the_exact_quasiparticle_weight() -> No
     assert Z[1] == pytest.approx(Z[0], abs=1e-6)
 
 
-@pytest.mark.parametrize("symmetries", [["sz"], ["s"]])
+@pytest.mark.parametrize(
+    ("symmetries", "time_step"), [([], 0.025), (["sz"], 0.05), (["s"], 0.05)]
+)
 def test_thermal_state_of_a_ghost_impurity_is_the_exact_one(
-    symmetries: list[str],
+    symmetries: list[str], time_step: float
 ) -> None:
     problem = ghost_problem(2, 1)
     h_int, gf_struct, bath_size = problem[:3]
@@ -214,7 +216,7 @@ def test_thermal_state_of_a_ghost_impurity_is_the_exact_one(
             gf_struct,
             10,
             bond_dim=200,
-            time_step=0.05,
+            time_step=time_step,
             symmetries=symmetries,
             bath_size=bath_size,
         ),
@@ -228,11 +230,11 @@ def test_thermal_state_of_a_ghost_impurity_is_the_exact_one(
         assert solver.overlap(Op) == pytest.approx(expected.overlap(Op), abs=1e-6)
 
 
-def test_thermal_state_without_a_conserved_spin_is_rejected() -> None:
+def test_thermal_state_with_both_spin_symmetries_is_rejected() -> None:
     h_int, gf_struct, bath_size = ghost_problem(2, 1)[:3]
     with pytest.raises(ValueError, match="symmetries"):
         Block2ThermalImpuritySolver(
-            h_int, gf_struct, 10, symmetries=[], bath_size=bath_size
+            h_int, gf_struct, 10, symmetries=["sz", "s"], bath_size=bath_size
         )
 
 

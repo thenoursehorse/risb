@@ -48,6 +48,11 @@ _MIX_STRENGTHS = (0.1, 0.01)
 # targeted states of a step unconverged
 _SUB_SWEEPS = 4
 
+# Imaginary time and order of the Taylor series of the first step without a
+# conserved spin
+_SEED_TIME = 0.01
+_SEED_ORDER = 6
+
 # A sector: two times the total spin and two times its projection, None where
 # it is not fixed
 type _Sector = tuple[int | None, int | None]
@@ -682,8 +687,8 @@ class Block2ThermalImpuritySolver(_Block2Base):
         equal steps.
     symmetries : sequence of str, optional
         Conserved quantity besides the particle number, ``"sz"``
-        (:math:`S_z`) or ``"s"`` (:math:`S`). Every sector is in the average.
-        Default is ``["sz"]``.
+        (:math:`S_z`) or ``"s"`` (:math:`S`), or empty for the particle
+        number only. Every sector is in the average. Default is ``["sz"]``.
     spin_blocks : sequence of tuple, optional
         The names of the spin-up and spin-down block of each pair of blocks
         in ``gf_struct`` with the same orbitals. Default is
@@ -699,8 +704,8 @@ class Block2ThermalImpuritySolver(_Block2Base):
     ------
     ValueError
         If ``spin_blocks`` does not pair every block of ``gf_struct`` with one
-        of the same size, if ``symmetries`` is not ``"sz"`` or ``"s"``, or if
-        ``h_int`` does not conserve it.
+        of the same size, if ``symmetries`` is not empty, ``"sz"`` or ``"s"``,
+        or if ``h_int`` does not conserve it.
 
     """
 
@@ -727,8 +732,8 @@ class Block2ThermalImpuritySolver(_Block2Base):
         #: list : Conserved quantities besides the particle number.
         self.symmetries = list(symmetries)
 
-        if self.symmetries not in (["sz"], ["s"]):
-            msg = 'symmetries must be ["sz"] or ["s"].'
+        if self.symmetries not in ([], ["sz"], ["s"]):
+            msg = 'symmetries must be [], ["sz"] or ["s"].'
             raise ValueError(msg)
 
         # The directory with the thermal state, and its tag
@@ -767,16 +772,55 @@ class Block2ThermalImpuritySolver(_Block2Base):
         L = len(self._sites)
         scratch = tempfile.TemporaryDirectory()
         symm_type = SymmetryTypes.SU2 if "s" in self.symmetries else SymmetryTypes.SZ
-        driver = DMRGDriver(scratch=scratch.name, symm_type=symm_type)
-        driver.initialize_system(n_sites=L, n_elec=L, spin=0)
-        mpo = self._mpo(driver, symm_type, self._const, self._h1, self._V, ancilla=True)
+        if self.symmetries:
+            driver = DMRGDriver(scratch=scratch.name, symm_type=symm_type)
+            driver.initialize_system(n_sites=L, n_elec=L, spin=0)
+            mpo = self._mpo(
+                driver, symm_type, self._const, self._h1, self._V, ancilla=True
+            )
+            ket, t0, log_norm = driver.get_ancilla_mps("KET0"), 0.0, 0.0
+        else:
+            # block2's infinite-temperature state has one particle number at
+            # each bond between two pairs of a spin orbital and its ancilla,
+            # and td_dmrg keeps no state without weight, so particles never
+            # move between pairs that no two neighbouring sites connect. A
+            # first step exp(-t0 H) by a Taylor series of MPO applications
+            # gives weight to every particle number
+            n = 2 * L
+            driver = DMRGDriver(scratch=scratch.name, symm_type=SymmetryTypes.SGF)
+            driver.initialize_system(n_sites=n, n_elec=n, spin=0)
+            driver.get_ancilla_mps("KET0", target=driver.bw.SX(n, 0, 0))
+            driver.initialize_system(n_sites=2 * n, n_elec=n, spin=0)
+            ket0 = ket = driver.load_mps("KET0")
+            identity = driver.get_identity_mpo()
+            t0 = min(_SEED_TIME, self.beta / 2)
+            for k in range(_SEED_ORDER, 0, -1):
+                # ket0 - t0 / k H ket
+                s = -t0 / k
+                bra = driver.get_random_mps(f"SEED{k}", bond_dim=self.bond_dim)
+                driver.addition(
+                    bra,
+                    ket0,
+                    ket,
+                    mpo_a=identity,
+                    mpo_b=self._doubled_mpo(
+                        driver, s * self._const, s * self._h1, s * self._V
+                    ),
+                    bra_bond_dims=[self.bond_dim],
+                    n_sweeps=20,
+                    tol=1e-12,
+                    iprint=0,
+                )
+                ket = bra
+            log_norm = float(np.log(driver.expectation(ket, identity, ket)))
+            mpo = self._doubled_mpo(driver, self._const, self._h1, self._V)
         # exp(-beta H / 2) on the infinite-temperature state, normalized
         # after each step
         ket = driver.td_dmrg(
             mpo,
-            driver.get_ancilla_mps("KET0"),
-            target_t=self.beta / 2,
-            n_steps=max(1, math.ceil(self.beta / 2 / self.time_step)),
+            ket,
+            target_t=self.beta / 2 - t0,
+            n_steps=max(1, math.ceil((self.beta / 2 - t0) / self.time_step)),
             bond_dims=[self.bond_dim],
             te_type="rk4",
             n_sub_sweeps=_SUB_SWEEPS,
@@ -787,24 +831,32 @@ class Block2ThermalImpuritySolver(_Block2Base):
         )
         # Z is 4^L times the product of the squared norms before each
         # normalization
-        log_Z = L * np.log(4) + float(np.sum(np.log(np.real(driver._te.normsqs))))
+        log_Z = (
+            L * np.log(4)
+            + log_norm
+            + float(np.sum(np.log(np.real(driver._te.normsqs))))
+        )
         self.energy = float(driver.expectation(ket, mpo, ket))
         self.grand_potential = -log_Z / self.beta
         self.entropy = self.beta * (self.energy - self.grand_potential)
 
         # The thermal state as a state of the orbitals and the ancillas, with
-        # only a conserved spin projection, and its 1-RDM of the orbitals
-        driver.initialize_system(n_sites=2 * L, n_elec=2 * L, spin=0)
-        if symm_type == SymmetryTypes.SU2:
-            driver.align_mps_center(ket, ref=0)
-            ket = driver.mps_change_to_sz(ket, "ZKET", sz=0)
-            driver.symm_type = SymmetryTypes.SZ
+        # at most a conserved spin projection, and its 1-RDM of the orbitals
+        if self.symmetries:
             driver.initialize_system(n_sites=2 * L, n_elec=2 * L, spin=0)
+            if symm_type == SymmetryTypes.SU2:
+                driver.align_mps_center(ket, ref=0)
+                ket = driver.mps_change_to_sz(ket, "ZKET", sz=0)
+                driver.symm_type = SymmetryTypes.SZ
+                driver.initialize_system(n_sites=2 * L, n_elec=2 * L, spin=0)
         ket.save_data()
         ket.info.save_data(f"{scratch.name}/{ket.info.tag}-mps_info.bin")
-        dm_up, dm_dn = driver.get_1pdm(ket)
-        G = np.zeros((2 * L, 2 * L))
-        G[0::2, 0::2], G[1::2, 1::2] = dm_up[0::2, 0::2], dm_dn[0::2, 0::2]
+        if self.symmetries:
+            dm_up, dm_dn = driver.get_1pdm(ket)
+            G = np.zeros((2 * L, 2 * L))
+            G[0::2, 0::2], G[1::2, 1::2] = dm_up[0::2, 0::2], dm_dn[0::2, 0::2]
+        else:
+            G = np.asarray(driver.get_1pdm(ket))[0::2, 0::2]
         self._set_rho(G)
         if self._state is not None:
             self._state[0].cleanup()
@@ -843,11 +895,33 @@ class Block2ThermalImpuritySolver(_Block2Base):
         assert self._state is not None  # set by solve
         scratch, tag = self._state
         L = len(self._sites)
-        driver = DMRGDriver(scratch=scratch.name, symm_type=SymmetryTypes.SZ)
-        driver.initialize_system(n_sites=L, n_elec=L, spin=0)
+        if self.symmetries:
+            driver = DMRGDriver(scratch=scratch.name, symm_type=SymmetryTypes.SZ)
+            driver.initialize_system(n_sites=L, n_elec=L, spin=0)
+            mpo = self._mpo(driver, SymmetryTypes.SZ, const, h1, V, ancilla=True)
+        else:
+            driver = DMRGDriver(scratch=scratch.name, symm_type=SymmetryTypes.SGF)
+            driver.initialize_system(n_sites=4 * L, n_elec=2 * L, spin=0)
+            mpo = self._doubled_mpo(driver, const, h1, V)
         ket = driver.load_mps(tag)
-        mpo = self._mpo(driver, SymmetryTypes.SZ, const, h1, V, ancilla=True)
         return float(driver.expectation(ket, mpo, ket))
+
+    def _doubled_mpo(
+        self,
+        driver: DMRGDriver,
+        const: float,
+        h1: NDArray[np.float64],
+        V: NDArray[np.float64],
+    ) -> Any:
+        # The MPO of the particle-number chain of each spin orbital and its
+        # ancilla next to it, with h1 and V on the spin orbitals
+        n = len(h1)
+        p = np.arange(0, 2 * n, 2)
+        h1_doubled = np.zeros((2 * n, 2 * n))
+        h1_doubled[np.ix_(p, p)] = h1
+        V_doubled = np.zeros((2 * n,) * 4)
+        V_doubled[np.ix_(p, p, p, p)] = V
+        return self._mpo(driver, SymmetryTypes.SGF, const, h1_doubled, V_doubled)
 
 
 def _bath(bl: str) -> str:

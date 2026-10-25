@@ -18,8 +18,8 @@ tolerance; extrapolation of converged RISB results as a comparison.
 3. [x] ITensor prototype + validation (see Step 3 notes).
 4. [x] TeNPy prototype + validation (see Step 4 notes).
 5. [x] d- and f-shell benchmark, B = 1 and 3 (see Step 5 notes).
-6. [ ] LatticeSolver test with the best candidate: inner vs outer extrapolation.
-7. [ ] Implement the kept solvers, optional deps, tests.
+6. [x] LatticeSolver test with the best candidate (no inner extrapolation; see Decisions after step 6).
+7. [x] Implement the kept solvers, optional deps, tests.
 
 ## Step 1 notes
 
@@ -365,7 +365,13 @@ tests/test_block2.py (2 orbitals, U = 3, J = 0.6, mu = 1.5), grand canonical.
 - [ ] Low T: switch to the T=0 ground-state multiplet average when beta * gap is large (gap from extra T=0 solves; heuristic). Purification only for now.
 - [ ] Ancilla disentangler (Hauschild et al. 2018): not in block2; own two-site unitary optimizer on block-sparse tensors, non-neighbour ancillas.
 - [ ] Graded time steps (dt/4 to beta=1, dt/2 to beta=3, then dt): fixes the entropy / grand potential time-step error; ~5% extra at beta=100, ~4x at beta=1.
-- [ ] N-only (SGF) purification wrong with any hopping (reproducer scratchpad/thermal/sgf_debug.py: 1 orbital + 1 bath, exact without hopping, dE 0.39 with hopping only; Sz mode exact). Suspect our site ordering (P/A interleaved per spin orbital: odd-parity pairs) rather than block2; check, else report to block2.
+- [x] N-only (SGF) purification, in Block2ThermalImpuritySolver as symmetries=[] (seeded first step; test at dt 0.025, 40 s; dt 0.05 drho 1.3e-6, ~10x Sz's time-step error). Once the full suite stalled >8 min in the thermal Kanamori lattice test (S mode); not reproduced in 6 reruns. Cause found: block2's infinite-T MPS has one N per bond between P/A pairs, and td_dmrg (cutoff 1e-20) drops zero-weight states, so a sector absent at a bond never appears (docstring: "When this MPS has a very low bond dimension, this implementation of td-DMRG may be inaccurate"). With spin orbitals 2j+s every same-spin hop crosses the opposite-spin pair, so no 2-site window seeds it; Sz mode (spatial sites) seeds through neighbouring hops. Not the start state itself (RDMs and overlap with a pair ground state correct) nor the ancilla MPO (explicit-ancilla MPO same result).
+  - td_dmrg cutoff=0 fixes small cases (block2 start): 1 orb B=3 drho 0.33 -> 7e-7, 2 orb B=1 2.6e-6 (beta 10, dt 0.05). Sz unchanged by it (2 orb B=3 drho 7e-6, dOmega 5e-4 either way; ~25% slower).
+  - 2 orb B=3 N only, cutoff 0: M300 drho 6e-4 dOmega 3.9e-3 (148 s); M600 drho 9e-4 dOmega 2.3e-3 (593 s). Not converging in M: zero-weight seeds are arbitrary SVD vectors, not a subspace expansion. Sz at M300: 7e-6 (63 s).
+  - Pair-ground-state start (DMRG on -sum c+_P c_A, noise): 2.6e-3 with default cutoff; no help.
+  - Fix (option 2, works): first step exp(-tau H) psi0 by a Taylor series of exact MPO applications (Horner, driver.addition fits onto a random full-sector MPS of bond dim M on a plain 2n-site SGF driver with the physical H embedded on even sites), then td_dmrg to beta/2 - tau with the default cutoff. ln Z gets ln <phi|phi>. Script scratchpad/thermal/seed.py. tau 0.01, K 4..8 equal.
+    - 1 orb B=3: drho 8e-7 (12 s); 2 orb B=1: 1.2e-6 (10 s).
+    - 2 orb B=3: M300 drho 1.0e-5 dE 1.1e-5 dOmega 4.3e-4 (94 s; Sz M300 7e-6, 5.5e-4, 63 s); M600 drho 1.1e-6 dOmega 3.0e-4 (364 s). Converges in M; dOmega is the time-step error, as in Sz.
 - [ ] SOC at finite T: needs N-only (or parity-only) purification working.
 - [ ] Parity-only purification (block2 SAny, Z2 fermion parity; even-parity P/A pairs): candidate fix for the above and for N-breaking impurities.
 
@@ -374,10 +380,11 @@ tests/test_block2.py (2 orbitals, U = 3, J = 0.6, mu = 1.5), grand canonical.
 - Outputs rho_*, energy, grand_potential, entropy; overlap (ancilla MPO on the Sz state; S state converted to Sz after the evolution).
 - Shared code in _Block2Base (layout, set_h_int/set_h_imp, checks, rho, MPO).
 - Tests: 2 orb B=1 beta=10 vs FockitThermalImpuritySolver (sz, s), N-only rejected; ~4-5 s each.
-- [ ] ThermalLatticeSolver run with Block2ThermalImpuritySolver (smoothness for the loop).
+- [x] ThermalLatticeSolver run with Block2ThermalImpuritySolver (see Thermal RISB loop).
 
 ### Thermal RISB loop with Block2ThermalImpuritySolver
-- block2 td_dmrg default n_sub_sweeps=2 leaves each rk4 step unconverged (drho 1e-5 at M exact, worse with smaller dt); 4 -> 4e-8. Solver now uses 4 (_SUB_SWEEPS). The d-shell M scans above used 2: recheck.
+- block2 td_dmrg default n_sub_sweeps=2 leaves each rk4 step unconverged (drho 1e-5 at M exact, worse with smaller dt); 4 -> 4e-8. Solver now uses 4 (_SUB_SWEEPS). The d-shell M scans above used 2.
+- [ ] Recheck the d-shell finite-T M/dt scans with 4 sub-sweeps.
 - Kanamori 2 orb B=1 cubic, half filling (n_target=2): T=0.1 S/Sz M200 dt0.05: same 18 cycles as fockit, Z 1e-7, docc 2e-8, Omega 6e-7, mu 3e-7 (65/95 s). T=0.5 dt0.1: 7 s, ~1e-6. -> test.
 - Bethe U=2 B=3 (ghosts): T=0.2 S M200 dt0.05 converges in 10 cycles (fockit 7), docc 3e-8, Z 4e-6. T=0.5: some runs converge, some stall at 1e-6..5e-5 for 600+ cycles; run-to-run variation (threads). At a stalled point err 8e-8, block2 impurity error 1e-7, yet lattice Omega off fockit by 1.4e-3: near-flat direction of the B=3 ghost solution (fockit itself does not reach tol 1e-12 at T=0.5; warm-started fockit moves 31 cycles). Map smooth at the solution (line scan error 7e-8, repeat spread 8e-9).
 - Sz at M200 on Bethe B=3 (needs 256): truncation noise ~1e-5, DIIS stalls. Truncation sets the reachable tol.
