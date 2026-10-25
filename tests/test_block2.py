@@ -198,13 +198,16 @@ def test_two_orbital_kanamori_lattice_has_the_exact_quasiparticle_weight() -> No
     assert Z[1] == pytest.approx(Z[0], abs=1e-6)
 
 
+# With the particle number only, already one orbital needs particles to move
+# between spin orbitals that are not neighbours on the chain
 @pytest.mark.parametrize(
-    ("symmetries", "time_step"), [([], 0.025), (["sz"], 0.05), (["s"], 0.05)]
+    ("symmetries", "n_orb", "time_step"),
+    [([], 1, 0.1), (["sz"], 2, 0.05), (["s"], 2, 0.05)],
 )
 def test_thermal_state_of_a_ghost_impurity_is_the_exact_one(
-    symmetries: list[str], time_step: float
+    symmetries: list[str], n_orb: int, time_step: float
 ) -> None:
-    problem = ghost_problem(2, 1)
+    problem = ghost_problem(n_orb, 1)
     h_int, gf_struct, bath_size = problem[:3]
     expected = solved(
         FockitThermalImpuritySolver(h_int, gf_struct, 10, bath_size=bath_size),
@@ -226,7 +229,7 @@ def test_thermal_state_of_a_ghost_impurity_is_the_exact_one(
     assert solver.energy == pytest.approx(expected.overlap(expected.h_imp), abs=1e-6)
     assert solver.grand_potential == pytest.approx(expected.grand_potential, abs=1e-6)
     assert solver.entropy == pytest.approx(expected.entropy, abs=1e-4)
-    for Op in (N_op(["up", "dn"], 2), S2_op(["up", "dn"], 2)):
+    for Op in (N_op(["up", "dn"], n_orb), S2_op(["up", "dn"], n_orb)):
         assert solver.overlap(Op) == pytest.approx(expected.overlap(Op), abs=1e-6)
 
 
