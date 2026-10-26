@@ -1,5 +1,10 @@
 # ruff: noqa: D100, D103
+import os
+import shutil
+import subprocess
+import sys
 from itertools import product
+from pathlib import Path
 from typing import Any
 
 import numpy as np
@@ -265,6 +270,27 @@ def test_lowest_states_of_every_sector_give_the_exact_thermal_state(
         assert solver.overlap(Op) == pytest.approx(expected.overlap(Op), abs=1e-8)
 
 
+@pytest.mark.parametrize(("eta", "delta", "match"), [(40, 0, "delta"), (1, 2, "eta")])
+def test_too_narrow_window_of_the_lowest_states_warns(
+    eta: float, delta: int, match: str
+) -> None:
+    problem = ghost_problem(1, 1)
+    h_int, gf_struct, bath_size = problem[:3]
+    solver = Block2ThermalImpuritySolver(
+        h_int,
+        gf_struct,
+        10,
+        bond_dim=50,
+        symmetries=["s"],
+        method="lowest",
+        eta=eta,
+        delta=delta,
+        bath_size=bath_size,
+    )
+    with pytest.warns(RuntimeWarning, match=match):
+        solved(solver, problem)
+
+
 def test_thermal_state_with_both_spin_symmetries_is_rejected() -> None:
     h_int, gf_struct, bath_size = ghost_problem(2, 1)[:3]
     with pytest.raises(ValueError, match="symmetries"):
@@ -305,3 +331,36 @@ def test_two_orbital_kanamori_lattice_at_finite_temperature_is_the_exact_one() -
     assert Z_b2 == pytest.approx(Z, abs=1e-5)
     assert mu_b2 == pytest.approx(mu, abs=1e-6)
     assert docc_b2 == pytest.approx(docc, abs=1e-6)
+
+
+def test_solvers_on_mpi_ranks_give_the_exact_states() -> None:
+    pytest.importorskip("mpi4py")
+    mpirun = shutil.which("mpirun")
+    if mpirun is None:
+        pytest.skip("mpirun is not on the PATH")
+    tests = Path(__file__).parent
+    result = subprocess.run(
+        [
+            mpirun,
+            "-n",
+            "2",
+            sys.executable,
+            # A rank that fails stops the others, which would wait for it
+            "-m",
+            "mpi4py",
+            "-m",
+            "pytest",
+            "-q",
+            "-x",
+            "-p",
+            "no:cacheprovider",
+            str(tests / "test_mpi_block2.py"),
+        ],
+        capture_output=True,
+        text=True,
+        cwd=tests.parent,
+        env=os.environ | {"OMP_NUM_THREADS": "1"},
+        timeout=300,
+        check=False,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr

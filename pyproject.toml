@@ -26,6 +26,7 @@ classifiers = [
 
 [project.optional-dependencies]
 block2 = ["block2>=0.5.4"]
+mpi = ["mpi4py>=4.0"]
 
 [project.urls]
 Homepage = "https://github.com/thenoursehorse/risb"
@@ -67,6 +68,10 @@ dev = [
   "ruff",
   "scipy-stubs",
 ]
+
+[tool.uv]
+# Built against the MPI on the PATH
+no-binary-package = ["mpi4py"]
 
 [tool.pytest.ini_options]
 minversion = "9.0"

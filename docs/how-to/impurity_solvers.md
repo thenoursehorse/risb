@@ -418,10 +418,39 @@ impurity_solver = Block2ThermalImpuritySolver(
 The lowest states of every sector within `delta` particles of half filling
 are found together by DMRG, and the states with
 $\beta (E - E_0) \le$ `eta` are in the average[^Giordano2026].
+`solve()` warns if the sectors `delta` particles from half filling have
+states in the average, or if the states it found outside the average have a
+weight above $10^{-4}$.
 
 `solve()` stores the thermal average of `h_imp` in `impurity_solver.energy`,
 the grand potential in `impurity_solver.grand_potential`, and the entropy in
 `impurity_solver.entropy`. `overlap` gives thermal averages.
+
+### MPI ranks
+
+The sectors can be solved in parallel on MPI ranks, with the optional
+dependency [mpi4py](https://mpi4py.readthedocs.io) built against the MPI of
+the machine, installed with
+
+```bash
+pip install --no-binary mpi4py "risb[mpi]"
+```
+
+Pass the communicator to the solver
+
+```python
+from mpi4py import MPI
+
+impurity_solver = Block2ThermalImpuritySolver(
+    h_int, gf_struct, beta=40, method="lowest", comm=MPI.COMM_WORLD
+)
+```
+
+and run the script on every rank, e.g., `mpirun -n 32 python script.py`. Every
+rank must call `solve()` and `overlap`, and every rank gets the same results.
+The ranks of `Block2ImpuritySolver` split the sectors of `symmetries`, and the
+ranks of `Block2ThermalImpuritySolver` split the sectors of `"lowest"`.
+`"purification"` runs on rank 0. Each rank uses `OMP_NUM_THREADS` threads.
 
 [^Wolf2015]:
     [F. A. Wolf, A. Go, I. P. McCulloch, A. J. Millis, and U. Schollwöck,

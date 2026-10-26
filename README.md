@@ -61,6 +61,8 @@ Optional
 - [block2](https://block2.readthedocs.io) for `Block2ImpuritySolver` and
   `Block2ThermalImpuritySolver`,
   installed with `pip install "risb[block2]"`
+- [mpi4py](https://mpi4py.readthedocs.io) to split the block2 solvers over MPI
+  ranks, installed with `pip install --no-binary mpi4py "risb[mpi]"`
 
 ## Installation
 

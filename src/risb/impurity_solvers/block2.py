@@ -20,6 +20,7 @@
 import logging
 import math
 import tempfile
+import warnings
 from collections.abc import Collection, Mapping, Sequence
 from itertools import combinations, product
 from typing import Any, override
@@ -30,6 +31,7 @@ from numpy.typing import NDArray
 from pyblock2.driver.core import DMRGDriver, SymmetryTypes
 
 from risb.helpers_fockit import Op_to_tensors
+from risb.helpers_mpi import Comm, SerialComm, gather_tasks, round_robin
 from risb.types import BlockMatrix, BlockMatrixLike, GfStruct, ImpuritySolver
 
 logger = logging.getLogger(__name__)
@@ -52,6 +54,10 @@ _SUB_SWEEPS = 4
 # highest states
 _ROOTS_TOL = 1e-8
 
+# Largest weight of the found states outside the window of the lowest states
+# without a warning. It changes the density matrices by up to twice as much
+_TRUNCATED_TOL = 1e-4
+
 # Imaginary time and order of the Taylor series of the first step without a
 # conserved spin
 _SEED_TIME = 0.01
@@ -60,6 +66,16 @@ _SEED_ORDER = 6
 # A sector: two times the total spin and two times its projection, None where
 # it is not fixed
 type _Sector = tuple[int | None, int | None]
+
+# The energies, <c_p^dag c_q> of the spin orbitals and tags of the lowest
+# states of a sector, the discarded weight, and the directory with the states
+type _Run = tuple[
+    list[float],
+    list[NDArray[np.float64]],
+    list[str],
+    float,
+    tempfile.TemporaryDirectory[str],
+]
 
 # A pure state of a thermal state: its weight, directory, tag, sector (None
 # for a purified state) and particle number
@@ -89,10 +105,15 @@ class _Block2Base(ImpuritySolver):
         bond_dim: int,
         spin_blocks: Sequence[tuple[str, str]],
         bath_size: Mapping[str, int] | None,
+        comm: Comm | None,
     ) -> None:
         #: risb.types.GfStruct : Block matrix structure of the physical orbitals
         #: (c-electrons).
         self.gf_struct = gf_struct
+
+        #: risb.helpers_mpi.Comm : Communicator of the ranks the sectors are
+        #: split over.
+        self.comm = SerialComm() if comm is None else comm
 
         #: int : Bond dimension of the matrix product state.
         self.bond_dim = bond_dim
@@ -284,19 +305,9 @@ class _Block2Base(ImpuritySolver):
         driver.initialize_system(n_sites=n_sites, n_elec=n_elec, spin=spin)
         return driver, symm_type
 
-    def _run(
-        self, sector: _Sector, n_elec: int, nroots: int, mix: bool
-    ) -> tuple[
-        list[float],
-        list[NDArray[np.float64]],
-        list[str],
-        float,
-        tempfile.TemporaryDirectory[str],
-    ]:
-        # The energies, <c_p^dag c_q> of the spin orbitals, and tags of the
-        # lowest nroots states in sector with n_elec electrons, by
-        # state-averaged DMRG (block Davidson) for more than one, the
-        # discarded weight, and the directory with the states
+    def _run(self, sector: _Sector, n_elec: int, nroots: int, mix: bool) -> _Run:
+        # The lowest nroots states in sector with n_elec electrons, by
+        # state-averaged DMRG (block Davidson) for more than one
         twosz = sector[1]
         L = len(self._sites)
         scratch = tempfile.TemporaryDirectory()
@@ -556,6 +567,10 @@ class Block2ImpuritySolver(_Block2Base):
         ``{"up": 3, "dn": 3}`` for ``B = 3`` and one orbital per spin. Blocks
         that are not given have as many bath orbitals as physical orbitals
         (``B = 1``).
+    comm : risb.helpers_mpi.Comm, optional
+        MPI communicator, e.g. ``mpi4py.MPI.COMM_WORLD``, whose ranks solve
+        the sectors in ``symmetries`` in parallel. Every rank must call
+        :meth:`solve` and :meth:`overlap`. Default is a single process.
 
     Raises
     ------
@@ -576,8 +591,9 @@ class Block2ImpuritySolver(_Block2Base):
         mix: bool = True,
         *,
         bath_size: Mapping[str, int] | None = None,
+        comm: Comm | None = None,
     ) -> None:
-        super().__init__(gf_struct, bond_dim, spin_blocks, bath_size)
+        super().__init__(gf_struct, bond_dim, spin_blocks, bath_size, comm)
 
         #: dict : Conserved quantities and their sectors.
         self.symmetries = dict(symmetries or {})
@@ -652,18 +668,20 @@ class Block2ImpuritySolver(_Block2Base):
         """
         self._check_h_imp()
         L = len(self._sites)
-        results = {
-            sector: self._run(sector, L, 1, self.mix) for sector in self._sectors
+        runs = {
+            i: self._run(self._sectors[i], L, 1, self.mix)
+            for i in round_robin(self.comm, len(self._sectors))
         }
-        energies = {sector: result[0][0] for sector, result in results.items()}
+        gathered = gather_tasks(self.comm, {i: run[0][0] for i, run in runs.items()})
+        energies = {self._sectors[i]: e for i, e in gathered.items()}
         lowest = min(energies, key=energies.__getitem__)
         if (
-            self._previous in results
+            self._previous in energies
             and energies[self._previous] < energies[lowest] + _SECTOR_TOL
         ):
             lowest = self._previous
         self._previous = lowest
-        if len(results) > 1:
+        if len(energies) > 1:
             logger.info(
                 "Lowest energies by sector: %s",
                 ", ".join(
@@ -671,14 +689,20 @@ class Block2ImpuritySolver(_Block2Base):
                     for s, e in sorted(energies.items(), key=lambda x: x[1])
                 ),
             )
-        for sector, result in results.items():
-            if sector != lowest:
-                result[4].cleanup()
         if self._state is not None:
             self._state[0].cleanup()
-        energies_lowest, Gs, _, self.discarded_weight, scratch = results[lowest]
-        self.gs_energy, G = energies_lowest[0], Gs[0]
-        self._state = (scratch, lowest)
+        self._state = None
+        # The rank of the lowest sector has its state
+        G, discarded_weight = np.zeros((2 * L, 2 * L)), 0.0
+        for i, run in runs.items():
+            if self._sectors[i] == lowest:
+                _, (G,), _, discarded_weight, scratch = run
+                self._state = (scratch, lowest)
+            else:
+                run[4].cleanup()
+        self.gs_energy = energies[lowest]
+        self.discarded_weight = self.comm.allreduce(discarded_weight)
+        G = self.comm.allreduce(G)
         twos, twosz = lowest
         self.sector = {}
         if twos is not None:
@@ -721,12 +745,14 @@ class Block2ImpuritySolver(_Block2Base):
     ) -> float:
         # <const + sum h1 c^dag c + sum V c^dag c^dag c c> in the ground state,
         # averaged over the spin multiplet with a conserved total spin and no
-        # spin projection
-        assert self._state is not None  # set by solve
-        scratch, sector = self._state
-        return self._state_expectation(
-            scratch.name, "KET", sector, len(self._sites), const, h1, V
-        )
+        # spin projection, from the rank with the state
+        total = 0.0
+        if self._state is not None:
+            scratch, sector = self._state
+            total = self._state_expectation(
+                scratch.name, "KET", sector, len(self._sites), const, h1, V
+            )
+        return float(self.comm.allreduce(total))
 
 
 class Block2ThermalImpuritySolver(_Block2Base):
@@ -791,6 +817,11 @@ class Block2ThermalImpuritySolver(_Block2Base):
         ``{"up": 3, "dn": 3}`` for ``B = 3`` and one orbital per spin. Blocks
         that are not given have as many bath orbitals as physical orbitals
         (``B = 1``).
+    comm : risb.helpers_mpi.Comm, optional
+        MPI communicator, e.g. ``mpi4py.MPI.COMM_WORLD``, whose ranks solve
+        the sectors of ``"lowest"`` in parallel. ``"purification"`` runs on
+        rank 0. Every rank must call :meth:`solve` and :meth:`overlap`.
+        Default is a single process.
 
     Raises
     ------
@@ -816,8 +847,9 @@ class Block2ThermalImpuritySolver(_Block2Base):
         delta: int = 2,
         *,
         bath_size: Mapping[str, int] | None = None,
+        comm: Comm | None = None,
     ) -> None:
-        super().__init__(gf_struct, bond_dim, spin_blocks, bath_size)
+        super().__init__(gf_struct, bond_dim, spin_blocks, bath_size, comm)
 
         #: float : Inverse temperature of the impurity problem.
         self.beta = beta
@@ -873,6 +905,14 @@ class Block2ThermalImpuritySolver(_Block2Base):
         :attr:`rho_c` of every block, :attr:`energy`, :attr:`grand_potential`,
         and :attr:`entropy`.
 
+        Warns
+        -----
+        RuntimeWarning
+            With ``"lowest"``, if the sectors ``delta`` particles from half
+            filling have states with ``beta * (E - E0) <= eta``, or if the
+            states found with ``beta * (E - E0) > eta`` have a weight above
+            ``1e-4``.
+
         Raises
         ------
         ValueError
@@ -918,7 +958,8 @@ class Block2ThermalImpuritySolver(_Block2Base):
     def _expectation(
         self, const: float, h1: NDArray[np.float64], V: NDArray[np.float64]
     ) -> float:
-        # <const + sum h1 c^dag c + sum V c^dag c^dag c c> in the thermal state
+        # <const + sum h1 c^dag c + sum V c^dag c^dag c c> in the thermal state,
+        # summed over the states of every rank
         total = 0.0
         for weight, scratch, tag, sector, n_elec in self._states:
             if sector is None:
@@ -927,9 +968,25 @@ class Block2ThermalImpuritySolver(_Block2Base):
                 total += weight * self._state_expectation(
                     scratch, tag, sector, n_elec, const, h1, V
                 )
-        return total
+        return float(self.comm.allreduce(total))
 
     def _purify(self) -> _ThermalResult:
+        # The thermal state by purification, on rank 0
+        L = len(self._sites)
+        G, energy, log_Z = np.zeros((2 * L, 2 * L)), 0.0, 0.0
+        dirs: list[tempfile.TemporaryDirectory[str]] = []
+        states: list[_ThermalState] = []
+        if self.comm.rank == 0:
+            G, energy, log_Z, dirs, states = self._purified_state()
+        return (
+            self.comm.allreduce(G),
+            self.comm.allreduce(energy),
+            self.comm.allreduce(log_Z),
+            dirs,
+            states,
+        )
+
+    def _purified_state(self) -> _ThermalResult:
         # The thermal state by purification
         L = len(self._sites)
         scratch = tempfile.TemporaryDirectory()
@@ -1046,58 +1103,124 @@ class Block2ThermalImpuritySolver(_Block2Base):
         # delta particles of half filling, with beta (E - E0) <= eta. Each
         # sector solves for its lowest state, and for twice as many states
         # until the highest is above the window or every state of the sector
-        # is found
+        # is found. The ranks split the sectors
         L = len(self._sites)
         window = self.eta / self.beta
-        runs = {
-            (n_elec, sector): self._run(sector, n_elec, 1, mix=True)
+        tasks = [
+            (n_elec, sector)
             for n_elec in range(max(0, L - self.delta), min(2 * L, L + self.delta) + 1)
             for sector in self._spin_sectors(min(n_elec, 2 * L - n_elec))
+        ]
+        runs = {
+            i: self._run(tasks[i][1], tasks[i][0], 1, mix=True)
+            for i in round_robin(self.comm, len(tasks))
         }
-        E0 = min(run[0][0] for run in runs.values())
-        for n_elec, sector in runs:
+        E0 = min(
+            gather_tasks(self.comm, {i: run[0][0] for i, run in runs.items()}).values()
+        )
+        for i in runs:
+            n_elec, sector = tasks[i]
             size = _sector_size(L, n_elec, sector)
-            while (
-                max(runs[n_elec, sector][0]) - E0 <= window
-                and len(runs[n_elec, sector][0]) < size
-            ):
-                nroots = min(2 * len(runs[n_elec, sector][0]), size)
-                runs[n_elec, sector][4].cleanup()
-                runs[n_elec, sector] = self._run(sector, n_elec, nroots, mix=True)
+            while max(runs[i][0]) - E0 <= window and len(runs[i][0]) < size:
+                nroots = min(2 * len(runs[i][0]), size)
+                runs[i][4].cleanup()
+                runs[i] = self._run(sector, n_elec, nroots, mix=True)
             logger.debug(
                 "Sector %d, %s: energies above the lowest %s",
                 n_elec,
                 sector,
-                np.round(np.array(runs[n_elec, sector][0]) - E0, 6),
+                np.round(np.array(runs[i][0]) - E0, 6),
             )
+        energies = gather_tasks(self.comm, {i: run[0] for i, run in runs.items()})
 
-        dirs = []
-        kept: list[tuple[float, float, NDArray[np.float64], _ThermalState]] = []
-        for (n_elec, sector), (es, run_Gs, tags, _, scratch) in runs.items():
-            if min(es) - E0 > window:
+        weights: dict[tuple[int, int], float] = {}
+        n_states, truncated = 0, 0.0
+        for i, es in energies.items():
+            # Every state of a spin multiplet has the same weight
+            twos = tasks[i][1][0]
+            multiplicity = 1 if twos is None else twos + 1
+            for k, e in enumerate(es):
+                weight = multiplicity * np.exp(-self.beta * (e - E0))
+                if e - E0 <= window:
+                    weights[i, k] = weight
+                    n_states += multiplicity
+                else:
+                    truncated += weight
+        Z = float(sum(weights.values()))
+        energy = float(sum(w * energies[i][k] for (i, k), w in weights.items())) / Z
+
+        G = np.zeros((2 * L, 2 * L))
+        dirs: list[tempfile.TemporaryDirectory[str]] = []
+        states: list[_ThermalState] = []
+        for i, (_, run_Gs, tags, _, scratch) in runs.items():
+            n_elec, sector = tasks[i]
+            kept = [(k, w / Z) for (j, k), w in weights.items() if j == i]
+            if not kept:
                 scratch.cleanup()
                 continue
             dirs.append(scratch)
-            # Every state of a spin multiplet has the same weight
-            multiplicity = 1 if sector[0] is None else sector[0] + 1
-            kept += [
-                (
-                    multiplicity * np.exp(-self.beta * (e - E0)),
-                    e,
-                    G,
-                    (0.0, scratch.name, tag, sector, n_elec),
-                )
-                for e, G, tag in zip(es, run_Gs, tags, strict=True)
-                if e - E0 <= window
-            ]
-        logger.info("%d states in the thermal average", len(kept))
-        weights = np.array([k[0] for k in kept])
-        Z = float(weights.sum())
-        p = weights / Z
-        G = np.einsum("i,ipq->pq", p, np.array([k[2] for k in kept]))
-        energy = float(p @ np.array([k[1] for k in kept]))
-        states = [(float(w), *k[3][1:]) for w, k in zip(p, kept, strict=True)]
+            for k, p in kept:
+                G += p * run_Gs[k]
+                states.append((float(p), scratch.name, tags[k], sector, n_elec))
+        G = self.comm.allreduce(G)
+        discarded = gather_tasks(
+            self.comm,
+            {i: run[3] for i, run in runs.items() if any(j == i for j, _ in weights)},
+        )
+        if self.comm.rank == 0:
+            self._report(
+                tasks,
+                energies,
+                E0,
+                n_states,
+                truncated / Z,
+                max(discarded.values()),
+            )
         return G, energy, -self.beta * E0 + np.log(Z), dirs, states
+
+    def _report(
+        self,
+        tasks: Sequence[tuple[int, _Sector]],
+        energies: Mapping[int, Sequence[float]],
+        E0: float,
+        n_states: int,
+        truncated: float,
+        discarded: float,
+    ) -> None:
+        # Log the lowest states, and warn if delta or eta is too small
+        L = len(self._sites)
+        lowest: dict[int, float] = {}
+        for i, es in energies.items():
+            n_elec = tasks[i][0]
+            lowest[n_elec] = min(lowest.get(n_elec, np.inf), self.beta * (es[0] - E0))
+        n0, sector0 = tasks[min(energies, key=lambda i: energies[i][0])]
+        logger.info("Lowest energy %.10f, sector %d, %s", E0, n0, sector0)
+        logger.info(
+            "Lowest beta (E - E0) by particle number: %s",
+            ", ".join(f"{n}: {b:.2f}" for n, b in sorted(lowest.items())),
+        )
+        logger.info(
+            "%d states in the thermal average. The found states outside it have "
+            "a weight of %.1e",
+            n_states,
+            truncated,
+        )
+        logger.info("Largest discarded weight of the sectors in it %.1e", discarded)
+        edges = [n for n in (L - self.delta, L + self.delta) if 0 < n < 2 * L]
+        inside = [n for n in edges if lowest[n] <= self.eta]
+        if inside:
+            msg = (
+                f"Sectors with {inside} particles, delta from half filling, have "
+                f"states with beta (E - E0) <= eta. Increase delta."
+            )
+            warnings.warn(msg, RuntimeWarning, stacklevel=4)
+        if truncated > _TRUNCATED_TOL:
+            msg = (
+                f"The found states with beta (E - E0) > eta have a weight of "
+                f"{truncated:.1e}, which changes the density matrices by up to "
+                f"twice as much. Increase eta."
+            )
+            warnings.warn(msg, RuntimeWarning, stacklevel=4)
 
     def _spin_sectors(self, top: int) -> list[_Sector]:
         # The spin sectors of a particle number with top unpaired electrons at
