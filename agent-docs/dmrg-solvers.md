@@ -429,6 +429,8 @@ tests/test_block2.py (2 orbitals, U = 3, J = 0.6, mu = 1.5), grand canonical.
 - [x] eta check, d B=3 b=10 M=200 (2 ranks x 5 threads): eta 8 bound (weight of found states outside) 1.1e-3, would warn. eta 10: 1225 s, 54 states (21 at eta 8), bound 3.6e-4, rho vs eta 8 3.0e-4 / 1.4e-4 / 1.7e-5 (f/cf/c), delta warning (N=22 at beta (E-E0) 9.52). eta 12: killed after 4 h (window 1.2 takes in a dense group at ~1.15; N=19, 21 doubling to 16-32 states).
 - [ ] State-averaged DMRG with many states at fixed M degrades the lowest ones: eta 12 run, N=20 singlet 0.014 above its own single-state energy (weight error ~13% at beta 10); ~0.007 at eta 8 (8 states). Options: lowest energies (and rho?) from the smaller solves, or raise M with the number of states. Decide before relying on eta > 8.
 - [ ] METTS prototype (scratchpad): grand canonical via purified ghost sites (Cao et al.), noise vs 1e-3.
+- [ ] fockit: a "lowest" feature for FockitThermalImpuritySolver (lowest states of the sectors near half filling with beta (E - E0) <= eta), as for block2. Its thermal solves take far too long at e.g. beta = 10.
+- [ ] MPI everywhere, fockit included: the target is a cluster with 30+ MPI tasks or cores, and the code uses MPI too little (now only the sectors of the block2 solvers).
 
 ## Solver survey
 See agent-docs/impurity-solvers.md.
