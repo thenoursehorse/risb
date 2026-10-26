@@ -25,7 +25,12 @@ classifiers = [
 ]
 
 [project.optional-dependencies]
-block2 = ["block2>=0.5.4"]
+block2 = [
+  "block2>=0.5.4",
+  # block2's Linux x86_64 wheel links the .so.2 libraries of MKL without
+  # depending on it. MKL 2026 has .so.3
+  "mkl<2026; sys_platform == 'linux' and platform_machine == 'x86_64'",
+]
 mpi = ["mpi4py>=4.0"]
 
 [project.urls]
