@@ -4,7 +4,13 @@
 from typing import Any
 
 import pytest
-from test_block2 import assert_same_rho, assert_same_state, ghost_problem, solved
+from test_block2 import (
+    CUTOFF,
+    assert_same_rho,
+    assert_same_state,
+    ghost_problem,
+    solved,
+)
 
 from risb.helpers_fockit import N_op, S2_op
 from risb.impurity_solvers import FockitImpuritySolver, FockitThermalImpuritySolver
@@ -31,6 +37,7 @@ def test_ground_state_with_sectors_split_over_ranks_is_the_exact_one() -> None:
             symmetries={"s": None},
             bath_size=bath_size,
             comm=MPI.COMM_WORLD,
+            cutoff=CUTOFF,
         ),
         problem,
     )
@@ -64,6 +71,7 @@ def test_thermal_state_with_sectors_split_over_ranks_is_the_exact_one(
             bath_size=bath_size,
             comm=MPI.COMM_WORLD,
             **kwargs,
+            cutoff=CUTOFF,
         ),
         problem,
     )

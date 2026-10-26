@@ -312,9 +312,10 @@ from risb.impurity_solvers import Block2ImpuritySolver
 impurity_solver = Block2ImpuritySolver(h_int, gf_struct, bond_dim=500)
 ```
 
-`bond_dim` is the bond dimension of the matrix product state. The larger it
-is, the closer the state is to the exact ground state, and the longer a solve
-takes.
+`bond_dim` is the largest bond dimension of the matrix product state. The
+larger it is, the closer the state is to the exact ground state, and the longer
+a solve takes. A bond keeps only the states whose eigenvalue of its reduced
+density matrix is above `cutoff`, `1e-10` by default.
 
 The spin-up and spin-down block of each pair of blocks with the same orbitals
 is given as

@@ -23,6 +23,9 @@ from risb.impurity_solvers import Block2ImpuritySolver, Block2ThermalImpuritySol
 
 PRINT_SIZE = "from mpi4py import MPI; print(MPI.COMM_WORLD.Get_size())"
 
+# The comparisons with exact results keep every state of a bond
+CUTOFF = 1e-20
+
 type Problem = tuple[
     OpSum,
     list[tuple[str, int]],
@@ -91,7 +94,12 @@ def test_ground_state_of_a_ghost_impurity_is_the_exact_one(
     )
     solver = solved(
         Block2ImpuritySolver(
-            h_int, gf_struct, bond_dim=200, symmetries=symmetries, bath_size=bath_size
+            h_int,
+            gf_struct,
+            bond_dim=200,
+            symmetries=symmetries,
+            bath_size=bath_size,
+            cutoff=CUTOFF,
         ),
         problem,
     )
@@ -119,6 +127,7 @@ def test_state_of_a_spin_multiplet_is_the_lowest_with_its_spin_projection() -> N
             bond_dim=200,
             symmetries={"s": None, "sz": 1},
             bath_size=bath_size,
+            cutoff=CUTOFF,
         ),
         problem,
     )
@@ -152,6 +161,7 @@ def test_total_spin_of_a_triplet_is_that_of_the_multiplet_or_of_its_state(
             bond_dim=200,
             symmetries=symmetries,
             bath_size=bath_size,
+            cutoff=CUTOFF,
         ),
         problem,
     )
@@ -189,7 +199,11 @@ def test_two_orbital_kanamori_lattice_has_the_exact_quasiparticle_weight() -> No
     for solver in (
         FockitImpuritySolver(kanamori(2, 3.0, 0.6), gf_struct),
         Block2ImpuritySolver(
-            kanamori(2, 3.0, 0.6), gf_struct, bond_dim=100, symmetries={"sz": 0}
+            kanamori(2, 3.0, 0.6),
+            gf_struct,
+            bond_dim=100,
+            symmetries={"sz": 0},
+            cutoff=CUTOFF,
         ),
     ):
         kweight = SmearingKWeight(beta=40, n_target=2)
@@ -229,6 +243,7 @@ def test_thermal_state_of_a_ghost_impurity_is_the_exact_one(
             time_step=time_step,
             symmetries=symmetries,
             bath_size=bath_size,
+            cutoff=CUTOFF,
         ),
         problem,
     )
@@ -261,6 +276,7 @@ def test_lowest_states_of_every_sector_give_the_exact_thermal_state(
             eta=40,
             delta=2,
             bath_size=bath_size,
+            cutoff=CUTOFF,
         ),
         problem,
     )
@@ -315,6 +331,7 @@ def test_two_orbital_kanamori_lattice_at_finite_temperature_is_the_exact_one() -
             bond_dim=200,
             time_step=0.1,
             symmetries=["s"],
+            cutoff=CUTOFF,
         ),
     ):
         S = ThermalLatticeSolver(

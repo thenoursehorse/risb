@@ -43,8 +43,12 @@ _SECTOR_TOL = 1e-8
 # spin-rotation invariant impurity Hamiltonian
 _SU2_TOL = 1e-6
 
-# Default of mix_schedule: (strength, sweeps, noise) of each stage of the
-# symmetry-mixing sweeps
+# Smallest eigenvalue of the reduced density matrix of a bond that the matrix
+# product states keep, by default
+_CUTOFF = 1e-10
+
+# (strength, sweeps, noise) of each stage of the symmetry-mixing sweeps that
+# start each solve, by default
 _MIX_SCHEDULE = ((0.1, 6, 1e-5), (0.01, 6, 1e-5), (0.001, 6, 1e-5), (1e-4, 6, 1e-5))
 
 # Sweeps of each imaginary time step. block2's default of two leaves the
@@ -111,6 +115,7 @@ class _Block2Base(ImpuritySolver):
         self,
         gf_struct: GfStruct,
         bond_dim: int,
+        cutoff: float,
         spin_blocks: Sequence[tuple[str, str]],
         bath_size: Mapping[str, int] | None,
         comm: Comm | None,
@@ -128,8 +133,12 @@ class _Block2Base(ImpuritySolver):
         #: symmetry-mixing sweeps that start each solve.
         self.mix_schedule = list(mix_schedule)
 
-        #: int : Bond dimension of the matrix product state.
+        #: int : Largest bond dimension of the matrix product states.
         self.bond_dim = bond_dim
+
+        #: float : Smallest eigenvalue of the reduced density matrix of a bond
+        #: that is kept.
+        self.cutoff = cutoff
 
         sizes = dict(gf_struct)
         bath_sizes = {bl: (bath_size or {}).get(bl, n) for bl, n in gf_struct}
@@ -385,6 +394,7 @@ class _Block2Base(ImpuritySolver):
                 noises=[1e-6] * 2 + [0.0],
                 thrds=[1e-15],
                 tol=1e-12,
+                cutoff=self.cutoff,
                 iprint=0,
                 proj_mpss=refined,
                 proj_weights=[weight] * len(refined),
@@ -429,6 +439,7 @@ class _Block2Base(ImpuritySolver):
                     noises=[noise],
                     thrds=[1e-12],
                     tol=0.0,
+                    cutoff=self.cutoff,
                     iprint=0,
                 )
             schedule: dict[str, Any] = {
@@ -441,7 +452,16 @@ class _Block2Base(ImpuritySolver):
                 "noises": [1e-4] * 2 + [1e-5] * 2 + [1e-6] * 2 + [0.0],
             }
         mpo = self._mpo(driver, symm_type, self._const, self._h1, self._V)
-        driver.dmrg(mpo, ket, n_sweeps=40, thrds=[1e-15], tol=tol, iprint=0, **schedule)
+        driver.dmrg(
+            mpo,
+            ket,
+            n_sweeps=40,
+            thrds=[1e-15],
+            tol=tol,
+            cutoff=self.cutoff,
+            iprint=0,
+            **schedule,
+        )
         return ket, mpo
 
     def _sz_state(
@@ -603,7 +623,11 @@ class Block2ImpuritySolver(_Block2Base):
         matrix block as a string and the size of that block.
         For example: ``[ ('up', 3), ('dn', 3) ]``.
     bond_dim : int, optional
-        Bond dimension of the matrix product state.
+        Largest bond dimension of the matrix product state.
+    cutoff : float, optional
+        Smallest eigenvalue of the reduced density matrix of a bond that is
+        kept, so that a bond keeps fewer than ``bond_dim`` states where they
+        suffice. Default is ``1e-10``.
     symmetries : mapping, optional
         Conserved quantities besides the particle number, ``"sz"`` (total
         spin projection) and ``"s"`` (total spin), and the sector of each. A
@@ -651,6 +675,7 @@ class Block2ImpuritySolver(_Block2Base):
         h_int: OpSum,
         gf_struct: GfStruct,
         bond_dim: int = 500,
+        cutoff: float = _CUTOFF,
         symmetries: Mapping[str, float | None] | None = None,
         spin_blocks: Sequence[tuple[str, str]] = (("up", "dn"),),
         mix_schedule: Sequence[tuple[float, int, float]] = _MIX_SCHEDULE,
@@ -659,7 +684,7 @@ class Block2ImpuritySolver(_Block2Base):
         comm: Comm | None = None,
     ) -> None:
         super().__init__(
-            gf_struct, bond_dim, spin_blocks, bath_size, comm, mix_schedule
+            gf_struct, bond_dim, cutoff, spin_blocks, bath_size, comm, mix_schedule
         )
 
         #: dict : Conserved quantities and their sectors.
@@ -862,7 +887,11 @@ class Block2ThermalImpuritySolver(_Block2Base):
     beta : float
         Inverse temperature of the impurity problem.
     bond_dim : int, optional
-        Bond dimension of the matrix product states.
+        Largest bond dimension of the matrix product states.
+    cutoff : float, optional
+        Smallest eigenvalue of the reduced density matrix of a bond that is
+        kept, so that a bond keeps fewer than ``bond_dim`` states where they
+        suffice. Default is ``1e-10``.
     time_step : float, optional
         Largest step in imaginary time of ``"purification"``. The state
         evolves to ``beta / 2`` in equal steps.
@@ -912,6 +941,7 @@ class Block2ThermalImpuritySolver(_Block2Base):
         gf_struct: GfStruct,
         beta: float,
         bond_dim: int = 500,
+        cutoff: float = _CUTOFF,
         time_step: float = 0.1,
         symmetries: Sequence[str] = ("sz",),
         spin_blocks: Sequence[tuple[str, str]] = (("up", "dn"),),
@@ -924,7 +954,7 @@ class Block2ThermalImpuritySolver(_Block2Base):
         comm: Comm | None = None,
     ) -> None:
         super().__init__(
-            gf_struct, bond_dim, spin_blocks, bath_size, comm, mix_schedule
+            gf_struct, bond_dim, cutoff, spin_blocks, bath_size, comm, mix_schedule
         )
 
         #: float : Inverse temperature of the impurity problem.
@@ -1104,6 +1134,7 @@ class Block2ThermalImpuritySolver(_Block2Base):
                     bra_bond_dims=[self.bond_dim],
                     n_sweeps=20,
                     tol=1e-12,
+                    cutoff=self.cutoff,
                     iprint=0,
                 )
                 ket = bra
@@ -1122,6 +1153,7 @@ class Block2ThermalImpuritySolver(_Block2Base):
             normalize_mps=True,
             hermitian=True,
             final_mps_tag="KET",
+            cutoff=self.cutoff,
             iprint=0,
         )
         # Z is 4^L times the product of the squared norms before each
