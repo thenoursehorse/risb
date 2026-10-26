@@ -127,5 +127,21 @@ def _resolve_external_reference(app, env, node, contnode):
     return missing_reference(app, env, node, contnode)
 
 
+def _public_bases(bases):
+    # The bases of a class, with each private base replaced by its own bases
+    return [
+        public
+        for base in bases
+        for public in (
+            _public_bases(base.__bases__) if base.__name__.startswith("_") else [base]
+        )
+    ]
+
+
+def _show_public_bases(_app, _name, _obj, _options, bases):
+    bases[:] = _public_bases(bases)
+
+
 def setup(app):
     app.connect("missing-reference", _resolve_external_reference)
+    app.connect("autodoc-process-bases", _show_public_bases)

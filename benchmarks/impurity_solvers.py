@@ -125,11 +125,11 @@ def time_lattice_solve(name: str, h_int: OpSum, n_orb: int, V: float = 0) -> Non
         symmetrizers=[paramagnetic],
     )
     start = time.perf_counter()
-    S.solve(tol=1e-8)
+    result = S.solve(tol=1e-8)
     elapsed = time.perf_counter() - start
     logger.info(
         f"{name:12s} {elapsed:8.2f} s, "
-        f"{S.optimize.n:4d} iterations, success {S.optimize.success}, "
+        f"{result.cycles:4d} iterations, success {result.converged}, "
         f"Z {S.Z[0]['up'][0, 0].real:.8f}"
     )
 

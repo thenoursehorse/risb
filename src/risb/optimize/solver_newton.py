@@ -65,6 +65,9 @@ class NewtonSolver(ABC):
         if error_fun not in {"recursion", "root"}:
             msg = f"Unrecognized error_fun {error_fun} !"
             raise ValueError(msg)
+
+        #: str : The error to make zero, ``'recursion'`` (``g_x - x``) or
+        #: ``'root'`` (the residual of the root functions).
         self.error_fun = error_fun
 
         #: list of numpy.ndarray : History of guesses to the root problem.

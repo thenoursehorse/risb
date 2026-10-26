@@ -20,7 +20,7 @@ logger = logging.getLogger(__name__)
 class SolveResult:
     """The outcome of :func:`drive`."""
 
-    #: numpy.ndarray : The last input of :meth:`FixedPointProblem.cycle`.
+    #: numpy.ndarray : The last input of :meth:`risb.types.FixedPointProblem.cycle`.
     x: NDArray[np.float64]
 
     #: bool : Whether the error fell below the tolerance.
@@ -96,6 +96,8 @@ class Driver:
         maxiter: int = 1000,
     ) -> None:
         self.problem = problem
+
+        #: risb.optimize.NewtonSolver : Gives the next guess after each cycle.
         self.optimizer = optimizer
         self.callbacks = callbacks
         self.tol = tol

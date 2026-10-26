@@ -724,7 +724,7 @@ def get_thermal_grand_potential(
     impurity_grand_potential : list of float
         Grand potential of the impurity problem of each cluster, in the order
         of the clusters, e.g.,
-        :attr:`risb.impurity_solvers.FockitImpuritySolver.grand_potential`.
+        :attr:`risb.impurity_solvers.FockitThermalImpuritySolver.grand_potential`.
 
     Returns
     -------
