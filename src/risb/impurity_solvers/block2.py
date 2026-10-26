@@ -23,6 +23,7 @@ import tempfile
 import warnings
 from collections.abc import Collection, Mapping, Sequence
 from itertools import combinations, product
+from pathlib import Path
 from typing import Any, override
 
 import numpy as np
@@ -369,6 +370,9 @@ class _Block2Base(ImpuritySolver):
             if twosz is not None:
                 Gs = [self._density_matrix(driver, symm_type, tag) for tag in sz_tags]
         variances = [self._variance(driver, symm_type, tag) for tag in sz_tags]
+        if twos is not None:
+            for tag in sz_tags:
+                _remove_mps(scratch.name, tag)
         return energies, Gs, tags, discarded_weight, scratch, variances
 
     def _refine(
@@ -550,6 +554,7 @@ class _Block2Base(ImpuritySolver):
         for m, sz_tag in sz_tags.items():
             driver = self._sz_driver(scratch, n_elec, m)
             total += self._in_state(driver, SymmetryTypes.SZ, sz_tag, const, h1, V)
+            _remove_mps(scratch, sz_tag)
         return total / len(twoszs)
 
     def _mixing(self, symm_type: SymmetryTypes) -> NDArray[np.float64]:
@@ -1426,3 +1431,10 @@ def _sector_size(L: int, n_elec: int, sector: _Sector) -> int:
     if twosz is not None:
         return math.comb(L, (n_elec + twosz) // 2) * math.comb(L, (n_elec - twosz) // 2)
     return math.comb(2 * L, n_elec)
+
+
+def _remove_mps(scratch: str, tag: str) -> None:
+    # Delete the files of the matrix product state tag in scratch
+    for path in Path(scratch).iterdir():
+        if path.name == f"{tag}-mps_info.bin" or f".{tag}." in path.name:
+            path.unlink()
