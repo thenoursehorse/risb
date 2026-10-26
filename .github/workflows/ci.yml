@@ -37,7 +37,7 @@ jobs:
           python-version: ${{ matrix.python-version }}
 
       - name: Install MPI
-        run: sudo apt-get update && sudo apt-get install -y libopenmpi-dev openmpi-bin
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libopenmpi-dev openmpi-bin
 
       - name: Install risb
         run: uv sync --locked --group docs --extra block2 --extra mpi

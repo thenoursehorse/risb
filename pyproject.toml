@@ -74,10 +74,6 @@ dev = [
   "scipy-stubs",
 ]
 
-[tool.uv]
-# Built against the MPI on the PATH
-no-binary-package = ["mpi4py"]
-
 [tool.pytest.ini_options]
 minversion = "9.0"
 addopts = ["-ra", "--showlocals", "--strict-markers", "--strict-config"]

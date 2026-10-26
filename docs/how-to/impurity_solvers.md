@@ -297,6 +297,8 @@ exact diagonalization. It needs the optional dependency block2, installed with
 pip install "risb[block2]"
 ```
 
+or `uv add "risb[block2]"` in a [uv](https://docs.astral.sh/uv) project.
+
 The impurity problem must be collinear and real: each block of `gf_struct` is
 one spin, and `h_int` conserves the total spin projection.
 
@@ -435,6 +437,9 @@ the machine, installed with
 ```bash
 pip install --no-binary mpi4py "risb[mpi]"
 ```
+
+or with [uv](https://docs.astral.sh/uv)
+`uv pip install --no-binary mpi4py "risb[mpi]"`.
 
 Pass the communicator to the solver
 

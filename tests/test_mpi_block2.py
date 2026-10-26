@@ -9,7 +9,11 @@ from test_block2 import assert_same_rho, assert_same_state, ghost_problem, solve
 from risb.helpers_fockit import N_op, S2_op
 from risb.impurity_solvers import FockitImpuritySolver, FockitThermalImpuritySolver
 
-MPI = pytest.importorskip("mpi4py.MPI")
+try:
+    from mpi4py import MPI
+except (ImportError, RuntimeError) as error:
+    # Without mpi4py, or without an MPI library for it to load
+    pytest.skip(str(error), allow_module_level=True)
 from risb.impurity_solvers import Block2ImpuritySolver, Block2ThermalImpuritySolver
 
 

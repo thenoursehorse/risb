@@ -21,6 +21,8 @@ from risb.kweight import SmearingKWeight
 pytest.importorskip("pyblock2")
 from risb.impurity_solvers import Block2ImpuritySolver, Block2ThermalImpuritySolver
 
+PRINT_SIZE = "from mpi4py import MPI; print(MPI.COMM_WORLD.Get_size())"
+
 type Problem = tuple[
     OpSum,
     list[tuple[str, int]],
@@ -338,6 +340,15 @@ def test_solvers_on_mpi_ranks_give_the_exact_states() -> None:
     mpirun = shutil.which("mpirun")
     if mpirun is None:
         pytest.skip("mpirun is not on the PATH")
+    # An mpirun of another MPI than mpi4py's starts each rank on its own
+    ranks = subprocess.run(
+        [mpirun, "-n", "2", sys.executable, "-c", PRINT_SIZE],
+        capture_output=True,
+        text=True,
+        timeout=60,
+        check=False,
+    )
+    assert ranks.stdout.split() == ["2", "2"], ranks.stdout + ranks.stderr
     tests = Path(__file__).parent
     result = subprocess.run(
         [
