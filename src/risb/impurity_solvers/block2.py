@@ -48,9 +48,8 @@ _MIX_STRENGTHS = (0.1, 0.01)
 # targeted states of a step unconverged
 _SUB_SWEEPS = 4
 
-# Energy tolerance of the screening of the sectors of the lowest states, and
-# of state-averaged DMRG, which converges slowly in its highest states
-_SCREEN_TOL = 1e-6
+# Energy tolerance of state-averaged DMRG, which converges slowly in its
+# highest states
 _ROOTS_TOL = 1e-8
 
 # Imaginary time and order of the Taylor series of the first step without a
@@ -749,9 +748,7 @@ class Block2ThermalImpuritySolver(_Block2Base):
 
     With ``method="lowest"``, the thermal average is over the lowest states of
     each sector within ``delta`` particles of half filling, found together by
-    state-averaged DMRG after a screening of the sectors at a quarter of the
-    bond dimension, and keeps the states with
-    ``beta * (E - E0) <= eta`` above the lowest energy ``E0``, as in L.
+    state-averaged DMRG, and keeps the states with ``beta * (E - E0) <= eta`` above the lowest energy ``E0``, as in L.
     Giordano, Y. Tan, Z.-H. Cui, and C. Sun,
     `arXiv:2601.01641 <https://arxiv.org/abs/2601.01641>`__. It is for low
     temperatures, where few states have a weight.
@@ -1046,46 +1043,27 @@ class Block2ThermalImpuritySolver(_Block2Base):
 
     def _lowest(self) -> _ThermalResult:
         # The thermal average over the lowest states of the sectors within
-        # delta particles of half filling, with beta (E - E0) <= eta. A
-        # screening at a smaller bond dimension keeps the sectors within twice
-        # the window and counts their states in it. Each kept sector then
-        # solves for one state more, doubled until the highest is above the
-        # window or every state of the sector is found
+        # delta particles of half filling, with beta (E - E0) <= eta. Each
+        # sector solves for its lowest state, and for twice as many states
+        # until the highest is above the window or every state of the sector
+        # is found
         L = len(self._sites)
         window = self.eta / self.beta
-        screened = {
-            (n_elec, sector): self._screen(sector, n_elec, 1)
+        runs = {
+            (n_elec, sector): self._run(sector, n_elec, 1, mix=True)
             for n_elec in range(max(0, L - self.delta), min(2 * L, L + self.delta) + 1)
             for sector in self._spin_sectors(min(n_elec, 2 * L - n_elec))
-        }
-        E0 = min(es[0] for es in screened.values())
-        nroots = {}
-        for (n_elec, sector), lowest in screened.items():
-            if lowest[0] - E0 > 2 * window:
-                continue
-            size = _sector_size(L, n_elec, sector)
-            es = lowest
-            while max(es) - E0 <= window and len(es) < size:
-                es = self._screen(sector, n_elec, min(2 * len(es), size))
-            n_in = sum(e - E0 <= window for e in es)
-            nroots[n_elec, sector] = min(n_in + 1, size)
-
-        runs = {
-            (n_elec, sector): self._run(sector, n_elec, n, mix=True)
-            for (n_elec, sector), n in nroots.items()
         }
         E0 = min(run[0][0] for run in runs.values())
         for n_elec, sector in runs:
             size = _sector_size(L, n_elec, sector)
             while (
                 max(runs[n_elec, sector][0]) - E0 <= window
-                and nroots[n_elec, sector] < size
+                and len(runs[n_elec, sector][0]) < size
             ):
+                nroots = min(2 * len(runs[n_elec, sector][0]), size)
                 runs[n_elec, sector][4].cleanup()
-                nroots[n_elec, sector] = min(2 * nroots[n_elec, sector], size)
-                runs[n_elec, sector] = self._run(
-                    sector, n_elec, nroots[n_elec, sector], mix=True
-                )
+                runs[n_elec, sector] = self._run(sector, n_elec, nroots, mix=True)
             logger.debug(
                 "Sector %d, %s: energies above the lowest %s",
                 n_elec,
@@ -1120,14 +1098,6 @@ class Block2ThermalImpuritySolver(_Block2Base):
         energy = float(p @ np.array([k[1] for k in kept]))
         states = [(float(w), *k[3][1:]) for w, k in zip(p, kept, strict=True)]
         return G, energy, -self.beta * E0 + np.log(Z), dirs, states
-
-    def _screen(self, sector: _Sector, n_elec: int, nroots: int) -> list[float]:
-        # Energies of the lowest nroots states of sector with n_elec electrons
-        # at a quarter of the bond dimension, converged to _SCREEN_TOL
-        with tempfile.TemporaryDirectory() as scratch:
-            driver, symm_type = self._driver(scratch, sector, n_elec)
-            M = max(self.bond_dim // 4, min(self.bond_dim, 50))
-            return self._optimize(driver, symm_type, nroots, M, True, _SCREEN_TOL)[1]
 
     def _spin_sectors(self, top: int) -> list[_Sector]:
         # The spin sectors of a particle number with top unpaired electrons at
