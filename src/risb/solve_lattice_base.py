@@ -20,7 +20,6 @@
 import warnings
 from abc import ABC, abstractmethod
 from collections.abc import Callable, Mapping, Sequence
-from itertools import product
 from typing import TypeIs
 
 import numpy as np
@@ -51,10 +50,11 @@ class BaseLatticeSolver(ABC):
     Each :meth:`one_cycle` finds the quasiparticle bands from :attr:`R` and
     :attr:`Lambda`, their k-space weights from :meth:`update_weights`, and the
     quasiparticle density matrices. It then calls :meth:`update_bath`,
-    :meth:`solve_impurities`, and :meth:`next_qp`. A subclass implements
-    :meth:`update_weights`, :meth:`update_bath`, and :meth:`next_qp`. The
-    attributes describe the :attr:`R` and :attr:`Lambda` of the cycle, and
-    the next ones are returned.
+    :meth:`solve_impurities`, :meth:`update_residuals`, and
+    :meth:`next_r_lambda`. A subclass implements :meth:`update_weights`,
+    :meth:`update_bath`, :meth:`update_residuals`, and :meth:`next_r_lambda`.
+    The attributes describe the :attr:`R` and :attr:`Lambda` of the cycle,
+    and the next ones are returned.
 
     Parameters
     ----------
@@ -184,9 +184,6 @@ class BaseLatticeSolver(ABC):
 
         self.symmetrizers = symmetrizers
         self.force_real = force_real
-
-        # The Hermitian basis of each size of square matrix
-        self._H_basis: dict[int, list[NDArray[np.inexact]]] = {}
 
         #: list of dict : Number of quasiparticle orbitals of each block of
         #: each cluster, which is the number of bath orbitals of its impurity
@@ -335,54 +332,6 @@ class BaseLatticeSolver(ABC):
         self.iteration = 0
 
     @staticmethod
-    def _hermitian_basis(N: int, is_real: bool = False) -> list[NDArray[np.inexact]]:
-        """
-        Return a basis of Hermitian matrices of size N.
-
-        Parameters
-        ----------
-        N : int
-            The dimension of the Hermitian matrics
-        is_real : bool
-            If True spans only symmetric matrices.
-
-        Returns
-        -------
-        list of numpy.ndarray
-            A list of matrices that define an orthonormal basis that spans all
-            Hermitian matrices of dimension `N`.
-
-        """
-        H_rs: list[NDArray[np.inexact]]
-        if is_real:
-            n_basis = int(N + N * (N - 1) / 2)
-            H_rs = [np.zeros([N, N]) for _ in range(n_basis)]
-        else:
-            n_basis = int(N + N * (N - 1) / 2 + N * (N - 1) / 2)
-            H_rs = [np.zeros([N, N], dtype=complex) for _ in range(n_basis)]
-
-        # Construct orthogonal basis
-        i = 0
-        for r, s in product(range(N), range(N)):
-            if r == s:
-                H_rs[i][r, r] = 1
-                i = i + 1
-            elif r < s:
-                H_rs[i][r, s] = 1
-                H_rs[i][s, r] = 1
-                i = i + 1
-            elif r > s:
-                if not is_real:
-                    H_rs[i][r, s] = 1j
-                    H_rs[i][s, r] = -1j
-                    i = i + 1
-
-        # Normalize
-        for i in range(len(H_rs)):
-            H_rs[i] = H_rs[i] / np.sqrt(np.einsum("ij,ji->", H_rs[i].conj().T, H_rs[i]))
-        return H_rs
-
-    @staticmethod
     def _initialize_block_mf_matrix(
         gf_struct: list[GfStruct], is_real: bool
     ) -> list[BlockMatrix]:
@@ -396,22 +345,17 @@ class BaseLatticeSolver(ABC):
                     A[i][bl] = np.zeros((bsize, bsize), dtype=complex)
         return A
 
-    def _hermitian_basis_of(self, N: int) -> list[NDArray[np.inexact]]:
-        if N not in self._H_basis:
-            self._H_basis[N] = self._hermitian_basis(N, self.force_real)
-        return self._H_basis[N]
-
-    def _flatten_matrix(self, A: list[BlockMatrix], is_coeff_real: bool) -> list[float]:
+    def _flatten_matrix(self, A: list[BlockMatrix], is_hermitian: bool) -> list[float]:
         x: list[float] = []
         for i in range(self.n_clusters):
             for bl, _bl_size in self.gf_struct[i]:
-                x += self._flatten_block(A[i][bl], is_coeff_real)
+                x += helpers.matrix_to_vector(A[i][bl], is_hermitian, self.force_real)
         return x
 
     def _unflatten_matrix(
         self,
         x: Sequence[float] | NDArray[np.float64],
-        is_coeff_real: bool,
+        is_hermitian: bool,
         like: list[BlockMatrix],
         offset: int = 0,
     ) -> tuple[list[BlockMatrix], int]:
@@ -419,77 +363,24 @@ class BaseLatticeSolver(ABC):
         A: list[BlockMatrix] = [{} for i in range(self.n_clusters)]
         for i in range(self.n_clusters):
             for bl, _bl_size in self.gf_struct[i]:
-                A[i][bl], offset = self._unflatten_block(
-                    x, is_coeff_real, like[i][bl].shape, offset
+                A[i][bl], offset = helpers.vector_to_matrix(
+                    x, like[i][bl].shape, is_hermitian, self.force_real, offset
                 )
-        return A, offset
-
-    def _flatten_block(
-        self, A: NDArray[np.inexact], is_coeff_real: bool
-    ) -> list[float]:
-        if A.shape[0] != A.shape[1]:
-            # A rectangular matrix, e.g., R with ghosts, is stored by its
-            # entries
-            coeffs = list(A.ravel())
-        else:
-            # To extract a coefficient of a basis that spans a vector
-            # space it is the inner product <basis_vec, vec> = coeff
-            # if the basis_vec is orthonormal. For matrices the inner
-            # product is <A, B> = Tr(A^+, B).
-            # Note that einsum is order mag faster than tr(a,b) and
-            # stores no intermediate array
-            # Could also vectorize both matrices as flatten('F') to
-            # column-major order and then take normal inner product
-            coeffs = [
-                np.einsum("ij,ji->", h.conj().T, A)
-                for h in self._hermitian_basis_of(A.shape[0])
-            ]
-        x: list[float] = []
-        for coeff in coeffs:
-            x.append(float(coeff.real))
-            if (not is_coeff_real) and (not self.force_real):
-                x.append(float(coeff.imag))
-        return x
-
-    def _unflatten_block(
-        self,
-        x: Sequence[float] | NDArray[np.float64],
-        is_coeff_real: bool,
-        shape: tuple[int, ...],
-        offset: int = 0,
-    ) -> tuple[NDArray[np.inexact], int]:
-        dtype = float if self.force_real else complex
-        if shape[0] != shape[1]:
-            basis = [
-                np.eye(shape[0] * shape[1])[n].reshape(shape)
-                for n in range(shape[0] * shape[1])
-            ]
-        else:
-            basis = self._hermitian_basis_of(shape[0])
-        A: NDArray[np.inexact] = np.zeros(shape, dtype=dtype)
-        for h in basis:
-            # x stores the coefficients of the basis
-            if is_coeff_real or self.force_real:
-                A = A + x[offset] * h
-                offset = offset + 1
-            else:
-                A = A + (x[offset] + 1j * x[offset + 1]) * h
-                offset = offset + 2
         return A, offset
 
     def _set_lambda_r(self, x: NDArray[np.float64]) -> None:
         # Lambda and R from the vector that cycle takes
         self.Lambda, offset = self._unflatten_matrix(
-            x, is_coeff_real=True, like=self.Lambda
+            x, is_hermitian=True, like=self.Lambda
         )
         self.R, _ = self._unflatten_matrix(
-            x, is_coeff_real=False, like=self.R, offset=offset
+            x, is_hermitian=False, like=self.R, offset=offset
         )
 
-    def _project(self, A: list[BlockMatrix], is_coeff_real: bool) -> list[BlockMatrix]:
+    def _project(self, A: list[BlockMatrix], is_hermitian: bool) -> list[BlockMatrix]:
         # Onto the matrices that x can hold, e.g., Hermitian or real
         A_projected, _ = self._unflatten_matrix(
-            self._flatten_matrix(A, is_coeff_real), is_coeff_real, like=A
+            self._flatten_matrix(A, is_hermitian), is_hermitian, like=A
         )
         return A_projected
 
@@ -508,7 +399,7 @@ class BaseLatticeSolver(ABC):
                 else:
                     h0_loc_matrix[i][bl] = helpers.get_h0_loc_matrix(self.h0_k[bl_full])
 
-        h0_loc_matrix = self._project(h0_loc_matrix, is_coeff_real=True)
+        h0_loc_matrix = self._project(h0_loc_matrix, is_hermitian=True)
         for symmetrize in self.symmetrizers:
             h0_loc_matrix = symmetrize(h0_loc_matrix)
 
@@ -524,8 +415,8 @@ class BaseLatticeSolver(ABC):
 
         """
         return np.array(
-            self._flatten_matrix(self.Lambda, is_coeff_real=True)
-            + self._flatten_matrix(self.R, is_coeff_real=False)
+            self._flatten_matrix(self.Lambda, is_hermitian=True)
+            + self._flatten_matrix(self.R, is_hermitian=False)
         )
 
     def cycle(
@@ -551,12 +442,12 @@ class BaseLatticeSolver(ABC):
         self._set_lambda_r(x)
         Lambda, R, self.f1, self.f2 = self.one_cycle()
         residual = np.array(
-            self._flatten_matrix(self.f2, is_coeff_real=True)
-            + self._flatten_matrix(self.f1, is_coeff_real=False)
+            self._flatten_matrix(self.f2, is_hermitian=True)
+            + self._flatten_matrix(self.f1, is_hermitian=False)
         )
         x_new = np.array(
-            self._flatten_matrix(Lambda, is_coeff_real=True)
-            + self._flatten_matrix(R, is_coeff_real=False)
+            self._flatten_matrix(Lambda, is_hermitian=True)
+            + self._flatten_matrix(R, is_hermitian=False)
         )
         return x_new, residual
 
@@ -584,6 +475,8 @@ class BaseLatticeSolver(ABC):
         """
         return []
 
+    # TODO: consider renaming this, since it returns the weights rather than
+    # updating them
     @abstractmethod
     def update_weights(self, energies: BlockRealArray) -> BlockRealArray:
         """
@@ -630,25 +523,31 @@ class BaseLatticeSolver(ABC):
                 self.rho_c[i][bl] = self.impurity_solvers[i].get_rho_c(bl)
 
         ## Enforce matrix structure from symmetries
-        self.rho_f = self._project(self.rho_f, is_coeff_real=True)
-        self.rho_cf = self._project(self.rho_cf, is_coeff_real=False)
-        self.rho_c = self._project(self.rho_c, is_coeff_real=True)
+        self.rho_f = self._project(self.rho_f, is_hermitian=True)
+        self.rho_cf = self._project(self.rho_cf, is_hermitian=False)
+        self.rho_c = self._project(self.rho_c, is_hermitian=True)
         for symmetrize in self.symmetrizers:
             self.rho_f = symmetrize(self.rho_f)
             self.rho_cf = symmetrize(self.rho_cf)
             self.rho_c = symmetrize(self.rho_c)
 
     @abstractmethod
-    def next_qp(self) -> tuple[list[BlockMatrix], list[BlockMatrix]]:
+    def update_residuals(self) -> None:
+        """Set the root functions :attr:`f1` and :attr:`f2` from the impurity density matrices."""
+
+    @abstractmethod
+    def next_r_lambda(self) -> tuple[list[BlockMatrix], list[BlockMatrix]]:
         """
-        Set :attr:`f1` and :attr:`f2`, and return the next :attr:`Lambda` and :attr:`R` from the impurity density matrices.
+        Return the next :attr:`R` and :attr:`Lambda` from the impurity density matrices.
+
+        It does not change :attr:`R` and :attr:`Lambda`.
 
         Returns
         -------
-        Lambda : list of risb.types.BlockMatrix
-            The next correlation potential matrix on each cluster.
         R : list of risb.types.BlockMatrix
             The next renormalization matrix on each cluster.
+        Lambda : list of risb.types.BlockMatrix
+            The next correlation potential matrix on each cluster.
 
         """
 
@@ -727,8 +626,8 @@ class BaseLatticeSolver(ABC):
         # FIXME More expensive to do this than just storing and working with the coefficients, but
         # nothing compared to solving the impurity problem so this is likely fine
         # Enforce matrix structure from symmetries
-        self.rho_qp = self._project(self.rho_qp, is_coeff_real=True)
-        # self.lopsided_ke_qp, _ = self._unflatten_matrix( self._flatten_matrix( self.lopsided_ke_qp, is_coeff_real=False ), is_coeff_real=False )
+        self.rho_qp = self._project(self.rho_qp, is_hermitian=True)
+        # self.lopsided_ke_qp, _ = self._unflatten_matrix( self._flatten_matrix( self.lopsided_ke_qp, is_hermitian=False ), is_hermitian=False )
         for symmetrize in self.symmetrizers:
             self.rho_qp = symmetrize(self.rho_qp)
             # self.lopsided_ke_qp = symmetrize(self.lopsided_ke_qp) # FIXME can I do it to ke as well? It should have same symm as D
@@ -736,7 +635,8 @@ class BaseLatticeSolver(ABC):
 
         self.update_bath()
         self.solve_impurities()
-        Lambda, R = self.next_qp()
+        self.update_residuals()
+        R, Lambda = self.next_r_lambda()
 
         self.iteration += 1
 

@@ -118,8 +118,8 @@ class LatticeSolver(BaseLatticeSolver):
                     )
 
         # Enforce matrix structure from symmetries
-        self.Lambda_c = self._project(self.Lambda_c, is_coeff_real=True)
-        self.D = self._project(self.D, is_coeff_real=False)
+        self.Lambda_c = self._project(self.Lambda_c, is_hermitian=True)
+        self.D = self._project(self.D, is_hermitian=False)
         for symmetrize in self.symmetrizers:
             self.Lambda_c = symmetrize(self.Lambda_c)
             self.D = symmetrize(self.D)
@@ -132,13 +132,12 @@ class LatticeSolver(BaseLatticeSolver):
         core_scale = self._core_scale()
         for i in range(self.n_clusters):
             for bl in self.Lambda_c[i]:
-                self.Lambda_c[i][bl] = _place_core_baths(
+                self.Lambda_c[i][bl] = _pin_full_empty_bath_levels(
                     self.Lambda_c[i][bl], self.rho_qp[i][bl], core_scale
                 )
 
     @override
-    def next_qp(self) -> tuple[list[BlockMatrix], list[BlockMatrix]]:
-        core_scale = self._core_scale()
+    def update_residuals(self) -> None:
         for i in range(self.n_clusters):
             for bl, _ in self.gf_struct[i]:
                 self.f1[i][bl] = helpers.get_f1(
@@ -147,12 +146,15 @@ class LatticeSolver(BaseLatticeSolver):
                 self.f2[i][bl] = helpers.get_f2(self.rho_f[i][bl], self.rho_qp[i][bl])
 
         # Enforce matrix structure from symmetries
-        self.f2 = self._project(self.f2, is_coeff_real=True)
-        self.f1 = self._project(self.f1, is_coeff_real=False)
+        self.f2 = self._project(self.f2, is_hermitian=True)
+        self.f1 = self._project(self.f1, is_hermitian=False)
         for symmetrize in self.symmetrizers:
             self.f1 = symmetrize(self.f1)
             self.f2 = symmetrize(self.f2)
 
+    @override
+    def next_r_lambda(self) -> tuple[list[BlockMatrix], list[BlockMatrix]]:
+        core_scale = self._core_scale()
         Lambda: list[BlockMatrix] = [{} for _ in range(self.n_clusters)]
         R: list[BlockMatrix] = [{} for _ in range(self.n_clusters)]
         for i in range(self.n_clusters):
@@ -168,8 +170,8 @@ class LatticeSolver(BaseLatticeSolver):
                     Lambda[i][bl], R[i][bl] = Lambda[i][bl].real, R[i][bl].real
 
         # Enforce matrix structure from symmetries
-        Lambda = self._project(Lambda, is_coeff_real=True)
-        R = self._project(R, is_coeff_real=False)
+        Lambda = self._project(Lambda, is_hermitian=True)
+        R = self._project(R, is_hermitian=False)
         for symmetrize in self.symmetrizers:
             Lambda = symmetrize(Lambda)
             R = symmetrize(R)
@@ -182,12 +184,12 @@ class LatticeSolver(BaseLatticeSolver):
         # channel for the other orbitals, can also exist
         for i in range(self.n_clusters):
             for bl in Lambda[i]:
-                Lambda[i][bl] = _place_core_levels(
+                Lambda[i][bl] = _pin_full_empty_qp_levels(
                     Lambda[i][bl],
                     self.rho_f[i][bl],
                     self._kinetic_half_bandwidth + core_scale,
                 )
-        return Lambda, R
+        return R, Lambda
 
     def _core_scale(self) -> float:
         # An energy far from every energy of the model, leaving out the
@@ -218,7 +220,7 @@ def _edge_orbitals(
     return eigenvalues, vectors, eigenvalues * (1 - eigenvalues) < helpers.EDGE_TOL
 
 
-def _place_core_baths(
+def _pin_full_empty_bath_levels(
     Lambda_c: NDArray[np.inexact], rho_qp: NDArray[np.inexact], scale: float
 ) -> NDArray[np.inexact]:
     eigenvalues, vectors, edge = _edge_orbitals(rho_qp)
@@ -232,7 +234,7 @@ def _place_core_baths(
     return Lambda_c
 
 
-def _place_core_levels(
+def _pin_full_empty_qp_levels(
     Lambda: NDArray[np.inexact], rho_f: NDArray[np.inexact], margin: float
 ) -> NDArray[np.inexact]:
     eigenvalues, vectors, edge = _edge_orbitals(rho_f)

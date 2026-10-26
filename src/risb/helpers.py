@@ -20,12 +20,15 @@
 # from scipy.linalg import pinv
 # from scipy.special import binom
 import warnings
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
+from functools import cache
+from itertools import product
 
 import numpy as np
 from numpy.linalg import inv
 from numpy.typing import NDArray
 from scipy.linalg import sqrtm
+from scipy.optimize import least_squares
 from scipy.special import expit
 
 from risb.types import BlockMatrix, BlockMatrixLike, BlockRealArray
@@ -446,6 +449,369 @@ def get_h0_emb_grand_potential(
     energies = np.linalg.eigvalsh(get_h0_emb(R, Lambda, D, Lambda_c, mu))
     omega = np.trace(Lambda_c).real - np.sum(np.logaddexp(0, -beta * energies)) / beta
     return float(omega)
+
+
+def get_thermal_f1(
+    rho_cf: NDArray[np.inexact], rho_qpf: NDArray[np.inexact], R: NDArray[np.inexact]
+) -> NDArray[np.inexact]:
+    """
+    Return the first self-consistent equation of finite-temperature RISB.
+
+    Parameters
+    ----------
+    rho_cf : numpy.ndarray
+        c,f-electron hybridization density matrix from the impurity problem.
+    rho_qpf : numpy.ndarray
+        Quasiparticle-bath density matrix of the quadratic embedding
+        Hamiltonian, from :func:`get_h0_emb_densities`.
+    R : numpy.ndarray
+        Renormalization matrix from electrons to quasiparticles.
+
+    Returns
+    -------
+    f1 : numpy.ndarray
+        First self-consistency equation.
+
+    Notes
+    -----
+    Eq. 203 of `arXiv:2603.20559 <arXiv260320559_>`__.
+
+    .. _arXiv260320559: https://arxiv.org/abs/2603.20559
+
+    """
+    f1: NDArray[np.inexact] = rho_cf - R.T @ rho_qpf
+    return f1
+
+
+def get_thermal_f2(
+    rho_f: NDArray[np.inexact], rho_f_emb: NDArray[np.inexact]
+) -> NDArray[np.inexact]:
+    """
+    Return the second self-consistent equation of finite-temperature RISB.
+
+    Parameters
+    ----------
+    rho_f : numpy.ndarray
+        f-electron density matrix from the impurity problem.
+    rho_f_emb : numpy.ndarray
+        Bath density matrix of the quadratic embedding Hamiltonian, from
+        :func:`get_h0_emb_densities`.
+
+    Returns
+    -------
+    f2 : numpy.ndarray
+        Second self-consistency equation.
+
+    Notes
+    -----
+    Eq. 202 of `arXiv:2603.20559 <arXiv260320559_>`__.
+
+    .. _arXiv260320559: https://arxiv.org/abs/2603.20559
+
+    """
+    f2: NDArray[np.inexact] = rho_f - rho_f_emb
+    return f2
+
+
+def get_thermal_d_lambda_c(
+    rho_qp: NDArray[np.inexact],
+    ke: NDArray[np.inexact],
+    R: NDArray[np.inexact],
+    Lambda: NDArray[np.inexact],
+    beta: float,
+    mu: float,
+    D: NDArray[np.inexact],
+    Lambda_c: NDArray[np.inexact],
+    *,
+    anchor: tuple[NDArray[np.inexact], NDArray[np.inexact]] | None = None,
+    alpha: float = 1e-8,
+    force_real: bool = False,
+) -> tuple[NDArray[np.inexact], NDArray[np.inexact]]:
+    """
+    Return the hybridization and bath coupling of the impurity problem at finite temperature.
+
+    They are fit, starting from ``D`` and ``Lambda_c``, so that the quadratic
+    embedding Hamiltonian has the quasiparticle density matrix ``rho_qp``
+    and ``rho_qpf @ D = ke.T``.
+
+    Parameters
+    ----------
+    rho_qp : numpy.ndarray
+        Quasiparticle density matrix obtained from the mean-field.
+    ke : numpy.ndarray
+        Lopsided quasiparticle kinetic energy.
+    R : numpy.ndarray
+        Renormalization matrix from electrons to quasiparticles.
+    Lambda : numpy.ndarray
+        Correlation potential of quasiparticles.
+    beta : float
+        Inverse temperature.
+    mu : float
+        Chemical potential.
+    D : numpy.ndarray
+        Hybridization coupling to start the fit from.
+    Lambda_c : numpy.ndarray
+        Bath coupling to start the fit from.
+    anchor : tuple of numpy.ndarray, optional
+        ``(D, Lambda_c)`` to also minimize ``alpha`` times the squared
+        distance from. It pins combinations that the equations barely fix.
+    alpha : float, optional
+        Strength of ``anchor``.
+    force_real : bool, optional
+        Whether the matrices are real.
+
+    Returns
+    -------
+    D : numpy.ndarray
+        Hybridization coupling of the impurity problem.
+    Lambda_c : numpy.ndarray
+        Bath coupling of the impurity problem.
+
+    Notes
+    -----
+    Eqs. 200-201 of `arXiv:2603.20559 <arXiv260320559_>`__.
+
+    .. _arXiv260320559: https://arxiv.org/abs/2603.20559
+
+    """
+
+    def unflatten(
+        y: NDArray[np.float64],
+    ) -> tuple[NDArray[np.inexact], NDArray[np.inexact]]:
+        Lambda_c_y, offset = vector_to_matrix(y, Lambda_c.shape, True, force_real)
+        D_y, _ = vector_to_matrix(y, D.shape, False, force_real, offset)
+        return D_y, Lambda_c_y
+
+    def flatten(
+        D_y: NDArray[np.inexact], Lambda_c_y: NDArray[np.inexact]
+    ) -> list[float]:
+        return matrix_to_vector(Lambda_c_y, True, force_real) + matrix_to_vector(
+            D_y, False, force_real
+        )
+
+    def residual(y: NDArray[np.float64]) -> NDArray[np.float64]:
+        D_y, Lambda_c_y = unflatten(y)
+        rho_qp_emb, rho_qpf, _ = get_h0_emb_densities(
+            R, Lambda, D_y, Lambda_c_y, beta, mu
+        )
+        return _entries(rho_qp_emb - rho_qp, rho_qpf @ D_y - ke.T)
+
+    y_anchor = None if anchor is None else flatten(*anchor)
+    return unflatten(_fit(residual, flatten(D, Lambda_c), y_anchor, alpha))
+
+
+def get_thermal_r_lambda(
+    rho_f: NDArray[np.inexact],
+    rho_cf: NDArray[np.inexact],
+    D: NDArray[np.inexact],
+    Lambda_c: NDArray[np.inexact],
+    beta: float,
+    mu: float,
+    R: NDArray[np.inexact],
+    Lambda: NDArray[np.inexact],
+    *,
+    anchor: tuple[NDArray[np.inexact], NDArray[np.inexact]] | None = None,
+    alpha: float = 1e-8,
+    force_real: bool = False,
+) -> tuple[NDArray[np.inexact], NDArray[np.inexact]]:
+    """
+    Return the renormalization matrix and correlation potential of the quasiparticles at finite temperature.
+
+    They are fit, starting from ``R`` and ``Lambda``, so that the quadratic
+    embedding Hamiltonian has the density matrices ``rho_f`` and ``rho_cf``
+    of the impurity problem.
+
+    Parameters
+    ----------
+    rho_f : numpy.ndarray
+        f-electron density matrix from the impurity problem.
+    rho_cf : numpy.ndarray
+        c,f-electron hybridization density matrix from the impurity problem.
+    D : numpy.ndarray
+        Hybridization coupling of the impurity problem.
+    Lambda_c : numpy.ndarray
+        Bath coupling of the impurity problem.
+    beta : float
+        Inverse temperature.
+    mu : float
+        Chemical potential.
+    R : numpy.ndarray
+        Renormalization matrix to start the fit from.
+    Lambda : numpy.ndarray
+        Correlation potential to start the fit from.
+    anchor : tuple of numpy.ndarray, optional
+        ``(R, Lambda)`` to also minimize ``alpha`` times the squared distance
+        from. It pins combinations that the equations barely fix.
+    alpha : float, optional
+        Strength of ``anchor``.
+    force_real : bool, optional
+        Whether the matrices are real.
+
+    Returns
+    -------
+    R : numpy.ndarray
+        Renormalization matrix from electrons to quasiparticles.
+    Lambda : numpy.ndarray
+        Correlation potential of quasiparticles.
+
+    Notes
+    -----
+    Eqs. 202-203 of `arXiv:2603.20559 <arXiv260320559_>`__.
+
+    .. _arXiv260320559: https://arxiv.org/abs/2603.20559
+
+    """
+
+    def unflatten(
+        y: NDArray[np.float64],
+    ) -> tuple[NDArray[np.inexact], NDArray[np.inexact]]:
+        Lambda_y, offset = vector_to_matrix(y, Lambda.shape, True, force_real)
+        R_y, _ = vector_to_matrix(y, R.shape, False, force_real, offset)
+        return R_y, Lambda_y
+
+    def flatten(R_y: NDArray[np.inexact], Lambda_y: NDArray[np.inexact]) -> list[float]:
+        return matrix_to_vector(Lambda_y, True, force_real) + matrix_to_vector(
+            R_y, False, force_real
+        )
+
+    def residual(y: NDArray[np.float64]) -> NDArray[np.float64]:
+        R_y, Lambda_y = unflatten(y)
+        _, rho_qpf, rho_f_emb = get_h0_emb_densities(
+            R_y, Lambda_y, D, Lambda_c, beta, mu
+        )
+        return _entries(rho_f_emb - rho_f, R_y.T @ rho_qpf - rho_cf)
+
+    y_anchor = None if anchor is None else flatten(*anchor)
+    return unflatten(_fit(residual, flatten(R, Lambda), y_anchor, alpha))
+
+
+@cache
+def get_hermitian_basis(
+    N: int, is_real: bool = False
+) -> tuple[NDArray[np.inexact], ...]:
+    """
+    Return an orthonormal basis of the Hermitian matrices of size ``N``.
+
+    Parameters
+    ----------
+    N : int
+        Size of the matrices.
+    is_real : bool, optional
+        Whether the basis spans only the real symmetric matrices.
+
+    Returns
+    -------
+    tuple of numpy.ndarray
+        The basis matrices, orthonormal in the inner product
+        ``Tr(A^dag B)``. They are read-only.
+
+    """
+    basis: list[NDArray[np.inexact]] = []
+    for r, s in product(range(N), range(N)):
+        H = np.zeros((N, N), dtype=float if is_real else complex)
+        if r == s:
+            H[r, r] = 1
+        elif r < s:
+            H[r, s] = H[s, r] = 1
+        elif not is_real:
+            H[r, s], H[s, r] = 1j, -1j
+        else:
+            continue
+        H = H / np.sqrt(np.einsum("ij,ji->", H.conj().T, H))
+        H.flags.writeable = False
+        basis.append(H)
+    return tuple(basis)
+
+
+def matrix_to_vector(
+    A: NDArray[np.inexact], is_hermitian: bool, is_real: bool = False
+) -> list[float]:
+    """
+    Return the real numbers that hold a matrix.
+
+    A square matrix is held by its coefficients in
+    :func:`get_hermitian_basis`, which are real for a Hermitian matrix, and
+    a rectangular matrix by its entries, e.g., ``R`` with ghosts. The real
+    part of each, and the imaginary part unless ``is_hermitian`` or
+    ``is_real``, are in the vector.
+
+    Parameters
+    ----------
+    A : numpy.ndarray
+        The matrix.
+    is_hermitian : bool
+        Whether ``A`` is Hermitian, so that its coefficients are real.
+    is_real : bool, optional
+        Whether ``A`` is real.
+
+    Returns
+    -------
+    list of float
+        The real numbers, as :func:`vector_to_matrix` takes them.
+
+    """
+    if A.shape[0] != A.shape[1]:
+        coeffs = list(A.ravel())
+    else:
+        coeffs = [
+            np.einsum("ij,ji->", h.conj().T, A)
+            for h in get_hermitian_basis(A.shape[0], is_real)
+        ]
+    x: list[float] = []
+    for coeff in coeffs:
+        x.append(float(coeff.real))
+        if not is_hermitian and not is_real:
+            x.append(float(coeff.imag))
+    return x
+
+
+def vector_to_matrix(
+    x: Sequence[float] | NDArray[np.float64],
+    shape: tuple[int, ...],
+    is_hermitian: bool,
+    is_real: bool = False,
+    offset: int = 0,
+) -> tuple[NDArray[np.inexact], int]:
+    """
+    Return the matrix held by real numbers from :func:`matrix_to_vector`.
+
+    Parameters
+    ----------
+    x : sequence of float
+        The real numbers.
+    shape : tuple of int
+        Shape of the matrix.
+    is_hermitian : bool
+        Whether the matrix is Hermitian.
+    is_real : bool, optional
+        Whether the matrix is real.
+    offset : int, optional
+        Where the matrix starts in ``x``.
+
+    Returns
+    -------
+    A : numpy.ndarray
+        The matrix.
+    offset : int
+        Where the matrix ends in ``x``, e.g., where the next one starts.
+
+    """
+    if shape[0] != shape[1]:
+        basis: Sequence[NDArray[np.inexact]] = [
+            np.eye(shape[0] * shape[1])[n].reshape(shape)
+            for n in range(shape[0] * shape[1])
+        ]
+    else:
+        basis = get_hermitian_basis(shape[0], is_real)
+    A: NDArray[np.inexact] = np.zeros(shape, dtype=float if is_real else complex)
+    for h in basis:
+        if is_hermitian or is_real:
+            A = A + x[offset] * h
+            offset = offset + 1
+        else:
+            A = A + (x[offset] + 1j * x[offset + 1]) * h
+            offset = offset + 2
+    return A, offset
 
 
 def get_lagrangian(
@@ -1885,3 +2251,31 @@ def _dagger(A: NDArray[np.inexact]) -> NDArray[np.inexact]:
 def _fermi_entropy(x: NDArray[np.floating]) -> float:
     # Entropy of fermion modes at energies x in units of the temperature
     return float(np.sum(np.logaddexp(0, -x) + x * expit(-x)))
+
+
+def _entries(*arrays: NDArray[np.inexact]) -> NDArray[np.float64]:
+    # The real and imaginary parts of every entry, as residuals to fit
+    return np.concatenate(
+        [np.concatenate([A.real.ravel(), A.imag.ravel()]) for A in arrays]
+    )
+
+
+def _fit(
+    residual: Callable[[NDArray[np.float64]], NDArray[np.float64]],
+    y0: list[float],
+    anchor: list[float] | None,
+    alpha: float,
+) -> NDArray[np.float64]:
+    # The least-squares solution of residual from y0, also pulled towards
+    # anchor by alpha times the squared distance
+    fun = residual
+    if anchor is not None:
+        y_anchor, scale = np.array(anchor), np.sqrt(alpha)
+
+        def fun(y: NDArray[np.float64]) -> NDArray[np.float64]:
+            return np.concatenate([residual(y), scale * (y - y_anchor)])
+
+    y: NDArray[np.float64] = least_squares(
+        fun, y0, xtol=1e-15, ftol=1e-15, gtol=1e-15
+    ).x
+    return y

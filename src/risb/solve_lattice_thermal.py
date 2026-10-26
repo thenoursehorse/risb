@@ -22,7 +22,7 @@ from typing import Any, override
 
 import numpy as np
 from numpy.typing import NDArray
-from scipy.optimize import brentq, least_squares
+from scipy.optimize import brentq
 from scipy.special import expit
 
 from risb import helpers
@@ -122,7 +122,9 @@ class ThermalLatticeSolver(BaseLatticeSolver):
 
         # The strength and the reference parameters of each fit after anchor()
         self._anchor_alpha: float | None = None
-        self._anchors: dict[tuple[str, int, str], NDArray[np.float64]] = {}
+        self._anchors: dict[
+            tuple[str, int, str], tuple[NDArray[np.inexact], NDArray[np.inexact]]
+        ] = {}
 
         self.mu: float
         if mu is not None:
@@ -186,19 +188,29 @@ class ThermalLatticeSolver(BaseLatticeSolver):
                 else:
                     D = helpers.get_d(rho_qp, ke)
                     Lambda_c = helpers.get_lambda_c(rho_qp, R, Lambda, D)
-                self.D[i][bl], self.Lambda_c[i][bl] = self._fit_bath(
-                    R, Lambda, D, Lambda_c, rho_qp, ke, ("bath", i, bl)
+                self.D[i][bl], self.Lambda_c[i][bl] = helpers.get_thermal_d_lambda_c(
+                    rho_qp,
+                    ke,
+                    R,
+                    Lambda,
+                    self.beta,
+                    self.mu,
+                    D,
+                    Lambda_c,
+                    anchor=self._anchor_of(("bath", i, bl), (D, Lambda_c)),
+                    alpha=self._anchor_alpha or 0.0,
+                    force_real=self.force_real,
                 )
 
         # Enforce matrix structure from symmetries
-        self.Lambda_c = self._project(self.Lambda_c, is_coeff_real=True)
-        self.D = self._project(self.D, is_coeff_real=False)
+        self.Lambda_c = self._project(self.Lambda_c, is_hermitian=True)
+        self.D = self._project(self.D, is_hermitian=False)
         for symmetrize in self.symmetrizers:
             self.Lambda_c = symmetrize(self.Lambda_c)
             self.D = symmetrize(self.D)
 
     @override
-    def next_qp(self) -> tuple[list[BlockMatrix], list[BlockMatrix]]:
+    def update_residuals(self) -> None:
         # The electrons of the bands of the orbitals in no cluster are those of
         # all bands minus those of the clusters
         self.n_electrons = float(
@@ -209,38 +221,55 @@ class ThermalLatticeSolver(BaseLatticeSolver):
                 for bl in self.rho_c[i]
             )
         )
-        Lambda_next: list[BlockMatrix] = [{} for _ in range(self.n_clusters)]
-        R_next: list[BlockMatrix] = [{} for _ in range(self.n_clusters)]
         for i in range(self.n_clusters):
             for bl, _ in self.gf_struct[i]:
-                R, Lambda = self.R[i][bl], self.Lambda[i][bl]
-                D, Lambda_c = self.D[i][bl], self.Lambda_c[i][bl]
+                R = self.R[i][bl]
                 _, rho_qpf, rho_f_emb = helpers.get_h0_emb_densities(
-                    R, Lambda, D, Lambda_c, self.beta, self.mu
-                )
-                self.f1[i][bl] = self.rho_cf[i][bl] - R.T @ rho_qpf
-                self.f2[i][bl] = self.rho_f[i][bl] - rho_f_emb
-                R_next[i][bl], Lambda_next[i][bl] = self._fit_qp(
                     R,
-                    Lambda,
-                    D,
-                    Lambda_c,
-                    self.rho_f[i][bl],
-                    self.rho_cf[i][bl],
-                    ("qp", i, bl),
+                    self.Lambda[i][bl],
+                    self.D[i][bl],
+                    self.Lambda_c[i][bl],
+                    self.beta,
+                    self.mu,
                 )
+                self.f1[i][bl] = helpers.get_thermal_f1(self.rho_cf[i][bl], rho_qpf, R)
+                self.f2[i][bl] = helpers.get_thermal_f2(self.rho_f[i][bl], rho_f_emb)
 
         # Enforce matrix structure from symmetries
-        self.f2 = self._project(self.f2, is_coeff_real=True)
-        self.f1 = self._project(self.f1, is_coeff_real=False)
-        Lambda_next = self._project(Lambda_next, is_coeff_real=True)
-        R_next = self._project(R_next, is_coeff_real=False)
+        self.f2 = self._project(self.f2, is_hermitian=True)
+        self.f1 = self._project(self.f1, is_hermitian=False)
         for symmetrize in self.symmetrizers:
             self.f1 = symmetrize(self.f1)
             self.f2 = symmetrize(self.f2)
-            Lambda_next = symmetrize(Lambda_next)
+
+    @override
+    def next_r_lambda(self) -> tuple[list[BlockMatrix], list[BlockMatrix]]:
+        R_next: list[BlockMatrix] = [{} for _ in range(self.n_clusters)]
+        Lambda_next: list[BlockMatrix] = [{} for _ in range(self.n_clusters)]
+        for i in range(self.n_clusters):
+            for bl, _ in self.gf_struct[i]:
+                R, Lambda = self.R[i][bl], self.Lambda[i][bl]
+                R_next[i][bl], Lambda_next[i][bl] = helpers.get_thermal_r_lambda(
+                    self.rho_f[i][bl],
+                    self.rho_cf[i][bl],
+                    self.D[i][bl],
+                    self.Lambda_c[i][bl],
+                    self.beta,
+                    self.mu,
+                    R,
+                    Lambda,
+                    anchor=self._anchor_of(("qp", i, bl), (R, Lambda)),
+                    alpha=self._anchor_alpha or 0.0,
+                    force_real=self.force_real,
+                )
+
+        # Enforce matrix structure from symmetries
+        R_next = self._project(R_next, is_hermitian=False)
+        Lambda_next = self._project(Lambda_next, is_hermitian=True)
+        for symmetrize in self.symmetrizers:
             R_next = symmetrize(R_next)
-        return Lambda_next, R_next
+            Lambda_next = symmetrize(Lambda_next)
+        return R_next, Lambda_next
 
     @override
     def get_x(self) -> NDArray[np.float64]:
@@ -353,77 +382,15 @@ class ThermalLatticeSolver(BaseLatticeSolver):
         self._anchor_alpha = None
         self._anchors = {}
 
-    def _fit(
+    def _anchor_of(
         self,
-        residual: Callable[[NDArray[np.float64]], NDArray[np.float64]],
-        y0: list[float],
         key: tuple[str, int, str],
-    ) -> NDArray[np.float64]:
-        fun = residual
-        if self._anchor_alpha is not None:
-            anchor = self._anchors.setdefault(key, np.array(y0))
-            scale = np.sqrt(self._anchor_alpha)
-
-            def fun(y: NDArray[np.float64]) -> NDArray[np.float64]:
-                return np.concatenate([residual(y), scale * (y - anchor)])
-
-        result = least_squares(fun, y0, xtol=1e-15, ftol=1e-15, gtol=1e-15)
-        y: NDArray[np.float64] = result.x
-        return y
-
-    def _fit_bath(
-        self,
-        R: NDArray[np.inexact],
-        Lambda: NDArray[np.inexact],
-        D: NDArray[np.inexact],
-        Lambda_c: NDArray[np.inexact],
-        rho_qp: NDArray[np.inexact],
-        ke: NDArray[np.inexact],
-        key: tuple[str, int, str],
-    ) -> tuple[NDArray[np.inexact], NDArray[np.inexact]]:
-        def unflatten(
-            y: NDArray[np.float64],
-        ) -> tuple[NDArray[np.inexact], NDArray[np.inexact]]:
-            Lambda_c_y, offset = self._unflatten_block(y, True, Lambda_c.shape)
-            D_y, _ = self._unflatten_block(y, False, D.shape, offset)
-            return D_y, Lambda_c_y
-
-        def residual(y: NDArray[np.float64]) -> NDArray[np.float64]:
-            D_y, Lambda_c_y = unflatten(y)
-            rho_qp_emb, rho_qpf, _ = helpers.get_h0_emb_densities(
-                R, Lambda, D_y, Lambda_c_y, self.beta, self.mu
-            )
-            return _entries(rho_qp_emb - rho_qp, rho_qpf @ D_y - ke.T)
-
-        y0 = self._flatten_block(Lambda_c, True) + self._flatten_block(D, False)
-        return unflatten(self._fit(residual, y0, key))
-
-    def _fit_qp(
-        self,
-        R: NDArray[np.inexact],
-        Lambda: NDArray[np.inexact],
-        D: NDArray[np.inexact],
-        Lambda_c: NDArray[np.inexact],
-        rho_f: NDArray[np.inexact],
-        rho_cf: NDArray[np.inexact],
-        key: tuple[str, int, str],
-    ) -> tuple[NDArray[np.inexact], NDArray[np.inexact]]:
-        def unflatten(
-            y: NDArray[np.float64],
-        ) -> tuple[NDArray[np.inexact], NDArray[np.inexact]]:
-            Lambda_y, offset = self._unflatten_block(y, True, Lambda.shape)
-            R_y, _ = self._unflatten_block(y, False, R.shape, offset)
-            return R_y, Lambda_y
-
-        def residual(y: NDArray[np.float64]) -> NDArray[np.float64]:
-            R_y, Lambda_y = unflatten(y)
-            _, rho_qpf, rho_f_emb = helpers.get_h0_emb_densities(
-                R_y, Lambda_y, D, Lambda_c, self.beta, self.mu
-            )
-            return _entries(rho_f_emb - rho_f, R_y.T @ rho_qpf - rho_cf)
-
-        y0 = self._flatten_block(Lambda, True) + self._flatten_block(R, False)
-        return unflatten(self._fit(residual, y0, key))
+        start: tuple[NDArray[np.inexact], NDArray[np.inexact]],
+    ) -> tuple[NDArray[np.inexact], NDArray[np.inexact]] | None:
+        # Where the first fit of key after anchor started, if anchored
+        if self._anchor_alpha is None:
+            return None
+        return self._anchors.setdefault(key, (start[0].copy(), start[1].copy()))
 
 
 def _mu_of_filling(
@@ -439,10 +406,3 @@ def _mu_of_filling(
     low = min(float(np.min(e)) for e in energies.values()) - 50 / beta
     high = max(float(np.max(e)) for e in energies.values()) + 50 / beta
     return float(brentq(excess, low, high))
-
-
-def _entries(*arrays: NDArray[np.inexact]) -> NDArray[np.float64]:
-    # The real and imaginary parts of every entry, as residuals to fit
-    return np.concatenate(
-        [np.concatenate([A.real.ravel(), A.imag.ravel()]) for A in arrays]
-    )

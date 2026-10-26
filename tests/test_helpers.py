@@ -872,3 +872,73 @@ def test_quadratic_embedding_at_low_temperature_purifies_a_solution() -> None:
         assert rho_f == pytest.approx(Delta, abs=1e-10)
         assert rho_f == pytest.approx(S.rho_f[0][bl], abs=1e-10)
         assert R.T @ rho_qpf == pytest.approx(S.rho_cf[0][bl], abs=1e-10)
+
+
+@pytest.mark.parametrize("is_real", [True, False])
+def test_hermitian_basis_is_orthonormal_and_spans_the_hermitian_matrices(
+    is_real: bool,
+) -> None:
+    N = 3
+    basis = helpers.get_hermitian_basis(N, is_real)
+    gram = np.array([[np.trace(a.conj().T @ b) for b in basis] for a in basis])
+    assert gram == pytest.approx(np.eye(len(basis)), abs=1e-12)
+    assert len(basis) == (N * (N + 1) // 2 if is_real else N * N)
+    for h in basis:
+        assert h == pytest.approx(h.conj().T, abs=1e-12)
+
+
+@pytest.mark.parametrize(
+    ("shape", "is_hermitian", "is_real"),
+    [
+        ((3, 3), True, False),
+        ((3, 3), True, True),
+        ((3, 3), False, False),
+        ((3, 1), False, False),
+        ((3, 1), False, True),
+    ],
+)
+def test_matrix_survives_a_round_trip_through_its_vector(
+    shape: tuple[int, int], is_hermitian: bool, is_real: bool
+) -> None:
+    rng = np.random.default_rng(2)
+    A: NDArray[np.inexact] = rng.normal(size=shape)
+    if not is_real:
+        A = A + 1j * rng.normal(size=shape)
+    if is_hermitian:
+        A = 0.5 * (A + A.conj().T)
+    # After a number of another matrix
+    x = [7.0, *helpers.matrix_to_vector(A, is_hermitian, is_real)]
+    B, end = helpers.vector_to_matrix(x, shape, is_hermitian, is_real, offset=1)
+    assert pytest.approx(A, abs=1e-12) == B
+    assert end == len(x)
+
+
+@pytest.mark.parametrize("force_real", [True, False])
+def test_thermal_bath_fit_gives_the_quasiparticle_density_and_kinetic_energy(
+    force_real: bool,
+) -> None:
+    # Three quasiparticles of one orbital. The fit stops on the size of its
+    # step, along combinations that the equations barely fix, a little short
+    # of a solution
+    rng = np.random.default_rng(1)
+
+    def matrix(rows: int, cols: int) -> NDArray[np.inexact]:
+        A: NDArray[np.inexact] = rng.normal(size=(rows, cols))
+        return A if force_real else A + 1j * rng.normal(size=(rows, cols))
+
+    def hermitian() -> NDArray[np.inexact]:
+        A = matrix(3, 3)
+        return 0.5 * (A + A.conj().T)
+
+    R, Lambda, D, Lambda_c = matrix(3, 1), hermitian(), matrix(3, 1), hermitian()
+    beta, mu = 3.0, 0.3
+    rho_qp, rho_qpf, _ = helpers.get_h0_emb_densities(R, Lambda, D, Lambda_c, beta, mu)
+    ke = (rho_qpf @ D).T
+    D_fit, Lambda_c_fit = helpers.get_thermal_d_lambda_c(
+        rho_qp, ke, R, Lambda, beta, mu, 1.1 * D, 0.9 * Lambda_c, force_real=force_real
+    )
+    rho_qp_fit, rho_qpf_fit, _ = helpers.get_h0_emb_densities(
+        R, Lambda, D_fit, Lambda_c_fit, beta, mu
+    )
+    assert rho_qp_fit == pytest.approx(rho_qp, abs=1e-6)
+    assert pytest.approx(ke, abs=1e-6) == (rho_qpf_fit @ D_fit).T
