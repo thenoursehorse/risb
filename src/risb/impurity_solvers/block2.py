@@ -52,30 +52,37 @@ _MIX_SCHEDULE = ((0.1, 6, 1e-5), (0.01, 6, 1e-5), (0.001, 6, 1e-5), (1e-4, 6, 1e
 _SUB_SWEEPS = 4
 
 # Energy tolerance of state-averaged DMRG, which converges slowly in its
-# highest states
+# highest states, and the most sweeps of the refinement of each of its states
 _ROOTS_TOL = 1e-8
+_REFINE_SWEEPS = 20
 
 # Largest weight of the found states outside the window of the lowest states
 # without a warning. It changes the density matrices by up to twice as much
-_TRUNCATED_TOL = 1e-4
+_EXCLUDED_WEIGHT_TOL = 1e-4
 
 # Imaginary time and order of the Taylor series of the first step without a
 # conserved spin
 _SEED_TIME = 0.01
 _SEED_ORDER = 6
 
+# block2's matrix product states and operators, which it gives no types for
+type _MPS = Any
+type _MPO = Any
+
 # A sector: two times the total spin and two times its projection, None where
 # it is not fixed
 type _Sector = tuple[int | None, int | None]
 
 # The energies, <c_p^dag c_q> of the spin orbitals and tags of the lowest
-# states of a sector, the discarded weight, and the directory with the states
+# states of a sector, the discarded weight, the directory with the states, and
+# their energy variances
 type _Run = tuple[
     list[float],
     list[NDArray[np.float64]],
     list[str],
     float,
     tempfile.TemporaryDirectory[str],
+    list[float],
 ]
 
 # A pure state of a thermal state: its weight, directory, tag, sector (None
@@ -297,7 +304,7 @@ class _Block2Base(ImpuritySolver):
 
     def _driver(
         self, scratch: str, sector: _Sector, n_elec: int
-    ) -> tuple[DMRGDriver, Any]:
+    ) -> tuple[DMRGDriver, SymmetryTypes]:
         # A driver of the sector with n_elec electrons, and its symmetry type
         twos, twosz = sector
         L = len(self._sites)
@@ -313,19 +320,26 @@ class _Block2Base(ImpuritySolver):
 
     def _run(self, sector: _Sector, n_elec: int, nroots: int) -> _Run:
         # The lowest nroots states in sector with n_elec electrons, by
-        # state-averaged DMRG (block Davidson) for more than one
+        # state-averaged DMRG (block Davidson) and a refinement of each for
+        # more than one
         twosz = sector[1]
         L = len(self._sites)
         scratch = tempfile.TemporaryDirectory()
         driver, symm_type = self._driver(scratch.name, sector, n_elec)
         tol = 1e-12 if nroots == 1 else _ROOTS_TOL
-        ket, energies = self._optimize(driver, symm_type, nroots, self.bond_dim, tol)
+        ket, mpo = self._optimize(driver, symm_type, nroots, self.bond_dim, tol)
         discarded_weight = float(driver.get_dmrg_results()[1][-1])
         kets = [ket]
         if nroots > 1:
-            kets = [driver.split_mps(ket, i, f"KET{i}") for i in range(nroots)]
-            for k in kets:
-                k.save_data()
+            kets, discarded_weight = self._refine(
+                driver,
+                mpo,
+                [driver.split_mps(ket, i, f"KET{i}") for i in range(nroots)],
+                scratch.name,
+            )
+        # The energies of the stored states, of which the density matrices
+        # are. block2's are of the two-site states before their truncation
+        energies = [float(driver.expectation(k, mpo, k)) for k in kets]
 
         Gs = []
         for k in kets:
@@ -344,18 +358,55 @@ class _Block2Base(ImpuritySolver):
                 G[0::2, 0::2], G[1::2, 1::2] = dm_up / norm, dm_dn / norm
             Gs.append(G)
         tags = [k.info.tag for k in kets]
-        return energies, Gs, tags, discarded_weight, scratch
+        # After the density matrices, which change kets with a conserved total
+        # spin and a spin projection as the variances do
+        variances = [self._variance(scratch.name, tag, sector, n_elec) for tag in tags]
+        return energies, Gs, tags, discarded_weight, scratch, variances
+
+    def _refine(
+        self, driver: DMRGDriver, mpo: _MPO, kets: Sequence[_MPS], scratch: str
+    ) -> tuple[list[_MPS], float]:
+        # Each state of block Davidson, refined by DMRG of that state alone
+        # from it, orthogonal to the refined lower ones, and the largest weight
+        # discarded in the last sweeps. The states of block Davidson share one
+        # basis and are much less accurate than a single state at the same bond
+        # dimension. The penalty of the lower states exceeds every energy
+        # difference between the states
+        energies = [float(driver.expectation(k, mpo, k)) for k in kets]
+        weight = 1 + 2 * (max(energies) - min(energies))
+        refined: list[_MPS] = []
+        discarded_weight = 0.0
+        for ket in kets:
+            driver.dmrg(
+                mpo,
+                ket,
+                n_sweeps=_REFINE_SWEEPS,
+                bond_dims=[self.bond_dim],
+                noises=[1e-6] * 2 + [0.0],
+                thrds=[1e-15],
+                tol=1e-12,
+                iprint=0,
+                proj_mpss=refined,
+                proj_weights=[weight] * len(refined),
+            )
+            ket.save_data()
+            ket.info.save_data(f"{scratch}/{ket.info.tag}-mps_info.bin")
+            refined.append(ket)
+            discarded_weight = max(
+                discarded_weight, float(driver.get_dmrg_results()[1][-1])
+            )
+        return refined, discarded_weight
 
     def _optimize(
         self,
         driver: DMRGDriver,
-        symm_type: Any,
+        symm_type: SymmetryTypes,
         nroots: int,
         M: int,
         tol: float,
-    ) -> tuple[Any, list[float]]:
+    ) -> tuple[_MPS, _MPO]:
         # The lowest nroots states of the sector of driver at bond dimension
-        # M, and their energies, converged to tol
+        # M, converged to tol, and the MPO of the impurity Hamiltonian
         m1, m2 = max(M // 4, min(M, 25)), max(M // 2, min(M, 50))
         ket = driver.get_random_mps(
             tag="KET", bond_dim=M if self.mix_schedule else m1, nroots=nroots
@@ -390,22 +441,12 @@ class _Block2Base(ImpuritySolver):
                 "noises": [1e-4] * 2 + [1e-5] * 2 + [1e-6] * 2 + [0.0],
             }
         mpo = self._mpo(driver, symm_type, self._const, self._h1, self._V)
-        energies = np.atleast_1d(
-            driver.dmrg(
-                mpo,
-                ket,
-                n_sweeps=40,
-                thrds=[1e-15],
-                tol=tol,
-                iprint=0,
-                **schedule,
-            )
-        ).tolist()
-        return ket, energies
+        driver.dmrg(mpo, ket, n_sweeps=40, thrds=[1e-15], tol=tol, iprint=0, **schedule)
+        return ket, mpo
 
     def _sz_state(
-        self, driver: DMRGDriver, ket: Any, twosz: int, n_elec: int
-    ) -> tuple[Any, float]:
+        self, driver: DMRGDriver, ket: _MPS, twosz: int, n_elec: int
+    ) -> tuple[_MPS, float]:
         # The state of the spin multiplet ket with spin projection twosz / 2
         # and n_elec electrons, and its norm, with driver changed to that
         # sector without a conserved total spin
@@ -415,6 +456,24 @@ class _Block2Base(ImpuritySolver):
         driver.symm_type = SymmetryTypes.SZ
         driver.initialize_system(n_sites=L, n_elec=n_elec, spin=twosz)
         return zket, float(driver.expectation(zket, driver.get_identity_mpo(), zket))
+
+    def _variance(self, scratch: str, tag: str, sector: _Sector, n_elec: int) -> float:
+        # <H^2> - <H>^2 of the state tag of sector with n_elec electrons. With a
+        # conserved total spin, of its state of a fixed spin projection, since
+        # block2's <H^2> does not run with one
+        driver, symm_type = self._driver(scratch, sector, n_elec)
+        ket, norm = driver.load_mps(tag), 1.0
+        twos, twosz = sector
+        if twos is not None:
+            ket, norm = self._sz_state(
+                driver, ket, twos if twosz is None else twosz, n_elec
+            )
+            symm_type = SymmetryTypes.SZ
+        # Without the constant term, which does not change the variance
+        mpo = self._mpo(driver, symm_type, 0.0, self._h1, self._V)
+        h = float(driver.expectation(ket, mpo, ket)) / norm
+        h2 = float(driver.expectation(ket, mpo, ket, stacked_mpo=mpo)) / norm
+        return h2 - h * h
 
     def _state_expectation(
         self,
@@ -444,7 +503,7 @@ class _Block2Base(ImpuritySolver):
             total += float(driver.expectation(zket, mpo, zket)) / norm
         return total / len(twoszs)
 
-    def _mixing(self, symm_type: Any) -> NDArray[np.float64]:
+    def _mixing(self, symm_type: SymmetryTypes) -> NDArray[np.float64]:
         # Random hoppings between every pair of physical orbitals, which can
         # be far apart on the chain, and between neighbours on the chain, as a
         # one-body matrix of the spin orbitals. Spin flips without a conserved
@@ -473,12 +532,12 @@ class _Block2Base(ImpuritySolver):
     def _mpo(
         self,
         driver: DMRGDriver,
-        symm_type: Any,
+        symm_type: SymmetryTypes,
         const: float,
         h1: NDArray[np.float64],
         V: NDArray[np.float64],
         ancilla: bool = False,
-    ) -> Any:
+    ) -> _MPO:
         # The MPO of const + sum h1 c^dag c + sum V c^dag c^dag c c, with an
         # identity on an ancilla next to each site if ancilla. (ij|kl) is the
         # coefficient of c_i^dag c_k^dag c_l c_j / 2, summed over every i, j,
@@ -649,6 +708,10 @@ class Block2ImpuritySolver(_Block2Base):
         #: :meth:`solve`.
         self.discarded_weight: float
 
+        #: float : Energy variance ``<H^2> - <H>^2`` of the ground state, set
+        #: by :meth:`solve`.
+        self.variance: float
+
         #: dict : Sector of the ground state, with ``"s"`` and ``"sz"`` where
         #: they are conserved, set by :meth:`solve`.
         self.sector: dict[str, float] = {}
@@ -698,15 +761,16 @@ class Block2ImpuritySolver(_Block2Base):
             self._state[0].cleanup()
         self._state = None
         # The rank of the lowest sector has its state
-        G, discarded_weight = np.zeros((2 * L, 2 * L)), 0.0
+        G, discarded_weight, variance = np.zeros((2 * L, 2 * L)), 0.0, 0.0
         for i, run in runs.items():
             if self._sectors[i] == lowest:
-                _, (G,), _, discarded_weight, scratch = run
+                _, (G,), _, discarded_weight, scratch, (variance,) = run
                 self._state = (scratch, lowest)
             else:
                 run[4].cleanup()
         self.gs_energy = energies[lowest]
         self.discarded_weight = self.comm.allreduce(discarded_weight)
+        self.variance = self.comm.allreduce(variance)
         G = self.comm.allreduce(G)
         twos, twosz = lowest
         self.sector = {}
@@ -779,7 +843,8 @@ class Block2ThermalImpuritySolver(_Block2Base):
 
     With ``method="lowest"``, the thermal average is over the lowest states of
     each sector within ``delta`` particles of half filling, found together by
-    state-averaged DMRG, and keeps the states with ``beta * (E - E0) <= eta`` above the lowest energy ``E0``, as in L.
+    state-averaged DMRG and then each refined alone, and keeps the states with
+    ``beta * (E - E0) <= eta`` above the lowest energy ``E0``, as in L.
     Giordano, Y. Tan, Z.-H. Cui, and C. Sun,
     `arXiv:2601.01641 <https://arxiv.org/abs/2601.01641>`__. It is for low
     temperatures, where few states have a weight.
@@ -1145,7 +1210,7 @@ class Block2ThermalImpuritySolver(_Block2Base):
         energies = gather_tasks(self.comm, {i: run[0] for i, run in runs.items()})
 
         weights: dict[tuple[int, int], float] = {}
-        n_states, truncated = 0, 0.0
+        n_states, excluded = 0, 0.0
         for i, es in energies.items():
             # Every state of a spin multiplet has the same weight
             twos = tasks[i][1][0]
@@ -1156,14 +1221,14 @@ class Block2ThermalImpuritySolver(_Block2Base):
                     weights[i, k] = weight
                     n_states += multiplicity
                 else:
-                    truncated += weight
+                    excluded += weight
         Z = float(sum(weights.values()))
         energy = float(sum(w * energies[i][k] for (i, k), w in weights.items())) / Z
 
         G = np.zeros((2 * L, 2 * L))
         dirs: list[tempfile.TemporaryDirectory[str]] = []
         states: list[_ThermalState] = []
-        for i, (_, run_Gs, tags, _, scratch) in runs.items():
+        for i, (_, run_Gs, tags, _, scratch, _) in runs.items():
             n_elec, sector = tasks[i]
             kept = [(k, w / Z) for (j, k), w in weights.items() if j == i]
             if not kept:
@@ -1174,9 +1239,16 @@ class Block2ThermalImpuritySolver(_Block2Base):
                 G += p * run_Gs[k]
                 states.append((float(p), scratch.name, tags[k], sector, n_elec))
         G = self.comm.allreduce(G)
-        discarded = gather_tasks(
+        # The largest discarded weight and energy variance of the states in
+        # the average
+        in_average = {i: [k for j, k in weights if j == i] for i in runs}
+        largest = gather_tasks(
             self.comm,
-            {i: run[3] for i, run in runs.items() if any(j == i for j, _ in weights)},
+            {
+                i: (runs[i][3], max(runs[i][5][k] for k in ks))
+                for i, ks in in_average.items()
+                if ks
+            },
         )
         if self.comm.rank == 0:
             self._report(
@@ -1184,8 +1256,9 @@ class Block2ThermalImpuritySolver(_Block2Base):
                 energies,
                 E0,
                 n_states,
-                truncated / Z,
-                max(discarded.values()),
+                excluded / Z,
+                max(d for d, _ in largest.values()),
+                max(v for _, v in largest.values()),
             )
         return G, energy, -self.beta * E0 + np.log(Z), dirs, states
 
@@ -1195,8 +1268,9 @@ class Block2ThermalImpuritySolver(_Block2Base):
         energies: Mapping[int, Sequence[float]],
         E0: float,
         n_states: int,
-        truncated: float,
+        excluded: float,
         discarded: float,
+        variance: float,
     ) -> None:
         # Log the lowest states, and warn if delta or eta is too small
         L = len(self._sites)
@@ -1214,9 +1288,14 @@ class Block2ThermalImpuritySolver(_Block2Base):
             "%d states in the thermal average. The found states outside it have "
             "a weight of %.1e",
             n_states,
-            truncated,
+            excluded,
         )
-        logger.info("Largest discarded weight of the sectors in it %.1e", discarded)
+        logger.info(
+            "Largest discarded weight of the sectors in it %.1e, and largest "
+            "energy variance of its states %.1e",
+            discarded,
+            variance,
+        )
         edges = [n for n in (L - self.delta, L + self.delta) if 0 < n < 2 * L]
         inside = [n for n in edges if lowest[n] <= self.eta]
         if inside:
@@ -1225,10 +1304,10 @@ class Block2ThermalImpuritySolver(_Block2Base):
                 f"states with beta (E - E0) <= eta. Increase delta."
             )
             warnings.warn(msg, RuntimeWarning, stacklevel=4)
-        if truncated > _TRUNCATED_TOL:
+        if excluded > _EXCLUDED_WEIGHT_TOL:
             msg = (
                 f"The found states with beta (E - E0) > eta have a weight of "
-                f"{truncated:.1e}, which changes the density matrices by up to "
+                f"{excluded:.1e}, which changes the density matrices by up to "
                 f"twice as much. Increase eta."
             )
             warnings.warn(msg, RuntimeWarning, stacklevel=4)
@@ -1248,7 +1327,7 @@ class Block2ThermalImpuritySolver(_Block2Base):
         const: float,
         h1: NDArray[np.float64],
         V: NDArray[np.float64],
-    ) -> Any:
+    ) -> _MPO:
         # The MPO of the particle-number chain of each spin orbital and its
         # ancilla next to it, with h1 and V on the spin orbitals
         n = len(h1)

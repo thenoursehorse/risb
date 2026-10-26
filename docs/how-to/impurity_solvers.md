@@ -357,31 +357,15 @@ of `h_imp` differ.
 
 ### Mixing sweeps
 
-DMRG keeps a state in the sectors of every quantity that the Hamiltonian
-conserves, also the ones the solver does not, such as the parity of each
-orbital with its bath orbitals in a Kanamori impurity. It can then end in an
-excited state. Each solve therefore starts with the sweeps of Appendix A1 of
-Wolf, et al.[^Wolf2015], with extra random hoppings between the orbitals that
-connect these sectors. They keep the symmetries in `symmetries`. The hoppings
-fall in stages, each a strength relative to the largest one-body coupling, a
-number of sweeps at the full bond dimension, and a noise
-
-```python
-impurity_solver = Block2ImpuritySolver(
-    h_int,
-    gf_struct,
-    mix_schedule=[(0.1, 6, 1e-5), (0.01, 6, 1e-5), (0.001, 6, 1e-5), (1e-4, 6, 1e-5)],
-)
-```
-
-which is the default. They are turned off with
+Each solve starts with sweeps that add random hoppings between the orbitals,
+as in Appendix A1 of Wolf, et al.[^Wolf2015], so that DMRG does not stay in
+the sector of a quantity the solver does not conserve. They are set by
+`mix_schedule`, the strength, sweeps, and noise of each stage, and turned off
+with
 
 ```python
 impurity_solver = Block2ImpuritySolver(h_int, gf_struct, mix_schedule=())
 ```
-
-`Block2ThermalImpuritySolver` takes the same `mix_schedule` for
-`method="lowest"`.
 
 ### Setting `h_imp` and solving
 
@@ -392,9 +376,10 @@ impurity_solver.set_h_imp(Lambda_c, D, h0_loc_matrix)
 impurity_solver.solve()
 ```
 
-`solve()` stores the ground state energy in `impurity_solver.gs_energy`, and
-the largest weight discarded in the last sweep in
-`impurity_solver.discarded_weight`. The density matrices, `set_h_int` and
+`solve()` stores the ground state energy in `impurity_solver.gs_energy`, the
+largest weight discarded in the last sweep in
+`impurity_solver.discarded_weight`, and the energy variance of the ground state
+in `impurity_solver.variance`. The density matrices, `set_h_int` and
 `overlap` are as described for `FockitImpuritySolver`. The operators of
 `overlap` have at most two-body terms. With `"s"` and no `"sz"`, expectation
 values average over the states of the spin multiplet, as the density
@@ -434,9 +419,6 @@ impurity_solver = Block2ThermalImpuritySolver(
 The lowest states of every sector within `delta` particles of half filling
 are found together by DMRG, and the states with
 $\beta (E - E_0) \le$ `eta` are in the average[^Giordano2026].
-`solve()` warns if the sectors `delta` particles from half filling have
-states in the average, or if the states it found outside the average have a
-weight above $10^{-4}$.
 
 `solve()` stores the thermal average of `h_imp` in `impurity_solver.energy`,
 the grand potential in `impurity_solver.grand_potential`, and the entropy in
