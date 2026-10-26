@@ -282,7 +282,9 @@ def test_scipy_root_converges_near_a_solution() -> None:
         S_root.R[0][bl] = 0.99 * S.R[0][bl]
         S_root.Lambda[0][bl] = 1.01 * S.Lambda[0][bl]
     optimizer = ScipyRoot(error_fun="root", method="krylov", options={"fatol": 1e-10})
-    assert S_root.solve(optimizer=optimizer).converged
+    result = S_root.solve(optimizer=optimizer)
+    assert result.converged
+    assert S_root.get_x() == pytest.approx(result.x, abs=1e-12)
     docc = nc("up", 0) * nc("dn", 0)
     assert impurity_solver_root.overlap(docc) == pytest.approx(
         impurity_solver.overlap(docc), abs=1e-8
@@ -343,6 +345,14 @@ def test_default_solve_converges_at_high_temperature(model: str, T: float) -> No
     if (model, T) == ("one_band_ghosts", 1.0):
         docc = impurity_solver.overlap(nc("up", 0) * nc("dn", 0))
         assert docc == pytest.approx(0.141837, abs=1e-6)
+
+
+def test_a_cycle_leaves_the_solver_at_its_input() -> None:
+    S, _ = bethe_lattice(hubbard(2.0), 3, 1.0)
+    x = S.get_x()
+    x_new, _ = S.cycle(x)
+    assert np.linalg.norm(x_new - x) > 1e-3
+    assert S.get_x() == pytest.approx(x, abs=1e-12)
 
 
 def test_an_anchor_does_not_carry_over_to_the_next_solve() -> None:

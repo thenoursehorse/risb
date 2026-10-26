@@ -137,7 +137,7 @@ class LatticeSolver(BaseLatticeSolver):
                 )
 
     @override
-    def update_qp(self) -> None:
+    def next_qp(self) -> tuple[list[BlockMatrix], list[BlockMatrix]]:
         core_scale = self._core_scale()
         for i in range(self.n_clusters):
             for bl, _ in self.gf_struct[i]:
@@ -153,33 +153,26 @@ class LatticeSolver(BaseLatticeSolver):
             self.f1 = symmetrize(self.f1)
             self.f2 = symmetrize(self.f2)
 
+        Lambda: list[BlockMatrix] = [{} for _ in range(self.n_clusters)]
+        R: list[BlockMatrix] = [{} for _ in range(self.n_clusters)]
         for i in range(self.n_clusters):
             for bl, _ in self.gf_struct[i]:
+                Lambda[i][bl] = helpers.get_lambda(
+                    self.R[i][bl],
+                    self.D[i][bl],
+                    self.Lambda_c[i][bl],
+                    self.rho_f[i][bl],
+                )
+                R[i][bl] = helpers.get_r(self.rho_cf[i][bl], self.rho_f[i][bl])
                 if self.force_real:
-                    self.Lambda[i][bl] = helpers.get_lambda(
-                        self.R[i][bl],
-                        self.D[i][bl],
-                        self.Lambda_c[i][bl],
-                        self.rho_f[i][bl],
-                    ).real
-                    self.R[i][bl] = helpers.get_r(
-                        self.rho_cf[i][bl], self.rho_f[i][bl]
-                    ).real
-                else:
-                    self.Lambda[i][bl] = helpers.get_lambda(
-                        self.R[i][bl],
-                        self.D[i][bl],
-                        self.Lambda_c[i][bl],
-                        self.rho_f[i][bl],
-                    )
-                    self.R[i][bl] = helpers.get_r(self.rho_cf[i][bl], self.rho_f[i][bl])
+                    Lambda[i][bl], R[i][bl] = Lambda[i][bl].real, R[i][bl].real
 
         # Enforce matrix structure from symmetries
-        self.Lambda = self._project(self.Lambda, is_coeff_real=True)
-        self.R = self._project(self.R, is_coeff_real=False)
+        Lambda = self._project(Lambda, is_coeff_real=True)
+        R = self._project(R, is_coeff_real=False)
         for symmetrize in self.symmetrizers:
-            self.Lambda = symmetrize(self.Lambda)
-            self.R = symmetrize(self.R)
+            Lambda = symmetrize(Lambda)
+            R = symmetrize(R)
 
         # The quasiparticle level of a full (empty) orbital is only fixed to be
         # below (above) the chemical potential, so keep it below (above) every
@@ -188,12 +181,13 @@ class LatticeSolver(BaseLatticeSolver):
         # quasiparticle orbital is not exactly full (empty) and is an extra
         # channel for the other orbitals, can also exist
         for i in range(self.n_clusters):
-            for bl in self.Lambda[i]:
-                self.Lambda[i][bl] = _place_core_levels(
-                    self.Lambda[i][bl],
+            for bl in Lambda[i]:
+                Lambda[i][bl] = _place_core_levels(
+                    Lambda[i][bl],
                     self.rho_f[i][bl],
                     self._kinetic_half_bandwidth + core_scale,
                 )
+        return Lambda, R
 
     def _core_scale(self) -> float:
         # An energy far from every energy of the model, leaving out the

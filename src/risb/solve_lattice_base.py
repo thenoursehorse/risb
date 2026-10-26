@@ -51,8 +51,10 @@ class BaseLatticeSolver(ABC):
     Each :meth:`one_cycle` finds the quasiparticle bands from :attr:`R` and
     :attr:`Lambda`, their k-space weights from :meth:`update_weights`, and the
     quasiparticle density matrices. It then calls :meth:`update_bath`,
-    :meth:`solve_impurities`, and :meth:`update_qp`. A subclass implements
-    :meth:`update_weights`, :meth:`update_bath`, and :meth:`update_qp`.
+    :meth:`solve_impurities`, and :meth:`next_qp`. A subclass implements
+    :meth:`update_weights`, :meth:`update_bath`, and :meth:`next_qp`. The
+    attributes describe the :attr:`R` and :attr:`Lambda` of the cycle, and
+    the next ones are returned.
 
     Parameters
     ----------
@@ -475,6 +477,15 @@ class BaseLatticeSolver(ABC):
                 offset = offset + 2
         return A, offset
 
+    def _set_lambda_r(self, x: NDArray[np.float64]) -> None:
+        # Lambda and R from the vector that cycle takes
+        self.Lambda, offset = self._unflatten_matrix(
+            x, is_coeff_real=True, like=self.Lambda
+        )
+        self.R, _ = self._unflatten_matrix(
+            x, is_coeff_real=False, like=self.R, offset=offset
+        )
+
     def _project(self, A: list[BlockMatrix], is_coeff_real: bool) -> list[BlockMatrix]:
         # Onto the matrices that x can hold, e.g., Hermitian or real
         A_projected, _ = self._unflatten_matrix(
@@ -531,23 +542,23 @@ class BaseLatticeSolver(ABC):
         Returns
         -------
         x_new : numpy.ndarray
-            The new :attr:`Lambda` and :attr:`R`.
+            The next :attr:`Lambda` and :attr:`R`. The attributes stay those
+            of ``x``.
         residual : numpy.ndarray
             The root functions :attr:`f2` and :attr:`f1`, zero at a solution.
 
         """
-        self.Lambda, offset = self._unflatten_matrix(
-            x, is_coeff_real=True, like=self.Lambda
-        )
-        self.R, _ = self._unflatten_matrix(
-            x, is_coeff_real=False, like=self.R, offset=offset
-        )
-        self.Lambda, self.R, self.f1, self.f2 = self.one_cycle()
+        self._set_lambda_r(x)
+        Lambda, R, self.f1, self.f2 = self.one_cycle()
         residual = np.array(
             self._flatten_matrix(self.f2, is_coeff_real=True)
             + self._flatten_matrix(self.f1, is_coeff_real=False)
         )
-        return BaseLatticeSolver.get_x(self), residual
+        x_new = np.array(
+            self._flatten_matrix(Lambda, is_coeff_real=True)
+            + self._flatten_matrix(R, is_coeff_real=False)
+        )
+        return x_new, residual
 
     def default_optimizer(self) -> NewtonSolver:
         """
@@ -628,8 +639,18 @@ class BaseLatticeSolver(ABC):
             self.rho_c = symmetrize(self.rho_c)
 
     @abstractmethod
-    def update_qp(self) -> None:
-        """Set :attr:`f1`, :attr:`f2`, and the new :attr:`Lambda` and :attr:`R` from the impurity density matrices."""
+    def next_qp(self) -> tuple[list[BlockMatrix], list[BlockMatrix]]:
+        """
+        Set :attr:`f1` and :attr:`f2`, and return the next :attr:`Lambda` and :attr:`R` from the impurity density matrices.
+
+        Returns
+        -------
+        Lambda : list of risb.types.BlockMatrix
+            The next correlation potential matrix on each cluster.
+        R : list of risb.types.BlockMatrix
+            The next renormalization matrix on each cluster.
+
+        """
 
     def one_cycle(
         self,
@@ -639,12 +660,15 @@ class BaseLatticeSolver(ABC):
         """
         Single iteration of the RISB self-consistent cycle.
 
+        The attributes describe the current :attr:`R` and :attr:`Lambda`, which
+        it does not change.
+
         Returns
         -------
         Lambda : list of risb.types.BlockMatrix
-            The new guess for the correlation potential matrix on each cluster.
+            The next guess for the correlation potential matrix on each cluster.
         R : list of risb.types.BlockMatrix
-            The new guess for the renormalization matrix on each cluster.
+            The next guess for the renormalization matrix on each cluster.
         f1 : list of risb.types.BlockMatrix
             The return of the fixed-point function that matches the
             quasiparticle density matrices on each cluster.
@@ -712,11 +736,11 @@ class BaseLatticeSolver(ABC):
 
         self.update_bath()
         self.solve_impurities()
-        self.update_qp()
+        Lambda, R = self.next_qp()
 
         self.iteration += 1
 
-        return self.Lambda, self.R, self.f1, self.f2
+        return Lambda, R, self.f1, self.f2
 
     def solve(
         self,
@@ -731,7 +755,9 @@ class BaseLatticeSolver(ABC):
         Solve for the renormalization matrix :attr:`R` and correlation potential matrix :attr:`Lambda`.
 
         Starts from the current :attr:`Lambda` and :attr:`R`, and sets the
-        self-consistent solutions.
+        self-consistent solutions. Afterwards every attribute is that of the
+        last :attr:`Lambda` and :attr:`R` that a cycle started from, the ``x``
+        of the result.
 
         Parameters
         ----------
@@ -747,7 +773,8 @@ class BaseLatticeSolver(ABC):
         maxiter : int, optional
             Maximum number of cycles. Default is ``1000``.
         one_shot : bool, optional
-            Run a single cycle instead of solving. Default is False.
+            Run a single cycle instead of solving, and set :attr:`Lambda` and
+            :attr:`R` to its next guess. Default is False.
         self_consistency_tol : float, optional
             Warn if :attr:`self_consistency_error` is above this after a
             self-consistent solve. The optimizer can stop where the guess of
@@ -765,7 +792,8 @@ class BaseLatticeSolver(ABC):
         """
         if one_shot:
             x = self.get_x()
-            _, residual = self.cycle(x)
+            x_new, residual = self.cycle(x)
+            self._set_lambda_r(x_new)
             error = float(np.linalg.norm(residual))
             return SolveResult(x, False, 1, error, [error])
 

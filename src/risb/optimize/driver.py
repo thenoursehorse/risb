@@ -196,8 +196,11 @@ def drive(
 
 def _drive_scipy(problem: FixedPointProblem, optimizer: ScipyRoot) -> SolveResult:
     history: list[float] = []
+    last = problem.get_x()
 
     def error(x: NDArray[np.float64]) -> NDArray[np.float64]:
+        nonlocal last
+        last = x.copy()
         x_new, residual = problem.cycle(x)
         e: NDArray[np.float64] = (
             residual if optimizer.error_fun == "root" else x_new - x
@@ -206,6 +209,9 @@ def _drive_scipy(problem: FixedPointProblem, optimizer: ScipyRoot) -> SolveResul
         return e
 
     result = root(error, problem.get_x(), **optimizer.kwargs)  # type: ignore[call-overload]
+    # The problem is left at the solution, which need not be the last guess
+    if not np.array_equal(last, result.x):
+        problem.cycle(result.x)
     return SolveResult(
         np.asarray(result.x), bool(result.success), len(history), history[-1], history
     )

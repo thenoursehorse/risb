@@ -198,7 +198,7 @@ class ThermalLatticeSolver(BaseLatticeSolver):
             self.D = symmetrize(self.D)
 
     @override
-    def update_qp(self) -> None:
+    def next_qp(self) -> tuple[list[BlockMatrix], list[BlockMatrix]]:
         # The electrons of the bands of the orbitals in no cluster are those of
         # all bands minus those of the clusters
         self.n_electrons = float(
@@ -209,6 +209,8 @@ class ThermalLatticeSolver(BaseLatticeSolver):
                 for bl in self.rho_c[i]
             )
         )
+        Lambda_next: list[BlockMatrix] = [{} for _ in range(self.n_clusters)]
+        R_next: list[BlockMatrix] = [{} for _ in range(self.n_clusters)]
         for i in range(self.n_clusters):
             for bl, _ in self.gf_struct[i]:
                 R, Lambda = self.R[i][bl], self.Lambda[i][bl]
@@ -218,7 +220,7 @@ class ThermalLatticeSolver(BaseLatticeSolver):
                 )
                 self.f1[i][bl] = self.rho_cf[i][bl] - R.T @ rho_qpf
                 self.f2[i][bl] = self.rho_f[i][bl] - rho_f_emb
-                self.R[i][bl], self.Lambda[i][bl] = self._fit_qp(
+                R_next[i][bl], Lambda_next[i][bl] = self._fit_qp(
                     R,
                     Lambda,
                     D,
@@ -231,13 +233,14 @@ class ThermalLatticeSolver(BaseLatticeSolver):
         # Enforce matrix structure from symmetries
         self.f2 = self._project(self.f2, is_coeff_real=True)
         self.f1 = self._project(self.f1, is_coeff_real=False)
-        self.Lambda = self._project(self.Lambda, is_coeff_real=True)
-        self.R = self._project(self.R, is_coeff_real=False)
+        Lambda_next = self._project(Lambda_next, is_coeff_real=True)
+        R_next = self._project(R_next, is_coeff_real=False)
         for symmetrize in self.symmetrizers:
             self.f1 = symmetrize(self.f1)
             self.f2 = symmetrize(self.f2)
-            self.Lambda = symmetrize(self.Lambda)
-            self.R = symmetrize(self.R)
+            Lambda_next = symmetrize(Lambda_next)
+            R_next = symmetrize(R_next)
+        return Lambda_next, R_next
 
     @override
     def get_x(self) -> NDArray[np.float64]:
