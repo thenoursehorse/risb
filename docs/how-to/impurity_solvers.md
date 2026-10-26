@@ -362,12 +362,26 @@ conserves, also the ones the solver does not, such as the parity of each
 orbital with its bath orbitals in a Kanamori impurity. It can then end in an
 excited state. Each solve therefore starts with the sweeps of Appendix A1 of
 Wolf, et al.[^Wolf2015], with extra random hoppings between the orbitals that
-connect these sectors, at 10 % and then 1 % of the largest one-body coupling.
-They keep the symmetries in `symmetries`. They are turned off with
+connect these sectors. They keep the symmetries in `symmetries`. The hoppings
+fall in stages, each a strength relative to the largest one-body coupling, a
+number of sweeps at the full bond dimension, and a noise
 
 ```python
-impurity_solver = Block2ImpuritySolver(h_int, gf_struct, mix=False)
+impurity_solver = Block2ImpuritySolver(
+    h_int,
+    gf_struct,
+    mix_schedule=[(0.1, 6, 1e-5), (0.01, 6, 1e-5), (0.001, 6, 1e-5), (1e-4, 6, 1e-5)],
+)
 ```
+
+which is the default. They are turned off with
+
+```python
+impurity_solver = Block2ImpuritySolver(h_int, gf_struct, mix_schedule=())
+```
+
+`Block2ThermalImpuritySolver` takes the same `mix_schedule` for
+`method="lowest"`.
 
 ### Setting `h_imp` and solving
 

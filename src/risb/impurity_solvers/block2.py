@@ -43,8 +43,9 @@ _SECTOR_TOL = 1e-8
 # spin-rotation invariant impurity Hamiltonian
 _SU2_TOL = 1e-6
 
-# Strengths of the symmetry-mixing hoppings in the warm-up sweeps
-_MIX_STRENGTHS = (0.1, 0.01)
+# Default of mix_schedule: (strength, sweeps, noise) of each stage of the
+# symmetry-mixing sweeps
+_MIX_SCHEDULE = ((0.1, 6, 1e-5), (0.01, 6, 1e-5), (0.001, 6, 1e-5), (1e-4, 6, 1e-5))
 
 # Sweeps of each imaginary time step. block2's default of two leaves the
 # targeted states of a step unconverged
@@ -106,6 +107,7 @@ class _Block2Base(ImpuritySolver):
         spin_blocks: Sequence[tuple[str, str]],
         bath_size: Mapping[str, int] | None,
         comm: Comm | None,
+        mix_schedule: Sequence[tuple[float, int, float]],
     ) -> None:
         #: risb.types.GfStruct : Block matrix structure of the physical orbitals
         #: (c-electrons).
@@ -114,6 +116,10 @@ class _Block2Base(ImpuritySolver):
         #: risb.helpers_mpi.Comm : Communicator of the ranks the sectors are
         #: split over.
         self.comm = SerialComm() if comm is None else comm
+
+        #: list of tuple : ``(strength, sweeps, noise)`` of each stage of the
+        #: symmetry-mixing sweeps that start each solve.
+        self.mix_schedule = list(mix_schedule)
 
         #: int : Bond dimension of the matrix product state.
         self.bond_dim = bond_dim
@@ -305,7 +311,7 @@ class _Block2Base(ImpuritySolver):
         driver.initialize_system(n_sites=n_sites, n_elec=n_elec, spin=spin)
         return driver, symm_type
 
-    def _run(self, sector: _Sector, n_elec: int, nroots: int, mix: bool) -> _Run:
+    def _run(self, sector: _Sector, n_elec: int, nroots: int) -> _Run:
         # The lowest nroots states in sector with n_elec electrons, by
         # state-averaged DMRG (block Davidson) for more than one
         twosz = sector[1]
@@ -313,9 +319,7 @@ class _Block2Base(ImpuritySolver):
         scratch = tempfile.TemporaryDirectory()
         driver, symm_type = self._driver(scratch.name, sector, n_elec)
         tol = 1e-12 if nroots == 1 else _ROOTS_TOL
-        ket, energies = self._optimize(
-            driver, symm_type, nroots, self.bond_dim, mix, tol
-        )
+        ket, energies = self._optimize(driver, symm_type, nroots, self.bond_dim, tol)
         discarded_weight = float(driver.get_dmrg_results()[1][-1])
         kets = [ket]
         if nroots > 1:
@@ -348,21 +352,17 @@ class _Block2Base(ImpuritySolver):
         symm_type: Any,
         nroots: int,
         M: int,
-        mix: bool,
         tol: float,
     ) -> tuple[Any, list[float]]:
         # The lowest nroots states of the sector of driver at bond dimension
         # M, and their energies, converged to tol
         m1, m2 = max(M // 4, min(M, 25)), max(M // 2, min(M, 50))
-        ket = driver.get_random_mps(tag="KET", bond_dim=m1, nroots=nroots)
-        if mix:
+        ket = driver.get_random_mps(
+            tag="KET", bond_dim=M if self.mix_schedule else m1, nroots=nroots
+        )
+        if self.mix_schedule:
             mixing = self._mixing(symm_type)
-            for strength, bond_dims, noises in zip(
-                _MIX_STRENGTHS,
-                ([m1] * 2 + [m2] * 4, [m2] * 6),
-                ([1e-4] * 2 + [1e-5] * 4, [1e-5] * 6),
-                strict=True,
-            ):
+            for strength, sweeps, noise in self.mix_schedule:
                 mpo = self._mpo(
                     driver,
                     symm_type,
@@ -373,9 +373,9 @@ class _Block2Base(ImpuritySolver):
                 driver.dmrg(
                     mpo,
                     ket,
-                    n_sweeps=6,
-                    bond_dims=bond_dims,
-                    noises=noises,
+                    n_sweeps=sweeps,
+                    bond_dims=[M],
+                    noises=[noise],
                     thrds=[1e-12],
                     tol=0.0,
                     iprint=0,
@@ -524,12 +524,14 @@ class Block2ImpuritySolver(_Block2Base):
     solve starts with the sweeps of Appendix A1 of F. A. Wolf, A. Go, I. P.
     McCulloch, A. J. Millis, and U. Schollwoeck, Phys. Rev. X 5, 041032 (2015)
     (`arXiv:1507.08650 <https://arxiv.org/abs/1507.08650>`__), with extra
-    random hoppings at 10 %, then 1 %, of the largest one-body coupling. DMRG
-    otherwise does not leave the sectors of quantities that the Hamiltonian
-    conserves and the solver does not, e.g. the total spin and the parity of
-    each orbital with its bath orbitals in a Kanamori impurity, and can end in
-    an excited state. The extra hoppings keep the symmetries in
-    ``symmetries``.
+    random hoppings that fall in the stages of ``mix_schedule``, at the full
+    bond dimension. DMRG otherwise does not leave the sectors of quantities
+    that the Hamiltonian conserves and the solver does not, e.g. the total
+    spin and the parity of each orbital with its bath orbitals in a Kanamori
+    impurity, and can end in an excited state. The hoppings keep the
+    symmetries in ``symmetries``. At a smaller bond dimension the order of
+    nearly degenerate states can differ from that at the full one, and the
+    state can end in the sector of a higher one.
 
     Parameters
     ----------
@@ -558,9 +560,13 @@ class Block2ImpuritySolver(_Block2Base):
         The names of the spin-up and spin-down block of each pair of blocks
         in ``gf_struct`` with the same orbitals. Default is
         ``[("up", "dn")]``.
-    mix : bool, optional
-        Whether to start each solve with the symmetry-mixing sweeps. Default
-        is ``True``.
+    mix_schedule : sequence of tuple, optional
+        The symmetry-mixing sweeps that start each solve, as ``(strength,
+        sweeps, noise)`` of each stage: random hoppings of ``strength`` times
+        the largest one-body coupling, for ``sweeps`` sweeps at the full bond
+        dimension with ``noise``. Default is ``((0.1, 6, 1e-5), (0.01, 6,
+        1e-5), (0.001, 6, 1e-5), (1e-4, 6, 1e-5))``, and ``()`` turns them
+        off.
     bath_size : mapping, optional
         Number of bath orbitals of each block, ``B`` times its size for ghost
         RISB with ``B`` quasiparticle orbitals per orbital, e.g.,
@@ -588,18 +594,17 @@ class Block2ImpuritySolver(_Block2Base):
         bond_dim: int = 500,
         symmetries: Mapping[str, float | None] | None = None,
         spin_blocks: Sequence[tuple[str, str]] = (("up", "dn"),),
-        mix: bool = True,
+        mix_schedule: Sequence[tuple[float, int, float]] = _MIX_SCHEDULE,
         *,
         bath_size: Mapping[str, int] | None = None,
         comm: Comm | None = None,
     ) -> None:
-        super().__init__(gf_struct, bond_dim, spin_blocks, bath_size, comm)
+        super().__init__(
+            gf_struct, bond_dim, spin_blocks, bath_size, comm, mix_schedule
+        )
 
         #: dict : Conserved quantities and their sectors.
         self.symmetries = dict(symmetries or {})
-
-        #: bool : Whether each solve starts with the symmetry-mixing sweeps.
-        self.mix = mix
 
         L = len(self._sites)
         unknown = set(self.symmetries) - {"s", "sz"}
@@ -669,7 +674,7 @@ class Block2ImpuritySolver(_Block2Base):
         self._check_h_imp()
         L = len(self._sites)
         runs = {
-            i: self._run(self._sectors[i], L, 1, self.mix)
+            i: self._run(self._sectors[i], L, 1)
             for i in round_robin(self.comm, len(self._sectors))
         }
         gathered = gather_tasks(self.comm, {i: run[0][0] for i, run in runs.items()})
@@ -811,6 +816,9 @@ class Block2ThermalImpuritySolver(_Block2Base):
     delta : int, optional
         Largest difference of the particle number from half filling of a
         sector in ``"lowest"``. Default is 2.
+    mix_schedule : sequence of tuple, optional
+        The symmetry-mixing sweeps that start each solve of ``"lowest"``, as
+        in :class:`Block2ImpuritySolver`.
     bath_size : mapping, optional
         Number of bath orbitals of each block, ``B`` times its size for ghost
         RISB with ``B`` quasiparticle orbitals per orbital, e.g.,
@@ -845,11 +853,14 @@ class Block2ThermalImpuritySolver(_Block2Base):
         method: str = "purification",
         eta: float = 8.0,
         delta: int = 2,
+        mix_schedule: Sequence[tuple[float, int, float]] = _MIX_SCHEDULE,
         *,
         bath_size: Mapping[str, int] | None = None,
         comm: Comm | None = None,
     ) -> None:
-        super().__init__(gf_struct, bond_dim, spin_blocks, bath_size, comm)
+        super().__init__(
+            gf_struct, bond_dim, spin_blocks, bath_size, comm, mix_schedule
+        )
 
         #: float : Inverse temperature of the impurity problem.
         self.beta = beta
@@ -1112,7 +1123,7 @@ class Block2ThermalImpuritySolver(_Block2Base):
             for sector in self._spin_sectors(min(n_elec, 2 * L - n_elec))
         ]
         runs = {
-            i: self._run(tasks[i][1], tasks[i][0], 1, mix=True)
+            i: self._run(tasks[i][1], tasks[i][0], 1)
             for i in round_robin(self.comm, len(tasks))
         }
         E0 = min(
@@ -1124,7 +1135,7 @@ class Block2ThermalImpuritySolver(_Block2Base):
             while max(runs[i][0]) - E0 <= window and len(runs[i][0]) < size:
                 nroots = min(2 * len(runs[i][0]), size)
                 runs[i][4].cleanup()
-                runs[i] = self._run(sector, n_elec, nroots, mix=True)
+                runs[i] = self._run(sector, n_elec, nroots)
             logger.debug(
                 "Sector %d, %s: energies above the lowest %s",
                 n_elec,

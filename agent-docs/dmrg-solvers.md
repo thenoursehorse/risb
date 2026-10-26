@@ -425,9 +425,19 @@ tests/test_block2.py (2 orbitals, U = 3, J = 0.6, mu = 1.5), grand canonical.
   - d B=3 b=10 M=200 laptop: 1 rank x 10 threads 943 s; 8 x 1 972 s (round 1 292 s, round 2 ~680 s: multi-state solves do use threads); 2 x 5 589 s (round 1 264 s, round 2 ~325 s). rho same to 1e-8. Round 2 = sectors whose lowest is in the window, doubled until the highest is out; here N=19, 21 (5 doublets each, d degeneracy) to 8 states.
 - [x] Warnings/logs of "lowest" (rank 0): E0 and sector, lowest beta (E - E0) per N, states in the average, weight of the found states outside the window (lower bound of the truncated weight; rho changes by up to twice it), largest discarded weight. RuntimeWarning if the edge sectors of delta have states in the window, or the truncated weight > 1e-4 (_TRUNCATED_TOL). d B=3 b=10 eta=8: ~1e-3, would warn.
 - [ ] block2-mpi inside the in-window sectors (sub-communicators), the remaining bound of "lowest" on many ranks.
-- [ ] Pre-existing on dev (not from block2 work): mypy benchmarks/impurity_solvers.py:132 LatticeSolver.optimize; sphinx -n warnings error_fun, optimizer, FixedPointProblem.cycle (optimize refactor 10792fc).
-- [ ] Check "lowest" at eta 12 / M 500 on d B=3 beta 10 (accuracy of eta 8 and of state-averaged roots).
+- [x] Pre-existing on dev (not from block2 work), fixed: mypy benchmarks/impurity_solvers.py:132 LatticeSolver.optimize; sphinx -n warnings error_fun, optimizer, FixedPointProblem.cycle (optimize refactor 10792fc).
+- [x] eta check, d B=3 b=10 M=200 (2 ranks x 5 threads): eta 8 bound (weight of found states outside) 1.1e-3, would warn. eta 10: 1225 s, 54 states (21 at eta 8), bound 3.6e-4, rho vs eta 8 3.0e-4 / 1.4e-4 / 1.7e-5 (f/cf/c), delta warning (N=22 at beta (E-E0) 9.52). eta 12: killed after 4 h (window 1.2 takes in a dense group at ~1.15; N=19, 21 doubling to 16-32 states).
+- [ ] State-averaged DMRG with many states at fixed M degrades the lowest ones: eta 12 run, N=20 singlet 0.014 above its own single-state energy (weight error ~13% at beta 10); ~0.007 at eta 8 (8 states). Options: lowest energies (and rho?) from the smaller solves, or raise M with the number of states. Decide before relying on eta > 8.
 - [ ] METTS prototype (scratchpad): grand canonical via purified ghost sites (Cao et al.), noise vs 1e-3.
 
 ## Solver survey
 See agent-docs/impurity-solvers.md.
+
+### Trapping in the sector of a nearly degenerate state (mix_schedule)
+- d B=3 b=10, N=21 2S=1 (5 doublets, one per orbital, spacing 3.7e-3 from the h0_loc split -0.1..0.1): single-state solve at M=200 ended 7.4e-3 above the lowest (3rd member), 6/6 runs; also 2 and 3 states, and in S, Sz and N-only modes; 4 states found it. Single-state at M=400, 800: found.
+- Cause: the mixing sweeps (the only stage that moves between the orbital-parity sectors Kanamori conserves) ran at M/4, M/2. There the truncation errors (M=50: 0.04-0.11; M=100: 0.007-0.02) exceed the spacing and reorder the group; without mixing the state never leaves the sector it picked. Not the strength (0.03-1.0 same), not more noise after mixing (to 1e-3).
+- Fix: random start and mixing at the full M, strengths 0.1, 0.01, 0.001, 1e-4, 6 sweeps each (3 sweeps: 0/8 found; 6: 8/8). Public as mix_schedule ((strength, sweeps, noise) per stage, () off) on both block2 solvers; mix= removed.
+- ED check, d B=1 (Sz mode, every (N, Sz) for N = 8..12): M=100 old traps N=12 (2Sz=0 +1.6e-2, 2Sz=2 +4e-3), new exact in all 10; M=40 old traps 4, new 2 (both N=12; there even 6 states miss the lowest by 2.6e-3, M too small); N=12 2Sz=0: new traps at M=60 3/3 (6 states resolve it to 2e-4), exact from M=80.
+- No small half-filled model traps (96 cases: 3-5 orbitals B=1, 2-3 orbitals B=3, shell shifts -2..2, M=40-100), so no fast regression test. A lowest test (d B=1, M=100, S mode, mu=0.5 so N=12 is lowest, beta 1e4, vs ED of N=12) failed with the old schedule and passed with the new, but took ~95 s: not kept (user).
+- Cost: lowest d B=3 b=10 M=200 round 1 1160 s (was ~600), N=19 doubling to 8 states 716 s (was ~160). Multi-state solves found the trapped state with old mixing at 4 states: they may not need the full mixing.
+- No scheme guarantees the lowest state: check by bond dimension (M vs 2M) and with several states.
