@@ -329,11 +329,46 @@ class _Block2Base(ImpuritySolver):
         return driver, symm_type
 
     def _run(self, sector: _Sector, n_elec: int, nroots: int) -> _Run:
-        # The lowest nroots states in sector with n_elec electrons, by
-        # state-averaged DMRG (block Davidson) and a refinement of each for
-        # more than one
+        # The lowest nroots states in sector with n_elec electrons. Each step
+        # below creates its own driver, which is freed when the step returns:
+        # creating a driver replaces block2's working memory, which has to
+        # outlive the states and operators in it
         scratch = tempfile.TemporaryDirectory()
-        driver, symm_type = self._driver(scratch.name, sector, n_elec)
+        energies, tags, discarded_weight = self._solve_states(
+            scratch.name, sector, n_elec, nroots
+        )
+        twos, twosz = sector
+        if twos is None:
+            Gs, variances = self._density_matrices_and_variances(
+                scratch.name, sector, n_elec, tags
+            )
+        else:
+            # The states of a fixed spin projection, for the density matrices
+            # with one, and for the variances
+            sz = twos if twosz is None else twosz
+            Gs = []
+            if twosz is None:
+                Gs, _ = self._density_matrices_and_variances(
+                    scratch.name, sector, n_elec, tags
+                )
+            sz_tags = self._to_sz_states(scratch.name, sector, n_elec, tags, sz)
+            sz_Gs, variances = self._density_matrices_and_variances(
+                scratch.name, (None, sz), n_elec, sz_tags
+            )
+            if twosz is not None:
+                Gs = sz_Gs
+            for tag in sz_tags:
+                _remove_mps(scratch.name, tag)
+        return energies, Gs, tags, discarded_weight, scratch, variances
+
+    def _solve_states(
+        self, scratch: str, sector: _Sector, n_elec: int, nroots: int
+    ) -> tuple[list[float], list[str], float]:
+        # The energies and tags of the lowest nroots states in sector with
+        # n_elec electrons, saved in scratch, by state-averaged DMRG (block
+        # Davidson) and a refinement of each for more than one, and the
+        # largest weight discarded in the last sweeps
+        driver, symm_type = self._driver(scratch, sector, n_elec)
         tol = 1e-12 if nroots == 1 else _ROOTS_TOL
         ket, mpo = self._optimize(driver, symm_type, nroots, self.bond_dim, tol)
         discarded_weight = float(driver.get_dmrg_results()[1][-1])
@@ -343,37 +378,38 @@ class _Block2Base(ImpuritySolver):
                 driver,
                 mpo,
                 [driver.split_mps(ket, i, f"KET{i}") for i in range(nroots)],
-                scratch.name,
+                scratch,
             )
         # The energies of the stored states, of which the density matrices
         # are. block2's are of the two-site states before their truncation
         energies = [float(driver.expectation(k, mpo, k)) for k in kets]
-        tags = [k.info.tag for k in kets]
-        twos, twosz = sector
-        Gs: list[NDArray[np.float64]] = []
-        if twos is None or twosz is None:
-            Gs = [self._density_matrix(driver, symm_type, tag) for tag in tags]
-        # Each driver replaces the memory of block2, so the states and operators
-        # of this one go first
-        del ket, kets, mpo
-        sz_tags = tags
-        if twos is not None:
-            # The states of a fixed spin projection, for the density matrices
-            # with one, and for the variances, which block2 does not take with
-            # a conserved total spin
-            sz = twos if twosz is None else twosz
-            sz_tags = [self._to_sz(driver, tag, sz, f"Z{tag}") for tag in tags]
-            driver, symm_type = (
-                self._sz_driver(scratch.name, n_elec, sz),
-                SymmetryTypes.SZ,
-            )
-            if twosz is not None:
-                Gs = [self._density_matrix(driver, symm_type, tag) for tag in sz_tags]
-        variances = [self._variance(driver, symm_type, tag) for tag in sz_tags]
-        if twos is not None:
-            for tag in sz_tags:
-                _remove_mps(scratch.name, tag)
-        return energies, Gs, tags, discarded_weight, scratch, variances
+        return energies, [k.info.tag for k in kets], discarded_weight
+
+    def _density_matrices_and_variances(
+        self, scratch: str, sector: _Sector, n_elec: int, tags: Sequence[str]
+    ) -> tuple[list[NDArray[np.float64]], list[float]]:
+        # <c_p^dag c_q> of the spin orbitals and the energy variances of the
+        # states tags in sector with n_elec electrons, without the variances
+        # with a conserved total spin, which block2 does not take
+        driver, symm_type = self._driver(scratch, sector, n_elec)
+        Gs = [self._density_matrix(driver, symm_type, tag) for tag in tags]
+        variances = []
+        if symm_type != SymmetryTypes.SU2:
+            variances = [self._variance(driver, symm_type, tag) for tag in tags]
+        return Gs, variances
+
+    def _to_sz_states(
+        self,
+        scratch: str,
+        sector: _Sector,
+        n_elec: int,
+        tags: Sequence[str],
+        twosz: int,
+    ) -> list[str]:
+        # Save the states of spin projection twosz / 2 of the spin multiplets
+        # tags in sector with n_elec electrons, and return their tags
+        driver, _ = self._driver(scratch, sector, n_elec)
+        return [self._to_sz(driver, tag, twosz, f"Z{tag}") for tag in tags]
 
     def _refine(
         self, driver: DMRGDriver, mpo: _MPO, kets: Sequence[_MPS], scratch: str
@@ -477,13 +513,6 @@ class _Block2Base(ImpuritySolver):
         zket.info.save_data(f"{driver.scratch}/{sz_tag}-mps_info.bin")
         return sz_tag
 
-    def _sz_driver(self, scratch: str, n_elec: int, twosz: int) -> DMRGDriver:
-        # A driver of the sector with n_elec electrons and spin projection
-        # twosz / 2, without a conserved total spin
-        driver = DMRGDriver(scratch=scratch, symm_type=SymmetryTypes.SZ)
-        driver.initialize_system(n_sites=len(self._sites), n_elec=n_elec, spin=twosz)
-        return driver
-
     def _density_matrix(
         self, driver: DMRGDriver, symm_type: SymmetryTypes, tag: str
     ) -> NDArray[np.float64]:
@@ -514,16 +543,19 @@ class _Block2Base(ImpuritySolver):
         h2 = float(driver.expectation(ket, mpo, ket, stacked_mpo=mpo)) / norm
         return h2 - h * h
 
-    def _in_state(
+    def _expectation_value(
         self,
-        driver: DMRGDriver,
-        symm_type: SymmetryTypes,
+        scratch: str,
+        sector: _Sector,
+        n_elec: int,
         tag: str,
         const: float,
         h1: NDArray[np.float64],
         V: NDArray[np.float64],
     ) -> float:
-        # <const + sum h1 c^dag c + sum V c^dag c^dag c c> in the state tag
+        # <const + sum h1 c^dag c + sum V c^dag c^dag c c> in the state tag of
+        # sector with n_elec electrons, without a conserved total spin
+        driver, symm_type = self._driver(scratch, sector, n_elec)
         ket = driver.load_mps(tag)
         mpo = self._mpo(driver, symm_type, const, h1, V)
         norm = float(driver.expectation(ket, driver.get_identity_mpo(), ket))
@@ -541,19 +573,17 @@ class _Block2Base(ImpuritySolver):
     ) -> float:
         # <const + sum h1 c^dag c + sum V c^dag c^dag c c> in the state tag of
         # sector with n_elec electrons, averaged over the spin multiplet with a
-        # conserved total spin and no spin projection. Each driver replaces
-        # the memory of block2, so a new one comes only after the states and
-        # operators of the last are gone
+        # conserved total spin and no spin projection
         twos, twosz = sector
-        driver, symm_type = self._driver(scratch, sector, n_elec)
         if twos is None:
-            return self._in_state(driver, symm_type, tag, const, h1, V)
+            return self._expectation_value(scratch, sector, n_elec, tag, const, h1, V)
         twoszs = [twosz] if twosz is not None else list(range(-twos, twos + 1, 2))
-        sz_tags = {m: self._to_sz(driver, tag, m, f"Z{m}{tag}") for m in twoszs}
         total = 0.0
-        for m, sz_tag in sz_tags.items():
-            driver = self._sz_driver(scratch, n_elec, m)
-            total += self._in_state(driver, SymmetryTypes.SZ, sz_tag, const, h1, V)
+        for m in twoszs:
+            (sz_tag,) = self._to_sz_states(scratch, sector, n_elec, [tag], m)
+            total += self._expectation_value(
+                scratch, (None, m), n_elec, sz_tag, const, h1, V
+            )
             _remove_mps(scratch, sz_tag)
         return total / len(twoszs)
 
