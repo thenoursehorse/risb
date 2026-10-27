@@ -124,14 +124,16 @@ the degenerate subspace, and which one is not specified.
 If you want to use the dense eigensolver {py:func}`scipy.linalg.eigh` instead
 
 ```python
-impurity_solver = FockitImpuritySolver(h_int, gf_struct, method="eigh")
+impurity_solver = FockitImpuritySolver(h_int, gf_struct, eigensolver="eigh")
 ```
 
 It is exact, but only practical for small impurity problems. Keyword arguments
 to the eigensolver are passed as
 
 ```python
-impurity_solver = FockitImpuritySolver(h_int, gf_struct, method_options={"ncv": 60})
+impurity_solver = FockitImpuritySolver(
+    h_int, gf_struct, eigensolver_options={"ncv": 60}
+)
 ```
 
 ### Symmetries
@@ -217,8 +219,22 @@ impurity_solver.set_h_imp(Lambda_c, D, h0_loc_matrix, mu=mu)
 ```
 
 The chemical potential `mu` is subtracted on the physical and bath orbitals.
-The grand potential is `impurity_solver.grand_potential`. The symmetries are
-given without eigenvalues, because every eigenvalue is in the average
+The grand potential is `impurity_solver.grand_potential`. The average is over
+the lowest states of every sector within `delta` particles of half filling
+with $\beta (E - E_0) \le$ `eta` above the lowest energy $E_0$ (`method="lowest"`, the default, with
+`eta=8` and `delta=2`). With `method="lowest-scan"` the particle numbers go
+from half filling outwards instead, until the lowest state at both ends has
+$\beta (E - E_0) >$ `eta`
+
+```python
+impurity_solver = FockitThermalImpuritySolver(
+    h_int, gf_struct, beta=40, method="lowest-scan", eta=8
+)
+```
+
+`comm` splits the sectors over MPI ranks, as for `Block2ThermalImpuritySolver`
+(see MPI ranks below). The symmetries are given without eigenvalues, because
+every eigenvalue is in the average
 
 ```python
 impurity_solver = FockitThermalImpuritySolver(
@@ -396,33 +412,34 @@ problem, as `ThermalLatticeSolver` needs
 from risb.impurity_solvers import Block2ThermalImpuritySolver
 
 impurity_solver = Block2ThermalImpuritySolver(
-    h_int, gf_struct, beta=40, bond_dim=500, time_step=0.1
+    h_int, gf_struct, beta=40, bond_dim=500, eta=8, delta=2
 )
 impurity_solver.set_h_imp(Lambda_c, D, h0_loc_matrix, mu=mu)
 impurity_solver.solve()
 ```
 
-The thermal state is a matrix product state of the orbitals and an ancilla
-next to each, evolved in imaginary time from infinite
-temperature[^Feiguin2005] in steps of at most `time_step`. `symmetries` is
-`["sz"]` (the default), `["s"]`, or `[]` for the particle number only, and
-every sector is in the average.
-`spin_blocks` and `bath_size` are as for `Block2ImpuritySolver`.
+The lowest states of every sector within `delta` particles of half filling
+are found together by DMRG, and the states with
+$\beta (E - E_0) \le$ `eta` are in the average[^Giordano2026]
+(`method="lowest"`, the default). `method="lowest-scan"` chooses the particle
+numbers as for `FockitThermalImpuritySolver`. `symmetries` is `["sz"]` (the
+default), `["s"]`, or `[]` for the particle number only, and every sector is
+in the average. `spin_blocks` and `bath_size` are as for
+`Block2ImpuritySolver`. With `calculate_variance=True`,
+`impurity_solver.variance` is the largest energy variance of the states in
+the average.
 
-If you want the thermal average over the lowest states instead, for low
-temperatures
+If you want a purified thermal state instead, for higher temperatures
 
 ```python
 impurity_solver = Block2ThermalImpuritySolver(
-    h_int, gf_struct, beta=40, bond_dim=500, method="lowest", eta=8, delta=2
+    h_int, gf_struct, beta=40, bond_dim=500, method="purification", time_step=0.1
 )
 ```
 
-The lowest states of every sector within `delta` particles of half filling
-are found together by DMRG, and the states with
-$\beta (E - E_0) \le$ `eta` are in the average[^Giordano2026]. With
-`calculate_variance=True`, `impurity_solver.variance` is the largest energy
-variance of these states.
+The thermal state is a matrix product state of the orbitals and an ancilla
+next to each, evolved in imaginary time from infinite
+temperature[^Feiguin2005] in steps of at most `time_step`.
 
 `solve()` stores the thermal average of `h_imp` in `impurity_solver.energy`,
 the grand potential in `impurity_solver.grand_potential`, and the entropy in
@@ -447,15 +464,16 @@ Pass the communicator to the solver
 from mpi4py import MPI
 
 impurity_solver = Block2ThermalImpuritySolver(
-    h_int, gf_struct, beta=40, method="lowest", comm=MPI.COMM_WORLD
+    h_int, gf_struct, beta=40, comm=MPI.COMM_WORLD
 )
 ```
 
 and run the script on every rank, e.g., `mpirun -n 32 python script.py`. Every
 rank must call `solve()` and `overlap`, and every rank gets the same results.
 The ranks of `Block2ImpuritySolver` split the sectors of `symmetries`, and the
-ranks of `Block2ThermalImpuritySolver` split the sectors of `"lowest"`.
-`"purification"` runs on rank 0. Each rank uses `OMP_NUM_THREADS` threads.
+ranks of `Block2ThermalImpuritySolver` and `FockitThermalImpuritySolver` split
+the sectors of `"lowest"` and `"lowest-scan"`. `"purification"` runs on rank
+0. Each rank uses `OMP_NUM_THREADS` threads.
 
 [^Wolf2015]:
     [F. A. Wolf, A. Go, I. P. McCulloch, A. J. Millis, and U. Schollwöck,

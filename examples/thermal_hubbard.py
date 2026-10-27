@@ -42,9 +42,15 @@ energy = []
 entropy = []
 start = None
 for T in T_arr:
-    # The thermal state over every particle number of the impurity problem
+    # The thermal state of the impurity problem. It keeps every state whose
+    # Boltzmann weight is above exp(-40) times that of the lowest state
     impurity_solver = FockitThermalImpuritySolver(
-        hubbard(U), gf_struct, bath_size=bath_size, beta=1 / T
+        hubbard(U),
+        gf_struct,
+        bath_size=bath_size,
+        beta=1 / T,
+        method="lowest-scan",
+        eta=40,
     )
     S = ThermalLatticeSolver(
         h0_k=h0_k,

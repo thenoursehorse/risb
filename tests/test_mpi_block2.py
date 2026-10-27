@@ -11,6 +11,7 @@ from test_block2 import (
     ghost_problem,
     solved,
 )
+from test_common import EXACT_THERMAL
 
 from risb.helpers_fockit import N_op, S2_op
 from risb.impurity_solvers import FockitImpuritySolver, FockitThermalImpuritySolver
@@ -50,6 +51,7 @@ def test_ground_state_with_sectors_split_over_ranks_is_the_exact_one() -> None:
     "kwargs",
     [
         {"symmetries": ["s"], "method": "lowest", "eta": 40},
+        {"symmetries": ["sz"], "method": "lowest-scan", "eta": 40},
         {"symmetries": [], "method": "purification"},
     ],
 )
@@ -59,7 +61,9 @@ def test_thermal_state_with_sectors_split_over_ranks_is_the_exact_one(
     problem = ghost_problem(1, 1)
     h_int, gf_struct, bath_size = problem[:3]
     expected = solved(
-        FockitThermalImpuritySolver(h_int, gf_struct, 10, bath_size=bath_size),
+        FockitThermalImpuritySolver(
+            h_int, gf_struct, 10, bath_size=bath_size, **EXACT_THERMAL
+        ),
         problem,
     )
     solver = solved(

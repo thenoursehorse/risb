@@ -54,6 +54,7 @@ from numpy.typing import NDArray
 from scipy.sparse.linalg import ArpackNoConvergence, aslinearoperator, eigsh
 
 from risb.helpers import get_entropy_impurity
+from risb.helpers_mpi import Comm, SerialComm, gather_tasks
 from risb.types import BlockMatrix, BlockMatrixLike, GfStruct, ImpuritySolver
 
 # Boltzmann weight, relative to the ground state, below which a state is dropped
@@ -67,6 +68,10 @@ _ARPACK_RETRIES = 2
 
 # Energy below the highest state found by eigsh at which a state was missed
 _MISSED_TOL = 1e-10
+
+# Weight of the found states outside the window of a thermal solve, relative
+# to the states in it, above which it warns
+_EXCLUDED_WEIGHT_TOL = 1e-4
 
 # A symmetry sector: the values of the diagonal symmetries, None where a
 # sector does not fix one, and the eigenvalues of the permutation and on-site
@@ -90,9 +95,14 @@ class _FockitBase(ImpuritySolver):
         bath_size: Mapping[str, int] | None,
         permutation_symmetries: Sequence[PermutationSymmetry] = (),
         onsite_symmetries: Sequence[OnsiteSymmetry] = (),
+        comm: Comm | None = None,
     ) -> None:
         #: fockit.algebra.OpSum : Interaction Hamiltonian.
         self.h_int = h_int
+
+        #: risb.helpers_mpi.Comm : Communicator of the ranks the sectors are
+        #: split over.
+        self.comm = SerialComm() if comm is None else comm
 
         #: risb.types.GfStruct : Block matrix structure of the physical orbitals
         #: (c-electrons).
@@ -136,13 +146,13 @@ class _FockitBase(ImpuritySolver):
         #: float : Lowest energy of the impurity problem, set by :meth:`solve`.
         self.gs_energy: float
 
-        #: numpy.ndarray : Weights of the states in the expectation values, in
-        #: the order of :attr:`ensemble`, set by :meth:`solve`.
+        #: numpy.ndarray : Weights of the states in the expectation values, of
+        #: every rank, set by :meth:`solve`.
         self.weights: NDArray[np.float64]
 
-        #: list of tuple : The states that the expectation values average
-        #: over, as ``(basis, states, weights)`` with the states as columns in
-        #: the basis, set by :meth:`solve`.
+        #: list of tuple : The states of this rank that the expectation values
+        #: average over, as ``(basis, states, weights)`` with the states as
+        #: columns in the basis, set by :meth:`solve`.
         self.ensemble: list[tuple[Basis, NDArray[np.complex128], NDArray[np.float64]]]
 
         #: float : Entropy ``-sum(weights * log(weights))`` of the states of
@@ -321,6 +331,7 @@ class _FockitBase(ImpuritySolver):
             for modes, matrices in annihilators:
                 A = np.stack([(C @ scaled).ravel() for C in matrices])
                 G[np.ix_(modes, modes)] += A.conj() @ A.T
+        G = self.comm.allreduce(G)
 
         for (bl, bl_size), (bl_bath, n_bath) in zip(
             self.gf_struct, self.gf_struct_bath, strict=True
@@ -534,6 +545,7 @@ class _FockitBase(ImpuritySolver):
                     for weight, state in zip(weights, states.T, strict=True)
                 )
             )
+        res = complex(self.comm.allreduce(res))
         if force_real:
             return res.real
         return res
@@ -553,11 +565,11 @@ class FockitImpuritySolver(_FockitBase):
         list of pairs, each containing the name of the
         matrix block as a string and the size of that block.
         For example: ``[ ('up', 3), ('down', 3) ]``.
-    method : {"eigsh", "eigh"}, optional
+    eigensolver : {"eigsh", "eigh"}, optional
         Find the ground state with :func:`scipy.sparse.linalg.eigsh` or with
         :func:`scipy.linalg.eigh` on the dense matrix. Default is ``"eigsh"``.
-    method_options : mapping, optional
-        Keyword arguments passed to ``method``, e.g. ``{"ncv": 60}``.
+    eigensolver_options : mapping, optional
+        Keyword arguments passed to ``eigensolver``, e.g. ``{"ncv": 60}``.
     diagonal_symmetries : mapping, optional
         Passed to ``fockit.hilbert.build_basis``, e.g. ``{Sz: 0}``. The
         half-filled particle number is always added. Modes of the bath orbitals
@@ -593,8 +605,8 @@ class FockitImpuritySolver(_FockitBase):
         self,
         h_int: OpSum,
         gf_struct: GfStruct,
-        method: Literal["eigsh", "eigh"] = "eigsh",
-        method_options: Mapping[str, Any] | None = None,
+        eigensolver: Literal["eigsh", "eigh"] = "eigsh",
+        eigensolver_options: Mapping[str, Any] | None = None,
         diagonal_symmetries: Mapping[OpSum, complex] | None = None,
         permutation_symmetries: Sequence[PermutationSymmetry] = (),
         onsite_symmetries: Sequence[OnsiteSymmetry] = (),
@@ -604,8 +616,8 @@ class FockitImpuritySolver(_FockitBase):
         *,
         bath_size: Mapping[str, int] | None = None,
     ) -> None:
-        if method not in ("eigsh", "eigh"):
-            msg = f"Unknown method {method!r}."
+        if eigensolver not in ("eigsh", "eigh"):
+            msg = f"Unknown eigensolver {eigensolver!r}."
             raise ValueError(msg)
         if degenerate not in ("ignore", "warn"):
             msg = f"Unknown degenerate {degenerate!r}."
@@ -620,10 +632,10 @@ class FockitImpuritySolver(_FockitBase):
         )
 
         #: str : Method that finds the ground state.
-        self.method = method
+        self.eigensolver = eigensolver
 
-        #: dict : Keyword arguments passed to :attr:`method`.
-        self.method_options = dict(method_options or {})
+        #: dict : Keyword arguments passed to :attr:`eigensolver`.
+        self.eigensolver_options = dict(eigensolver_options or {})
 
         #: dict : Diagonal symmetries of the basis, without the particle number.
         self.diagonal_symmetries = dict(diagonal_symmetries or {})
@@ -707,8 +719,8 @@ class FockitImpuritySolver(_FockitBase):
             H,
             self.beta,
             2 if self.degenerate == "warn" else 1,
-            self.method,
-            self.method_options,
+            self.eigensolver,
+            self.eigensolver_options,
         )
         if (
             self.degenerate == "warn"
@@ -760,15 +772,14 @@ class FockitThermalImpuritySolver(_FockitBase):
         matrix block as a string and the size of that block.
         For example: ``[ ('up', 3), ('down', 3) ]``.
     beta : float
-        Inverse temperature of the impurity problem. States with a weight
-        below ``1e-14`` relative to the lowest state are dropped.
-    method : {"eigsh", "eigh"}, optional
+        Inverse temperature of the impurity problem.
+    eigensolver : {"eigsh", "eigh"}, optional
         Find the states with :func:`scipy.sparse.linalg.eigsh` or with
         :func:`scipy.linalg.eigh` on the dense matrix. Default is ``"eigsh"``.
         A block of at most 2000 states is always diagonalized as a dense
         matrix.
-    method_options : mapping, optional
-        Keyword arguments passed to ``method``, e.g. ``{"ncv": 60}``.
+    eigensolver_options : mapping, optional
+        Keyword arguments passed to ``eigensolver``, e.g. ``{"ncv": 60}``.
     diagonal_symmetries : sequence, optional
         Sums of number operators that commute with the impurity Hamiltonian,
         e.g. ``[Sz]``. They split the Hamiltonian into blocks, and every block
@@ -783,6 +794,19 @@ class FockitThermalImpuritySolver(_FockitBase):
         Products of single-mode operators that commute with the impurity
         Hamiltonian, as the factors of ``fockit.hilbert.build_basis`` without
         eigenvalues.
+    method : {"lowest", "lowest-scan"}, optional
+        The particle numbers in the average. ``"lowest"`` (the default) takes
+        those within ``delta`` of half filling, as ``"lowest"`` of
+        :class:`risb.impurity_solvers.Block2ThermalImpuritySolver`.
+        ``"lowest-scan"`` takes them from half filling outwards, until the
+        lowest state of each of the two at the ends has ``beta * (E - E0) >
+        eta``. Both keep the states with ``beta * (E - E0) <= eta`` above the
+        lowest energy ``E0``.
+    eta : float, optional
+        Largest ``beta * (E - E0)`` of a state. Default is 8.
+    delta : int, optional
+        Largest difference of the particle number from half filling of a
+        sector in ``"lowest"``. Default is 2.
     bath_size : mapping, optional
         Number of bath orbitals of each block, ``B`` times its size for ghost
         RISB with ``B`` quasiparticle orbitals per orbital, e.g.,
@@ -790,6 +814,10 @@ class FockitThermalImpuritySolver(_FockitBase):
         that are not given have as many bath orbitals as physical orbitals
         (``B = 1``). The total number of physical and bath orbitals must be
         even.
+    comm : risb.helpers_mpi.Comm, optional
+        MPI communicator, e.g. ``mpi4py.MPI.COMM_WORLD``, whose ranks solve
+        the sectors in parallel. Every rank must call :meth:`solve` and
+        :meth:`overlap`. Default is a single process.
 
     Raises
     ------
@@ -797,7 +825,7 @@ class FockitThermalImpuritySolver(_FockitBase):
         If a diagonal symmetry is not a sum of number operators, if a
         permutation or onsite symmetry changes a diagonal symmetry or the
         particle number, or if the permutation and onsite symmetries do not
-        commute with each other.
+        commute with each other, or if ``method`` is unknown.
 
     """
 
@@ -806,16 +834,23 @@ class FockitThermalImpuritySolver(_FockitBase):
         h_int: OpSum,
         gf_struct: GfStruct,
         beta: float,
-        method: Literal["eigsh", "eigh"] = "eigsh",
-        method_options: Mapping[str, Any] | None = None,
+        eigensolver: Literal["eigsh", "eigh"] = "eigsh",
+        eigensolver_options: Mapping[str, Any] | None = None,
         diagonal_symmetries: Sequence[OpSum] = (),
         permutation_symmetries: Sequence[Mapping[Any, Any]] = (),
         onsite_symmetries: Sequence[Sequence[OpSum]] = (),
+        method: Literal["lowest", "lowest-scan"] = "lowest",
+        eta: float = 8.0,
+        delta: int = 2,
         *,
         bath_size: Mapping[str, int] | None = None,
+        comm: Comm | None = None,
     ) -> None:
-        if method not in ("eigsh", "eigh"):
-            msg = f"Unknown method {method!r}."
+        if eigensolver not in ("eigsh", "eigh"):
+            msg = f"Unknown eigensolver {eigensolver!r}."
+            raise ValueError(msg)
+        if method not in ("lowest", "lowest-scan"):
+            msg = 'method must be "lowest" or "lowest-scan".'
             raise ValueError(msg)
         super().__init__(
             h_int,
@@ -824,6 +859,7 @@ class FockitThermalImpuritySolver(_FockitBase):
             bath_size,
             [(m, 1) for m in permutation_symmetries],
             [(f, 1) for f in onsite_symmetries],
+            comm,
         )
         if any(shift is None for shift in self._shifts):
             msg = (
@@ -838,10 +874,20 @@ class FockitThermalImpuritySolver(_FockitBase):
         self.beta = beta
 
         #: str : Method that finds the states.
+        self.eigensolver = eigensolver
+
+        #: dict : Keyword arguments passed to :attr:`eigensolver`.
+        self.eigensolver_options = dict(eigensolver_options or {})
+
+        #: str : How the particle numbers in the average are chosen.
         self.method = method
 
-        #: dict : Keyword arguments passed to :attr:`method`.
-        self.method_options = dict(method_options or {})
+        #: float : Largest ``beta * (E - E0)`` of a state.
+        self.eta = eta
+
+        #: int : Largest difference of the particle number from half filling
+        #: of a sector in ``"lowest"``.
+        self.delta = delta
 
         #: list : Operators that split the Hamiltonian into blocks.
         self.diagonal_symmetries = list(diagonal_symmetries)
@@ -918,76 +964,173 @@ class FockitThermalImpuritySolver(_FockitBase):
         )
 
     @override
-    def _find_states(self) -> list[_Key]:
-        beta = self.beta
-        one_body = _one_body(self.h_imp - self.h_int, self._index)
-        hamiltonians = {}
-        lowest = {}
+    def solve(self) -> None:
+        """
+        Solve for the thermal state of the impurity problem.
 
-        def lowest_of(n: int) -> float:
+        Sets the density matrices :attr:`rho_f`, :attr:`rho_cf`, and
+        :attr:`rho_c` of every block, and :attr:`grand_potential`.
+
+        Raises
+        ------
+        ValueError
+            If :attr:`h_imp` is not Hermitian, or does not have the symmetries
+            of the basis.
+
+        Warns
+        -----
+        RuntimeWarning
+            With ``"lowest"``, if the sectors ``delta`` particles from half
+            filling have states with ``beta * (E - E0) <= eta``, and with
+            either method, if the states found with ``beta * (E - E0) > eta``
+            have a weight above ``1e-4``.
+
+        """
+        super().solve()
+
+    @override
+    def _find_states(self) -> list[_Key]:
+        # The lowest energy of every sector of the particle numbers of the
+        # method, and then the states with beta (E - E0) <= eta of the sectors
+        # with one. A rank keeps the sectors it solves
+        one_body = _one_body(self.h_imp - self.h_int, self._index)
+        window = self.eta / self.beta
+        half = len(self._modes) // 2
+        keys: list[_Key] = []
+        lowest: dict[int, float] = {}
+        hamiltonians: dict[_Key, Any] = {}
+        if self.method == "lowest":
+            numbers = [
+                n
+                for n in range(half - self.delta, half + self.delta + 1)
+                if n in self._sectors
+            ]
+        else:
+            numbers = [n for n in (half - 1, half, half + 1) if n in self._sectors]
+        number_of = {key: n for n, ks in self._sectors.items() for key in ks}
+        lowest_n: dict[int, float] = {}
+        while numbers:
+            lowest |= self._lowest_energies(numbers, keys, hamiltonians, one_body)
+            for i, key in enumerate(keys):
+                n = number_of[key]
+                lowest_n[n] = min(lowest_n.get(n, np.inf), lowest[i])
+            numbers = []
+            if self.method == "lowest-scan":
+                # The next particle number past each end with a state in the
+                # window
+                e0 = min(lowest_n.values())
+                numbers = [
+                    n + step
+                    for n, step in ((min(lowest_n), -1), (max(lowest_n), 1))
+                    if n + step in self._sectors and lowest_n[n] - e0 <= window
+                ]
+        e0 = min(lowest_n.values())
+
+        # The found states outside the window: the lowest state of the
+        # sectors outside it, and the states past the window of those in it
+        ensemble = []
+        excluded = 0.0
+        for i, key in enumerate(keys):
+            if key not in hamiltonians:
+                continue
+            if lowest[i] - e0 > window:
+                excluded += float(np.exp(-self.beta * (lowest[i] - e0)))
+                continue
+            energies, states = _lowest_states(
+                hamiltonians[key],
+                self.beta,
+                1,
+                self.eigensolver,
+                self.eigensolver_options,
+                e0,
+                np.exp(-self.eta),
+            )
+            inside = energies - e0 <= window
+            excluded += float(np.sum(_weight(energies[~inside], self.beta, e0)))
+            ensemble.append((key, states[:, inside], energies[inside]))
+        all_energies = np.concatenate(
+            self.comm.allgather(
+                np.concatenate([np.zeros(0)] + [e for *_, e in ensemble])
+            )
+        )
+        Z = float(np.sum(_weight(all_energies, self.beta, e0)))
+        self.weights = _weight(all_energies, self.beta, e0) / Z
+        self.ensemble = [
+            (self._basis(key), states, _weight(energies, self.beta, e0) / Z)
+            for key, states, energies in ensemble
+        ]
+        self.gs_energy = e0
+        self.grand_potential = e0 - float(np.log(Z)) / self.beta
+
+        excluded = float(self.comm.allreduce(excluded)) / Z
+        if self.comm.rank == 0:
+            edges = []
+            if self.method == "lowest":
+                edges = [
+                    n
+                    for n in (half - self.delta, half + self.delta)
+                    if 0 < n < 2 * half and lowest_n[n] - e0 <= window
+                ]
+            if edges:
+                msg = (
+                    f"Sectors with {edges} particles, delta from half filling, have "
+                    f"states with beta (E - E0) <= eta. Increase delta."
+                )
+                warnings.warn(msg, RuntimeWarning, stacklevel=4)
+            if excluded > _EXCLUDED_WEIGHT_TOL:
+                msg = (
+                    f"The found states with beta (E - E0) > eta have a weight of "
+                    f"{excluded:.1e}, which changes the density matrices by up to "
+                    f"twice as much. Increase eta."
+                )
+                warnings.warn(msg, RuntimeWarning, stacklevel=4)
+        return [key for key, *_ in ensemble]
+
+    def _lowest_energies(
+        self,
+        numbers: Sequence[int],
+        keys: list[_Key],
+        hamiltonians: dict[_Key, Any],
+        one_body: tuple[NDArray[np.inexact], float, OpSum],
+    ) -> dict[int, float]:
+        # Append the sectors of the particle numbers to keys, largest first,
+        # and return the lowest energy of each by its index in keys. Each rank
+        # solves every comm.size-th sector, and keeps its Hamiltonian
+        new = []
+        for n in numbers:
             dims: dict[tuple[float | None, ...], int] = {}
             for key in self._sectors[n]:
                 dim = self._basis(key).dim
                 dims[key[0]] = dims.get(key[0], 0) + dim
                 if dim:
-                    hamiltonians[key] = self._hamiltonian(key, *one_body)
-                    lowest[key] = _lowest_energy(hamiltonians[key], self.method_options)
+                    new.append(key)
             if any(dim != self._counts[vs] for vs, dim in dims.items()):
                 msg = (
                     "Some states are in no sector of the symmetries. The "
                     "permutation and onsite symmetries must commute with each other."
                 )
                 raise ValueError(msg)
-            return min(lowest[key] for key in self._sectors[n] if key in lowest)
-
-        # The lowest energy of each particle number, from half filling
-        # outwards until it has a negligible weight. This assumes the lowest
-        # energy has no other minimum as a function of the particle number
-        half = len(self._modes) // 2
-        lowest_n = {half: lowest_of(half)}
-        for step in (1, -1):
-            n = half + step
-            while n in self._sectors:
-                lowest_n[n] = lowest_of(n)
-                if (
-                    np.exp(-beta * (lowest_n[n] - min(lowest_n.values())))
-                    <= _WEIGHT_TOL
-                ):
-                    break
-                n += step
-        e0 = min(lowest_n.values())
-
-        keys = []
-        ensemble = []
-        for key in sorted(lowest, key=lambda key: lowest[key]):
-            if np.exp(-beta * (lowest[key] - e0)) <= _WEIGHT_TOL:
-                continue
-            energies, states = _lowest_states(
-                hamiltonians[key], beta, 1, self.method, self.method_options, e0
-            )
-            keep = _weight(energies, beta, e0) > _WEIGHT_TOL
-            keys.append(key)
-            ensemble.append((self._basis(key), states[:, keep], energies[keep]))
-        weights = _weight(np.concatenate([e for _, _, e in ensemble]), beta, e0)
-        self.weights = weights / np.sum(weights)
-        self.ensemble = [
-            (basis, states, _weight(energies, beta, e0) / np.sum(weights))
-            for basis, states, energies in ensemble
-        ]
-        self.gs_energy = e0
-        self.grand_potential = e0 - float(np.log(np.sum(weights))) / beta
-        return keys
+        start = len(keys)
+        keys.extend(sorted(new, key=lambda key: -self._basis(key).dim))
+        energies = {}
+        for i in range(start, len(keys)):
+            if i % self.comm.size == self.comm.rank:
+                hamiltonians[keys[i]] = self._hamiltonian(keys[i], *one_body)
+                energies[i] = _lowest_energy(
+                    hamiltonians[keys[i]], self.eigensolver_options
+                )
+        return gather_tasks(self.comm, energies)
 
 
 def _eigsh(
-    H: Any, k: int, method_options: Mapping[str, Any]
+    H: Any, k: int, eigensolver_options: Mapping[str, Any]
 ) -> tuple[NDArray[np.float64], NDArray[np.complex128]]:
     dim = H.shape[0]
     options: dict[str, Any] = {
         "which": "SA",
         "v0": np.random.default_rng(0).normal(size=dim),
         "ncv": min(dim, max(40, 2 * k + 1)),
-    } | dict(method_options)
+    } | dict(eigensolver_options)
     # ARPACK can run out of iterations when eigenvalues are close, and a
     # larger Krylov space usually fixes it
     for _ in range(_ARPACK_RETRIES):
@@ -1003,7 +1146,7 @@ def _eigsh(
 
 
 def _add_missed_states(
-    H: Any, states: NDArray[np.complex128], method_options: Mapping[str, Any]
+    H: Any, states: NDArray[np.complex128], eigensolver_options: Mapping[str, Any]
 ) -> tuple[NDArray[np.float64], NDArray[np.complex128]]:
     # Lanczos finds one state of a degenerate level in exact arithmetic, so
     # eigsh can skip the others. Shift the states found above the highest of
@@ -1023,7 +1166,7 @@ def _add_missed_states(
         shifted = aslinearoperator(H) + shift * (
             aslinearoperator(states) @ aslinearoperator(states.conj().T)
         )
-        energy, state = _eigsh(shifted, 1, method_options)
+        energy, state = _eigsh(shifted, 1, eigensolver_options)
         if energy[0] > energies[-1] - _MISSED_TOL:
             return energies, states
         states = np.column_stack([states, state])
@@ -1044,10 +1187,10 @@ def _hermitian_matrix(op: OpSum, basis: Basis) -> Any:
     return H
 
 
-def _lowest_energy(H: Any, method_options: Mapping[str, Any]) -> float:
+def _lowest_energy(H: Any, eigensolver_options: Mapping[str, Any]) -> float:
     if H.shape[0] <= _DENSE_DIM:
         return float(np.linalg.eigvalsh(H.toarray())[0])
-    return float(_eigsh(H, 1, method_options)[0][0])
+    return float(_eigsh(H, 1, eigensolver_options)[0][0])
 
 
 def _bath(bl: str) -> str:
@@ -1067,24 +1210,25 @@ def _lowest_states(
     H: Any,
     beta: float | None,
     k: int,
-    method: str,
-    method_options: Mapping[str, Any],
+    eigensolver: str,
+    eigensolver_options: Mapping[str, Any],
     reference: float | None = None,
+    weight_tol: float = _WEIGHT_TOL,
 ) -> tuple[NDArray[np.float64], NDArray[np.complex128]]:
     # The lowest k states, or with beta every state with a weight above
-    # _WEIGHT_TOL relative to the energy reference (default the lowest)
+    # weight_tol relative to the energy reference (default the lowest)
     dim = H.shape[0]
-    if method == "eigh":
-        energies, states = scipy.linalg.eigh(H.toarray(), **method_options)
+    if eigensolver == "eigh":
+        energies, states = scipy.linalg.eigh(H.toarray(), **eigensolver_options)
         return energies, states
     if dim <= k + 1 or (beta is not None and dim <= _DENSE_DIM):
         energies, states = np.linalg.eigh(H.toarray())
         return energies, states
-    energies, states = _eigsh(H, k, method_options)
+    energies, states = _eigsh(H, k, eigensolver_options)
     # Find more states until the highest one has a negligible weight
     while beta is not None and (
         _weight(energies, beta, energies[0] if reference is None else reference)[-1]
-        > _WEIGHT_TOL
+        > weight_tol
     ):
         k *= 2
         # Diagonalize the whole sector once the Krylov space of eigsh
@@ -1092,9 +1236,9 @@ def _lowest_states(
         if dim <= 2 * (2 * k + 1):
             energies, states = np.linalg.eigh(H.toarray())
             return energies, states
-        energies, states = _eigsh(H, k, method_options)
+        energies, states = _eigsh(H, k, eigensolver_options)
     if 1 < len(energies) < dim:
-        energies, states = _add_missed_states(H, states, method_options)
+        energies, states = _add_missed_states(H, states, eigensolver_options)
     return energies, states
 
 

@@ -1,5 +1,6 @@
 # ruff: noqa: D100, D103
 from itertools import product
+from pathlib import Path
 from typing import Any, Literal
 
 import numpy as np
@@ -8,6 +9,8 @@ from fockit.algebra import OpSum, c, cdag, nc, zero
 from fockit.hilbert import FermionSpace, build_basis, to_matrix
 from numpy.typing import NDArray
 from test_common import (
+    EXACT_THERMAL,
+    assert_passes_on_two_ranks,
     build_two_orbital_complex_h0_k,
 )
 
@@ -310,7 +313,7 @@ def test_fockit_options_give_the_same_ground_state(
     expected = request.getfixturevalue(model_expected)
     gf_struct = [(bl, n_orb) for bl in spin_names]
     all_options: dict[str, dict[str, Any]] = {
-        "eigh": {"method": "eigh"},
+        "eigh": {"eigensolver": "eigh"},
         "Sz": {"diagonal_symmetries": {sz_op(n_orb): 0}},
         "Sz and spin swap": {
             "diagonal_symmetries": {sz_op(n_orb): 0},
@@ -470,16 +473,20 @@ def test_eigsh_and_eigh_give_the_same_thermal_density_matrices() -> None:
     D = 0.4 * rng.normal(size=(6, 1))
     D[3] = 0.01
     solvers = {}
-    methods: list[Literal["eigsh", "eigh"]] = ["eigsh", "eigh"]
-    for method in methods:
+    eigensolvers: list[Literal["eigsh", "eigh"]] = ["eigsh", "eigh"]
+    for eigensolver in eigensolvers:
         impurity_solver = FockitImpuritySolver(
-            h_int, gf_struct, method=method, beta=200, bath_size={"up": 6, "dn": 6}
+            h_int,
+            gf_struct,
+            eigensolver=eigensolver,
+            beta=200,
+            bath_size={"up": 6, "dn": 6},
         )
         impurity_solver.set_h_imp(
             {bl: np.diag(levels) for bl, _ in gf_struct}, {bl: D for bl, _ in gf_struct}
         )
         impurity_solver.solve()
-        solvers[method] = impurity_solver
+        solvers[eigensolver] = impurity_solver
     assert solvers["eigsh"].entropy == pytest.approx(solvers["eigh"].entropy, abs=1e-10)
     for bl, _ in gf_struct:
         for rho in ["rho_f", "rho_cf", "rho_c"]:
@@ -581,7 +588,11 @@ def test_grand_canonical_impurity_is_the_thermal_state_over_every_particle_numbe
     D = {"s": 0.5 * (rng.normal(size=(4, 2)) + 1j * rng.normal(size=(4, 2)))}
     h0_loc = {"s": np.array([[0.2, 0.3 - 0.1j], [0.3 + 0.1j, -0.1]])}
     impurity_solver = FockitThermalImpuritySolver(
-        2 * nc("s", 0) * nc("s", 1), gf_struct, beta=beta, bath_size={"s": 4}
+        2 * nc("s", 0) * nc("s", 1),
+        gf_struct,
+        beta=beta,
+        bath_size={"s": 4},
+        **EXACT_THERMAL,
     )
     # The chemical potential is on the physical and bath orbitals
     impurity_solver.set_h_imp(Lambda_c, D, h0_loc)
@@ -620,6 +631,7 @@ def test_grand_canonical_impurity_keeps_every_value_of_a_diagonal_symmetry() -> 
         diagonal_symmetries=[Sz],
         beta=beta,
         bath_size=bath_size,
+        **EXACT_THERMAL,
     )
     impurity_solver.set_h_imp(Lambda_c, D, h0_loc, mu=mu)
     impurity_solver.solve()
@@ -650,7 +662,12 @@ def test_a_second_solve_with_new_terms_matches_a_new_solver(thermal: bool) -> No
     def new_solver(h_int: OpSum) -> FockitImpuritySolver | FockitThermalImpuritySolver:
         if thermal:
             return FockitThermalImpuritySolver(
-                h_int, gf_struct, 3.0, diagonal_symmetries=[Sz], bath_size=bath_size
+                h_int,
+                gf_struct,
+                3.0,
+                diagonal_symmetries=[Sz],
+                bath_size=bath_size,
+                **EXACT_THERMAL,
             )
         return FockitImpuritySolver(
             h_int,
@@ -727,7 +744,13 @@ def test_grand_canonical_impurity_keeps_every_eigenvalue_of_a_symmetry(
             [c(*m) * cdag(*m) + 1j * cdag(*m) * c(*m) for m in modes]
         ]
     impurity_solver = FockitThermalImpuritySolver(
-        h_int, gf_struct, beta, diagonal_symmetries=[Sz], bath_size=bath_size, **kw
+        h_int,
+        gf_struct,
+        beta,
+        diagonal_symmetries=[Sz],
+        bath_size=bath_size,
+        **kw,
+        **EXACT_THERMAL,
     )
     impurity_solver.set_h_imp(
         dict.fromkeys(spins, Lambda_c), dict.fromkeys(spins, D), mu=mu
@@ -743,6 +766,76 @@ def test_grand_canonical_impurity_keeps_every_eigenvalue_of_a_symmetry(
                 expected[rho][bl], abs=1e-10
             )
     assert impurity_solver.grand_potential == pytest.approx(omega, abs=1e-10)
+
+
+@pytest.mark.parametrize("method", ["lowest", "lowest-scan"])
+def test_lowest_states_in_a_wide_window_give_the_thermal_state_over_every_particle_number(
+    method: Literal["lowest", "lowest-scan"],
+) -> None:
+    beta, mu = 3.0, 0.3
+    gf_struct = [("up", 1), ("dn", 1)]
+    bath_size = {"up": 3, "dn": 3}
+    Sz = nc("up", 0) - nc("dn", 0)
+    for a in range(3):
+        Sz += nc("bath_up", a) - nc("bath_dn", a)
+    impurity_solver = FockitThermalImpuritySolver(
+        2 * nc("up", 0) * nc("dn", 0),
+        gf_struct,
+        beta,
+        diagonal_symmetries=[Sz],
+        method=method,
+        eta=40,
+        delta=4,
+        bath_size=bath_size,
+    )
+    impurity_solver.set_h_imp(
+        {bl: np.diag([-0.8, 0.1, 0.9]) for bl, _ in gf_struct},
+        {bl: np.array([[0.3], [0.2], [0.4]]) for bl, _ in gf_struct},
+        mu=mu,
+    )
+    impurity_solver.solve()
+
+    expected, omega = thermal_average_over_the_fock_space(
+        impurity_solver, impurity_solver.h_imp, beta
+    )
+    for rho in ["rho_f", "rho_cf", "rho_c"]:
+        for bl, _ in gf_struct:
+            assert getattr(impurity_solver, rho)[bl] == pytest.approx(
+                expected[rho][bl], abs=1e-10
+            )
+    assert impurity_solver.grand_potential == pytest.approx(omega, abs=1e-10)
+
+
+@pytest.mark.parametrize(
+    ("method", "eta", "delta", "match"),
+    [("lowest", 40, 0, "delta"), ("lowest", 1, 4, "eta"), ("lowest-scan", 1, 0, "eta")],
+)
+def test_too_narrow_window_of_the_lowest_states_warns(
+    method: Literal["lowest", "lowest-scan"], eta: float, delta: int, match: str
+) -> None:
+    gf_struct = [("up", 1), ("dn", 1)]
+    impurity_solver = FockitThermalImpuritySolver(
+        2 * nc("up", 0) * nc("dn", 0),
+        gf_struct,
+        3.0,
+        method=method,
+        eta=eta,
+        delta=delta,
+        bath_size={"up": 3, "dn": 3},
+    )
+    impurity_solver.set_h_imp(
+        {bl: np.diag([-0.8, 0.1, 0.9]) for bl, _ in gf_struct},
+        {bl: np.array([[0.3], [0.2], [0.4]]) for bl, _ in gf_struct},
+        mu=0.3,
+    )
+    with pytest.warns(RuntimeWarning, match=match):
+        impurity_solver.solve()
+
+
+def test_sectors_of_a_grand_canonical_impurity_on_mpi_ranks_are_those_of_one_process() -> (
+    None
+):
+    assert_passes_on_two_ranks(Path(__file__).parent / "test_mpi_fockit.py")
 
 
 def test_grand_canonical_impurity_rejects_symmetries_it_cannot_split_by() -> None:

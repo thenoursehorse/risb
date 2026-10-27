@@ -1,10 +1,65 @@
 # ruff: noqa: D100, D103
+import os
+import shutil
+import subprocess
+import sys
 from itertools import product
+from pathlib import Path
+from typing import Any
 
 import numpy as np
+import pytest
 from numpy.typing import NDArray
 
 from risb.types import BlockMatrix, GfStruct
+
+# FockitThermalImpuritySolver with every state of a weight above 1e-14
+# relative to the lowest, as the exact thermal state
+EXACT_THERMAL: dict[str, Any] = {"method": "lowest-scan", "eta": 14 * np.log(10)}
+
+PRINT_SIZE = "from mpi4py import MPI; print(MPI.COMM_WORLD.Get_size())"
+
+
+def assert_passes_on_two_ranks(path: Path) -> None:
+    # Run the tests in path on two MPI ranks
+    pytest.importorskip("mpi4py")
+    mpirun = shutil.which("mpirun")
+    if mpirun is None:
+        pytest.skip("mpirun is not on the PATH")
+    # An mpirun of another MPI than mpi4py's starts each rank on its own
+    ranks = subprocess.run(
+        [mpirun, "-n", "2", sys.executable, "-c", PRINT_SIZE],
+        capture_output=True,
+        text=True,
+        timeout=60,
+        check=False,
+    )
+    assert ranks.stdout.split() == ["2", "2"], ranks.stdout + ranks.stderr
+    result = subprocess.run(
+        [
+            mpirun,
+            "-n",
+            "2",
+            sys.executable,
+            # A rank that fails stops the others, which would wait for it
+            "-m",
+            "mpi4py",
+            "-m",
+            "pytest",
+            "-q",
+            "-x",
+            "-p",
+            "no:cacheprovider",
+            str(path),
+        ],
+        capture_output=True,
+        text=True,
+        cwd=path.parent.parent,
+        env=os.environ | {"OMP_NUM_THREADS": "1"},
+        timeout=300,
+        check=False,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
 
 
 def symmetrize_blocks(A: list[BlockMatrix]) -> list[BlockMatrix]:

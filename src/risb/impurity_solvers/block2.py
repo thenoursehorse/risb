@@ -951,7 +951,10 @@ class Block2ThermalImpuritySolver(_Block2Base):
     ``beta * (E - E0) <= eta`` above the lowest energy ``E0``, as in L.
     Giordano, Y. Tan, Z.-H. Cui, and C. Sun,
     `arXiv:2601.01641 <https://arxiv.org/abs/2601.01641>`__. It is for low
-    temperatures, where few states have a weight.
+    temperatures, where few states have a weight. ``method="lowest-scan"``
+    takes the particle numbers from half filling outwards instead, until the
+    lowest state of each of the two at the ends has ``beta * (E - E0) >
+    eta``.
 
     Parameters
     ----------
@@ -983,20 +986,21 @@ class Block2ThermalImpuritySolver(_Block2Base):
         in ``gf_struct`` with the same orbitals. Default is
         ``[("up", "dn")]``.
     method : str, optional
-        ``"purification"`` (the default) or ``"lowest"``.
+        ``"lowest"`` (the default), ``"lowest-scan"`` or ``"purification"``.
     eta : float, optional
-        Largest ``beta * (E - E0)`` of a state in ``"lowest"``. Default is 8.
+        Largest ``beta * (E - E0)`` of a state in ``"lowest"`` and
+        ``"lowest-scan"``. Default is 8.
     delta : int, optional
         Largest difference of the particle number from half filling of a
         sector in ``"lowest"``. Default is 2.
     mix_schedule : sequence of tuple, optional
-        The symmetry-mixing sweeps that start each solve of ``"lowest"``, as
-        in :class:`Block2ImpuritySolver`.
+        The symmetry-mixing sweeps that start each solve of ``"lowest"`` and
+        ``"lowest-scan"``, as in :class:`Block2ImpuritySolver`.
     calculate_variance : bool, optional
         Whether :meth:`solve` calculates the energy variance ``<H^2> -
-        <H>^2`` of each state in the thermal average of ``"lowest"``, which is
-        zero for an eigenstate, as in :class:`Block2ImpuritySolver`. Default
-        is False.
+        <H>^2`` of each state in the thermal average of ``"lowest"`` and
+        ``"lowest-scan"``, which is zero for an eigenstate, as in
+        :class:`Block2ImpuritySolver`. Default is False.
     bath_size : mapping, optional
         Number of bath orbitals of each block, ``B`` times its size for ghost
         RISB with ``B`` quasiparticle orbitals per orbital, e.g.,
@@ -1005,7 +1009,8 @@ class Block2ThermalImpuritySolver(_Block2Base):
         (``B = 1``).
     comm : risb.helpers_mpi.Comm, optional
         MPI communicator, e.g. ``mpi4py.MPI.COMM_WORLD``, whose ranks solve
-        the sectors of ``"lowest"`` in parallel. ``"purification"`` runs on
+        the sectors of ``"lowest"`` and ``"lowest-scan"`` in parallel.
+        ``"purification"`` runs on
         rank 0. Every rank must call :meth:`solve` and :meth:`overlap`.
         Default is a single process.
 
@@ -1029,7 +1034,7 @@ class Block2ThermalImpuritySolver(_Block2Base):
         time_step: float = 0.1,
         symmetries: Sequence[str] = ("sz",),
         spin_blocks: Sequence[tuple[str, str]] = (("up", "dn"),),
-        method: str = "purification",
+        method: str = "lowest",
         eta: float = 8.0,
         delta: int = 2,
         mix_schedule: Sequence[tuple[float, int, float]] = _MIX_SCHEDULE,
@@ -1072,11 +1077,11 @@ class Block2ThermalImpuritySolver(_Block2Base):
         #: of a sector in ``"lowest"``.
         self.delta = delta
 
-        if method not in ("purification", "lowest"):
-            msg = 'method must be "purification" or "lowest".'
+        if method not in ("lowest", "lowest-scan", "purification"):
+            msg = 'method must be "lowest", "lowest-scan" or "purification".'
             raise ValueError(msg)
-        if calculate_variance and method != "lowest":
-            msg = 'calculate_variance needs method "lowest".'
+        if calculate_variance and method == "purification":
+            msg = 'calculate_variance needs method "lowest" or "lowest-scan".'
             raise ValueError(msg)
 
         # The directories of the thermal state, and its pure states with their
@@ -1115,9 +1120,9 @@ class Block2ThermalImpuritySolver(_Block2Base):
         -----
         RuntimeWarning
             With ``"lowest"``, if the sectors ``delta`` particles from half
-            filling have states with ``beta * (E - E0) <= eta``, or if the
-            states found with ``beta * (E - E0) > eta`` have a weight above
-            ``1e-4``.
+            filling have states with ``beta * (E - E0) <= eta``, and with
+            ``"lowest"`` or ``"lowest-scan"``, if the states found with ``beta
+            * (E - E0) > eta`` have a weight above ``1e-4``.
 
         Raises
         ------
@@ -1129,7 +1134,7 @@ class Block2ThermalImpuritySolver(_Block2Base):
         self._check_h_imp()
         for d in self._dirs:
             d.cleanup()
-        solve = self._lowest if self.method == "lowest" else self._purify
+        solve = self._purify if self.method == "purification" else self._lowest
         G, self.energy, log_Z, self._dirs, self._states = solve()
         self.grand_potential = -log_Z / self.beta
         self.entropy = self.beta * (self.energy - self.grand_potential)
@@ -1307,25 +1312,48 @@ class Block2ThermalImpuritySolver(_Block2Base):
         return float(driver.expectation(ket, mpo, ket))
 
     def _lowest(self) -> _ThermalResult:
-        # The thermal average over the lowest states of the sectors within
-        # delta particles of half filling, with beta (E - E0) <= eta. Each
+        # The thermal average over the lowest states with beta (E - E0) <= eta
+        # of the sectors within delta particles of half filling, or with
+        # "lowest-scan" of the particle numbers from half filling outwards
+        # until the lowest state at both ends is outside the window. Each
         # sector solves for its lowest state, and for twice as many states
         # until the highest is above the window or every state of the sector
         # is found. The ranks split the sectors
         L = len(self._sites)
         window = self.eta / self.beta
-        tasks = [
-            (n_elec, sector)
-            for n_elec in range(max(0, L - self.delta), min(2 * L, L + self.delta) + 1)
-            for sector in self._spin_sectors(min(n_elec, 2 * L - n_elec))
-        ]
-        runs = {
-            i: self._run(tasks[i][1], tasks[i][0], 1)
-            for i in round_robin(self.comm, len(tasks))
-        }
-        E0 = min(
-            gather_tasks(self.comm, {i: run[0][0] for i, run in runs.items()}).values()
-        )
+        if self.method == "lowest":
+            numbers = list(
+                range(max(0, L - self.delta), min(2 * L, L + self.delta) + 1)
+            )
+        else:
+            numbers = [L - 1, L, L + 1]
+        tasks: list[tuple[int, _Sector]] = []
+        runs: dict[int, _Run] = {}
+        lowest: dict[int, float] = {}
+        while numbers:
+            start = len(tasks)
+            tasks += [
+                (n_elec, sector)
+                for n_elec in numbers
+                for sector in self._spin_sectors(min(n_elec, 2 * L - n_elec))
+            ]
+            new = range(start + self.comm.rank, len(tasks), self.comm.size)
+            runs |= {i: self._run(tasks[i][1], tasks[i][0], 1) for i in new}
+            lowest |= gather_tasks(self.comm, {i: runs[i][0][0] for i in new})
+            lowest_n: dict[int, float] = {}
+            for i, e in lowest.items():
+                lowest_n[tasks[i][0]] = min(lowest_n.get(tasks[i][0], np.inf), e)
+            numbers = []
+            if self.method == "lowest-scan":
+                # The next particle number past each end with a state in the
+                # window
+                E0 = min(lowest_n.values())
+                numbers = [
+                    n + step
+                    for n, step in ((min(lowest_n), -1), (max(lowest_n), 1))
+                    if 0 <= n + step <= 2 * L and lowest_n[n] - E0 <= window
+                ]
+        E0 = min(lowest.values())
         for i in runs:
             n_elec, sector = tasks[i]
             size = _sector_size(L, n_elec, sector)
@@ -1418,7 +1446,9 @@ class Block2ThermalImpuritySolver(_Block2Base):
         logger.info("Largest discarded weight of the sectors in it %.1e", discarded)
         if self.variance is not None:
             logger.info("Largest energy variance of its states %.1e", self.variance)
-        edges = [n for n in (L - self.delta, L + self.delta) if 0 < n < 2 * L]
+        edges = []
+        if self.method == "lowest":
+            edges = [n for n in (L - self.delta, L + self.delta) if 0 < n < 2 * L]
         inside = [n for n in edges if lowest[n] <= self.eta]
         if inside:
             msg = (

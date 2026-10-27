@@ -1,8 +1,4 @@
 # ruff: noqa: D100, D103
-import os
-import shutil
-import subprocess
-import sys
 from itertools import product
 from pathlib import Path
 from typing import Any
@@ -11,7 +7,12 @@ import numpy as np
 import pytest
 from fockit.algebra import OpSum, c, cdag, hc, nc, zero
 from numpy.typing import NDArray
-from test_common import build_cubic_h0_k, symmetrize_blocks
+from test_common import (
+    EXACT_THERMAL,
+    assert_passes_on_two_ranks,
+    build_cubic_h0_k,
+    symmetrize_blocks,
+)
 
 from risb import LatticeSolver, ThermalLatticeSolver
 from risb.helpers_fockit import N_op, S2_op, h_int_kanamori
@@ -20,8 +21,6 @@ from risb.kweight import SmearingKWeight
 
 pytest.importorskip("pyblock2")
 from risb.impurity_solvers import Block2ImpuritySolver, Block2ThermalImpuritySolver
-
-PRINT_SIZE = "from mpi4py import MPI; print(MPI.COMM_WORLD.Get_size())"
 
 # The comparisons with exact results keep every state of a bond
 CUTOFF = 1e-20
@@ -263,7 +262,9 @@ def test_thermal_state_of_a_ghost_impurity_is_the_exact_one(
     problem = ghost_problem(n_orb, 1)
     h_int, gf_struct, bath_size = problem[:3]
     expected = solved(
-        FockitThermalImpuritySolver(h_int, gf_struct, 10, bath_size=bath_size),
+        FockitThermalImpuritySolver(
+            h_int, gf_struct, 10, bath_size=bath_size, **EXACT_THERMAL
+        ),
         problem,
     )
     solver = solved(
@@ -274,6 +275,7 @@ def test_thermal_state_of_a_ghost_impurity_is_the_exact_one(
             bond_dim=200,
             time_step=time_step,
             symmetries=symmetries,
+            method="purification",
             bath_size=bath_size,
             cutoff=CUTOFF,
         ),
@@ -287,14 +289,19 @@ def test_thermal_state_of_a_ghost_impurity_is_the_exact_one(
         assert solver.overlap(Op) == pytest.approx(expected.overlap(Op), abs=1e-6)
 
 
-@pytest.mark.parametrize("symmetries", [[], ["sz"], ["s"]])
+@pytest.mark.parametrize(
+    ("symmetries", "method"),
+    [([], "lowest"), (["sz"], "lowest"), (["s"], "lowest"), (["s"], "lowest-scan")],
+)
 def test_lowest_states_of_every_sector_give_the_exact_thermal_state(
-    symmetries: list[str],
+    symmetries: list[str], method: str
 ) -> None:
     problem = ghost_problem(1, 1)
     h_int, gf_struct, bath_size = problem[:3]
     expected = solved(
-        FockitThermalImpuritySolver(h_int, gf_struct, 10, bath_size=bath_size),
+        FockitThermalImpuritySolver(
+            h_int, gf_struct, 10, bath_size=bath_size, **EXACT_THERMAL
+        ),
         problem,
     )
     solver = solved(
@@ -304,7 +311,7 @@ def test_lowest_states_of_every_sector_give_the_exact_thermal_state(
             10,
             bond_dim=50,
             symmetries=symmetries,
-            method="lowest",
+            method=method,
             eta=40,
             delta=2,
             bath_size=bath_size,
@@ -320,9 +327,12 @@ def test_lowest_states_of_every_sector_give_the_exact_thermal_state(
         assert solver.overlap(Op) == pytest.approx(expected.overlap(Op), abs=1e-8)
 
 
-@pytest.mark.parametrize(("eta", "delta", "match"), [(40, 0, "delta"), (1, 2, "eta")])
+@pytest.mark.parametrize(
+    ("method", "eta", "delta", "match"),
+    [("lowest", 40, 0, "delta"), ("lowest", 1, 2, "eta"), ("lowest-scan", 1, 0, "eta")],
+)
 def test_too_narrow_window_of_the_lowest_states_warns(
-    eta: float, delta: int, match: str
+    method: str, eta: float, delta: int, match: str
 ) -> None:
     problem = ghost_problem(1, 1)
     h_int, gf_struct, bath_size = problem[:3]
@@ -332,7 +342,7 @@ def test_too_narrow_window_of_the_lowest_states_warns(
         10,
         bond_dim=50,
         symmetries=["s"],
-        method="lowest",
+        method=method,
         eta=eta,
         delta=delta,
         bath_size=bath_size,
@@ -366,7 +376,12 @@ def test_energy_variance_of_a_purified_state_is_rejected() -> None:
     h_int, gf_struct, bath_size = ghost_problem(1, 1)[:3]
     with pytest.raises(ValueError, match="calculate_variance"):
         Block2ThermalImpuritySolver(
-            h_int, gf_struct, 10, calculate_variance=True, bath_size=bath_size
+            h_int,
+            gf_struct,
+            10,
+            method="purification",
+            calculate_variance=True,
+            bath_size=bath_size,
         )
 
 
@@ -384,7 +399,9 @@ def test_two_orbital_kanamori_lattice_at_finite_temperature_is_the_exact_one() -
     beta = 2.0
     results = []
     for solver in (
-        FockitThermalImpuritySolver(kanamori(2, 3.0, 0.6), gf_struct, beta),
+        FockitThermalImpuritySolver(
+            kanamori(2, 3.0, 0.6), gf_struct, beta, **EXACT_THERMAL
+        ),
         Block2ThermalImpuritySolver(
             kanamori(2, 3.0, 0.6),
             gf_struct,
@@ -392,6 +409,7 @@ def test_two_orbital_kanamori_lattice_at_finite_temperature_is_the_exact_one() -
             bond_dim=200,
             time_step=0.1,
             symmetries=["s"],
+            method="purification",
             cutoff=CUTOFF,
         ),
     ):
@@ -414,42 +432,4 @@ def test_two_orbital_kanamori_lattice_at_finite_temperature_is_the_exact_one() -
 
 
 def test_solvers_on_mpi_ranks_give_the_exact_states() -> None:
-    pytest.importorskip("mpi4py")
-    mpirun = shutil.which("mpirun")
-    if mpirun is None:
-        pytest.skip("mpirun is not on the PATH")
-    # An mpirun of another MPI than mpi4py's starts each rank on its own
-    ranks = subprocess.run(
-        [mpirun, "-n", "2", sys.executable, "-c", PRINT_SIZE],
-        capture_output=True,
-        text=True,
-        timeout=60,
-        check=False,
-    )
-    assert ranks.stdout.split() == ["2", "2"], ranks.stdout + ranks.stderr
-    tests = Path(__file__).parent
-    result = subprocess.run(
-        [
-            mpirun,
-            "-n",
-            "2",
-            sys.executable,
-            # A rank that fails stops the others, which would wait for it
-            "-m",
-            "mpi4py",
-            "-m",
-            "pytest",
-            "-q",
-            "-x",
-            "-p",
-            "no:cacheprovider",
-            str(tests / "test_mpi_block2.py"),
-        ],
-        capture_output=True,
-        text=True,
-        cwd=tests.parent,
-        env=os.environ | {"OMP_NUM_THREADS": "1"},
-        timeout=300,
-        check=False,
-    )
-    assert result.returncode == 0, result.stdout + result.stderr
+    assert_passes_on_two_ranks(Path(__file__).parent / "test_mpi_block2.py")

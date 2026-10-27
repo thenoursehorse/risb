@@ -4,6 +4,7 @@ import numpy as np
 import pytest
 from fockit.algebra import OpSum, nc
 from test_common import (
+    EXACT_THERMAL,
     bethe_h0_k,
     build_two_orbital_complex_h0_k,
     one_band_cubic_h0_k,
@@ -35,7 +36,7 @@ def bethe_lattice(
 ) -> tuple[ThermalLatticeSolver, FockitThermalImpuritySolver]:
     bath_size = {bl: B for bl, _ in ONE_BAND}
     impurity_solver = FockitThermalImpuritySolver(
-        h_int, ONE_BAND, bath_size=bath_size, beta=1 / T
+        h_int, ONE_BAND, bath_size=bath_size, beta=1 / T, **EXACT_THERMAL
     )
     S = ThermalLatticeSolver(
         h0_k={bl: bethe_h0_k(400) for bl, _ in ONE_BAND},
@@ -59,7 +60,11 @@ def two_site_cell(
     spin_names = ["up", "dn"]
     bath_size = dict.fromkeys(spin_names, 3)
     impurity_solver = FockitThermalImpuritySolver(
-        2.0 * nc("up", 0) * nc("dn", 0), ONE_BAND, bath_size=bath_size, beta=1 / T
+        2.0 * nc("up", 0) * nc("dn", 0),
+        ONE_BAND,
+        bath_size=bath_size,
+        beta=1 / T,
+        **EXACT_THERMAL,
     )
     S = ThermalLatticeSolver(
         h0_k=dict.fromkeys(spin_names, one_band_cubic_h0_k(4, supercell=True)),
@@ -143,7 +148,9 @@ def test_low_temperature_solution_is_the_zero_temperature_solution(
     S = ThermalLatticeSolver(
         h0_k,
         gf_struct,
-        FockitThermalImpuritySolver(h, gf_struct, bath_size=bath_size, beta=beta),
+        FockitThermalImpuritySolver(
+            h, gf_struct, bath_size=bath_size, beta=beta, **EXACT_THERMAL
+        ),
         beta=beta,
         mu=kweight.mu if fixed == "mu" else None,
         symmetrizers=[symmetrize_blocks],
