@@ -592,6 +592,41 @@ def test_constant_double_counting_is_a_shift_of_the_local_energies() -> None:
     assert all(i == 0 and set(rho) == {"up", "dn"} for i, rho in calls)
 
 
+def test_ghost_risb_with_double_counting_restarts_on_its_solution() -> None:
+    # Hubbard model on the Bethe lattice away from half filling, with a Hartree
+    # double counting of the density of the other spin
+    B, U = 3, 2.0
+    gf_struct = [("up", 1), ("dn", 1)]
+    bath_size = [{bl: B for bl, _ in gf_struct}]
+    h_int = U * nc("up", 0) * nc("dn", 0)
+
+    def double_counting(_i: int, rho_c: BlockMatrix) -> BlockMatrix:
+        return {"up": U * rho_c["dn"], "dn": U * rho_c["up"]}
+
+    def lattice_solver() -> LatticeSolver:
+        return LatticeSolver(
+            h0_k={bl: bethe_h0_k(200) for bl, _ in gf_struct},
+            gf_struct=gf_struct,
+            impurity_solvers=FockitImpuritySolver(
+                h_int, gf_struct, bath_size=bath_size[0]
+            ),
+            update_weights=SmearingKWeight(
+                beta=200, n_target=0.8 + (B - 1)
+            ).update_weights,
+            symmetrizers=[symmetrize_blocks],
+            force_real=True,
+            double_counting=double_counting,
+            bath_size=bath_size,
+        )
+
+    S = lattice_solver()
+    S.solve(tol=1e-10)
+    assert S.self_consistency_error < 1e-8
+    restarted = lattice_solver()
+    restarted.R, restarted.Lambda, restarted.rho_c = S.R, S.Lambda, S.rho_c
+    assert restarted.solve(one_shot=True).error < 1e-8
+
+
 def test_ghost_risb_without_interactions_is_the_non_interacting_solution() -> None:
     B = 3
     gf_struct = [("up", 1), ("dn", 1)]

@@ -95,10 +95,13 @@ class BaseLatticeSolver(ABC):
     double_counting : callable, optional
         A double-counting potential, called each cycle as
         ``double_counting(i, rho_c)`` with the density matrix
-        :attr:`rho_c` of cluster ``i`` from the previous cycle (its
-        quasiparticle density matrix :attr:`rho_qp` in the first cycle). It
-        returns a matrix for each block of the cluster, which is subtracted
-        from the local terms of cluster ``i`` in its impurity problem.
+        :attr:`rho_c` of cluster ``i`` from the previous cycle. If
+        :attr:`rho_c` is not set, e.g., in the first cycle, it is the
+        coherent density matrix ``R^T rho_qp R^*`` from :attr:`R` and
+        :attr:`rho_qp`. It returns a matrix for each block of the cluster,
+        which is subtracted from the local terms of cluster ``i`` in its
+        impurity problem. To restart from a solution, set :attr:`rho_c`
+        together with :attr:`R` and :attr:`Lambda`.
     bath_size : sequence of mapping, optional
         Ghost RISB (`10.1103/PhysRevB.96.195126
         <https://doi.org/10.1103/PhysRevB.96.195126>`__,
@@ -503,7 +506,12 @@ class BaseLatticeSolver(ABC):
         for i in range(self.n_clusters):
             h0_loc_matrix = self.h0_loc_matrix[i]
             if self.double_counting is not None:
-                rho = self.rho_c[i] if self.rho_c[i] else self.rho_qp[i]
+                rho = self.rho_c[i]
+                if not rho:
+                    rho = {
+                        bl: R.T @ self.rho_qp[i][bl] @ R.conj()
+                        for bl, R in self.R[i].items()
+                    }
                 potential = self.double_counting(i, rho)
                 h0_loc_matrix = {
                     bl: h0_loc_matrix[bl] - potential[bl] for bl in h0_loc_matrix
