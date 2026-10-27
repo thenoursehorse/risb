@@ -383,7 +383,9 @@ the largest weight discarded in the last sweep in
 `overlap` are as described for `FockitImpuritySolver`. The operators of
 `overlap` have at most two-body terms. With `"s"` and no `"sz"`, expectation
 values average over the states of the spin multiplet, as the density
-matrices do.
+matrices do. With `calculate_variance=True`, `solve()` also stores the energy
+variance $\langle H^2 \rangle - \langle H \rangle^2$ of the ground state,
+which is zero for an eigenstate, in `impurity_solver.variance`.
 
 ### Grand-canonical impurity problem
 
@@ -418,7 +420,9 @@ impurity_solver = Block2ThermalImpuritySolver(
 
 The lowest states of every sector within `delta` particles of half filling
 are found together by DMRG, and the states with
-$\beta (E - E_0) \le$ `eta` are in the average[^Giordano2026].
+$\beta (E - E_0) \le$ `eta` are in the average[^Giordano2026]. With
+`calculate_variance=True`, `impurity_solver.variance` is the largest energy
+variance of these states.
 
 `solve()` stores the thermal average of `h_imp` in `impurity_solver.energy`,
 the grand potential in `impurity_solver.grand_potential`, and the entropy in

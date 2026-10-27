@@ -108,6 +108,38 @@ def test_ground_state_of_a_ghost_impurity_is_the_exact_one(
         assert solver.overlap(Op) == pytest.approx(expected.overlap(Op), abs=1e-6)
 
 
+@pytest.mark.parametrize("symmetries", [{}, {"sz": 0}, {"s": 0}])
+def test_energy_variance_vanishes_for_the_ground_state_and_not_for_a_truncated_one(
+    symmetries: dict[str, Any],
+) -> None:
+    problem = ghost_problem(2, 3)
+    h_int, gf_struct, bath_size = problem[:3]
+    variances = [
+        solved(
+            Block2ImpuritySolver(
+                h_int,
+                gf_struct,
+                bond_dim=bond_dim,
+                symmetries=symmetries,
+                calculate_variance=True,
+                bath_size=bath_size,
+                cutoff=CUTOFF,
+            ),
+            problem,
+        ).variance
+        for bond_dim in (200, 8)
+    ]
+    assert variances[0] == pytest.approx(0, abs=1e-6)
+    assert variances[1] > 1e-4
+
+
+def test_energy_variance_is_not_calculated_by_default() -> None:
+    problem = ghost_problem(1, 1)
+    h_int, gf_struct, bath_size = problem[:3]
+    solver = Block2ImpuritySolver(h_int, gf_struct, bath_size=bath_size)
+    assert solved(solver, problem).variance is None
+
+
 def test_state_of_a_spin_multiplet_is_the_lowest_with_its_spin_projection() -> None:
     problem = ghost_problem(2, 1)
     h_int, gf_struct, bath_size = problem[:3]
@@ -307,6 +339,35 @@ def test_too_narrow_window_of_the_lowest_states_warns(
     )
     with pytest.warns(RuntimeWarning, match=match):
         solved(solver, problem)
+
+
+def test_energy_variance_of_the_lowest_states_vanishes() -> None:
+    problem = ghost_problem(1, 1)
+    h_int, gf_struct, bath_size = problem[:3]
+    solver = solved(
+        Block2ThermalImpuritySolver(
+            h_int,
+            gf_struct,
+            10,
+            bond_dim=50,
+            symmetries=["s"],
+            method="lowest",
+            eta=40,
+            calculate_variance=True,
+            bath_size=bath_size,
+            cutoff=CUTOFF,
+        ),
+        problem,
+    )
+    assert solver.variance == pytest.approx(0, abs=1e-8)
+
+
+def test_energy_variance_of_a_purified_state_is_rejected() -> None:
+    h_int, gf_struct, bath_size = ghost_problem(1, 1)[:3]
+    with pytest.raises(ValueError, match="calculate_variance"):
+        Block2ThermalImpuritySolver(
+            h_int, gf_struct, 10, calculate_variance=True, bath_size=bath_size
+        )
 
 
 def test_thermal_state_with_both_spin_symmetries_is_rejected() -> None:

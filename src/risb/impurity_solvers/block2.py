@@ -119,6 +119,7 @@ class _Block2Base(ImpuritySolver):
         bath_size: Mapping[str, int] | None,
         comm: Comm | None,
         mix_schedule: Sequence[tuple[float, int, float]],
+        calculate_variance: bool,
     ) -> None:
         #: risb.types.GfStruct : Block matrix structure of the physical orbitals
         #: (c-electrons).
@@ -131,6 +132,10 @@ class _Block2Base(ImpuritySolver):
         #: list of tuple : ``(strength, sweeps, noise)`` of each stage of the
         #: symmetry-mixing sweeps that start each solve.
         self.mix_schedule = list(mix_schedule)
+
+        #: bool : Whether :meth:`solve` calculates the energy variance of the
+        #: states.
+        self.calculate_variance = calculate_variance
 
         #: int : Largest bond dimension of the matrix product states.
         self.bond_dim = bond_dim
@@ -511,6 +516,31 @@ class _Block2Base(ImpuritySolver):
             G[0::2, 0::2] = G[1::2, 1::2] = np.asarray(driver.get_1pdm(ket)) / 2
         return G / norm
 
+    def _variance(
+        self, scratch: str, sector: _Sector, n_elec: int, tag: str
+    ) -> tuple[float, str]:
+        # <H^2> - <H>^2 in the state tag of sector with n_elec electrons, and
+        # the tag of the state (H - <H>) psi, to remove. The variance is the
+        # squared norm of that state, fitted at the bond dimension of psi,
+        # which underestimates it slightly (by less than ten percent in the
+        # tests of a d shell)
+        driver, symm_type = self._driver(scratch, sector, n_elec)
+        ket = driver.load_mps(tag)
+        identity = driver.get_identity_mpo()
+        norm = float(driver.expectation(ket, identity, ket))
+        mpo = self._mpo(driver, symm_type, self._const, self._h1, self._V)
+        energy = float(driver.expectation(ket, mpo, ket)) / norm
+        mpo = self._mpo(driver, symm_type, self._const - energy, self._h1, self._V)
+        bond_dim = ket.info.bond_dim
+        h_ket = driver.get_random_mps(
+            tag=f"H{tag}", bond_dim=bond_dim, center=ket.center, dot=ket.dot
+        )
+        driver.multiply(
+            h_ket, mpo, ket, n_sweeps=20, tol=1e-12, bra_bond_dims=[bond_dim]
+        )
+        variance = float(driver.expectation(h_ket, identity, h_ket)) / norm
+        return variance, h_ket.info.tag
+
     def _expectation_value(
         self,
         scratch: str,
@@ -682,6 +712,11 @@ class Block2ImpuritySolver(_Block2Base):
         dimension with ``noise``. Default is ``((0.1, 6, 1e-5), (0.01, 6,
         1e-5), (0.001, 6, 1e-5), (1e-4, 6, 1e-5))``, and ``()`` turns them
         off.
+    calculate_variance : bool, optional
+        Whether :meth:`solve` calculates the energy variance ``<H^2> -
+        <H>^2`` of the ground state, which is zero for an eigenstate. It
+        costs about half a solve without the symmetry-mixing sweeps. Default
+        is False.
     bath_size : mapping, optional
         Number of bath orbitals of each block, ``B`` times its size for ghost
         RISB with ``B`` quasiparticle orbitals per orbital, e.g.,
@@ -712,11 +747,19 @@ class Block2ImpuritySolver(_Block2Base):
         spin_blocks: Sequence[tuple[str, str]] = (("up", "dn"),),
         mix_schedule: Sequence[tuple[float, int, float]] = _MIX_SCHEDULE,
         *,
+        calculate_variance: bool = False,
         bath_size: Mapping[str, int] | None = None,
         comm: Comm | None = None,
     ) -> None:
         super().__init__(
-            gf_struct, bond_dim, cutoff, spin_blocks, bath_size, comm, mix_schedule
+            gf_struct,
+            bond_dim,
+            cutoff,
+            spin_blocks,
+            bath_size,
+            comm,
+            mix_schedule,
+            calculate_variance,
         )
 
         #: dict : Conserved quantities and their sectors.
@@ -764,6 +807,10 @@ class Block2ImpuritySolver(_Block2Base):
         #: float : Largest weight discarded in the last sweep, set by
         #: :meth:`solve`.
         self.discarded_weight: float
+
+        #: float or None : Energy variance ``<H^2> - <H>^2`` of the ground
+        #: state, set by :meth:`solve` with :attr:`calculate_variance`.
+        self.variance: float | None = None
 
         #: dict : Sector of the ground state, with ``"s"`` and ``"sz"`` where
         #: they are conserved, set by :meth:`solve`.
@@ -814,15 +861,20 @@ class Block2ImpuritySolver(_Block2Base):
             self._state[0].cleanup()
         self._state = None
         # The rank of the lowest sector has its state
-        G, discarded_weight = np.zeros((2 * L, 2 * L)), 0.0
+        G, discarded_weight, variance = np.zeros((2 * L, 2 * L)), 0.0, 0.0
         for i, run in runs.items():
             if self._sectors[i] == lowest:
-                _, (G,), _, discarded_weight, scratch = run
+                _, (G,), (tag,), discarded_weight, scratch = run
                 self._state = (scratch, lowest)
+                if self.calculate_variance:
+                    variance, h_tag = self._variance(scratch.name, lowest, L, tag)
+                    _remove_mps(scratch.name, h_tag)
             else:
                 run[4].cleanup()
         self.gs_energy = energies[lowest]
         self.discarded_weight = self.comm.allreduce(discarded_weight)
+        if self.calculate_variance:
+            self.variance = self.comm.allreduce(variance)
         G = self.comm.allreduce(G)
         twos, twosz = lowest
         self.sector = {}
@@ -940,6 +992,11 @@ class Block2ThermalImpuritySolver(_Block2Base):
     mix_schedule : sequence of tuple, optional
         The symmetry-mixing sweeps that start each solve of ``"lowest"``, as
         in :class:`Block2ImpuritySolver`.
+    calculate_variance : bool, optional
+        Whether :meth:`solve` calculates the energy variance ``<H^2> -
+        <H>^2`` of each state in the thermal average of ``"lowest"``, which is
+        zero for an eigenstate, as in :class:`Block2ImpuritySolver`. Default
+        is False.
     bath_size : mapping, optional
         Number of bath orbitals of each block, ``B`` times its size for ghost
         RISB with ``B`` quasiparticle orbitals per orbital, e.g.,
@@ -957,8 +1014,8 @@ class Block2ThermalImpuritySolver(_Block2Base):
     ValueError
         If ``spin_blocks`` does not pair every block of ``gf_struct`` with one
         of the same size, if ``symmetries`` is not empty, ``"sz"`` or ``"s"``,
-        if ``method`` is unknown, or if ``h_int`` does not conserve the
-        symmetries.
+        if ``method`` is unknown, if ``calculate_variance`` is True with
+        ``"purification"``, or if ``h_int`` does not conserve the symmetries.
 
     """
 
@@ -977,11 +1034,19 @@ class Block2ThermalImpuritySolver(_Block2Base):
         delta: int = 2,
         mix_schedule: Sequence[tuple[float, int, float]] = _MIX_SCHEDULE,
         *,
+        calculate_variance: bool = False,
         bath_size: Mapping[str, int] | None = None,
         comm: Comm | None = None,
     ) -> None:
         super().__init__(
-            gf_struct, bond_dim, cutoff, spin_blocks, bath_size, comm, mix_schedule
+            gf_struct,
+            bond_dim,
+            cutoff,
+            spin_blocks,
+            bath_size,
+            comm,
+            mix_schedule,
+            calculate_variance,
         )
 
         #: float : Inverse temperature of the impurity problem.
@@ -1010,6 +1075,9 @@ class Block2ThermalImpuritySolver(_Block2Base):
         if method not in ("purification", "lowest"):
             msg = 'method must be "purification" or "lowest".'
             raise ValueError(msg)
+        if calculate_variance and method != "lowest":
+            msg = 'calculate_variance needs method "lowest".'
+            raise ValueError(msg)
 
         # The directories of the thermal state, and its pure states with their
         # weights: the purified state, without a sector, or the lowest states
@@ -1028,6 +1096,11 @@ class Block2ThermalImpuritySolver(_Block2Base):
         #: float : Entropy ``beta * (energy - grand_potential)`` of the impurity
         #: problem, set by :meth:`solve`.
         self.entropy: float
+
+        #: float or None : Largest energy variance ``<H^2> - <H>^2`` of the
+        #: states in the thermal average, set by :meth:`solve` with
+        #: :attr:`calculate_variance`.
+        self.variance: float | None = None
 
     @override
     def solve(self) -> None:
@@ -1284,7 +1357,7 @@ class Block2ThermalImpuritySolver(_Block2Base):
         Z = float(sum(weights.values()))
         energy = float(sum(w * energies[i][k] for (i, k), w in weights.items())) / Z
 
-        G = np.zeros((2 * L, 2 * L))
+        G, variance = np.zeros((2 * L, 2 * L)), 0.0
         dirs: list[tempfile.TemporaryDirectory[str]] = []
         states: list[_ThermalState] = []
         for i, (_, run_Gs, tags, _, scratch) in runs.items():
@@ -1297,7 +1370,13 @@ class Block2ThermalImpuritySolver(_Block2Base):
             for k, p in kept:
                 G += p * run_Gs[k]
                 states.append((float(p), scratch.name, tags[k], sector, n_elec))
+                if self.calculate_variance:
+                    v, h_tag = self._variance(scratch.name, sector, n_elec, tags[k])
+                    _remove_mps(scratch.name, h_tag)
+                    variance = max(variance, v)
         G = self.comm.allreduce(G)
+        if self.calculate_variance:
+            self.variance = max(self.comm.allgather(variance))
         # The largest discarded weight of the sectors in the average
         discarded = gather_tasks(
             self.comm,
@@ -1337,6 +1416,8 @@ class Block2ThermalImpuritySolver(_Block2Base):
             excluded,
         )
         logger.info("Largest discarded weight of the sectors in it %.1e", discarded)
+        if self.variance is not None:
+            logger.info("Largest energy variance of its states %.1e", self.variance)
         edges = [n for n in (L - self.delta, L + self.delta) if 0 < n < 2 * L]
         inside = [n for n in edges if lowest[n] <= self.eta]
         if inside:
