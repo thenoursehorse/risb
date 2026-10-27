@@ -377,10 +377,9 @@ impurity_solver.set_h_imp(Lambda_c, D, h0_loc_matrix)
 impurity_solver.solve()
 ```
 
-`solve()` stores the ground state energy in `impurity_solver.gs_energy`, the
-largest weight discarded in the last sweep in
-`impurity_solver.discarded_weight`, and the energy variance of the ground state
-in `impurity_solver.variance`. The density matrices, `set_h_int` and
+`solve()` stores the ground state energy in `impurity_solver.gs_energy`, and
+the largest weight discarded in the last sweep in
+`impurity_solver.discarded_weight`. The density matrices, `set_h_int` and
 `overlap` are as described for `FockitImpuritySolver`. The operators of
 `overlap` have at most two-body terms. With `"s"` and no `"sz"`, expectation
 values average over the states of the spin multiplet, as the density

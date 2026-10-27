@@ -79,15 +79,13 @@ type _MPO = Any
 type _Sector = tuple[int | None, int | None]
 
 # The energies, <c_p^dag c_q> of the spin orbitals and tags of the lowest
-# states of a sector, the discarded weight, the directory with the states, and
-# their energy variances
+# states of a sector, the discarded weight, and the directory with the states
 type _Run = tuple[
     list[float],
     list[NDArray[np.float64]],
     list[str],
     float,
     tempfile.TemporaryDirectory[str],
-    list[float],
 ]
 
 # A pure state of a thermal state: its weight, directory, tag, sector (None
@@ -338,28 +336,15 @@ class _Block2Base(ImpuritySolver):
             scratch.name, sector, n_elec, nroots
         )
         twos, twosz = sector
-        if twos is None:
-            Gs, variances = self._density_matrices_and_variances(
-                scratch.name, sector, n_elec, tags
-            )
+        if twos is None or twosz is None:
+            Gs = self._density_matrices(scratch.name, sector, n_elec, tags)
         else:
-            # The states of a fixed spin projection, for the density matrices
-            # with one, and for the variances
-            sz = twos if twosz is None else twosz
-            Gs = []
-            if twosz is None:
-                Gs, _ = self._density_matrices_and_variances(
-                    scratch.name, sector, n_elec, tags
-                )
-            sz_tags = self._to_sz_states(scratch.name, sector, n_elec, tags, sz)
-            sz_Gs, variances = self._density_matrices_and_variances(
-                scratch.name, (None, sz), n_elec, sz_tags
-            )
-            if twosz is not None:
-                Gs = sz_Gs
+            # Of the states of the spin projection
+            sz_tags = self._to_sz_states(scratch.name, sector, n_elec, tags, twosz)
+            Gs = self._density_matrices(scratch.name, (None, twosz), n_elec, sz_tags)
             for tag in sz_tags:
                 _remove_mps(scratch.name, tag)
-        return energies, Gs, tags, discarded_weight, scratch, variances
+        return energies, Gs, tags, discarded_weight, scratch
 
     def _solve_states(
         self, scratch: str, sector: _Sector, n_elec: int, nroots: int
@@ -385,18 +370,13 @@ class _Block2Base(ImpuritySolver):
         energies = [float(driver.expectation(k, mpo, k)) for k in kets]
         return energies, [k.info.tag for k in kets], discarded_weight
 
-    def _density_matrices_and_variances(
+    def _density_matrices(
         self, scratch: str, sector: _Sector, n_elec: int, tags: Sequence[str]
-    ) -> tuple[list[NDArray[np.float64]], list[float]]:
-        # <c_p^dag c_q> of the spin orbitals and the energy variances of the
-        # states tags in sector with n_elec electrons, without the variances
-        # with a conserved total spin, which block2 does not take
+    ) -> list[NDArray[np.float64]]:
+        # <c_p^dag c_q> of the spin orbitals in the states tags of sector with
+        # n_elec electrons
         driver, symm_type = self._driver(scratch, sector, n_elec)
-        Gs = [self._density_matrix(driver, symm_type, tag) for tag in tags]
-        variances = []
-        if symm_type != SymmetryTypes.SU2:
-            variances = [self._variance(driver, symm_type, tag) for tag in tags]
-        return Gs, variances
+        return [self._density_matrix(driver, symm_type, tag) for tag in tags]
 
     def _to_sz_states(
         self,
@@ -530,18 +510,6 @@ class _Block2Base(ImpuritySolver):
             # Spin summed: the average over the multiplet has half in each spin
             G[0::2, 0::2] = G[1::2, 1::2] = np.asarray(driver.get_1pdm(ket)) / 2
         return G / norm
-
-    def _variance(
-        self, driver: DMRGDriver, symm_type: SymmetryTypes, tag: str
-    ) -> float:
-        # <H^2> - <H>^2 in the state tag, without a conserved total spin.
-        # Without the constant term, which does not change it
-        ket = driver.load_mps(tag)
-        mpo = self._mpo(driver, symm_type, 0.0, self._h1, self._V)
-        norm = float(driver.expectation(ket, driver.get_identity_mpo(), ket))
-        h = float(driver.expectation(ket, mpo, ket)) / norm
-        h2 = float(driver.expectation(ket, mpo, ket, stacked_mpo=mpo)) / norm
-        return h2 - h * h
 
     def _expectation_value(
         self,
@@ -797,10 +765,6 @@ class Block2ImpuritySolver(_Block2Base):
         #: :meth:`solve`.
         self.discarded_weight: float
 
-        #: float : Energy variance ``<H^2> - <H>^2`` of the ground state, set
-        #: by :meth:`solve`.
-        self.variance: float
-
         #: dict : Sector of the ground state, with ``"s"`` and ``"sz"`` where
         #: they are conserved, set by :meth:`solve`.
         self.sector: dict[str, float] = {}
@@ -850,16 +814,15 @@ class Block2ImpuritySolver(_Block2Base):
             self._state[0].cleanup()
         self._state = None
         # The rank of the lowest sector has its state
-        G, discarded_weight, variance = np.zeros((2 * L, 2 * L)), 0.0, 0.0
+        G, discarded_weight = np.zeros((2 * L, 2 * L)), 0.0
         for i, run in runs.items():
             if self._sectors[i] == lowest:
-                _, (G,), _, discarded_weight, scratch, (variance,) = run
+                _, (G,), _, discarded_weight, scratch = run
                 self._state = (scratch, lowest)
             else:
                 run[4].cleanup()
         self.gs_energy = energies[lowest]
         self.discarded_weight = self.comm.allreduce(discarded_weight)
-        self.variance = self.comm.allreduce(variance)
         G = self.comm.allreduce(G)
         twos, twosz = lowest
         self.sector = {}
@@ -1324,7 +1287,7 @@ class Block2ThermalImpuritySolver(_Block2Base):
         G = np.zeros((2 * L, 2 * L))
         dirs: list[tempfile.TemporaryDirectory[str]] = []
         states: list[_ThermalState] = []
-        for i, (_, run_Gs, tags, _, scratch, _) in runs.items():
+        for i, (_, run_Gs, tags, _, scratch) in runs.items():
             n_elec, sector = tasks[i]
             kept = [(k, w / Z) for (j, k), w in weights.items() if j == i]
             if not kept:
@@ -1335,26 +1298,14 @@ class Block2ThermalImpuritySolver(_Block2Base):
                 G += p * run_Gs[k]
                 states.append((float(p), scratch.name, tags[k], sector, n_elec))
         G = self.comm.allreduce(G)
-        # The largest discarded weight and energy variance of the states in
-        # the average
-        in_average = {i: [k for j, k in weights if j == i] for i in runs}
-        largest = gather_tasks(
+        # The largest discarded weight of the sectors in the average
+        discarded = gather_tasks(
             self.comm,
-            {
-                i: (runs[i][3], max(runs[i][5][k] for k in ks))
-                for i, ks in in_average.items()
-                if ks
-            },
+            {i: run[3] for i, run in runs.items() if any(j == i for j, _ in weights)},
         )
         if self.comm.rank == 0:
             self._report(
-                tasks,
-                energies,
-                E0,
-                n_states,
-                excluded / Z,
-                max(d for d, _ in largest.values()),
-                max(v for _, v in largest.values()),
+                tasks, energies, E0, n_states, excluded / Z, max(discarded.values())
             )
         return G, energy, -self.beta * E0 + np.log(Z), dirs, states
 
@@ -1366,7 +1317,6 @@ class Block2ThermalImpuritySolver(_Block2Base):
         n_states: int,
         excluded: float,
         discarded: float,
-        variance: float,
     ) -> None:
         # Log the lowest states, and warn if delta or eta is too small
         L = len(self._sites)
@@ -1386,12 +1336,7 @@ class Block2ThermalImpuritySolver(_Block2Base):
             n_states,
             excluded,
         )
-        logger.info(
-            "Largest discarded weight of the sectors in it %.1e, and largest "
-            "energy variance of its states %.1e",
-            discarded,
-            variance,
-        )
+        logger.info("Largest discarded weight of the sectors in it %.1e", discarded)
         edges = [n for n in (L - self.delta, L + self.delta) if 0 < n < 2 * L]
         inside = [n for n in edges if lowest[n] <= self.eta]
         if inside:
