@@ -1,4 +1,5 @@
 # ruff: noqa: D100, D102, D103
+from itertools import pairwise
 from typing import override
 
 import numpy as np
@@ -138,6 +139,37 @@ def test_callbacks_are_called_after_every_cycle_and_can_stop_the_solve() -> None
     assert seen == [1, 2, 3]
     assert not result.converged
     assert result.cycles == 3
+
+
+def test_callbacks_see_each_input_and_next_guess_up_to_the_converged_cycle() -> None:
+    seen: list[tuple[NDArray[np.float64], NDArray[np.float64], bool]] = []
+
+    def record(driver: Driver, _problem: FixedPointProblem) -> None:
+        seen.append((driver.x, driver.x_next, driver.converged))
+
+    result = drive(Linear(), DIIS(), callbacks=[record], tol=1e-12)
+    assert result.converged
+    assert len(seen) == result.cycles
+    assert [converged for _, _, converged in seen] == [False] * (len(seen) - 1) + [True]
+    for (_, x_next, _), (x, _, _) in pairwise(seen):
+        assert x == pytest.approx(x_next)
+    assert seen[-1][0] == pytest.approx(result.x)
+    assert seen[-1][1] == pytest.approx(result.x_next)
+
+
+def test_a_plateau_on_the_converged_cycle_leaves_the_solve_to_continue() -> None:
+    plain = DIIS()
+    result = drive(Linear(), plain, tol=1e-12)
+    # A plateau from the second cycle on would start on the converged cycle
+    on_plateau = OnPlateau(patience=result.cycles - 2, factor=1e100)
+    optimizer = DIIS()
+    with_plateau = drive(Linear(), optimizer, callbacks=[on_plateau], tol=1e-12)
+    assert on_plateau.restarts == 0
+    assert with_plateau.x_next == pytest.approx(result.x_next)
+    # The optimizer keeps its history for the next solve
+    after_plain = drive(Linear(), plain, maxiter=1, x0=result.x_next)
+    after = drive(Linear(), optimizer, maxiter=1, x0=with_plateau.x_next)
+    assert after.x_next == pytest.approx(after_plain.x_next)
 
 
 def test_a_callback_can_replace_the_optimizer_mid_solve() -> None:

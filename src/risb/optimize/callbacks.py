@@ -54,6 +54,8 @@ class OnPlateau:
 
     def __call__(self, driver: Driver, problem: FixedPointProblem) -> None:
         """Check for a plateau after a cycle of `driver`, and act on it."""
+        if driver.converged:
+            return
         self._smallest = min(self._smallest, driver.error)
         if driver.error < self._mark / self.factor:
             self._mark = driver.error
@@ -64,7 +66,7 @@ class OnPlateau:
         if self._smallest < self.near and anchor is not None and not self.anchored:
             # At the anchored solution the root functions need not be zero,
             # but the guess stops changing
-            driver.x = driver.best_x
+            driver.x_next = driver.best_x
             anchor()
             driver.optimizer.error_fun = "recursion"
             self.anchored = True

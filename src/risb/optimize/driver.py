@@ -71,9 +71,10 @@ class Driver:
     """
     The loop of :func:`drive`.
 
-    After every cycle, each callback gets the driver. It can read
-    :attr:`cycle`, :attr:`error`, :attr:`history`, and :attr:`best_x`, replace
-    :attr:`optimizer` or the next input :attr:`x`, or end the loop with
+    After every cycle, including the last, each callback gets the driver. It
+    can read :attr:`cycle`, :attr:`error`, :attr:`history`, :attr:`converged`,
+    the input :attr:`x` of the cycle, and :attr:`best_x`, replace
+    :attr:`optimizer` or the next input :attr:`x_next`, or end the loop with
     :meth:`stop`.
 
     Parameters
@@ -111,8 +112,11 @@ class Driver:
         self.tol = tol
         self.maxiter = maxiter
 
-        #: numpy.ndarray : The input of the next cycle.
+        #: numpy.ndarray : The input of the last cycle.
         self.x = problem.get_x() if x0 is None else x0
+
+        #: numpy.ndarray : The input of the next cycle, from the optimizer.
+        self.x_next = self.x
 
         #: int : Number of cycles so far.
         self.cycle = 0
@@ -122,6 +126,9 @@ class Driver:
 
         #: list of float : 2-norm of the error of every cycle.
         self.history: list[float] = []
+
+        #: bool : Whether the error of the last cycle is below the tolerance.
+        self.converged = False
 
         #: numpy.ndarray : The input of the cycle with the smallest error so
         #: far.
@@ -142,28 +149,31 @@ class Driver:
         risb.optimize.SolveResult
 
         """
-        converged = False
-        x = self.x
         while self.cycle < self.maxiter:
-            x = self.x
-            x_new, residual = self.problem.cycle(x)
+            self.x = self.x_next
+            x_new, residual = self.problem.cycle(self.x)
             self.cycle += 1
             self.error = float(
-                np.linalg.norm(self.optimizer.error_of(x, x_new, residual))
+                np.linalg.norm(self.optimizer.error_of(self.x, x_new, residual))
             )
             if self.error < min(self.history, default=np.inf):
-                self.best_x = x
+                self.best_x = self.x
             self.history.append(self.error)
             logger.info(f"cycle: {self.cycle}, error: {self.error}")
-            self.x = self.optimizer.step(x, x_new, residual)
-            if self.error < self.tol:
-                converged = True
-                break
+            self.x_next = self.optimizer.step(self.x, x_new, residual)
+            self.converged = self.error < self.tol
             for callback in self.callbacks:
                 callback(self, self.problem)
-            if self._stopped:
+            if self.converged or self._stopped:
                 break
-        return SolveResult(x, converged, self.cycle, self.error, self.history, self.x)
+        return SolveResult(
+            self.x,
+            self.converged,
+            self.cycle,
+            self.error,
+            self.history,
+            self.x_next,
+        )
 
 
 def drive(
