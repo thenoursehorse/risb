@@ -2,7 +2,7 @@
 
 Documentation at [https://thenoursehorse.github.io/risb](https://thenoursehorse.github.io/risb)
 
-Copyright (C) 2016-2023 H. L. Nourse and B. J. Powell, 2016-2022 R. H. McKenzie
+Copyright (C) 2016-2026 H. L. Nourse
 
 <!-- INDEX-START -->
 
@@ -42,6 +42,10 @@ If ghost quasiparticles (`bath_size`) are used you should also cite:
 [N. Lanatà, T.-H. Lee, Y.-X. Yao, and V. Dobrosavljević, Phys. Rev. B **96**, 195126 (2017)](https://doi.org/10.1103/PhysRevB.96.195126)
 
 [N. Lanatà, Phys. Rev. B **105**, 045111 (2022)](https://doi.org/10.1103/PhysRevB.105.045111)
+
+If the finite-temperature solver (`ThermalLatticeSolver`) is used you should also cite:
+
+[S. Giuli, T.-H. Lee, Y.-X. Yao, G. Kotliar, A. E. Ruckenstein, O. Gingras, and N. Lanatà, arXiv:2603.20559 (2026)](https://arxiv.org/abs/2603.20559)
 
 <!-- CITATION-END -->
 
@@ -146,3 +150,8 @@ uv run sphinx-autobuild -b html docs docs/_build
 Access through a browser at `http://127.0.0.1:8000`.
 
 <!-- INSTALL-END -->
+
+## AI use
+
+Parts of this code were written with AI coding assistants (Claude Code and Codex).
+All of it is reviewed and tested.
