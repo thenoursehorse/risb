@@ -729,11 +729,10 @@ def matrix_to_vector(
     """
     Return the real numbers that hold a matrix.
 
-    A square matrix is held by its coefficients in
-    :func:`get_hermitian_basis`, which are real for a Hermitian matrix, and
-    a rectangular matrix by its entries, e.g., ``R`` with ghosts. The real
-    part of each, and the imaginary part unless ``is_hermitian`` or
-    ``is_real``, are in the vector.
+    Hermitian and complex square matrices are held by their coefficients in
+    :func:`get_hermitian_basis`. Real non-Hermitian matrices and rectangular
+    matrices are held by their entries. The vector contains the real parts
+    and, unless ``is_hermitian`` or ``is_real``, the imaginary parts.
 
     Parameters
     ----------
@@ -750,7 +749,7 @@ def matrix_to_vector(
         The real numbers, as :func:`vector_to_matrix` takes them.
 
     """
-    if A.shape[0] != A.shape[1]:
+    if A.shape[0] != A.shape[1] or (is_real and not is_hermitian):
         coeffs = list(A.ravel())
     else:
         coeffs = [
@@ -796,7 +795,7 @@ def vector_to_matrix(
         Where the matrix ends in ``x``, e.g., where the next one starts.
 
     """
-    if shape[0] != shape[1]:
+    if shape[0] != shape[1] or (is_real and not is_hermitian):
         basis: Sequence[NDArray[np.inexact]] = [
             np.eye(shape[0] * shape[1])[n].reshape(shape)
             for n in range(shape[0] * shape[1])

@@ -361,6 +361,30 @@ def test_rotated_copy_of_the_non_interacting_solution_is_converged() -> None:
         assert S.Z[0][bl] == pytest.approx(np.eye(2), abs=1e-8)
 
 
+@pytest.mark.parametrize("force_real", [False, True])
+def test_real_rotation_of_the_non_interacting_solution_is_converged(
+    force_real: bool,
+) -> None:
+    gf_struct = [("up", 2), ("dn", 2)]
+    angle = 0.7
+    rotation = np.array(
+        [[np.cos(angle), -np.sin(angle)], [np.sin(angle), np.cos(angle)]]
+    )
+    S = LatticeSolver(
+        h0_k=build_cubic_h0_k(gf_struct=gf_struct),
+        gf_struct=gf_struct,
+        impurity_solvers=FockitImpuritySolver(zero(), gf_struct),
+        update_weights=SmearingKWeight(beta=40, n_target=2).update_weights,
+        force_real=force_real,
+    )
+    for bl, _ in gf_struct:
+        S.R[0][bl] = rotation.copy()
+    assert S.solve(tol=1e-10, maxiter=1).converged
+    for bl, _ in gf_struct:
+        assert S.Z[0][bl] == pytest.approx(np.eye(2), abs=1e-8)
+        assert S.rho_c[0][bl] == pytest.approx(0.5 * np.eye(2), abs=1e-8)
+
+
 def test_completely_full_orbital_decouples_and_leaves_the_one_band_solution() -> None:
     # Orbital 0 is a completely full band with no hopping to orbital 1, so
     # with only density interactions orbital 1 is the one-band model, shifted

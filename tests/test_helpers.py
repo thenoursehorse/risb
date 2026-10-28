@@ -893,6 +893,7 @@ def test_hermitian_basis_is_orthonormal_and_spans_the_hermitian_matrices(
         ((3, 3), True, False),
         ((3, 3), True, True),
         ((3, 3), False, False),
+        ((3, 3), False, True),
         ((3, 1), False, False),
         ((3, 1), False, True),
     ],
