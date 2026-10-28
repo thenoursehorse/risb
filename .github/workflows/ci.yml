@@ -49,7 +49,7 @@ jobs:
         run: uv run mypy
 
       - name: Test risb
-        run: uv run pytest
+        run: uv run pytest -vv -o faulthandler_timeout=120
 
       - name: Test docs
         run: uv run sphinx-build -b html -n -T -W --keep-going docs docs/_build
