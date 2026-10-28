@@ -34,7 +34,7 @@ class NewtonSolver(ABC):
     Base class for quasi-Newton methods to find the root of a function.
 
     Use :meth:`step` to take one iteration at a time, as
-    :func:`risb.optimize.drive` does, or :meth:`solve` to run until it
+    :func:`risb.optimize.solve_fixed_point` does, or :meth:`solve` to run until it
     converges.
 
     Parameters

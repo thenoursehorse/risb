@@ -333,18 +333,20 @@ impurity solvers, are those of `result.x`, the last guess of the solve.
 
 If you want to run your own code after every cycle, e.g., to print the
 progress or change the optimizer, give a function that takes the
-{py:class}`~risb.optimize.Driver` and the lattice solver
+{py:class}`~risb.optimize.FixedPointLoop` and the lattice solver
 
 ```python
-def progress(driver, S):
-    print(driver.cycle, driver.error)
+def progress(loop, S):
+    print(loop.cycle, loop.error)
 
 
 S.solve(callbacks=[progress])
 ```
 
-A callback can end the solve with `driver.stop()`, or replace
-`driver.optimizer`.
+A callback is also called after the last cycle, when `loop.converged` is
+true. `loop.x` is the input of the cycle just run, and `loop.x_next` the next
+guess. A callback can end the solve with `loop.stop()`, replace
+`loop.optimizer`, or set `loop.x_next`.
 
 For example, {py:class}`~risb.optimize.OnPlateau` restarts the optimizer when
 the error stops falling

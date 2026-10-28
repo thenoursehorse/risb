@@ -8,12 +8,12 @@ from numpy.typing import NDArray
 
 from risb.optimize import (
     DIIS,
-    Driver,
+    FixedPointLoop,
     LinearMixing,
     NewtonSolver,
     OnPlateau,
     ScipyRoot,
-    drive,
+    solve_fixed_point,
 )
 from risb.types import FixedPointProblem
 
@@ -98,9 +98,9 @@ class Linear:
         return self.x, self.x - x
 
 
-def test_drive_solves_a_problem_like_the_optimizer_on_its_own() -> None:
+def test_solve_fixed_point_solves_a_problem_like_the_optimizer_on_its_own() -> None:
     problem: FixedPointProblem = Linear()
-    result = drive(problem, DIIS(), tol=1e-12)
+    result = solve_fixed_point(problem, DIIS(), tol=1e-12)
     assert result.converged
     assert result.x == pytest.approx(Linear().solution, abs=1e-10)
     alone = DIIS()
@@ -109,7 +109,7 @@ def test_drive_solves_a_problem_like_the_optimizer_on_its_own() -> None:
     assert len(result.history) == result.cycles
 
 
-def test_drive_stops_on_the_error_the_optimizer_chooses() -> None:
+def test_solve_fixed_point_stops_on_the_error_the_optimizer_chooses() -> None:
     class Scaled(Linear):
         # The residual is much smaller than the change of x
         @override
@@ -119,8 +119,10 @@ def test_drive_stops_on_the_error_the_optimizer_chooses() -> None:
             x_new, change = super().cycle(x)
             return x_new, 1e-6 * change
 
-    root = drive(Scaled(), LinearMixing(error_fun="root"), tol=1e-10)
-    recursion = drive(Scaled(), LinearMixing(error_fun="recursion"), tol=1e-10)
+    root = solve_fixed_point(Scaled(), LinearMixing(error_fun="root"), tol=1e-10)
+    recursion = solve_fixed_point(
+        Scaled(), LinearMixing(error_fun="recursion"), tol=1e-10
+    )
     assert root.converged
     assert recursion.converged
     assert root.cycles < recursion.cycles
@@ -130,12 +132,12 @@ def test_drive_stops_on_the_error_the_optimizer_chooses() -> None:
 def test_callbacks_are_called_after_every_cycle_and_can_stop_the_solve() -> None:
     seen: list[int] = []
 
-    def record(driver: Driver, _problem: FixedPointProblem) -> None:
-        seen.append(driver.cycle)
-        if driver.cycle == 3:
-            driver.stop()
+    def record(loop: FixedPointLoop, _problem: FixedPointProblem) -> None:
+        seen.append(loop.cycle)
+        if loop.cycle == 3:
+            loop.stop()
 
-    result = drive(Linear(), DIIS(), callbacks=[record], tol=1e-14)
+    result = solve_fixed_point(Linear(), DIIS(), callbacks=[record], tol=1e-14)
     assert seen == [1, 2, 3]
     assert not result.converged
     assert result.cycles == 3
@@ -144,49 +146,55 @@ def test_callbacks_are_called_after_every_cycle_and_can_stop_the_solve() -> None
 def test_callbacks_see_each_input_and_next_guess_up_to_the_converged_cycle() -> None:
     seen: list[tuple[NDArray[np.float64], NDArray[np.float64], bool]] = []
 
-    def record(driver: Driver, _problem: FixedPointProblem) -> None:
-        seen.append((driver.x, driver.x_next, driver.converged))
+    def record(loop: FixedPointLoop, _problem: FixedPointProblem) -> None:
+        seen.append((loop.x, loop.x_next, loop.converged))
 
-    result = drive(Linear(), DIIS(), callbacks=[record], tol=1e-12)
+    result = solve_fixed_point(Linear(), DIIS(), callbacks=[record], tol=1e-12)
     assert result.converged
     assert len(seen) == result.cycles
     assert [converged for _, _, converged in seen] == [False] * (len(seen) - 1) + [True]
     for (_, x_next, _), (x, _, _) in pairwise(seen):
         assert x == pytest.approx(x_next)
-    assert seen[-1][0] == pytest.approx(result.x)
-    assert seen[-1][1] == pytest.approx(result.x_next)
+    assert seen[-1][0] == pytest.approx(result.x, rel=0, abs=0)
+    assert seen[-1][1] == pytest.approx(result.x_next, rel=0, abs=0)
 
 
 def test_a_plateau_on_the_converged_cycle_leaves_the_solve_to_continue() -> None:
     plain = DIIS()
-    result = drive(Linear(), plain, tol=1e-12)
+    result = solve_fixed_point(Linear(), plain, tol=1e-12)
     # A plateau from the second cycle on would start on the converged cycle
     on_plateau = OnPlateau(patience=result.cycles - 2, factor=1e100)
     optimizer = DIIS()
-    with_plateau = drive(Linear(), optimizer, callbacks=[on_plateau], tol=1e-12)
+    with_plateau = solve_fixed_point(
+        Linear(), optimizer, callbacks=[on_plateau], tol=1e-12
+    )
     assert on_plateau.restarts == 0
-    assert with_plateau.x_next == pytest.approx(result.x_next)
-    # The optimizer keeps its history for the next solve
-    after_plain = drive(Linear(), plain, maxiter=1, x0=result.x_next)
-    after = drive(Linear(), optimizer, maxiter=1, x0=with_plateau.x_next)
-    assert after.x_next == pytest.approx(after_plain.x_next)
+    # The optimizer keeps its history for the next solve. Exact, since near the
+    # solution a reset changes the next guess only at the rounding level
+    after_plain = solve_fixed_point(Linear(), plain, maxiter=1, x0=result.x_next)
+    after = solve_fixed_point(Linear(), optimizer, maxiter=1, x0=with_plateau.x_next)
+    assert after.x_next == pytest.approx(after_plain.x_next, rel=0, abs=0)
 
 
 def test_a_callback_can_replace_the_optimizer_mid_solve() -> None:
-    def switch(driver: Driver, _problem: FixedPointProblem) -> None:
-        if driver.cycle == 2:
-            driver.optimizer = DIIS(history_size=10, n_period=10**9)
+    def switch(loop: FixedPointLoop, _problem: FixedPointProblem) -> None:
+        if loop.cycle == 2:
+            loop.optimizer = DIIS(history_size=10, n_period=10**9)
 
-    result = drive(Linear(), LinearMixing(alpha=0.1), callbacks=[switch], tol=1e-12)
+    result = solve_fixed_point(
+        Linear(), LinearMixing(alpha=0.1), callbacks=[switch], tol=1e-12
+    )
     assert result.converged
     assert result.x == pytest.approx(Linear().solution, abs=1e-10)
 
 
 def test_scipy_root_solves_a_problem_in_one_shot() -> None:
-    def never(_driver: Driver, _problem: FixedPointProblem) -> None:
+    def never(_loop: FixedPointLoop, _problem: FixedPointProblem) -> None:
         raise AssertionError
 
-    result = drive(Linear(), ScipyRoot(method="hybr", tol=1e-12), callbacks=[never])
+    result = solve_fixed_point(
+        Linear(), ScipyRoot(method="hybr", tol=1e-12), callbacks=[never]
+    )
     assert result.converged
     assert result.x == pytest.approx(Linear().solution, abs=1e-10)
     assert result.cycles == len(result.history)
@@ -196,10 +204,10 @@ def test_scipy_root_solves_a_problem_in_one_shot() -> None:
 def test_solving_one_cycle_at_a_time_from_x_next_is_one_solve() -> None:
     problem = Linear()
     optimizer = DIIS()
-    result = drive(problem, optimizer, maxiter=1)
+    result = solve_fixed_point(problem, optimizer, maxiter=1)
     for _ in range(4):
-        result = drive(problem, optimizer, maxiter=1, x0=result.x_next)
-    whole = drive(Linear(), DIIS(), maxiter=5)
+        result = solve_fixed_point(problem, optimizer, maxiter=1, x0=result.x_next)
+    whole = solve_fixed_point(Linear(), DIIS(), maxiter=5)
     assert result.x == pytest.approx(whole.x)
     assert result.x_next == pytest.approx(whole.x_next)
 
@@ -237,7 +245,9 @@ class Stuck:
 def test_a_plateau_near_a_solution_anchors_the_problem_once() -> None:
     problem = Stuck(1e-8, can_anchor=True)
     on_plateau = OnPlateau(patience=5)
-    result = drive(problem, DIIS(error_fun="root"), callbacks=[on_plateau], tol=1e-12)
+    result = solve_fixed_point(
+        problem, DIIS(error_fun="root"), callbacks=[on_plateau], tol=1e-12
+    )
     assert result.converged
     assert problem.anchors == 1
     # The first guess has the smallest error
@@ -252,7 +262,9 @@ def test_a_plateau_far_from_a_solution_or_without_an_anchor_restarts(
 ) -> None:
     problem = Stuck(level, can_anchor)
     on_plateau = OnPlateau(patience=5)
-    result = drive(problem, DIIS(error_fun="root"), callbacks=[on_plateau], maxiter=20)
+    result = solve_fixed_point(
+        problem, DIIS(error_fun="root"), callbacks=[on_plateau], maxiter=20
+    )
     assert not result.converged
     assert problem.anchors == 0
     # A plateau is 6 cycles without progress, counted from the first cycle

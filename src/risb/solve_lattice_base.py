@@ -26,8 +26,8 @@ import numpy as np
 from numpy.typing import NDArray
 
 from risb import helpers
-from risb.optimize import DIIS, NewtonSolver, ScipyRoot, SolveResult, drive
-from risb.optimize.driver import Callback
+from risb.optimize import DIIS, NewtonSolver, ScipyRoot, SolveResult, solve_fixed_point
+from risb.optimize.fixed_point import Callback
 from risb.types import (
     BlockMatrix,
     BlockMatrixLike,
@@ -675,8 +675,9 @@ class BaseLatticeSolver(ABC):
             keeps its history from before, so passing the same one again
             continues it. Default is a new :meth:`default_optimizer`.
         callbacks : sequence of callable, optional
-            Called after every cycle, see :func:`risb.optimize.drive`. Default
-            is :meth:`default_callbacks`, and ``[]`` is none.
+            Called after every cycle, see
+            :func:`risb.optimize.solve_fixed_point`. Default is
+            :meth:`default_callbacks`, and ``[]`` is none.
         tol : float, optional
             Stop when the 2-norm of the error (see ``error_fun`` of the
             optimizer) is below this. Default is ``1e-12``.
@@ -704,7 +705,7 @@ class BaseLatticeSolver(ABC):
             optimizer = self.default_optimizer()
         if callbacks is None:
             callbacks = self.default_callbacks()
-        result = drive(self, optimizer, callbacks, tol, maxiter, x0)
+        result = solve_fixed_point(self, optimizer, callbacks, tol, maxiter, x0)
         self.self_consistency_error = max(
             float(np.max(np.abs(f[i][bl])))
             for f in (self.f1, self.f2)

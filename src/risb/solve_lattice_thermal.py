@@ -27,7 +27,7 @@ from scipy.special import expit
 
 from risb import helpers
 from risb.optimize import DIIS, NewtonSolver, OnPlateau, SolveResult
-from risb.optimize.driver import Callback
+from risb.optimize.fixed_point import Callback
 from risb.solve_lattice_base import BaseLatticeSolver
 from risb.types import (
     BlockMatrix,

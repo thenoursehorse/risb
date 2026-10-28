@@ -1,4 +1,4 @@
-"""Drive a fixed-point problem to its solution with an optimizer and callbacks."""
+"""Solve a fixed-point problem with an optimizer and callbacks."""
 
 import logging
 from collections.abc import Callable, Sequence
@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class SolveResult:
-    """The outcome of :func:`drive`."""
+    """The outcome of :func:`solve_fixed_point`."""
 
     #: numpy.ndarray : The last input of :meth:`risb.types.FixedPointProblem.cycle`.
     x: NDArray[np.float64]
@@ -42,7 +42,7 @@ class SolveResult:
 
 class ScipyRoot:
     """
-    :func:`scipy.optimize.root` as a one-shot optimizer for :func:`drive`.
+    :func:`scipy.optimize.root` as a one-shot optimizer for :func:`solve_fixed_point`.
 
     It runs to the end in one call, so the callbacks are not called.
 
@@ -63,15 +63,15 @@ class ScipyRoot:
         self.kwargs = kwargs
 
 
-type Callback = Callable[["Driver", FixedPointProblem], None]
-"""Called after every cycle of :func:`drive` as ``callback(driver, problem)``."""
+type Callback = Callable[["FixedPointLoop", FixedPointProblem], None]
+"""Called after every cycle of :func:`solve_fixed_point` as ``callback(loop, problem)``."""
 
 
-class Driver:
+class FixedPointLoop:
     """
-    The loop of :func:`drive`.
+    The loop of :func:`solve_fixed_point`.
 
-    After every cycle, including the last, each callback gets the driver. It
+    After every cycle, including the last, each callback gets the loop. It
     can read :attr:`cycle`, :attr:`error`, :attr:`history`, :attr:`converged`,
     the input :attr:`x` of the cycle, and :attr:`best_x`, replace
     :attr:`optimizer` or the next input :attr:`x_next`, or end the loop with
@@ -85,7 +85,7 @@ class Driver:
         Gives the next guess after each cycle. It keeps its history from
         before; :meth:`~risb.optimize.NewtonSolver.reset` clears it.
     callbacks : sequence of callable, optional
-        Called after every cycle as ``callback(driver, problem)``.
+        Called after every cycle as ``callback(loop, problem)``.
     tol : float, optional
         Stop when the 2-norm of the error is below this.
     maxiter : int, optional
@@ -176,7 +176,7 @@ class Driver:
         )
 
 
-def drive(
+def solve_fixed_point(
     problem: FixedPointProblem,
     optimizer: NewtonSolver | ScipyRoot,
     callbacks: Sequence[Callback] = (),
@@ -196,8 +196,8 @@ def drive(
         its history from before; :meth:`~risb.optimize.NewtonSolver.reset`
         clears it.
     callbacks : sequence of callable, optional
-        Called after every cycle as ``callback(driver, problem)``, with the
-        :class:`Driver`. Not called with a :class:`ScipyRoot`.
+        Called after every cycle as ``callback(loop, problem)``, with the
+        :class:`FixedPointLoop`. Not called with a :class:`ScipyRoot`.
     tol : float, optional
         Stop when the 2-norm of the error is below this. A :class:`ScipyRoot`
         stops by its own options.
@@ -212,11 +212,11 @@ def drive(
 
     """
     if isinstance(optimizer, ScipyRoot):
-        return _drive_scipy(problem, optimizer, x0)
-    return Driver(problem, optimizer, callbacks, tol, maxiter, x0).run()
+        return _solve_fixed_point_scipy(problem, optimizer, x0)
+    return FixedPointLoop(problem, optimizer, callbacks, tol, maxiter, x0).run()
 
 
-def _drive_scipy(
+def _solve_fixed_point_scipy(
     problem: FixedPointProblem,
     optimizer: ScipyRoot,
     x0: NDArray[np.float64] | None,

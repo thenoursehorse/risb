@@ -1,4 +1,4 @@
-"""Callbacks for :func:`risb.optimize.drive`."""
+"""Callbacks for :func:`risb.optimize.solve_fixed_point`."""
 
 import logging
 
@@ -6,7 +6,7 @@ import numpy as np
 
 from risb.types import FixedPointProblem
 
-from .driver import Driver
+from .fixed_point import FixedPointLoop
 
 logger = logging.getLogger(__name__)
 
@@ -52,29 +52,29 @@ class OnPlateau:
         self._mark = np.inf
         self._since = 0
 
-    def __call__(self, driver: Driver, problem: FixedPointProblem) -> None:
-        """Check for a plateau after a cycle of `driver`, and act on it."""
-        if driver.converged:
+    def __call__(self, loop: FixedPointLoop, problem: FixedPointProblem) -> None:
+        """Check for a plateau after a cycle of `loop`, and act on it."""
+        if loop.converged:
             return
-        self._smallest = min(self._smallest, driver.error)
-        if driver.error < self._mark / self.factor:
-            self._mark = driver.error
-            self._since = driver.cycle
-        if driver.cycle - self._since <= self.patience:
+        self._smallest = min(self._smallest, loop.error)
+        if loop.error < self._mark / self.factor:
+            self._mark = loop.error
+            self._since = loop.cycle
+        if loop.cycle - self._since <= self.patience:
             return
         anchor = getattr(problem, "anchor", None)
         if self._smallest < self.near and anchor is not None and not self.anchored:
             # At the anchored solution the root functions need not be zero,
             # but the guess stops changing
-            driver.x_next = driver.best_x
+            loop.x_next = loop.best_x
             anchor()
-            driver.optimizer.error_fun = "recursion"
+            loop.optimizer.error_fun = "recursion"
             self.anchored = True
-            logger.info(f"cycle: {driver.cycle}, anchored")
+            logger.info(f"cycle: {loop.cycle}, anchored")
         else:
             self.restarts += 1
-            logger.info(f"cycle: {driver.cycle}, restarted")
-        driver.optimizer.reset()
+            logger.info(f"cycle: {loop.cycle}, restarted")
+        loop.optimizer.reset()
         self._smallest = np.inf
         self._mark = np.inf
-        self._since = driver.cycle
+        self._since = loop.cycle

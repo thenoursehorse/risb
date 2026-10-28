@@ -75,7 +75,7 @@ class ImpuritySolver(Protocol):
 
 class FixedPointProblem(Protocol):
     """
-    A problem that :func:`risb.optimize.drive` can solve, e.g., :class:`risb.LatticeSolver`.
+    A problem for :func:`risb.optimize.solve_fixed_point`, e.g., :class:`risb.LatticeSolver`.
 
     One cycle maps an input vector ``x`` to a new guess, which is ``x`` at a
     solution.

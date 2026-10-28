@@ -2,17 +2,17 @@
 
 from .callbacks import OnPlateau
 from .diis import DIIS
-from .driver import Driver, ScipyRoot, SolveResult, drive
+from .fixed_point import FixedPointLoop, ScipyRoot, SolveResult, solve_fixed_point
 from .linear_mixing import LinearMixing
 from .solver_newton import NewtonSolver
 
 __all__ = [
     "DIIS",
-    "Driver",
+    "FixedPointLoop",
     "LinearMixing",
     "NewtonSolver",
     "OnPlateau",
     "ScipyRoot",
     "SolveResult",
-    "drive",
+    "solve_fixed_point",
 ]
