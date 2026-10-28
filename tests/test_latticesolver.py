@@ -18,7 +18,7 @@ from risb import LatticeSolver, helpers
 from risb.helpers_fockit import h_int_kanamori
 from risb.impurity_solvers import FockitImpuritySolver
 from risb.kweight import SmearingKWeight
-from risb.optimize import ScipyRoot, SolveResult
+from risb.optimize import DIIS, ScipyRoot, SolveResult
 from risb.types import BlockMatrix, GfStruct, ImpuritySolver
 
 type Model = tuple[
@@ -220,11 +220,14 @@ def test_one_cycle_per_solve_from_x_next_reaches_the_solution(
         for bl, _ in S.gf_struct[i]:
             np.fill_diagonal(S.Lambda[i][bl], mu_expected)
     # As in charge self-consistency with one RISB cycle per step
-    result = S.solve(maxiter=1, self_consistency_tol=np.inf)
+    optimizer = DIIS()
+    result = S.solve(optimizer, maxiter=1, self_consistency_tol=np.inf)
     for _ in range(200):
         if result.error < 1e-12:
             break
-        result = S.solve(maxiter=1, self_consistency_tol=np.inf, x0=result.x_next)
+        result = S.solve(
+            optimizer, maxiter=1, self_consistency_tol=np.inf, x0=result.x_next
+        )
     assert result.error < 1e-12
     do_assert(
         subtests, kweight.mu, S.Lambda, S.Z, mu_expected, Lambda_expected, Z_expected

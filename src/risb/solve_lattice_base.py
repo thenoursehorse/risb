@@ -671,8 +671,9 @@ class BaseLatticeSolver(ABC):
         Parameters
         ----------
         optimizer : risb.optimize.NewtonSolver or risb.optimize.ScipyRoot, optional
-            Gives the next :attr:`Lambda` and :attr:`R` of each cycle. Default
-            is :meth:`default_optimizer`.
+            Gives the next :attr:`Lambda` and :attr:`R` of each cycle. It
+            keeps its history from before, so passing the same one again
+            continues it. Default is a new :meth:`default_optimizer`.
         callbacks : sequence of callable, optional
             Called after every cycle, see :func:`risb.optimize.drive`. Default
             is :meth:`default_callbacks`, and ``[]`` is none.

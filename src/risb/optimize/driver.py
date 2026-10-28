@@ -81,7 +81,8 @@ class Driver:
     problem : risb.types.FixedPointProblem
         The problem to solve.
     optimizer : risb.optimize.NewtonSolver
-        Gives the next guess after each cycle.
+        Gives the next guess after each cycle. It keeps its history from
+        before; :meth:`~risb.optimize.NewtonSolver.reset` clears it.
     callbacks : sequence of callable, optional
         Called after every cycle as ``callback(driver, problem)``.
     tol : float, optional
@@ -141,7 +142,6 @@ class Driver:
         risb.optimize.SolveResult
 
         """
-        self.optimizer.reset()
         converged = False
         x = self.x
         while self.cycle < self.maxiter:
@@ -182,7 +182,9 @@ def drive(
     problem : risb.types.FixedPointProblem
         The problem to solve, e.g., a :class:`risb.LatticeSolver`.
     optimizer : risb.optimize.NewtonSolver or risb.optimize.ScipyRoot
-        Gives the next guess after each cycle, e.g., :class:`.DIIS`.
+        Gives the next guess after each cycle, e.g., :class:`.DIIS`. It keeps
+        its history from before; :meth:`~risb.optimize.NewtonSolver.reset`
+        clears it.
     callbacks : sequence of callable, optional
         Called after every cycle as ``callback(driver, problem)``, with the
         :class:`Driver`. Not called with a :class:`ScipyRoot`.
