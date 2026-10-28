@@ -25,6 +25,19 @@ If you want to reset the entire history after $n$ iterations
 optimize = DIIS(n_restart=...)
 ```
 
+The history is kept between solves, so passing the same optimizer to another
+`solve` continues it, e.g., one cycle per step of charge self-consistency
+
+```python
+result = S.solve(optimize, maxiter=1, x0=result.x_next)
+```
+
+To clear it
+
+```python
+optimize.reset()
+```
+
 ## Linear mixing step
 
 Our implementation takes a single linear mixing step every `n_period`

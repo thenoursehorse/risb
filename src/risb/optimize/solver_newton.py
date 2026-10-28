@@ -203,6 +203,8 @@ class NewtonSolver(ABC):
         """
         Find the root of a function.
 
+        It continues the history from before; :meth:`reset` clears it.
+
         Parameters
         ----------
         fun : callable
@@ -225,7 +227,7 @@ class NewtonSolver(ABC):
             Root of ``fun``.
 
         """
-        self.reset()
+        self.success = False
         x = deepcopy(x0)
         for _ in range(maxiter):
             g_x, residual = fun(x, *args)
