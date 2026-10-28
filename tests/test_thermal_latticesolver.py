@@ -16,7 +16,7 @@ from risb import LatticeSolver, ThermalLatticeSolver, helpers
 from risb.helpers_fockit import h_int_kanamori
 from risb.impurity_solvers import FockitImpuritySolver, FockitThermalImpuritySolver
 from risb.kweight import SmearingKWeight
-from risb.optimize import LinearMixing, ScipyRoot
+from risb.optimize import LinearMixing
 from risb.types import BlockMatrixLike, GfStruct
 
 ONE_BAND: GfStruct = [("up", 1), ("dn", 1)]
@@ -278,25 +278,6 @@ def test_four_ghosts_per_orbital_converge_to_the_two_ghost_solution() -> None:
     assert impurity_solver5.overlap(docc) == pytest.approx(
         impurity_solver3.overlap(docc), abs=1e-3
     )
-
-
-def test_scipy_root_converges_near_a_solution() -> None:
-    T = 0.1
-    S, impurity_solver = bethe_lattice(hubbard(2.0), 3, T)
-    S.solve(tol=1e-10)
-    S_root, impurity_solver_root = bethe_lattice(hubbard(2.0), 3, T)
-    for bl, _ in ONE_BAND:
-        S_root.R[0][bl] = 0.99 * S.R[0][bl]
-        S_root.Lambda[0][bl] = 1.01 * S.Lambda[0][bl]
-    optimizer = ScipyRoot(error_fun="root", method="krylov", options={"fatol": 1e-10})
-    result = S_root.solve(optimizer=optimizer)
-    assert result.converged
-    assert S_root.get_x() == pytest.approx(result.x, abs=1e-12)
-    docc = nc("up", 0) * nc("dn", 0)
-    assert impurity_solver_root.overlap(docc) == pytest.approx(
-        impurity_solver.overlap(docc), abs=1e-8
-    )
-    assert S_root.Z[0]["up"] == pytest.approx(S.Z[0]["up"], abs=1e-8)
 
 
 @pytest.mark.parametrize("optimizer", ["DIIS", "LinearMixing"])

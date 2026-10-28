@@ -193,7 +193,9 @@ def test_scipy_root_solves_a_problem_in_one_shot() -> None:
         raise AssertionError
 
     result = solve_fixed_point(
-        Linear(), ScipyRoot(method="hybr", tol=1e-12), callbacks=[never]
+        Linear(),
+        ScipyRoot(method="hybr", tol=1e-12, options={"maxfev": 100}),
+        callbacks=[never],
     )
     assert result.converged
     assert result.x == pytest.approx(Linear().solution, abs=1e-10)

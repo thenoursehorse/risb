@@ -268,7 +268,11 @@ def test_scipy_root(
     for i in range(S.n_clusters):
         for bl, _ in S.gf_struct[i]:
             np.fill_diagonal(S.Lambda[i][bl], mu_expected)
-    result = S.solve(optimizer=ScipyRoot(method=root_method, options={"fatol": 1e-10}))
+    result = S.solve(
+        optimizer=ScipyRoot(
+            method=root_method, options={"fatol": 1e-10, "maxiter": 100}
+        )
+    )
     assert result.converged
     mu_calculated = kweight.mu
     do_assert(
