@@ -656,16 +656,17 @@ class BaseLatticeSolver(ABC):
         callbacks: Sequence[Callback] | None = None,
         tol: float = 1e-12,
         maxiter: int = 1000,
-        one_shot: bool = False,
         self_consistency_tol: float = 1e-6,
+        x0: NDArray[np.float64] | None = None,
     ) -> SolveResult:
         """
         Solve for the renormalization matrix :attr:`R` and correlation potential matrix :attr:`Lambda`.
 
-        Starts from the current :attr:`Lambda` and :attr:`R`, and sets the
-        self-consistent solutions. Afterwards every attribute is that of the
-        last :attr:`Lambda` and :attr:`R` that a cycle started from, the ``x``
-        of the result.
+        Starts from the current :attr:`Lambda` and :attr:`R`, or `x0`, and
+        sets the self-consistent solutions. Afterwards every attribute is that
+        of the last :attr:`Lambda` and :attr:`R` that a cycle started from, the
+        ``x`` of the result. The next guess is the ``x_next`` of the result,
+        e.g., to continue with ``solve(x0=result.x_next)``.
 
         Parameters
         ----------
@@ -680,9 +681,6 @@ class BaseLatticeSolver(ABC):
             optimizer) is below this. Default is ``1e-12``.
         maxiter : int, optional
             Maximum number of cycles. Default is ``1000``.
-        one_shot : bool, optional
-            Run a single cycle instead of solving, and set :attr:`Lambda` and
-            :attr:`R` to its next guess. Default is False.
         self_consistency_tol : float, optional
             Warn if :attr:`self_consistency_error` is above this after a
             self-consistent solve. The optimizer can stop where the guess of
@@ -692,24 +690,20 @@ class BaseLatticeSolver(ABC):
             insulator) the equations are not satisfied either, but there the
             bath of the impurity problem decouples and the observables do not
             depend on it. Default is ``1e-6``.
+        x0 : numpy.ndarray, optional
+            Where to start, as from :meth:`get_x`. Default is the current
+            :attr:`Lambda` and :attr:`R`.
 
         Returns
         -------
         risb.optimize.SolveResult
 
         """
-        if one_shot:
-            x = self.get_x()
-            x_new, residual = self.cycle(x)
-            self._set_lambda_r(x_new)
-            error = float(np.linalg.norm(residual))
-            return SolveResult(x, False, 1, error, [error])
-
         if optimizer is None:
             optimizer = self.default_optimizer()
         if callbacks is None:
             callbacks = self.default_callbacks()
-        result = drive(self, optimizer, callbacks, tol, maxiter)
+        result = drive(self, optimizer, callbacks, tol, maxiter, x0)
         self.self_consistency_error = max(
             float(np.max(np.abs(f[i][bl])))
             for f in (self.f1, self.f2)

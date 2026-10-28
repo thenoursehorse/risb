@@ -177,6 +177,17 @@ def test_scipy_root_solves_a_problem_in_one_shot() -> None:
     assert result.converged
     assert result.x == pytest.approx(Linear().solution, abs=1e-10)
     assert result.cycles == len(result.history)
+    assert result.x_next is None
+
+
+def test_solving_one_cycle_at_a_time_from_x_next_is_one_solve() -> None:
+    problem = Linear()
+    result = drive(problem, LinearMixing(alpha=0.5), maxiter=1)
+    for _ in range(4):
+        result = drive(problem, LinearMixing(alpha=0.5), maxiter=1, x0=result.x_next)
+    whole = drive(Linear(), LinearMixing(alpha=0.5), maxiter=5)
+    assert result.x == pytest.approx(whole.x)
+    assert result.x_next == pytest.approx(whole.x_next)
 
 
 class Stuck:

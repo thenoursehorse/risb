@@ -35,6 +35,10 @@ class SolveResult:
     #: list of float : 2-norm of the error of every cycle.
     history: list[float] = field(default_factory=list)
 
+    #: numpy.ndarray or None : The next guess, where a following solve can
+    #: start. None with a :class:`ScipyRoot`.
+    x_next: NDArray[np.float64] | None = None
+
 
 class ScipyRoot:
     """
@@ -84,6 +88,8 @@ class Driver:
         Stop when the 2-norm of the error is below this.
     maxiter : int, optional
         Maximum number of cycles.
+    x0 : numpy.ndarray, optional
+        Where to start. Default is the current guess of `problem`.
 
     """
 
@@ -94,6 +100,7 @@ class Driver:
         callbacks: Sequence[Callback] = (),
         tol: float = 1e-12,
         maxiter: int = 1000,
+        x0: NDArray[np.float64] | None = None,
     ) -> None:
         self.problem = problem
 
@@ -104,7 +111,7 @@ class Driver:
         self.maxiter = maxiter
 
         #: numpy.ndarray : The input of the next cycle.
-        self.x = problem.get_x()
+        self.x = problem.get_x() if x0 is None else x0
 
         #: int : Number of cycles so far.
         self.cycle = 0
@@ -148,15 +155,15 @@ class Driver:
                 self.best_x = x
             self.history.append(self.error)
             logger.info(f"cycle: {self.cycle}, error: {self.error}")
+            self.x = self.optimizer.step(x, x_new, residual)
             if self.error < self.tol:
                 converged = True
                 break
-            self.x = self.optimizer.step(x, x_new, residual)
             for callback in self.callbacks:
                 callback(self, self.problem)
             if self._stopped:
                 break
-        return SolveResult(x, converged, self.cycle, self.error, self.history)
+        return SolveResult(x, converged, self.cycle, self.error, self.history, self.x)
 
 
 def drive(
@@ -165,9 +172,10 @@ def drive(
     callbacks: Sequence[Callback] = (),
     tol: float = 1e-12,
     maxiter: int = 1000,
+    x0: NDArray[np.float64] | None = None,
 ) -> SolveResult:
     """
-    Solve a fixed-point problem, starting from its current guess.
+    Solve a fixed-point problem, starting from its current guess or `x0`.
 
     Parameters
     ----------
@@ -183,6 +191,8 @@ def drive(
         stops by its own options.
     maxiter : int, optional
         Maximum number of cycles. Not used with a :class:`ScipyRoot`.
+    x0 : numpy.ndarray, optional
+        Where to start. Default is the current guess of `problem`.
 
     Returns
     -------
@@ -190,13 +200,19 @@ def drive(
 
     """
     if isinstance(optimizer, ScipyRoot):
-        return _drive_scipy(problem, optimizer)
-    return Driver(problem, optimizer, callbacks, tol, maxiter).run()
+        return _drive_scipy(problem, optimizer, x0)
+    return Driver(problem, optimizer, callbacks, tol, maxiter, x0).run()
 
 
-def _drive_scipy(problem: FixedPointProblem, optimizer: ScipyRoot) -> SolveResult:
+def _drive_scipy(
+    problem: FixedPointProblem,
+    optimizer: ScipyRoot,
+    x0: NDArray[np.float64] | None,
+) -> SolveResult:
     history: list[float] = []
-    last = problem.get_x()
+    if x0 is None:
+        x0 = problem.get_x()
+    last = x0
 
     def error(x: NDArray[np.float64]) -> NDArray[np.float64]:
         nonlocal last
@@ -208,7 +224,7 @@ def _drive_scipy(problem: FixedPointProblem, optimizer: ScipyRoot) -> SolveResul
         history.append(float(np.linalg.norm(e)))
         return e
 
-    result = root(error, problem.get_x(), **optimizer.kwargs)  # type: ignore[call-overload]
+    result = root(error, x0, **optimizer.kwargs)  # type: ignore[call-overload]
     # The problem is left at the solution, which need not be the last guess
     if not np.array_equal(last, result.x):
         problem.cycle(result.x)

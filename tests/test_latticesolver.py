@@ -21,8 +21,6 @@ from risb.kweight import SmearingKWeight
 from risb.optimize import ScipyRoot, SolveResult
 from risb.types import BlockMatrix, GfStruct, ImpuritySolver
 
-# FIXME add one_shot test
-
 type Model = tuple[
     GfStruct,
     dict[str, NDArray[np.float64]],
@@ -196,6 +194,40 @@ def test_diis_nosymmetrize(
     mu_calculated = kweight.mu
     do_assert(
         subtests, mu_calculated, S.Lambda, S.Z, mu_expected, Lambda_expected, Z_expected
+    )
+
+
+def test_one_cycle_per_solve_from_x_next_reaches_the_solution(
+    subtests: pytest.Subtests, one_band: Model
+) -> None:
+    (
+        gf_struct,
+        h0_k,
+        impurity_solver,
+        kweight,
+        mu_expected,
+        Lambda_expected,
+        Z_expected,
+    ) = one_band
+    S = LatticeSolver(
+        h0_k=h0_k,
+        gf_struct=[gf_struct],
+        impurity_solvers=[impurity_solver],
+        update_weights=kweight.update_weights,
+        symmetrizers=[symmetrize_blocks],
+    )
+    for i in range(S.n_clusters):
+        for bl, _ in S.gf_struct[i]:
+            np.fill_diagonal(S.Lambda[i][bl], mu_expected)
+    # As in charge self-consistency with one RISB cycle per step
+    result = S.solve(maxiter=1, self_consistency_tol=np.inf)
+    for _ in range(200):
+        if result.error < 1e-12:
+            break
+        result = S.solve(maxiter=1, self_consistency_tol=np.inf, x0=result.x_next)
+    assert result.error < 1e-12
+    do_assert(
+        subtests, kweight.mu, S.Lambda, S.Z, mu_expected, Lambda_expected, Z_expected
     )
 
 
@@ -624,7 +656,7 @@ def test_ghost_risb_with_double_counting_restarts_on_its_solution() -> None:
     assert S.self_consistency_error < 1e-8
     restarted = lattice_solver()
     restarted.R, restarted.Lambda, restarted.rho_c = S.R, S.Lambda, S.rho_c
-    assert restarted.solve(one_shot=True).error < 1e-8
+    assert restarted.solve(maxiter=1).error < 1e-8
 
 
 def test_ghost_risb_without_interactions_is_the_non_interacting_solution() -> None:
