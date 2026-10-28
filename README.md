@@ -66,7 +66,7 @@ Optional
   `Block2ThermalImpuritySolver`, installed with `pip install "risb[block2]"`,
   or `uv add "risb[block2]"` in a [uv](https://docs.astral.sh/uv) project
 - [mpi4py](https://mpi4py.readthedocs.io) to split the block2 solvers over MPI
-  ranks, built against the MPI of the machine, installed with
+  ranks, installed with
   `pip install --no-binary mpi4py "risb[mpi]"`, or with uv
   `uv pip install --no-binary mpi4py "risb[mpi]"`
 
