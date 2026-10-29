@@ -445,6 +445,31 @@ temperature[^Feiguin2005] in steps of at most `time_step`.
 the grand potential in `impurity_solver.grand_potential`, and the entropy in
 `impurity_solver.entropy`. `overlap` gives thermal averages.
 
+### Diagnostics
+
+Both block2 solvers accept an optional `Block2Diagnostics` reporter:
+
+```python
+from risb.impurity_solvers import Block2Diagnostics
+
+with Block2Diagnostics(
+    level="debug", risb_output="risb.out", iprint=1, block2_output="block2.out"
+) as diagnostics:
+    impurity_solver = Block2ImpuritySolver(h_int, gf_struct, diagnostics=diagnostics)
+    impurity_solver.set_h_imp(Lambda_c, D, h0_loc_matrix)
+    impurity_solver.solve()
+```
+
+`level="info"` reports configuration and results; `"debug"` adds stages,
+timings, sector energies and thermal search decisions. `level=None` disables
+these reports. Native block2 output is controlled separately: `iprint=0` is
+quiet, `1` reports sweeps, and `2` adds iteration details.
+
+MPI paths become `risb.rank0.out`, `block2.rank0.out`, etc.; global summaries
+appear on rank 0. Capture changes process-wide streams, so backend calls in one
+process must be serial. Native output to streams without a file descriptor,
+such as `StringIO`, is copied when the backend stage ends.
+
 ### MPI ranks
 
 The sectors can be solved in parallel on MPI ranks, with the optional

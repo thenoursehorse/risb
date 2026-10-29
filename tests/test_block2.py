@@ -1,4 +1,7 @@
 # ruff: noqa: D100, D103
+import os
+import sys
+from io import StringIO
 from itertools import product
 from pathlib import Path
 from typing import Any
@@ -20,7 +23,11 @@ from risb.impurity_solvers import FockitImpuritySolver, FockitThermalImpuritySol
 from risb.kweight import SmearingKWeight
 
 pytest.importorskip("pyblock2")
-from risb.impurity_solvers import Block2ImpuritySolver, Block2ThermalImpuritySolver
+from risb.impurity_solvers import (
+    Block2Diagnostics,
+    Block2ImpuritySolver,
+    Block2ThermalImpuritySolver,
+)
 
 # The comparisons with exact results keep every state of a bond
 CUTOFF = 1e-20
@@ -137,6 +144,89 @@ def test_energy_variance_is_not_calculated_by_default() -> None:
     h_int, gf_struct, bath_size = problem[:3]
     solver = Block2ImpuritySolver(h_int, gf_struct, bath_size=bath_size)
     assert solved(solver, problem).variance is None
+
+
+@pytest.mark.parametrize("method", ["ground", "lowest", "purification"])
+def test_diagnostics_write_to_separate_files_and_can_be_disabled(
+    method: str, tmp_path: Path, capfd: pytest.CaptureFixture[str]
+) -> None:
+    problem = ghost_problem(1, 1)
+    h_int, gf_struct, bath_size = problem[:3]
+    risb_path, block2_path = tmp_path / "risb.out", tmp_path / "block2.out"
+    block2_path.write_text("previous run\n")
+    with Block2Diagnostics(
+        level="debug", risb_output=risb_path, iprint=1, block2_output=block2_path
+    ) as diagnostics:
+        solver = (
+            Block2ImpuritySolver(
+                h_int, gf_struct, bath_size=bath_size, diagnostics=diagnostics
+            )
+            if method == "ground"
+            else Block2ThermalImpuritySolver(
+                h_int,
+                gf_struct,
+                10,
+                method=method,
+                eta=40,
+                bath_size=bath_size,
+                diagnostics=diagnostics,
+            )
+        )
+        solved(solver, problem)
+        Op = nc("up", 0) * nc("dn", 0)
+        solver.overlap(Op)
+        report, backend = risb_path.read_text(), block2_path.read_text()
+        assert "solve.started" in report
+        assert "solve.finished" in report
+        assert "solve.started" not in backend
+        assert backend.startswith("previous run\n")
+        assert "Sweep" in backend
+        assert capfd.readouterr().out == ""
+        diagnostics.iprint = 0
+        solved(solver, problem)
+        assert block2_path.read_text() == backend
+        report = risb_path.read_text()
+        assert "solve=2" in report
+        solver.diagnostics = None
+        solved(solver, problem)
+        assert risb_path.read_text() == report
+        assert block2_path.read_text() == backend
+
+
+def test_backend_failure_restores_streams_and_keeps_caller_outputs_open(
+    monkeypatch: pytest.MonkeyPatch, capfd: pytest.CaptureFixture[str]
+) -> None:
+    def fail(*_args: object, **_kwargs: object) -> None:
+        sys.stdout.write("backend failure\n")
+        os.write(1, b"native failure\n")
+        raise RuntimeError
+
+    monkeypatch.setattr("pyblock2.driver.core.DMRGDriver.dmrg", fail)
+    problem = ghost_problem(1, 1)
+    h_int, gf_struct, bath_size = problem[:3]
+    report, backend = StringIO(), StringIO()
+    stdout, stderr = sys.stdout, sys.stderr
+    with (
+        pytest.raises(RuntimeError),
+        Block2Diagnostics(
+            risb_output=report, iprint=1, block2_output=backend
+        ) as diagnostics,
+    ):
+        solved(
+            Block2ImpuritySolver(
+                h_int, gf_struct, bath_size=bath_size, diagnostics=diagnostics
+            ),
+            problem,
+        )
+    assert sys.stdout is stdout
+    assert sys.stderr is stderr
+    assert not report.closed
+    assert not backend.closed
+    assert "solve.failed" in report.getvalue()
+    assert "backend failure" in backend.getvalue()
+    assert "native failure" in backend.getvalue()
+    assert "backend failure" not in report.getvalue()
+    assert capfd.readouterr().out == ""
 
 
 def test_state_of_a_spin_multiplet_is_the_lowest_with_its_spin_projection() -> None:

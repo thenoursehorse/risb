@@ -33,6 +33,11 @@ from pyblock2.driver.core import DMRGDriver, SymmetryTypes
 
 from risb.helpers_fockit import Op_to_tensors
 from risb.helpers_mpi import Comm, SerialComm, gather_tasks, round_robin
+from risb.impurity_solvers.block2_diagnostics import (
+    Block2Observer,
+    capture_block2,
+    diagnostic_stage,
+)
 from risb.types import BlockMatrix, BlockMatrixLike, GfStruct, ImpuritySolver
 
 logger = logging.getLogger(__name__)
@@ -120,6 +125,7 @@ class _Block2Base(ImpuritySolver):
         comm: Comm | None,
         mix_schedule: Sequence[tuple[float, int, float]],
         calculate_variance: bool,
+        diagnostics: Block2Observer | None,
     ) -> None:
         #: risb.types.GfStruct : Block matrix structure of the physical orbitals
         #: (c-electrons).
@@ -127,7 +133,10 @@ class _Block2Base(ImpuritySolver):
 
         #: risb.helpers_mpi.Comm : Communicator of the ranks the sectors are
         #: split over.
-        self.comm = SerialComm() if comm is None else comm
+        self.comm: Comm = SerialComm() if comm is None else comm
+
+        #: Optional observer of solver events and native output.
+        self.diagnostics = diagnostics
 
         #: list of tuple : ``(strength, sweeps, noise)`` of each stage of the
         #: symmetry-mixing sweeps that start each solve.
@@ -292,6 +301,16 @@ class _Block2Base(ImpuritySolver):
     def get_rho_c(self, bl: str) -> NDArray[np.inexact]:
         return self.rho_c[bl]
 
+    @property
+    def _iprint(self) -> int:
+        return 0 if self.diagnostics is None else self.diagnostics.iprint
+
+    def _emit(self, event: str, **fields: object) -> None:
+        if self.diagnostics is not None:
+            self.diagnostics.emit(
+                event, rank=self.comm.rank, size=self.comm.size, **fields
+            )
+
     def _check_h_imp(self) -> None:
         h1, V = self._h1, self._V
         if (
@@ -331,11 +350,14 @@ class _Block2Base(ImpuritySolver):
         driver.initialize_system(n_sites=n_sites, n_elec=n_elec, spin=spin)
         return driver, symm_type
 
+    @diagnostic_stage
+    @capture_block2
     def _run(self, sector: _Sector, n_elec: int, nroots: int) -> _Run:
         # The lowest nroots states in sector with n_elec electrons. Each step
         # below creates its own driver, which is freed when the step returns:
         # creating a driver replaces block2's working memory, which has to
         # outlive the states and operators in it
+        self._emit("sector.started", sector=sector, particles=n_elec, roots=nroots)
         scratch = tempfile.TemporaryDirectory()
         energies, tags, discarded_weight = self._solve_states(
             scratch.name, sector, n_elec, nroots
@@ -349,6 +371,13 @@ class _Block2Base(ImpuritySolver):
             Gs = self._density_matrices(scratch.name, (None, twosz), n_elec, sz_tags)
             for tag in sz_tags:
                 _remove_mps(scratch.name, tag)
+        self._emit(
+            "sector.finished",
+            sector=sector,
+            particles=n_elec,
+            energies=energies,
+            discarded_weight=discarded_weight,
+        )
         return energies, Gs, tags, discarded_weight, scratch
 
     def _solve_states(
@@ -361,7 +390,15 @@ class _Block2Base(ImpuritySolver):
         driver, symm_type = self._driver(scratch, sector, n_elec)
         tol = 1e-12 if nroots == 1 else _ROOTS_TOL
         ket, mpo = self._optimize(driver, symm_type, nroots, self.bond_dim, tol)
-        discarded_weight = float(driver.get_dmrg_results()[1][-1])
+        bond_dims, discarded_weights, sweep_energies = driver.get_dmrg_results()
+        discarded_weight = float(discarded_weights[-1])
+        self._emit(
+            "dmrg.summary",
+            sweeps=len(bond_dims),
+            bond_dim=bond_dims[-1],
+            discarded_weight=discarded_weight,
+            sweep_energies=sweep_energies[-1],
+        )
         kets = [ket]
         if nroots > 1:
             kets, discarded_weight = self._refine(
@@ -372,9 +409,12 @@ class _Block2Base(ImpuritySolver):
             )
         # The energies of the stored states, of which the density matrices
         # are. block2's are of the two-site states before their truncation
-        energies = [float(driver.expectation(k, mpo, k)) for k in kets]
+        energies = [
+            float(driver.expectation(k, mpo, k, iprint=self._iprint)) for k in kets
+        ]
         return energies, [k.info.tag for k in kets], discarded_weight
 
+    @diagnostic_stage
     def _density_matrices(
         self, scratch: str, sector: _Sector, n_elec: int, tags: Sequence[str]
     ) -> list[NDArray[np.float64]]:
@@ -396,6 +436,7 @@ class _Block2Base(ImpuritySolver):
         driver, _ = self._driver(scratch, sector, n_elec)
         return [self._to_sz(driver, tag, twosz, f"Z{tag}") for tag in tags]
 
+    @diagnostic_stage
     def _refine(
         self, driver: DMRGDriver, mpo: _MPO, kets: Sequence[_MPS], scratch: str
     ) -> tuple[list[_MPS], float]:
@@ -405,11 +446,14 @@ class _Block2Base(ImpuritySolver):
         # basis and are much less accurate than a single state at the same bond
         # dimension. The penalty of the lower states exceeds every energy
         # difference between the states
-        energies = [float(driver.expectation(k, mpo, k)) for k in kets]
+        energies = [
+            float(driver.expectation(k, mpo, k, iprint=self._iprint)) for k in kets
+        ]
         weight = 1 + 2 * (max(energies) - min(energies))
         refined: list[_MPS] = []
         discarded_weight = 0.0
         for ket in kets:
+            self._emit("refinement.started", tag=ket.info.tag)
             driver.dmrg(
                 mpo,
                 ket,
@@ -419,7 +463,7 @@ class _Block2Base(ImpuritySolver):
                 thrds=[1e-15],
                 tol=1e-12,
                 cutoff=self.cutoff,
-                iprint=0,
+                iprint=self._iprint,
                 proj_mpss=refined,
                 proj_weights=[weight] * len(refined),
             )
@@ -431,6 +475,7 @@ class _Block2Base(ImpuritySolver):
             )
         return refined, discarded_weight
 
+    @diagnostic_stage
     def _optimize(
         self,
         driver: DMRGDriver,
@@ -448,6 +493,9 @@ class _Block2Base(ImpuritySolver):
         if self.mix_schedule:
             mixing = self._mixing(symm_type)
             for strength, sweeps, noise in self.mix_schedule:
+                self._emit(
+                    "mixing.started", strength=strength, sweeps=sweeps, noise=noise
+                )
                 mpo = self._mpo(
                     driver,
                     symm_type,
@@ -464,7 +512,7 @@ class _Block2Base(ImpuritySolver):
                     thrds=[1e-12],
                     tol=0.0,
                     cutoff=self.cutoff,
-                    iprint=0,
+                    iprint=self._iprint,
                 )
             schedule: dict[str, Any] = {
                 "bond_dims": [M],
@@ -476,6 +524,9 @@ class _Block2Base(ImpuritySolver):
                 "noises": [1e-4] * 2 + [1e-5] * 2 + [1e-6] * 2 + [0.0],
             }
         mpo = self._mpo(driver, symm_type, self._const, self._h1, self._V)
+        self._emit(
+            "optimization.started", roots=nroots, bond_dim=M, tol=tol, max_sweeps=40
+        )
         driver.dmrg(
             mpo,
             ket,
@@ -483,7 +534,7 @@ class _Block2Base(ImpuritySolver):
             thrds=[1e-15],
             tol=tol,
             cutoff=self.cutoff,
-            iprint=0,
+            iprint=self._iprint,
             **schedule,
         )
         return ket, mpo
@@ -505,17 +556,23 @@ class _Block2Base(ImpuritySolver):
         # the spin multiplet with a conserved total spin
         L = len(self._sites)
         ket = driver.load_mps(tag)
-        norm = float(driver.expectation(ket, driver.get_identity_mpo(), ket))
+        norm = float(
+            driver.expectation(ket, driver.get_identity_mpo(), ket, iprint=self._iprint)
+        )
         G = np.zeros((2 * L, 2 * L))
         if symm_type == SymmetryTypes.SGF:
-            G[:] = driver.get_1pdm(ket)
+            G[:] = driver.get_1pdm(ket, iprint=self._iprint)
         elif symm_type == SymmetryTypes.SZ:
-            G[0::2, 0::2], G[1::2, 1::2] = driver.get_1pdm(ket)
+            G[0::2, 0::2], G[1::2, 1::2] = driver.get_1pdm(ket, iprint=self._iprint)
         else:
             # Spin summed: the average over the multiplet has half in each spin
-            G[0::2, 0::2] = G[1::2, 1::2] = np.asarray(driver.get_1pdm(ket)) / 2
+            G[0::2, 0::2] = G[1::2, 1::2] = (
+                np.asarray(driver.get_1pdm(ket, iprint=self._iprint)) / 2
+            )
         return G / norm
 
+    @diagnostic_stage
+    @capture_block2
     def _variance(
         self, scratch: str, sector: _Sector, n_elec: int, tag: str
     ) -> tuple[float, str]:
@@ -527,18 +584,27 @@ class _Block2Base(ImpuritySolver):
         driver, symm_type = self._driver(scratch, sector, n_elec)
         ket = driver.load_mps(tag)
         identity = driver.get_identity_mpo()
-        norm = float(driver.expectation(ket, identity, ket))
+        norm = float(driver.expectation(ket, identity, ket, iprint=self._iprint))
         mpo = self._mpo(driver, symm_type, self._const, self._h1, self._V)
-        energy = float(driver.expectation(ket, mpo, ket)) / norm
+        energy = float(driver.expectation(ket, mpo, ket, iprint=self._iprint)) / norm
         mpo = self._mpo(driver, symm_type, self._const - energy, self._h1, self._V)
         bond_dim = ket.info.bond_dim
         h_ket = driver.get_random_mps(
             tag=f"H{tag}", bond_dim=bond_dim, center=ket.center, dot=ket.dot
         )
         driver.multiply(
-            h_ket, mpo, ket, n_sweeps=20, tol=1e-12, bra_bond_dims=[bond_dim]
+            h_ket,
+            mpo,
+            ket,
+            n_sweeps=20,
+            tol=1e-12,
+            bra_bond_dims=[bond_dim],
+            iprint=self._iprint,
         )
-        variance = float(driver.expectation(h_ket, identity, h_ket)) / norm
+        variance = (
+            float(driver.expectation(h_ket, identity, h_ket, iprint=self._iprint))
+            / norm
+        )
         return variance, h_ket.info.tag
 
     def _expectation_value(
@@ -556,9 +622,12 @@ class _Block2Base(ImpuritySolver):
         driver, symm_type = self._driver(scratch, sector, n_elec)
         ket = driver.load_mps(tag)
         mpo = self._mpo(driver, symm_type, const, h1, V)
-        norm = float(driver.expectation(ket, driver.get_identity_mpo(), ket))
-        return float(driver.expectation(ket, mpo, ket)) / norm
+        norm = float(
+            driver.expectation(ket, driver.get_identity_mpo(), ket, iprint=self._iprint)
+        )
+        return float(driver.expectation(ket, mpo, ket, iprint=self._iprint)) / norm
 
+    @capture_block2
     def _state_expectation(
         self,
         scratch: str,
@@ -611,6 +680,7 @@ class _Block2Base(ImpuritySolver):
                 mixing[2 * j, 2 * j + 1] = scale * rng.uniform(-1, 1)
         return mixing + mixing.T
 
+    @diagnostic_stage
     def _mpo(
         self,
         driver: DMRGDriver,
@@ -632,14 +702,14 @@ class _Block2Base(ImpuritySolver):
                 g2e=2 * V.transpose(0, 3, 1, 2),
                 ecore=const,
                 ancilla=ancilla,
-                iprint=0,
+                iprint=self._iprint,
             )
         up, dn = slice(0, None, 2), slice(1, None, 2)
         g_ud = 4 * V[up, dn, dn, up].transpose(0, 3, 1, 2)
         if symm_type == SymmetryTypes.SU2:
             h1e = (h1[up, up] + h1[dn, dn]) / 2
             return driver.get_qc_mpo(
-                h1e=h1e, g2e=g_ud, ecore=const, ancilla=ancilla, iprint=0
+                h1e=h1e, g2e=g_ud, ecore=const, ancilla=ancilla, iprint=self._iprint
             )
         g_uu = 2 * V[up, up, up, up].transpose(0, 3, 1, 2)
         g_dd = 2 * V[dn, dn, dn, dn].transpose(0, 3, 1, 2)
@@ -648,7 +718,7 @@ class _Block2Base(ImpuritySolver):
             g2e=(g_uu, g_ud, g_dd),
             ecore=const,
             ancilla=ancilla,
-            iprint=0,
+            iprint=self._iprint,
         )
 
 
@@ -727,6 +797,10 @@ class Block2ImpuritySolver(_Block2Base):
         MPI communicator, e.g. ``mpi4py.MPI.COMM_WORLD``, whose ranks solve
         the sectors in ``symmetries`` in parallel. Every rank must call
         :meth:`solve` and :meth:`overlap`. Default is a single process.
+    diagnostics : risb.impurity_solvers.Block2Observer, optional
+        Observer of solver events and native output. None disables the
+        additional diagnostics. Use
+        :class:`~risb.impurity_solvers.Block2Diagnostics` for files or streams.
 
     Raises
     ------
@@ -750,6 +824,7 @@ class Block2ImpuritySolver(_Block2Base):
         calculate_variance: bool = False,
         bath_size: Mapping[str, int] | None = None,
         comm: Comm | None = None,
+        diagnostics: Block2Observer | None = None,
     ) -> None:
         super().__init__(
             gf_struct,
@@ -760,6 +835,7 @@ class Block2ImpuritySolver(_Block2Base):
             comm,
             mix_schedule,
             calculate_variance,
+            diagnostics,
         )
 
         #: dict : Conserved quantities and their sectors.
@@ -820,6 +896,7 @@ class Block2ImpuritySolver(_Block2Base):
         self.entropy = 0.0
 
     @override
+    @diagnostic_stage
     def solve(self) -> None:
         """
         Solve for the ground state in the half-filled particle sector of the impurity problem.
@@ -836,6 +913,15 @@ class Block2ImpuritySolver(_Block2Base):
         """
         self._check_h_imp()
         L = len(self._sites)
+        self._emit(
+            "configuration",
+            sites=L,
+            bond_dim=self.bond_dim,
+            cutoff=self.cutoff,
+            symmetries=self.symmetries,
+            sectors=len(self._sectors),
+            calculate_variance=self.calculate_variance,
+        )
         runs = {
             i: self._run(self._sectors[i], L, 1)
             for i in round_robin(self.comm, len(self._sectors))
@@ -843,12 +929,21 @@ class Block2ImpuritySolver(_Block2Base):
         gathered = gather_tasks(self.comm, {i: run[0][0] for i, run in runs.items()})
         energies = {self._sectors[i]: e for i, e in gathered.items()}
         lowest = min(energies, key=energies.__getitem__)
+        candidate = lowest
         if (
             self._previous in energies
             and energies[self._previous] < energies[lowest] + _SECTOR_TOL
         ):
             lowest = self._previous
         self._previous = lowest
+        if self.comm.rank == 0:
+            self._emit(
+                "sector.selected",
+                sector=lowest,
+                energy=energies[lowest],
+                retained_previous=lowest != candidate,
+                tolerance=_SECTOR_TOL,
+            )
         if len(energies) > 1:
             logger.info(
                 "Lowest energies by sector: %s",
@@ -883,7 +978,15 @@ class Block2ImpuritySolver(_Block2Base):
         if twosz is not None:
             self.sector["sz"] = twosz / 2
         self._set_rho(G)
+        if self.comm.rank == 0:
+            self._emit(
+                "ground_state.summary",
+                energy=self.gs_energy,
+                discarded_weight=self.discarded_weight,
+                variance=self.variance,
+            )
 
+    @diagnostic_stage
     def overlap(self, Op: OpSum, force_real: bool = True) -> float | complex:
         """
         Calculate the expectation value of an operator in the ground state of the impurity problem.
@@ -1013,6 +1116,9 @@ class Block2ThermalImpuritySolver(_Block2Base):
         ``"purification"`` runs on
         rank 0. Every rank must call :meth:`solve` and :meth:`overlap`.
         Default is a single process.
+    diagnostics : risb.impurity_solvers.Block2Observer, optional
+        Observer of solver events and native output, as for
+        :class:`Block2ImpuritySolver`.
 
     Raises
     ------
@@ -1042,6 +1148,7 @@ class Block2ThermalImpuritySolver(_Block2Base):
         calculate_variance: bool = False,
         bath_size: Mapping[str, int] | None = None,
         comm: Comm | None = None,
+        diagnostics: Block2Observer | None = None,
     ) -> None:
         super().__init__(
             gf_struct,
@@ -1052,6 +1159,7 @@ class Block2ThermalImpuritySolver(_Block2Base):
             comm,
             mix_schedule,
             calculate_variance,
+            diagnostics,
         )
 
         #: float : Inverse temperature of the impurity problem.
@@ -1108,6 +1216,7 @@ class Block2ThermalImpuritySolver(_Block2Base):
         self.variance: float | None = None
 
     @override
+    @diagnostic_stage
     def solve(self) -> None:
         """
         Solve for the thermal state of the impurity problem.
@@ -1132,6 +1241,18 @@ class Block2ThermalImpuritySolver(_Block2Base):
 
         """
         self._check_h_imp()
+        self._emit(
+            "configuration",
+            sites=len(self._sites),
+            method=self.method,
+            beta=self.beta,
+            bond_dim=self.bond_dim,
+            cutoff=self.cutoff,
+            symmetries=self.symmetries,
+            eta=self.eta,
+            delta=self.delta,
+            calculate_variance=self.calculate_variance,
+        )
         for d in self._dirs:
             d.cleanup()
         solve = self._purify if self.method == "purification" else self._lowest
@@ -1139,7 +1260,15 @@ class Block2ThermalImpuritySolver(_Block2Base):
         self.grand_potential = -log_Z / self.beta
         self.entropy = self.beta * (self.energy - self.grand_potential)
         self._set_rho(G)
+        if self.comm.rank == 0:
+            self._emit(
+                "thermal.summary",
+                energy=self.energy,
+                grand_potential=self.grand_potential,
+                entropy=self.entropy,
+            )
 
+    @diagnostic_stage
     def overlap(self, Op: OpSum, force_real: bool = True) -> float | complex:
         """
         Calculate the thermal average of an operator in the impurity problem.
@@ -1197,6 +1326,8 @@ class Block2ThermalImpuritySolver(_Block2Base):
             states,
         )
 
+    @diagnostic_stage
+    @capture_block2
     def _purified_state(self) -> _ThermalResult:
         # The thermal state by purification
         L = len(self._sites)
@@ -1240,13 +1371,21 @@ class Block2ThermalImpuritySolver(_Block2Base):
                     n_sweeps=20,
                     tol=1e-12,
                     cutoff=self.cutoff,
-                    iprint=0,
+                    iprint=self._iprint,
                 )
                 ket = bra
-            log_norm = float(np.log(driver.expectation(ket, identity, ket)))
+            log_norm = float(
+                np.log(driver.expectation(ket, identity, ket, iprint=self._iprint))
+            )
             mpo = self._doubled_mpo(driver, self._const, self._h1, self._V)
         # exp(-beta H / 2) on the infinite-temperature state, normalized
         # after each step
+        self._emit(
+            "purification.started",
+            target_time=self.beta / 2,
+            steps=max(1, math.ceil((self.beta / 2 - t0) / self.time_step)),
+            sub_sweeps=_SUB_SWEEPS,
+        )
         ket = driver.td_dmrg(
             mpo,
             ket,
@@ -1259,7 +1398,7 @@ class Block2ThermalImpuritySolver(_Block2Base):
             hermitian=True,
             final_mps_tag="KET",
             cutoff=self.cutoff,
-            iprint=0,
+            iprint=self._iprint,
         )
         # Z is 4^L times the product of the squared norms before each
         # normalization
@@ -1268,7 +1407,7 @@ class Block2ThermalImpuritySolver(_Block2Base):
             + log_norm
             + float(np.sum(np.log(np.real(driver._te.normsqs))))
         )
-        energy = float(driver.expectation(ket, mpo, ket))
+        energy = float(driver.expectation(ket, mpo, ket, iprint=self._iprint))
 
         # The thermal state as a state of the orbitals and the ancillas, with
         # at most a conserved spin projection, and its 1-RDM of the orbitals
@@ -1282,13 +1421,14 @@ class Block2ThermalImpuritySolver(_Block2Base):
         ket.save_data()
         ket.info.save_data(f"{scratch.name}/{ket.info.tag}-mps_info.bin")
         if self.symmetries:
-            dm_up, dm_dn = driver.get_1pdm(ket)
+            dm_up, dm_dn = driver.get_1pdm(ket, iprint=self._iprint)
             G = np.zeros((2 * L, 2 * L))
             G[0::2, 0::2], G[1::2, 1::2] = dm_up[0::2, 0::2], dm_dn[0::2, 0::2]
         else:
-            G = np.asarray(driver.get_1pdm(ket))[0::2, 0::2]
+            G = np.asarray(driver.get_1pdm(ket, iprint=self._iprint))[0::2, 0::2]
         return G, energy, log_Z, [scratch], [(1.0, scratch.name, ket.info.tag, None, L)]
 
+    @capture_block2
     def _purified_expectation(
         self,
         scratch: str,
@@ -1309,7 +1449,7 @@ class Block2ThermalImpuritySolver(_Block2Base):
             driver.initialize_system(n_sites=4 * L, n_elec=2 * L, spin=0)
             mpo = self._doubled_mpo(driver, const, h1, V)
         ket = driver.load_mps(tag)
-        return float(driver.expectation(ket, mpo, ket))
+        return float(driver.expectation(ket, mpo, ket, iprint=self._iprint))
 
     def _lowest(self) -> _ThermalResult:
         # The thermal average over the lowest states with beta (E - E0) <= eta
@@ -1331,6 +1471,7 @@ class Block2ThermalImpuritySolver(_Block2Base):
         runs: dict[int, _Run] = {}
         lowest: dict[int, float] = {}
         while numbers:
+            self._emit("scan.extended", particle_numbers=numbers, energy_window=window)
             start = len(tasks)
             tasks += [
                 (n_elec, sector)
@@ -1353,12 +1494,27 @@ class Block2ThermalImpuritySolver(_Block2Base):
                     for n, step in ((min(lowest_n), -1), (max(lowest_n), 1))
                     if 0 <= n + step <= 2 * L and lowest_n[n] - E0 <= window
                 ]
+                self._emit(
+                    "scan.decision",
+                    lowest_by_particles=lowest_n,
+                    lowest_energy=E0,
+                    energy_window=window,
+                    next_particles=numbers,
+                )
         E0 = min(lowest.values())
         for i in runs:
             n_elec, sector = tasks[i]
             size = _sector_size(L, n_elec, sector)
             while max(runs[i][0]) - E0 <= window and len(runs[i][0]) < size:
                 nroots = min(2 * len(runs[i][0]), size)
+                self._emit(
+                    "roots.increased",
+                    particles=n_elec,
+                    sector=sector,
+                    old=len(runs[i][0]),
+                    new=nroots,
+                    energy_window=window,
+                )
                 runs[i][4].cleanup()
                 runs[i] = self._run(sector, n_elec, nroots)
             logger.debug(
@@ -1432,6 +1588,16 @@ class Block2ThermalImpuritySolver(_Block2Base):
             n_elec = tasks[i][0]
             lowest[n_elec] = min(lowest.get(n_elec, np.inf), self.beta * (es[0] - E0))
         n0, sector0 = tasks[min(energies, key=lambda i: energies[i][0])]
+        self._emit(
+            "thermal.window",
+            lowest_energy=E0,
+            particles=n0,
+            sector=sector0,
+            states=n_states,
+            known_excluded_weight=excluded,
+            discarded_weight=discarded,
+            variance=self.variance,
+        )
         logger.info("Lowest energy %.10f, sector %d, %s", E0, n0, sector0)
         logger.info(
             "Lowest beta (E - E0) by particle number: %s",
