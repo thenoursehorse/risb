@@ -50,6 +50,16 @@ class LatticeSolver(BaseLatticeSolver):
         lattice. It is called as ``update_weights(energies)``,
         where the energies are a dictionary with each key a list.
         See class :class:`.SmearingKWeight`.
+    pin_full_empty : bool, optional
+        Whether to move the levels of full or empty auxiliary orbitals far from
+        the active levels. Default is ``True``. An orbital is treated as frozen
+        when its density eigenvalue satisfies ``n * (1 - n) < helpers.EDGE_TOL``
+        (``1e-12``). Bath levels use :attr:`rho_qp`; quasiparticle levels use
+        :attr:`rho_f` after the impurity solve. This enforces complementary bath
+        occupations in the decoupled limit, but can affect convergence and
+        solution selection. With ``False``, both level shifts are disabled;
+        the pseudo-inverse treatment of singular factors is unchanged, and
+        decoupled baths can have inconsistent occupations.
     diagnostics : risb.diagnostics.DiagnosticObserver, optional
         Use :class:`~risb.diagnostics.LatticeDiagnostics` for progress reports.
 
@@ -74,6 +84,7 @@ class LatticeSolver(BaseLatticeSolver):
         double_counting: Callable[[int, BlockMatrix], BlockMatrixLike] | None = None,
         *,
         bath_size: Sequence[Mapping[str, int]] | None = None,
+        pin_full_empty: bool = True,
         force_real_atol: float = 1e-12,
         force_real_rtol: float = 1e-10,
         diagnostics: DiagnosticObserver | None = None,
@@ -94,6 +105,7 @@ class LatticeSolver(BaseLatticeSolver):
             bath_size=bath_size,
         )
         self._update_weights = update_weights
+        self.pin_full_empty = pin_full_empty
 
     @override
     def update_weights(self, energies: BlockRealArray) -> BlockRealArray:
@@ -128,12 +140,13 @@ class LatticeSolver(BaseLatticeSolver):
         # bath orbital empty (full) is not finite, so put the bath level far
         # away instead. Otherwise the bath orbital competes for electrons and
         # the impurity problem can end at R = 0 with the wrong filling
-        core_scale = self._core_scale()
-        for i in range(self.n_clusters):
-            for bl in self.Lambda_c[i]:
-                self.Lambda_c[i][bl] = _pin_full_empty_bath_levels(
-                    self.Lambda_c[i][bl], self.rho_qp[i][bl], core_scale
-                )
+        if self.pin_full_empty:
+            core_scale = self._core_scale()
+            for i in range(self.n_clusters):
+                for bl in self.Lambda_c[i]:
+                    self.Lambda_c[i][bl] = _pin_full_empty_bath_levels(
+                        self.Lambda_c[i][bl], self.rho_qp[i][bl], core_scale
+                    )
 
     @override
     def update_residuals(self) -> None:
@@ -153,7 +166,6 @@ class LatticeSolver(BaseLatticeSolver):
 
     @override
     def next_r_lambda(self) -> tuple[list[BlockMatrix], list[BlockMatrix]]:
-        core_scale = self._core_scale()
         Lambda: list[BlockMatrix] = [{} for _ in range(self.n_clusters)]
         R: list[BlockMatrix] = [{} for _ in range(self.n_clusters)]
         for i in range(self.n_clusters):
@@ -179,13 +191,15 @@ class LatticeSolver(BaseLatticeSolver):
         # stays decoupled. A solution with a lower energy, where the
         # quasiparticle orbital is not exactly full (empty) and is an extra
         # channel for the other orbitals, can also exist
-        for i in range(self.n_clusters):
-            for bl in Lambda[i]:
-                Lambda[i][bl] = _pin_full_empty_qp_levels(
-                    Lambda[i][bl],
-                    self.rho_f[i][bl],
-                    self._kinetic_half_bandwidth + core_scale,
-                )
+        if self.pin_full_empty:
+            core_scale = self._core_scale()
+            for i in range(self.n_clusters):
+                for bl in Lambda[i]:
+                    Lambda[i][bl] = _pin_full_empty_qp_levels(
+                        Lambda[i][bl],
+                        self.rho_f[i][bl],
+                        self._kinetic_half_bandwidth + core_scale,
+                    )
         return R, Lambda
 
     def _core_scale(self) -> float:
