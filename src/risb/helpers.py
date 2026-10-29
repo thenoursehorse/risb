@@ -526,6 +526,7 @@ def get_thermal_d_lambda_c(
     anchor: tuple[NDArray[np.inexact], NDArray[np.inexact]] | None = None,
     alpha: float = 1e-8,
     force_real: bool = False,
+    diagnostics: Callable[..., None] | None = None,
 ) -> tuple[NDArray[np.inexact], NDArray[np.inexact]]:
     """
     Return the hybridization and bath coupling of the impurity problem at finite temperature.
@@ -559,6 +560,8 @@ def get_thermal_d_lambda_c(
         Strength of ``anchor``.
     force_real : bool, optional
         Whether the matrices are real.
+    diagnostics : callable, optional
+        Receive fit statistics as an event name and keyword measurements.
 
     Returns
     -------
@@ -597,7 +600,7 @@ def get_thermal_d_lambda_c(
         return _entries(rho_qp_emb - rho_qp, rho_qpf @ D_y - ke.T)
 
     y_anchor = None if anchor is None else flatten(*anchor)
-    return unflatten(_fit(residual, flatten(D, Lambda_c), y_anchor, alpha))
+    return unflatten(_fit(residual, flatten(D, Lambda_c), y_anchor, alpha, diagnostics))
 
 
 def get_thermal_r_lambda(
@@ -613,6 +616,7 @@ def get_thermal_r_lambda(
     anchor: tuple[NDArray[np.inexact], NDArray[np.inexact]] | None = None,
     alpha: float = 1e-8,
     force_real: bool = False,
+    diagnostics: Callable[..., None] | None = None,
 ) -> tuple[NDArray[np.inexact], NDArray[np.inexact]]:
     """
     Return the renormalization matrix and correlation potential of the quasiparticles at finite temperature.
@@ -646,6 +650,8 @@ def get_thermal_r_lambda(
         Strength of ``anchor``.
     force_real : bool, optional
         Whether the matrices are real.
+    diagnostics : callable, optional
+        Receive fit statistics as an event name and keyword measurements.
 
     Returns
     -------
@@ -682,7 +688,7 @@ def get_thermal_r_lambda(
         return _entries(rho_f_emb - rho_f, R_y.T @ rho_qpf - rho_cf)
 
     y_anchor = None if anchor is None else flatten(*anchor)
-    return unflatten(_fit(residual, flatten(R, Lambda), y_anchor, alpha))
+    return unflatten(_fit(residual, flatten(R, Lambda), y_anchor, alpha, diagnostics))
 
 
 @cache
@@ -2264,6 +2270,7 @@ def _fit(
     y0: list[float],
     anchor: list[float] | None,
     alpha: float,
+    diagnostics: Callable[..., None] | None = None,
 ) -> NDArray[np.float64]:
     # The least-squares solution of residual from y0, also pulled towards
     # anchor by alpha times the squared distance
@@ -2274,7 +2281,19 @@ def _fit(
         def fun(y: NDArray[np.float64]) -> NDArray[np.float64]:
             return np.concatenate([residual(y), scale * (y - y_anchor)])
 
-    y: NDArray[np.float64] = least_squares(
-        fun, y0, xtol=1e-15, ftol=1e-15, gtol=1e-15
-    ).x
+    result = least_squares(fun, y0, xtol=1e-15, ftol=1e-15, gtol=1e-15)
+    if diagnostics is not None:
+        physical = result.fun[: -len(y0)] if anchor is not None else result.fun
+        diagnostics(
+            "fit.result",
+            success=bool(result.success),
+            status=int(result.status),
+            evaluations=int(result.nfev),
+            optimality=float(result.optimality),
+            max_residual=float(np.max(np.abs(physical))),
+            residual_norm=float(np.linalg.norm(physical)),
+            total_cost=float(result.cost),
+            anchored=anchor is not None,
+        )
+    y: NDArray[np.float64] = result.x
     return y

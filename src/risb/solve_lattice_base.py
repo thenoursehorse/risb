@@ -20,12 +20,15 @@
 import warnings
 from abc import ABC, abstractmethod
 from collections.abc import Callable, Mapping, Sequence
+from contextlib import AbstractContextManager
 from typing import TypeIs
 
 import numpy as np
 from numpy.typing import NDArray
 
 from risb import helpers
+from risb.diagnostics import DiagnosticObserver
+from risb.diagnostics.output import stage
 from risb.optimize import DIIS, NewtonSolver, ScipyRoot, SolveResult, solve_fixed_point
 from risb.optimize.fixed_point import Callback
 from risb.types import (
@@ -127,6 +130,8 @@ class BaseLatticeSolver(ABC):
         Chemical potential that :meth:`solve_impurities` passes to the
         ``set_h_imp`` of each impurity solver. Default is None, which passes
         none.
+    diagnostics : risb.diagnostics.DiagnosticObserver, optional
+        Passive reporter of lattice events. None disables reporting.
 
     """
 
@@ -146,9 +151,11 @@ class BaseLatticeSolver(ABC):
         mu: float | None = None,
         force_real_atol: float = 1e-12,
         force_real_rtol: float = 1e-10,
+        diagnostics: DiagnosticObserver | None = None,
     ) -> None:
         #: risb.types.BlockMatrixLike : Non-interacting Hamiltonian in k-space.
         self.h0_k = h0_k
+        self.diagnostics = diagnostics
 
         # FIXME is this the best way to make sure gf_struct is a list of gf_struct?
         self.gf_struct: list[GfStruct]
@@ -460,6 +467,20 @@ class BaseLatticeSolver(ABC):
             + self._flatten_matrix(self.R, is_hermitian=False, name="R")
         )
 
+    def _emit(self, event: str, **fields: object) -> None:
+        if self.diagnostics is not None:
+            self.diagnostics.emit(event, **fields)
+
+    def _stage(self, name: str, **fields: object) -> AbstractContextManager[None]:
+        return stage(self.diagnostics, name, **fields)
+
+    def _diagnostic_configuration(self) -> dict[str, object]:
+        return {
+            "clusters": self.n_clusters,
+            "blocks": self.gf_struct,
+            "kpoints": {bl: np.shape(h)[0] for bl, h in self.h0_k.items()},
+        }
+
     def cycle(
         self, x: NDArray[np.float64]
     ) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
@@ -542,31 +563,32 @@ class BaseLatticeSolver(ABC):
     def solve_impurities(self) -> None:
         """Solve the impurity problem of each cluster, and set :attr:`rho_f`, :attr:`rho_cf`, and :attr:`rho_c`."""
         for i in range(self.n_clusters):
-            h0_loc_matrix = self.h0_loc_matrix[i]
-            if self.double_counting is not None:
-                rho = self.rho_c[i]
-                if not rho:
-                    rho = {
-                        bl: R.T @ self.rho_qp[i][bl] @ R.conj()
-                        for bl, R in self.R[i].items()
+            with self._stage("impurity", cluster=i):
+                h0_loc_matrix = self.h0_loc_matrix[i]
+                if self.double_counting is not None:
+                    rho = self.rho_c[i]
+                    if not rho:
+                        rho = {
+                            bl: R.T @ self.rho_qp[i][bl] @ R.conj()
+                            for bl, R in self.R[i].items()
+                        }
+                    potential = self.double_counting(i, rho)
+                    h0_loc_matrix = {
+                        bl: h0_loc_matrix[bl] - potential[bl] for bl in h0_loc_matrix
                     }
-                potential = self.double_counting(i, rho)
-                h0_loc_matrix = {
-                    bl: h0_loc_matrix[bl] - potential[bl] for bl in h0_loc_matrix
-                }
-            if self.mu is None:
-                self.impurity_solvers[i].set_h_imp(
-                    self.Lambda_c[i], self.D[i], h0_loc_matrix
-                )
-            else:
-                self.impurity_solvers[i].set_h_imp(
-                    self.Lambda_c[i], self.D[i], h0_loc_matrix, mu=self.mu
-                )
-            self.impurity_solvers[i].solve()
-            for bl, _ in self.gf_struct[i]:
-                self.rho_f[i][bl] = self.impurity_solvers[i].get_rho_f(bl)
-                self.rho_cf[i][bl] = self.impurity_solvers[i].get_rho_cf(bl)
-                self.rho_c[i][bl] = self.impurity_solvers[i].get_rho_c(bl)
+                if self.mu is None:
+                    self.impurity_solvers[i].set_h_imp(
+                        self.Lambda_c[i], self.D[i], h0_loc_matrix
+                    )
+                else:
+                    self.impurity_solvers[i].set_h_imp(
+                        self.Lambda_c[i], self.D[i], h0_loc_matrix, mu=self.mu
+                    )
+                self.impurity_solvers[i].solve()
+                for bl, _ in self.gf_struct[i]:
+                    self.rho_f[i][bl] = self.impurity_solvers[i].get_rho_f(bl)
+                    self.rho_cf[i][bl] = self.impurity_solvers[i].get_rho_cf(bl)
+                    self.rho_c[i][bl] = self.impurity_solvers[i].get_rho_c(bl)
 
         ## Enforce matrix structure from symmetries
         self.rho_f = self._project(self.rho_f, is_hermitian=True, name="rho_f")
@@ -622,71 +644,106 @@ class BaseLatticeSolver(ABC):
             hybridzation density matrices on each cluster.
 
         """
-        for symmetrize in self.symmetrizers:
-            self.R = symmetrize(self.R)
-            self.Lambda = symmetrize(self.Lambda)
+        with self._stage("cycle", iteration=self.iteration + 1):
+            for symmetrize in self.symmetrizers:
+                self.R = symmetrize(self.R)
+                self.Lambda = symmetrize(self.Lambda)
 
-        # Make R, Lambda in supercell basis from basis of the clusters. The
-        # orbitals in no cluster keep their bands: R = 1, Lambda = 0 there
-        self.R_full, self.Lambda_full = helpers.upfold_r_lambda(
-            self.R,
-            self.Lambda,
-            self.h0_kin_k,
-            self._projectors_qp,
-            self.gf_struct_mapping,
-        )
-
-        h0_k_R = {}
-        # R_h0_k_R = dict()
-        for bl in self.h0_kin_k:
-            h_qp = helpers.get_h_qp(
-                self.R_full[bl], self.Lambda_full[bl], self.h0_kin_k[bl]
-            )
-            self.energies_qp[bl], self.bloch_vector_qp[bl] = np.linalg.eigh(h_qp)
-            h0_k_R[bl] = helpers.get_h0_kin_k_R(
-                self.R_full[bl], self.h0_kin_k[bl], self.bloch_vector_qp[bl]
-            )
-            # R_h0_k_R[bl] = helpers.get_R_h0_kin_kR(R_full[bl], self.h0_kin_k[bl], self.bloch_vector_qp[bl])
-
-        self.kweights = self.update_weights(self.energies_qp)
-
-        for i in range(self.n_clusters):
-            for bl, _ in self.gf_struct[i]:
-                bl_full = self.gf_struct_mapping[i][bl]
-                P = None if self.projectors is None else self.projectors[i][bl]
-                P_qp = None
-                if self._projectors_qp is not None:
-                    P_qp = self._projectors_qp[i][bl]
-                self.rho_qp[i][bl] = helpers.get_rho_qp(
-                    self.bloch_vector_qp[bl_full], self.kweights[bl_full], P_qp
+            # Make R, Lambda in supercell basis from basis of the clusters. The
+            # orbitals in no cluster keep their bands: R = 1, Lambda = 0 there
+            with self._stage("bands"):
+                self.R_full, self.Lambda_full = helpers.upfold_r_lambda(
+                    self.R,
+                    self.Lambda,
+                    self.h0_kin_k,
+                    self._projectors_qp,
+                    self.gf_struct_mapping,
                 )
-                self.lopsided_ke_qp[i][bl] = helpers.get_ke(
-                    h0_k_R[bl_full],
-                    self.bloch_vector_qp[bl_full],
-                    self.kweights[bl_full],
-                    P,
-                    P_qp,
+
+                h0_k_R = {}
+                # R_h0_k_R = dict()
+                for bl in self.h0_kin_k:
+                    h_qp = helpers.get_h_qp(
+                        self.R_full[bl], self.Lambda_full[bl], self.h0_kin_k[bl]
+                    )
+                    self.energies_qp[bl], self.bloch_vector_qp[bl] = np.linalg.eigh(
+                        h_qp
+                    )
+                    h0_k_R[bl] = helpers.get_h0_kin_k_R(
+                        self.R_full[bl], self.h0_kin_k[bl], self.bloch_vector_qp[bl]
+                    )
+                    # R_h0_k_R[bl] = helpers.get_R_h0_kin_kR(R_full[bl], self.h0_kin_k[bl], self.bloch_vector_qp[bl])
+
+            with self._stage("weights"):
+                self.kweights = self.update_weights(self.energies_qp)
+
+            with self._stage("densities"):
+                for i in range(self.n_clusters):
+                    for bl, _ in self.gf_struct[i]:
+                        bl_full = self.gf_struct_mapping[i][bl]
+                        P = None if self.projectors is None else self.projectors[i][bl]
+                        P_qp = None
+                        if self._projectors_qp is not None:
+                            P_qp = self._projectors_qp[i][bl]
+                        self.rho_qp[i][bl] = helpers.get_rho_qp(
+                            self.bloch_vector_qp[bl_full], self.kweights[bl_full], P_qp
+                        )
+                        self.lopsided_ke_qp[i][bl] = helpers.get_ke(
+                            h0_k_R[bl_full],
+                            self.bloch_vector_qp[bl_full],
+                            self.kweights[bl_full],
+                            P,
+                            P_qp,
+                        )
+                        # self.ke_qp[i][bl] = helpers.get_ke(R_h0_k_R[bl_full], self.bloch_vector_qp[bl_full], self.kweights[bl_full], self.projectors[i][bl])
+
+                # FIXME More expensive to do this than just storing and working with the coefficients, but
+                # nothing compared to solving the impurity problem so this is likely fine
+                # Enforce matrix structure from symmetries
+                self.rho_qp = self._project(
+                    self.rho_qp, is_hermitian=True, name="rho_qp"
                 )
-                # self.ke_qp[i][bl] = helpers.get_ke(R_h0_k_R[bl_full], self.bloch_vector_qp[bl_full], self.kweights[bl_full], self.projectors[i][bl])
+                # self.lopsided_ke_qp, _ = self._unflatten_matrix( self._flatten_matrix( self.lopsided_ke_qp, is_hermitian=False ), is_hermitian=False )
+                for symmetrize in self.symmetrizers:
+                    self.rho_qp = symmetrize(self.rho_qp)
+                    # self.lopsided_ke_qp = symmetrize(self.lopsided_ke_qp) # FIXME can I do it to ke as well? It should have same symm as D
+                    # self.ke_qp = symmetrize(self.ke_qp)
 
-        # FIXME More expensive to do this than just storing and working with the coefficients, but
-        # nothing compared to solving the impurity problem so this is likely fine
-        # Enforce matrix structure from symmetries
-        self.rho_qp = self._project(self.rho_qp, is_hermitian=True, name="rho_qp")
-        # self.lopsided_ke_qp, _ = self._unflatten_matrix( self._flatten_matrix( self.lopsided_ke_qp, is_hermitian=False ), is_hermitian=False )
-        for symmetrize in self.symmetrizers:
-            self.rho_qp = symmetrize(self.rho_qp)
-            # self.lopsided_ke_qp = symmetrize(self.lopsided_ke_qp) # FIXME can I do it to ke as well? It should have same symm as D
-            # self.ke_qp = symmetrize(self.ke_qp)
+            with self._stage("bath"):
+                self.update_bath()
+            with self._stage("impurities"):
+                self.solve_impurities()
+            with self._stage("residuals"):
+                self.update_residuals()
+            with self._stage("quasiparticles"):
+                R, Lambda = self.next_r_lambda()
 
-        self.update_bath()
-        self.solve_impurities()
-        self.update_residuals()
-        R, Lambda = self.next_r_lambda()
+            self.iteration += 1
 
-        self.iteration += 1
+            if self.diagnostics is not None:
+                maxima = {"f1": 0.0, "f2": 0.0}
+                for i in range(self.n_clusters):
+                    for bl in self.gf_struct_mapping[i]:
+                        f1 = float(np.max(np.abs(self.f1[i][bl])))
+                        f2 = float(np.max(np.abs(self.f2[i][bl])))
+                        self._emit(
+                            "residual.block",
+                            iteration=self.iteration,
+                            cluster=i,
+                            block=bl,
+                            f1=f1,
+                            f2=f2,
+                        )
+                        maxima["f1"] = max(maxima["f1"], f1)
+                        maxima["f2"] = max(maxima["f2"], f2)
+                self._emit(
+                    "cycle.summary",
+                    iteration=self.iteration,
+                    max_f1=maxima["f1"],
+                    max_f2=maxima["f2"],
+                )
 
-        return Lambda, R, self.f1, self.f2
+            return Lambda, R, self.f1, self.f2
 
     def solve(
         self,
@@ -739,28 +796,53 @@ class BaseLatticeSolver(ABC):
         risb.optimize.SolveResult
 
         """
-        self._warned_imaginary.clear()
-        if optimizer is None:
-            optimizer = self.default_optimizer()
-        if callbacks is None:
-            callbacks = self.default_callbacks()
-        result = solve_fixed_point(self, optimizer, callbacks, tol, maxiter, x0)
-        self.self_consistency_error = max(
-            float(np.max(np.abs(f[i][bl])))
-            for f in (self.f1, self.f2)
-            for i in range(self.n_clusters)
-            for bl in f[i]
-        )
-        if self.self_consistency_error > self_consistency_tol:
-            msg = (
-                "The RISB self-consistency equations are not satisfied: "
-                f"max |f1|, |f2| = {self.self_consistency_error:.1e}. In the "
-                "atomic limit (R = 0, e.g., a Mott insulator) the bath of the "
-                "impurity problem decouples and this does not change the "
-                "observables. Otherwise the result is not a solution."
+        with self._stage("solve", solver=type(self).__name__):
+            self._warned_imaginary.clear()
+            if optimizer is None:
+                optimizer = self.default_optimizer()
+            if callbacks is None:
+                callbacks = self.default_callbacks()
+            if self.diagnostics is not None:
+                self._emit(
+                    "configuration",
+                    optimizer=type(optimizer).__name__,
+                    error_fun=optimizer.error_fun,
+                    tol=tol,
+                    maxiter=maxiter,
+                    **self._diagnostic_configuration(),
+                )
+            result = solve_fixed_point(
+                self,
+                optimizer,
+                callbacks,
+                tol,
+                maxiter,
+                x0,
+                diagnostics=self.diagnostics,
             )
-            warnings.warn(msg, RuntimeWarning, stacklevel=2)
-        return result
+            self.self_consistency_error = max(
+                float(np.max(np.abs(f[i][bl])))
+                for f in (self.f1, self.f2)
+                for i in range(self.n_clusters)
+                for bl in f[i]
+            )
+            if self.self_consistency_error > self_consistency_tol:
+                msg = (
+                    "The RISB self-consistency equations are not satisfied: "
+                    f"max |f1|, |f2| = {self.self_consistency_error:.1e}. In the "
+                    "atomic limit (R = 0, e.g., a Mott insulator) the bath of the "
+                    "impurity problem decouples and this does not change the "
+                    "observables. Otherwise the result is not a solution."
+                )
+                warnings.warn(msg, RuntimeWarning, stacklevel=2)
+            self._emit(
+                "solve.result",
+                optimizer_converged=result.converged,
+                optimizer_error=result.error,
+                cycles=result.cycles,
+                self_consistency_error=self.self_consistency_error,
+            )
+            return result
 
     @property
     def Z(self) -> list[BlockMatrix]:

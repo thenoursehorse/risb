@@ -2,7 +2,6 @@
 
 from typing import TYPE_CHECKING
 
-from .block2_diagnostics import Block2Diagnostics, Block2Observer
 from .dummy import DummyImpuritySolver
 from .fockit import FockitImpuritySolver, FockitThermalImpuritySolver
 
@@ -10,9 +9,7 @@ if TYPE_CHECKING:
     from .block2 import Block2ImpuritySolver, Block2ThermalImpuritySolver
 
 __all__ = [
-    "Block2Diagnostics",
     "Block2ImpuritySolver",
-    "Block2Observer",
     "Block2ThermalImpuritySolver",
     "DummyImpuritySolver",
     "FockitImpuritySolver",

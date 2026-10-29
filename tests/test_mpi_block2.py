@@ -14,6 +14,7 @@ from test_block2 import (
 )
 from test_common import EXACT_THERMAL
 
+from risb.diagnostics import Block2Diagnostics
 from risb.helpers_fockit import N_op, S2_op
 from risb.impurity_solvers import FockitImpuritySolver, FockitThermalImpuritySolver
 
@@ -23,7 +24,6 @@ except (ImportError, RuntimeError) as error:
     # Without mpi4py, or without an MPI library for it to load
     pytest.skip(str(error), allow_module_level=True)
 from risb.impurity_solvers import (
-    Block2Diagnostics,
     Block2ImpuritySolver,
     Block2ThermalImpuritySolver,
 )

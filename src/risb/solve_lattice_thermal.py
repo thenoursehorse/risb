@@ -18,6 +18,7 @@
 """Solver for finite-temperature rotationally invariant slave-boson mean-field theory on a lattice."""
 
 from collections.abc import Callable, Mapping, Sequence
+from functools import partial
 from typing import Any, override
 
 import numpy as np
@@ -26,6 +27,7 @@ from scipy.optimize import brentq
 from scipy.special import expit
 
 from risb import helpers
+from risb.diagnostics import DiagnosticObserver
 from risb.optimize import DIIS, NewtonSolver, OnPlateau, SolveResult
 from risb.optimize.fixed_point import Callback
 from risb.solve_lattice_base import BaseLatticeSolver
@@ -71,6 +73,9 @@ class ThermalLatticeSolver(BaseLatticeSolver):
         Number of electrons per unit cell. The chemical potential :attr:`mu`
         is then solved for with :attr:`Lambda` and :attr:`R`, and the root
         functions include ``n_electrons - n_target``. Default is a fixed `mu`.
+    diagnostics : risb.diagnostics.DiagnosticObserver, optional
+        Use :class:`~risb.diagnostics.ThermalLatticeDiagnostics` for progress
+        and fit reports.
 
     Other Parameters
     ----------------
@@ -97,6 +102,7 @@ class ThermalLatticeSolver(BaseLatticeSolver):
         n_target: float | None = None,
         force_real_atol: float = 1e-12,
         force_real_rtol: float = 1e-10,
+        diagnostics: DiagnosticObserver | None = None,
     ) -> None:
         super().__init__(
             h0_k,
@@ -108,6 +114,7 @@ class ThermalLatticeSolver(BaseLatticeSolver):
             force_real=force_real,
             force_real_atol=force_real_atol,
             force_real_rtol=force_real_rtol,
+            diagnostics=diagnostics,
             check_projectors=check_projectors,
             double_counting=double_counting,
             bath_size=bath_size,
@@ -159,6 +166,14 @@ class ThermalLatticeSolver(BaseLatticeSolver):
             raise ValueError(msg)
 
     @override
+    def _diagnostic_configuration(self) -> dict[str, object]:
+        return super()._diagnostic_configuration() | {
+            "beta": self.beta,
+            "mu": self.mu,
+            "n_target": self.n_target,
+        }
+
+    @override
     def update_weights(self, energies: BlockRealArray) -> BlockRealArray:
         """
         Return the Fermi-Dirac occupation of each band at each k-point, divided by the number of k-points.
@@ -194,19 +209,31 @@ class ThermalLatticeSolver(BaseLatticeSolver):
                     Lambda_c = helpers.get_lambda_c(rho_qp, R, Lambda, D)
                 self._warn_if_complex(D, "D", i, bl)
                 self._warn_if_complex(Lambda_c, "Lambda_c", i, bl)
-                self.D[i][bl], self.Lambda_c[i][bl] = helpers.get_thermal_d_lambda_c(
-                    rho_qp,
-                    ke,
-                    R,
-                    Lambda,
-                    self.beta,
-                    self.mu,
-                    D,
-                    Lambda_c,
-                    anchor=self._anchor_of(("bath", i, bl), (D, Lambda_c)),
-                    alpha=self._anchor_alpha or 0.0,
-                    force_real=self.force_real,
-                )
+                with self._stage("bath_fit", cluster=i, block=bl):
+                    self.D[i][bl], self.Lambda_c[i][bl] = (
+                        helpers.get_thermal_d_lambda_c(
+                            rho_qp,
+                            ke,
+                            R,
+                            Lambda,
+                            self.beta,
+                            self.mu,
+                            D,
+                            Lambda_c,
+                            anchor=self._anchor_of(("bath", i, bl), (D, Lambda_c)),
+                            alpha=self._anchor_alpha or 0.0,
+                            force_real=self.force_real,
+                            diagnostics=partial(
+                                self._emit,
+                                cluster=i,
+                                block=bl,
+                                fit="bath",
+                                iteration=self.iteration + 1,
+                            )
+                            if self.diagnostics is not None
+                            else None,
+                        )
+                    )
 
         # Enforce matrix structure from symmetries
         self.Lambda_c = self._project(self.Lambda_c, is_hermitian=True, name="Lambda_c")
@@ -248,6 +275,14 @@ class ThermalLatticeSolver(BaseLatticeSolver):
             self.f1 = symmetrize(self.f1)
             self.f2 = symmetrize(self.f2)
 
+        self._emit(
+            "thermal.filling",
+            iteration=self.iteration + 1,
+            mu=self.mu,
+            filling=self.n_electrons,
+            target=self.n_target,
+        )
+
     @override
     def next_r_lambda(self) -> tuple[list[BlockMatrix], list[BlockMatrix]]:
         R_next: list[BlockMatrix] = [{} for _ in range(self.n_clusters)]
@@ -257,19 +292,29 @@ class ThermalLatticeSolver(BaseLatticeSolver):
                 R, Lambda = self.R[i][bl], self.Lambda[i][bl]
                 self._warn_if_complex(R, "R", i, bl)
                 self._warn_if_complex(Lambda, "Lambda", i, bl)
-                R_next[i][bl], Lambda_next[i][bl] = helpers.get_thermal_r_lambda(
-                    self.rho_f[i][bl],
-                    self.rho_cf[i][bl],
-                    self.D[i][bl],
-                    self.Lambda_c[i][bl],
-                    self.beta,
-                    self.mu,
-                    R,
-                    Lambda,
-                    anchor=self._anchor_of(("qp", i, bl), (R, Lambda)),
-                    alpha=self._anchor_alpha or 0.0,
-                    force_real=self.force_real,
-                )
+                with self._stage("quasiparticles_fit", cluster=i, block=bl):
+                    R_next[i][bl], Lambda_next[i][bl] = helpers.get_thermal_r_lambda(
+                        self.rho_f[i][bl],
+                        self.rho_cf[i][bl],
+                        self.D[i][bl],
+                        self.Lambda_c[i][bl],
+                        self.beta,
+                        self.mu,
+                        R,
+                        Lambda,
+                        anchor=self._anchor_of(("qp", i, bl), (R, Lambda)),
+                        alpha=self._anchor_alpha or 0.0,
+                        force_real=self.force_real,
+                        diagnostics=partial(
+                            self._emit,
+                            cluster=i,
+                            block=bl,
+                            fit="quasiparticles",
+                            iteration=self.iteration + 1,
+                        )
+                        if self.diagnostics is not None
+                        else None,
+                    )
 
         # Enforce matrix structure from symmetries
         R_next = self._project(R_next, is_hermitian=False, name="R")
@@ -384,11 +429,15 @@ class ThermalLatticeSolver(BaseLatticeSolver):
         """
         self._anchor_alpha = alpha
         self._anchors = {}
+        self._emit("anchor.set", alpha=alpha)
 
     def release(self) -> None:
         """Remove the anchor of :meth:`anchor`."""
+        was_anchored = self._anchor_alpha is not None
         self._anchor_alpha = None
         self._anchors = {}
+        if was_anchored:
+            self._emit("anchor.released")
 
     def _anchor_of(
         self,

@@ -21,7 +21,7 @@ from typing import Concatenate, Protocol, Self, TextIO
 
 from risb.helpers_mpi import Comm
 
-type Output = str | Path | TextIO | None
+from .output import DiagnosticOutput, Output
 
 
 class Block2Observer(Protocol):
@@ -83,11 +83,10 @@ class Block2Diagnostics:
         block2_output: Output = None,
     ) -> None:
         self.iprint = iprint
-        self._level = None if level is None else level.upper()
+        self._report = DiagnosticOutput(level, risb_output)
         self._outputs = {"risb": risb_output, "block2": block2_output}
         self._stack = ExitStack()
         self._streams: dict[tuple[str, int, int], TextIO] = {}
-        self._loggers: dict[tuple[int, int], logging.Logger] = {}
         self._solve = 0
 
     def __enter__(self) -> Self:
@@ -105,11 +104,7 @@ class Block2Diagnostics:
 
     def close(self) -> None:
         """Close owned files; leave supplied streams open."""
-        for logger in self._loggers.values():
-            for handler in logger.handlers:
-                handler.flush()
-                handler.close()
-        self._loggers.clear()
+        self._report.close()
         self._stack.close()
         self._streams.clear()
 
@@ -117,18 +112,6 @@ class Block2Diagnostics:
         """Report an event to this instance's destination."""
         if event == "solve.started":
             self._solve += 1
-        if self._level is None:
-            return
-        key = rank, size
-        if key not in self._loggers:
-            # Each instance owns its handlers.
-            logger = logging.Logger(__name__, self._level)  # noqa: LOG001
-            handler = logging.StreamHandler(self._stream("risb", rank, size))
-            handler.setFormatter(
-                logging.Formatter("%(asctime)s %(levelname)s %(message)s")
-            )
-            logger.addHandler(handler)
-            self._loggers[key] = logger
         level = (
             logging.INFO
             if event.startswith("solve.")
@@ -143,14 +126,8 @@ class Block2Diagnostics:
         )
         if event.endswith(".failed"):
             level = logging.ERROR
-        self._loggers[key].log(
-            level,
-            "solve=%d rank=%d/%d %s %s",
-            self._solve,
-            rank,
-            size,
-            event,
-            " ".join(f"{key}={value}" for key, value in fields.items()),
+        self._report.write(
+            event, level, rank=rank, size=size, solve=self._solve, **fields
         )
 
     @contextmanager
@@ -205,16 +182,6 @@ class Block2Diagnostics:
                 stream = self._stack.enter_context(path.open("a", encoding="utf-8"))
             else:
                 stream = sys.stderr if output is None else output
-                if channel == "risb" and (stream is sys.stdout or stream is sys.stderr):
-                    # Keep the reporting destination outside native stream capture.
-                    try:
-                        descriptor = stream.fileno()
-                    except AttributeError, OSError:
-                        pass
-                    else:
-                        stream = self._stack.enter_context(
-                            os.fdopen(os.dup(descriptor), "w", encoding="utf-8")
-                        )
             self._streams[key] = stream
         return self._streams[key]
 

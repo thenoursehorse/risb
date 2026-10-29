@@ -24,6 +24,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from risb import helpers
+from risb.diagnostics import DiagnosticObserver
 from risb.solve_lattice_base import BaseLatticeSolver
 from risb.types import (
     BlockMatrix,
@@ -49,6 +50,8 @@ class LatticeSolver(BaseLatticeSolver):
         lattice. It is called as ``update_weights(energies)``,
         where the energies are a dictionary with each key a list.
         See class :class:`.SmearingKWeight`.
+    diagnostics : risb.diagnostics.DiagnosticObserver, optional
+        Use :class:`~risb.diagnostics.LatticeDiagnostics` for progress reports.
 
     Other Parameters
     ----------------
@@ -73,6 +76,7 @@ class LatticeSolver(BaseLatticeSolver):
         bath_size: Sequence[Mapping[str, int]] | None = None,
         force_real_atol: float = 1e-12,
         force_real_rtol: float = 1e-10,
+        diagnostics: DiagnosticObserver | None = None,
     ) -> None:
         super().__init__(
             h0_k,
@@ -84,6 +88,7 @@ class LatticeSolver(BaseLatticeSolver):
             force_real=force_real,
             force_real_atol=force_real_atol,
             force_real_rtol=force_real_rtol,
+            diagnostics=diagnostics,
             check_projectors=check_projectors,
             double_counting=double_counting,
             bath_size=bath_size,

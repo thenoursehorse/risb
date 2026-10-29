@@ -18,13 +18,13 @@ from test_common import (
 )
 
 from risb import LatticeSolver, ThermalLatticeSolver
+from risb.diagnostics import Block2Diagnostics
 from risb.helpers_fockit import N_op, S2_op, h_int_kanamori
 from risb.impurity_solvers import FockitImpuritySolver, FockitThermalImpuritySolver
 from risb.kweight import SmearingKWeight
 
 pytest.importorskip("pyblock2")
 from risb.impurity_solvers import (
-    Block2Diagnostics,
     Block2ImpuritySolver,
     Block2ThermalImpuritySolver,
 )

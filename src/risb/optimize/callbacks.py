@@ -71,10 +71,13 @@ class OnPlateau:
             loop.optimizer.error_fun = "recursion"
             self.anchored = True
             logger.info(f"cycle: {loop.cycle}, anchored")
+            event = "optimizer.anchored"
         else:
             self.restarts += 1
             logger.info(f"cycle: {loop.cycle}, restarted")
+            event = "optimizer.restarted"
         loop.optimizer.reset()
         self._smallest = np.inf
         self._mark = np.inf
         self._since = loop.cycle
+        loop.emit(event, reason="plateau")

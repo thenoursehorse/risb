@@ -31,13 +31,13 @@ from fockit.algebra import OpSum, c, cdag, commutator, nc, normal_order, zero
 from numpy.typing import NDArray
 from pyblock2.driver.core import DMRGDriver, SymmetryTypes
 
-from risb.helpers_fockit import Op_to_tensors
-from risb.helpers_mpi import Comm, SerialComm, gather_tasks, round_robin
-from risb.impurity_solvers.block2_diagnostics import (
+from risb.diagnostics.block2 import (
     Block2Observer,
     capture_block2,
     diagnostic_stage,
 )
+from risb.helpers_fockit import Op_to_tensors
+from risb.helpers_mpi import Comm, SerialComm, gather_tasks, round_robin
 from risb.types import BlockMatrix, BlockMatrixLike, GfStruct, ImpuritySolver
 
 logger = logging.getLogger(__name__)
@@ -797,10 +797,10 @@ class Block2ImpuritySolver(_Block2Base):
         MPI communicator, e.g. ``mpi4py.MPI.COMM_WORLD``, whose ranks solve
         the sectors in ``symmetries`` in parallel. Every rank must call
         :meth:`solve` and :meth:`overlap`. Default is a single process.
-    diagnostics : risb.impurity_solvers.Block2Observer, optional
+    diagnostics : risb.diagnostics.Block2Observer, optional
         Observer of solver events and native output. None disables the
         additional diagnostics. Use
-        :class:`~risb.impurity_solvers.Block2Diagnostics` for files or streams.
+        :class:`~risb.diagnostics.Block2Diagnostics` for files or streams.
 
     Raises
     ------
@@ -1116,7 +1116,7 @@ class Block2ThermalImpuritySolver(_Block2Base):
         ``"purification"`` runs on
         rank 0. Every rank must call :meth:`solve` and :meth:`overlap`.
         Default is a single process.
-    diagnostics : risb.impurity_solvers.Block2Observer, optional
+    diagnostics : risb.diagnostics.Block2Observer, optional
         Observer of solver events and native output, as for
         :class:`Block2ImpuritySolver`.
 

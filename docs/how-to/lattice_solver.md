@@ -329,6 +329,18 @@ result.converged, result.cycles, result.error
 Afterwards `S.R`, `S.Lambda` and every other attribute of `S`, and the
 impurity solvers, are those of `result.x`, the last guess of the solve.
 
+## Diagnostics
+
+```python
+from risb.diagnostics import LatticeDiagnostics
+
+with LatticeDiagnostics(level="debug", output="lattice.out") as diagnostics:
+    S.diagnostics = diagnostics
+    result = S.solve()
+```
+
+Use `ThermalLatticeDiagnostics` for `ThermalLatticeSolver`.
+
 ## Running code during the solve
 
 If you want to run your own code after every cycle, e.g., to print the

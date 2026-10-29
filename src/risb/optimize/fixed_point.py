@@ -9,6 +9,7 @@ import numpy as np
 from numpy.typing import NDArray
 from scipy.optimize import root
 
+from risb.diagnostics import DiagnosticObserver
 from risb.types import FixedPointProblem
 
 from .solver_newton import NewtonSolver
@@ -92,6 +93,8 @@ class FixedPointLoop:
         Maximum number of cycles.
     x0 : numpy.ndarray, optional
         Where to start. Default is the current guess of `problem`.
+    diagnostics : risb.diagnostics.DiagnosticObserver, optional
+        Receive progress events independently of callbacks.
 
     """
 
@@ -103,8 +106,11 @@ class FixedPointLoop:
         tol: float = 1e-12,
         maxiter: int = 1000,
         x0: NDArray[np.float64] | None = None,
+        *,
+        diagnostics: DiagnosticObserver | None = None,
     ) -> None:
         self.problem = problem
+        self.diagnostics = diagnostics
 
         #: risb.optimize.NewtonSolver : Gives the next guess after each cycle.
         self.optimizer = optimizer
@@ -140,6 +146,11 @@ class FixedPointLoop:
         """End the loop after the current cycle."""
         self._stopped = True
 
+    def emit(self, event: str, **fields: object) -> None:
+        """Report an event independently of the control callbacks."""
+        if self.diagnostics is not None:
+            self.diagnostics.emit(event, cycle=self.cycle, **fields)
+
     def run(self) -> SolveResult:
         """
         Run cycles until the error is below the tolerance.
@@ -159,13 +170,28 @@ class FixedPointLoop:
             if self.error < min(self.history, default=np.inf):
                 self.best_x = self.x
             self.history.append(self.error)
+            error_fun = self.optimizer.error_fun
             logger.info(f"cycle: {self.cycle}, error: {self.error}")
             self.x_next = self.optimizer.step(self.x, x_new, residual)
             self.converged = self.error < self.tol
             for callback in self.callbacks:
                 callback(self, self.problem)
+            self.emit(
+                "optimizer.cycle",
+                error=self.error,
+                error_fun=error_fun,
+                converged=self.converged,
+            )
             if self.converged or self._stopped:
                 break
+        self.emit(
+            "optimizer.finished",
+            reason="tolerance"
+            if self.converged
+            else "callback"
+            if self._stopped
+            else "maxiter",
+        )
         return SolveResult(
             self.x,
             self.converged,
@@ -183,6 +209,8 @@ def solve_fixed_point(
     tol: float = 1e-12,
     maxiter: int = 1000,
     x0: NDArray[np.float64] | None = None,
+    *,
+    diagnostics: DiagnosticObserver | None = None,
 ) -> SolveResult:
     """
     Solve a fixed-point problem, starting from its current guess or `x0`.
@@ -205,6 +233,8 @@ def solve_fixed_point(
         Maximum number of cycles. Not used with a :class:`ScipyRoot`.
     x0 : numpy.ndarray, optional
         Where to start. Default is the current guess of `problem`.
+    diagnostics : risb.diagnostics.DiagnosticObserver, optional
+        Receive progress events independently of callbacks.
 
     Returns
     -------
@@ -212,14 +242,17 @@ def solve_fixed_point(
 
     """
     if isinstance(optimizer, ScipyRoot):
-        return _solve_fixed_point_scipy(problem, optimizer, x0)
-    return FixedPointLoop(problem, optimizer, callbacks, tol, maxiter, x0).run()
+        return _solve_fixed_point_scipy(problem, optimizer, x0, diagnostics)
+    return FixedPointLoop(
+        problem, optimizer, callbacks, tol, maxiter, x0, diagnostics=diagnostics
+    ).run()
 
 
 def _solve_fixed_point_scipy(
     problem: FixedPointProblem,
     optimizer: ScipyRoot,
     x0: NDArray[np.float64] | None,
+    diagnostics: DiagnosticObserver | None,
 ) -> SolveResult:
     history: list[float] = []
     if x0 is None:
@@ -234,12 +267,27 @@ def _solve_fixed_point_scipy(
             residual if optimizer.error_fun == "root" else x_new - x
         )
         history.append(float(np.linalg.norm(e)))
+        if diagnostics is not None:
+            diagnostics.emit(
+                "optimizer.evaluation",
+                evaluation=len(history),
+                error=history[-1],
+                error_fun=optimizer.error_fun,
+            )
         return e
 
     result = root(error, x0, **optimizer.kwargs)  # type: ignore[call-overload]
     # The problem is left at the solution, which need not be the last guess
     if not np.array_equal(last, result.x):
         problem.cycle(result.x)
+    if diagnostics is not None:
+        diagnostics.emit(
+            "optimizer.finished",
+            success=bool(result.success),
+            status=int(result.status),
+            message=str(result.message),
+            evaluations=int(result.nfev),
+        )
     return SolveResult(
         np.asarray(result.x), bool(result.success), len(history), history[-1], history
     )

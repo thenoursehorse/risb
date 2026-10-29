@@ -447,10 +447,8 @@ the grand potential in `impurity_solver.grand_potential`, and the entropy in
 
 ### Diagnostics
 
-Both block2 solvers accept an optional `Block2Diagnostics` reporter:
-
 ```python
-from risb.impurity_solvers import Block2Diagnostics
+from risb.diagnostics import Block2Diagnostics
 
 with Block2Diagnostics(
     level="debug", risb_output="risb.out", iprint=1, block2_output="block2.out"
@@ -460,15 +458,8 @@ with Block2Diagnostics(
     impurity_solver.solve()
 ```
 
-`level="info"` reports configuration and results; `"debug"` adds stages,
-timings, sector energies and thermal search decisions. `level=None` disables
-these reports. Native block2 output is controlled separately: `iprint=0` is
-quiet, `1` reports sweeps, and `2` adds iteration details.
-
-MPI paths become `risb.rank0.out`, `block2.rank0.out`, etc.; global summaries
-appear on rank 0. Capture changes process-wide streams, so backend calls in one
-process must be serial. Native output to streams without a file descriptor,
-such as `StringIO`, is copied when the backend stage ends.
+Both block2 solvers accept `diagnostics`. Use `level` for solver events and
+`iprint` for native block2 output.
 
 ### MPI ranks
 

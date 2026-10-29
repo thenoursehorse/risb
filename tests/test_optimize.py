@@ -1,4 +1,5 @@
 # ruff: noqa: D100, D102, D103
+from io import StringIO
 from itertools import pairwise
 from typing import override
 
@@ -6,6 +7,7 @@ import numpy as np
 import pytest
 from numpy.typing import NDArray
 
+from risb.diagnostics import LatticeDiagnostics
 from risb.optimize import (
     DIIS,
     FixedPointLoop,
@@ -192,15 +194,21 @@ def test_scipy_root_solves_a_problem_in_one_shot() -> None:
     def never(_loop: FixedPointLoop, _problem: FixedPointProblem) -> None:
         raise AssertionError
 
-    result = solve_fixed_point(
-        Linear(),
-        ScipyRoot(method="hybr", tol=1e-12, options={"maxfev": 100}),
-        callbacks=[never],
-    )
+    output = StringIO()
+    with LatticeDiagnostics(output=output) as diagnostics:
+        result = solve_fixed_point(
+            Linear(),
+            ScipyRoot(method="hybr", tol=1e-12, options={"maxfev": 100}),
+            callbacks=[never],
+            diagnostics=diagnostics,
+        )
     assert result.converged
     assert result.x == pytest.approx(Linear().solution, abs=1e-10)
     assert result.cycles == len(result.history)
     assert result.x_next is None
+    assert "optimizer.evaluation" in output.getvalue()
+    assert "optimizer.cycle" not in output.getvalue()
+    assert "optimizer.finished" in output.getvalue()
 
 
 def test_solving_one_cycle_at_a_time_from_x_next_is_one_solve() -> None:
