@@ -1,6 +1,7 @@
 # ruff: noqa: D100, D103
 # Also run on two ranks by test_block2.py, as
 # mpirun -n 2 python -m mpi4py -m pytest tests/test_mpi_block2.py
+from io import StringIO
 from pathlib import Path
 from typing import Any
 
@@ -14,7 +15,7 @@ from test_block2 import (
 )
 from test_common import EXACT_THERMAL
 
-from risb.diagnostics import Block2Diagnostics
+from risb.diagnostics import Block2Diagnostics, Block2ThermalDiagnostics
 from risb.helpers_fockit import N_op, S2_op
 from risb.impurity_solvers import FockitImpuritySolver, FockitThermalImpuritySolver
 
@@ -88,21 +89,31 @@ def test_thermal_state_with_sectors_split_over_ranks_is_the_exact_one(
         ),
         problem,
     )
-    solver = solved(
-        Block2ThermalImpuritySolver(
-            h_int,
-            gf_struct,
-            10,
-            bond_dim=200,
-            bath_size=bath_size,
-            comm=MPI.COMM_WORLD,
-            **kwargs,
-            cutoff=CUTOFF,
-        ),
-        problem,
-    )
-    assert_same_rho(solver, expected)
-    assert solver.energy == pytest.approx(expected.overlap(expected.h_imp), abs=1e-6)
-    assert solver.grand_potential == pytest.approx(expected.grand_potential, abs=1e-6)
-    for Op in (N_op(["up", "dn"], 1), S2_op(["up", "dn"], 1)):
-        assert solver.overlap(Op) == pytest.approx(expected.overlap(Op), abs=1e-6)
+    output = StringIO()
+    with Block2ThermalDiagnostics(risb_output=output) as diagnostics:
+        solver = solved(
+            Block2ThermalImpuritySolver(
+                h_int,
+                gf_struct,
+                10,
+                bond_dim=200,
+                bath_size=bath_size,
+                comm=MPI.COMM_WORLD,
+                **kwargs,
+                cutoff=CUTOFF,
+                diagnostics=diagnostics,
+            ),
+            problem,
+        )
+        assert_same_rho(solver, expected)
+        assert solver.energy == pytest.approx(
+            expected.overlap(expected.h_imp), abs=1e-6
+        )
+        assert solver.grand_potential == pytest.approx(
+            expected.grand_potential, abs=1e-6
+        )
+        for Op in (N_op(["up", "dn"], 1), S2_op(["up", "dn"], 1)):
+            assert solver.overlap(Op) == pytest.approx(expected.overlap(Op), abs=1e-6)
+    report = output.getvalue()
+    assert "solve.finished" in report
+    assert ("thermal.summary" in report) == (MPI.COMM_WORLD.rank == 0)

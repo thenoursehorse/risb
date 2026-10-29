@@ -458,8 +458,8 @@ with Block2Diagnostics(
     impurity_solver.solve()
 ```
 
-Both block2 solvers accept `diagnostics`. Use `level` for solver events and
-`iprint` for native block2 output.
+Use `Block2ThermalDiagnostics` for `Block2ThermalImpuritySolver`.
+`level` controls solver events; `iprint` controls native block2 output.
 
 ### MPI ranks
 

@@ -31,7 +31,7 @@ from fockit.algebra import OpSum, c, cdag, commutator, nc, normal_order, zero
 from numpy.typing import NDArray
 from pyblock2.driver.core import DMRGDriver, SymmetryTypes
 
-from risb.diagnostics.block2 import (
+from risb.diagnostics.block2_output import (
     Block2Observer,
     capture_block2,
     diagnostic_stage,
@@ -1117,8 +1117,8 @@ class Block2ThermalImpuritySolver(_Block2Base):
         rank 0. Every rank must call :meth:`solve` and :meth:`overlap`.
         Default is a single process.
     diagnostics : risb.diagnostics.Block2Observer, optional
-        Observer of solver events and native output, as for
-        :class:`Block2ImpuritySolver`.
+        Use :class:`~risb.diagnostics.Block2ThermalDiagnostics` for reports
+        and native output.
 
     Raises
     ------

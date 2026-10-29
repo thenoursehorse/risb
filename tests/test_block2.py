@@ -18,7 +18,7 @@ from test_common import (
 )
 
 from risb import LatticeSolver, ThermalLatticeSolver
-from risb.diagnostics import Block2Diagnostics
+from risb.diagnostics import Block2Diagnostics, Block2ThermalDiagnostics
 from risb.helpers_fockit import N_op, S2_op, h_int_kanamori
 from risb.impurity_solvers import FockitImpuritySolver, FockitThermalImpuritySolver
 from risb.kweight import SmearingKWeight
@@ -154,8 +154,9 @@ def test_diagnostics_write_to_separate_files_and_can_be_disabled(
     h_int, gf_struct, bath_size = problem[:3]
     risb_path, block2_path = tmp_path / "risb.out", tmp_path / "block2.out"
     block2_path.write_text("previous run\n")
-    with Block2Diagnostics(
-        level="debug", risb_output=risb_path, iprint=1, block2_output=block2_path
+    reporter = Block2Diagnostics if method == "ground" else Block2ThermalDiagnostics
+    with reporter(
+        level="info", risb_output=risb_path, iprint=1, block2_output=block2_path
     ) as diagnostics:
         solver = (
             Block2ImpuritySolver(
@@ -178,6 +179,8 @@ def test_diagnostics_write_to_separate_files_and_can_be_disabled(
         report, backend = risb_path.read_text(), block2_path.read_text()
         assert "solve.started" in report
         assert "solve.finished" in report
+        summary = "ground_state.summary" if method == "ground" else "thermal.summary"
+        assert summary in report
         assert "solve.started" not in backend
         assert backend.startswith("previous run\n")
         assert "Sweep" in backend
