@@ -41,6 +41,10 @@ from risb.types import (
 _GHOST_WEIGHT = 0.18
 
 
+class DiscardedImaginaryWarning(RuntimeWarning):
+    """force_real discarded imaginary parts above tolerance."""
+
+
 # The structure and methods here have been modeled
 # after github.com/TRIQS/hartree_fock
 class BaseLatticeSolver(ABC):
@@ -88,7 +92,10 @@ class BaseLatticeSolver(ABC):
         each function must take a list of all clusters.
         E.g., ``[R_cluster1, R_cluster2, ...]``.
     force_real : bool, optional
-        True if the mean-field matrices are forced to be real
+        Force the mean-field matrices to be real.
+    force_real_atol, force_real_rtol : float, optional
+        Absolute and relative tolerances for discarded imaginary parts.
+        Defaults: ``1e-12`` and ``1e-10``.
     check_projectors : bool, optional
         Raise a ValueError if `projectors` do not have orthonormal rows or
         overlap. Default is False.
@@ -137,6 +144,8 @@ class BaseLatticeSolver(ABC):
         *,
         bath_size: Sequence[Mapping[str, int]] | None = None,
         mu: float | None = None,
+        force_real_atol: float = 1e-12,
+        force_real_rtol: float = 1e-10,
     ) -> None:
         #: risb.types.BlockMatrixLike : Non-interacting Hamiltonian in k-space.
         self.h0_k = h0_k
@@ -187,6 +196,9 @@ class BaseLatticeSolver(ABC):
 
         self.symmetrizers = symmetrizers
         self.force_real = force_real
+        self.force_real_atol = force_real_atol
+        self.force_real_rtol = force_real_rtol
+        self._warned_imaginary: set[tuple[str, int, str]] = set()
 
         #: list of dict : Number of quasiparticle orbitals of each block of
         #: each cluster, which is the number of bath orbitals of its impurity
@@ -348,10 +360,32 @@ class BaseLatticeSolver(ABC):
                     A[i][bl] = np.zeros((bsize, bsize), dtype=complex)
         return A
 
-    def _flatten_matrix(self, A: list[BlockMatrix], is_hermitian: bool) -> list[float]:
+    def _warn_if_complex(
+        self, A: NDArray[np.inexact], name: str, cluster: int, block: str
+    ) -> None:
+        key = (name, cluster, block)
+        if not self.force_real or key in self._warned_imaginary:
+            return
+        discarded = float(np.max(np.abs(A.imag), initial=0))
+        threshold = self.force_real_atol + self.force_real_rtol * float(
+            np.max(np.abs(A.real), initial=0)
+        )
+        if discarded > threshold:
+            msg = (
+                f"force_real discards imaginary entries of {name} "
+                f"(cluster {cluster}, block {block!r}): "
+                f"max |Im| = {discarded:.3e} exceeds tolerance {threshold:.3e}."
+            )
+            warnings.warn(msg, DiscardedImaginaryWarning, stacklevel=3)
+            self._warned_imaginary.add(key)
+
+    def _flatten_matrix(
+        self, A: list[BlockMatrix], is_hermitian: bool, name: str
+    ) -> list[float]:
         x: list[float] = []
         for i in range(self.n_clusters):
             for bl, _bl_size in self.gf_struct[i]:
+                self._warn_if_complex(A[i][bl], name, i, bl)
                 x += helpers.matrix_to_vector(A[i][bl], is_hermitian, self.force_real)
         return x
 
@@ -380,10 +414,12 @@ class BaseLatticeSolver(ABC):
             x, is_hermitian=False, like=self.R, offset=offset
         )
 
-    def _project(self, A: list[BlockMatrix], is_hermitian: bool) -> list[BlockMatrix]:
+    def _project(
+        self, A: list[BlockMatrix], is_hermitian: bool, name: str
+    ) -> list[BlockMatrix]:
         # Onto the matrices that x can hold, e.g., Hermitian or real
         A_projected, _ = self._unflatten_matrix(
-            self._flatten_matrix(A, is_hermitian), is_hermitian, like=A
+            self._flatten_matrix(A, is_hermitian, name), is_hermitian, like=A
         )
         return A_projected
 
@@ -402,7 +438,9 @@ class BaseLatticeSolver(ABC):
                 else:
                     h0_loc_matrix[i][bl] = helpers.get_h0_loc_matrix(self.h0_k[bl_full])
 
-        h0_loc_matrix = self._project(h0_loc_matrix, is_hermitian=True)
+        h0_loc_matrix = self._project(
+            h0_loc_matrix, is_hermitian=True, name="h0_loc_matrix"
+        )
         for symmetrize in self.symmetrizers:
             h0_loc_matrix = symmetrize(h0_loc_matrix)
 
@@ -418,8 +456,8 @@ class BaseLatticeSolver(ABC):
 
         """
         return np.array(
-            self._flatten_matrix(self.Lambda, is_hermitian=True)
-            + self._flatten_matrix(self.R, is_hermitian=False)
+            self._flatten_matrix(self.Lambda, is_hermitian=True, name="Lambda")
+            + self._flatten_matrix(self.R, is_hermitian=False, name="R")
         )
 
     def cycle(
@@ -445,12 +483,12 @@ class BaseLatticeSolver(ABC):
         self._set_lambda_r(x)
         Lambda, R, self.f1, self.f2 = self.one_cycle()
         residual = np.array(
-            self._flatten_matrix(self.f2, is_hermitian=True)
-            + self._flatten_matrix(self.f1, is_hermitian=False)
+            self._flatten_matrix(self.f2, is_hermitian=True, name="f2")
+            + self._flatten_matrix(self.f1, is_hermitian=False, name="f1")
         )
         x_new = np.array(
-            self._flatten_matrix(Lambda, is_hermitian=True)
-            + self._flatten_matrix(R, is_hermitian=False)
+            self._flatten_matrix(Lambda, is_hermitian=True, name="Lambda")
+            + self._flatten_matrix(R, is_hermitian=False, name="R")
         )
         return x_new, residual
 
@@ -531,9 +569,9 @@ class BaseLatticeSolver(ABC):
                 self.rho_c[i][bl] = self.impurity_solvers[i].get_rho_c(bl)
 
         ## Enforce matrix structure from symmetries
-        self.rho_f = self._project(self.rho_f, is_hermitian=True)
-        self.rho_cf = self._project(self.rho_cf, is_hermitian=False)
-        self.rho_c = self._project(self.rho_c, is_hermitian=True)
+        self.rho_f = self._project(self.rho_f, is_hermitian=True, name="rho_f")
+        self.rho_cf = self._project(self.rho_cf, is_hermitian=False, name="rho_cf")
+        self.rho_c = self._project(self.rho_c, is_hermitian=True, name="rho_c")
         for symmetrize in self.symmetrizers:
             self.rho_f = symmetrize(self.rho_f)
             self.rho_cf = symmetrize(self.rho_cf)
@@ -634,7 +672,7 @@ class BaseLatticeSolver(ABC):
         # FIXME More expensive to do this than just storing and working with the coefficients, but
         # nothing compared to solving the impurity problem so this is likely fine
         # Enforce matrix structure from symmetries
-        self.rho_qp = self._project(self.rho_qp, is_hermitian=True)
+        self.rho_qp = self._project(self.rho_qp, is_hermitian=True, name="rho_qp")
         # self.lopsided_ke_qp, _ = self._unflatten_matrix( self._flatten_matrix( self.lopsided_ke_qp, is_hermitian=False ), is_hermitian=False )
         for symmetrize in self.symmetrizers:
             self.rho_qp = symmetrize(self.rho_qp)
@@ -701,6 +739,7 @@ class BaseLatticeSolver(ABC):
         risb.optimize.SolveResult
 
         """
+        self._warned_imaginary.clear()
         if optimizer is None:
             optimizer = self.default_optimizer()
         if callbacks is None:

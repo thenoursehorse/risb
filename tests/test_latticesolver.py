@@ -14,7 +14,7 @@ from test_common import (
     symmetrize_blocks,
 )
 
-from risb import LatticeSolver, helpers
+from risb import DiscardedImaginaryWarning, LatticeSolver, helpers
 from risb.helpers_fockit import h_int_kanamori
 from risb.impurity_solvers import FockitImpuritySolver
 from risb.kweight import SmearingKWeight
@@ -383,6 +383,20 @@ def test_real_rotation_of_the_non_interacting_solution_is_converged(
     for bl, _ in gf_struct:
         assert S.Z[0][bl] == pytest.approx(np.eye(2), abs=1e-8)
         assert S.rho_c[0][bl] == pytest.approx(0.5 * np.eye(2), abs=1e-8)
+
+
+def test_force_real_warns_when_discarding_imaginary_parts(one_band: Model) -> None:
+    gf_struct, h0_k, impurity_solver, kweight, *_ = one_band
+    S = LatticeSolver(
+        h0_k,
+        gf_struct,
+        impurity_solver,
+        kweight.update_weights,
+        force_real=True,
+    )
+    S.R[0]["up"] = np.array([[1 + 1e-6j]])
+    with pytest.warns(DiscardedImaginaryWarning):
+        S.get_x()
 
 
 def test_completely_full_orbital_decouples_and_leaves_the_one_band_solution() -> None:

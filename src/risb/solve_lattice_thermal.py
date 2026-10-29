@@ -74,7 +74,7 @@ class ThermalLatticeSolver(BaseLatticeSolver):
 
     Other Parameters
     ----------------
-    h0_k, gf_struct, projectors, gf_struct_mapping, symmetrizers, force_real, check_projectors, double_counting, bath_size
+    h0_k, gf_struct, projectors, gf_struct_mapping, symmetrizers, force_real, force_real_atol, force_real_rtol, check_projectors, double_counting, bath_size
         As in :class:`.BaseLatticeSolver`.
 
     """
@@ -95,6 +95,8 @@ class ThermalLatticeSolver(BaseLatticeSolver):
         *,
         bath_size: Sequence[Mapping[str, int]] | None = None,
         n_target: float | None = None,
+        force_real_atol: float = 1e-12,
+        force_real_rtol: float = 1e-10,
     ) -> None:
         super().__init__(
             h0_k,
@@ -104,6 +106,8 @@ class ThermalLatticeSolver(BaseLatticeSolver):
             gf_struct_mapping=gf_struct_mapping,
             symmetrizers=symmetrizers,
             force_real=force_real,
+            force_real_atol=force_real_atol,
+            force_real_rtol=force_real_rtol,
             check_projectors=check_projectors,
             double_counting=double_counting,
             bath_size=bath_size,
@@ -188,6 +192,8 @@ class ThermalLatticeSolver(BaseLatticeSolver):
                 else:
                     D = helpers.get_d(rho_qp, ke)
                     Lambda_c = helpers.get_lambda_c(rho_qp, R, Lambda, D)
+                self._warn_if_complex(D, "D", i, bl)
+                self._warn_if_complex(Lambda_c, "Lambda_c", i, bl)
                 self.D[i][bl], self.Lambda_c[i][bl] = helpers.get_thermal_d_lambda_c(
                     rho_qp,
                     ke,
@@ -203,8 +209,8 @@ class ThermalLatticeSolver(BaseLatticeSolver):
                 )
 
         # Enforce matrix structure from symmetries
-        self.Lambda_c = self._project(self.Lambda_c, is_hermitian=True)
-        self.D = self._project(self.D, is_hermitian=False)
+        self.Lambda_c = self._project(self.Lambda_c, is_hermitian=True, name="Lambda_c")
+        self.D = self._project(self.D, is_hermitian=False, name="D")
         for symmetrize in self.symmetrizers:
             self.Lambda_c = symmetrize(self.Lambda_c)
             self.D = symmetrize(self.D)
@@ -236,8 +242,8 @@ class ThermalLatticeSolver(BaseLatticeSolver):
                 self.f2[i][bl] = helpers.get_thermal_f2(self.rho_f[i][bl], rho_f_emb)
 
         # Enforce matrix structure from symmetries
-        self.f2 = self._project(self.f2, is_hermitian=True)
-        self.f1 = self._project(self.f1, is_hermitian=False)
+        self.f2 = self._project(self.f2, is_hermitian=True, name="f2")
+        self.f1 = self._project(self.f1, is_hermitian=False, name="f1")
         for symmetrize in self.symmetrizers:
             self.f1 = symmetrize(self.f1)
             self.f2 = symmetrize(self.f2)
@@ -249,6 +255,8 @@ class ThermalLatticeSolver(BaseLatticeSolver):
         for i in range(self.n_clusters):
             for bl, _ in self.gf_struct[i]:
                 R, Lambda = self.R[i][bl], self.Lambda[i][bl]
+                self._warn_if_complex(R, "R", i, bl)
+                self._warn_if_complex(Lambda, "Lambda", i, bl)
                 R_next[i][bl], Lambda_next[i][bl] = helpers.get_thermal_r_lambda(
                     self.rho_f[i][bl],
                     self.rho_cf[i][bl],
@@ -264,8 +272,8 @@ class ThermalLatticeSolver(BaseLatticeSolver):
                 )
 
         # Enforce matrix structure from symmetries
-        R_next = self._project(R_next, is_hermitian=False)
-        Lambda_next = self._project(Lambda_next, is_hermitian=True)
+        R_next = self._project(R_next, is_hermitian=False, name="R")
+        Lambda_next = self._project(Lambda_next, is_hermitian=True, name="Lambda")
         for symmetrize in self.symmetrizers:
             R_next = symmetrize(R_next)
             Lambda_next = symmetrize(Lambda_next)

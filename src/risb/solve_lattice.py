@@ -52,7 +52,7 @@ class LatticeSolver(BaseLatticeSolver):
 
     Other Parameters
     ----------------
-    h0_k, gf_struct, impurity_solvers, projectors, gf_struct_mapping, symmetrizers, force_real, check_projectors, double_counting, bath_size
+    h0_k, gf_struct, impurity_solvers, projectors, gf_struct_mapping, symmetrizers, force_real, force_real_atol, force_real_rtol, check_projectors, double_counting, bath_size
         As in :class:`.BaseLatticeSolver`.
 
     """
@@ -71,6 +71,8 @@ class LatticeSolver(BaseLatticeSolver):
         double_counting: Callable[[int, BlockMatrix], BlockMatrixLike] | None = None,
         *,
         bath_size: Sequence[Mapping[str, int]] | None = None,
+        force_real_atol: float = 1e-12,
+        force_real_rtol: float = 1e-10,
     ) -> None:
         super().__init__(
             h0_k,
@@ -80,6 +82,8 @@ class LatticeSolver(BaseLatticeSolver):
             gf_struct_mapping=gf_struct_mapping,
             symmetrizers=symmetrizers,
             force_real=force_real,
+            force_real_atol=force_real_atol,
+            force_real_rtol=force_real_rtol,
             check_projectors=check_projectors,
             double_counting=double_counting,
             bath_size=bath_size,
@@ -94,32 +98,22 @@ class LatticeSolver(BaseLatticeSolver):
     def update_bath(self) -> None:
         for i in range(self.n_clusters):
             for bl, _ in self.gf_struct[i]:
+                self.D[i][bl] = helpers.get_d(
+                    self.rho_qp[i][bl], self.lopsided_ke_qp[i][bl]
+                )
                 if self.force_real:
-                    self.D[i][bl] = helpers.get_d(
-                        self.rho_qp[i][bl], self.lopsided_ke_qp[i][bl]
-                    ).real
-                    # self.D[i][bl] = helpers.get_d2(self.rho_qp[i][bl], self.ke_qp[i][bl], self.R[i][bl]).real
-                    self.Lambda_c[i][bl] = helpers.get_lambda_c(
-                        self.rho_qp[i][bl],
-                        self.R[i][bl],
-                        self.Lambda[i][bl],
-                        self.D[i][bl],
-                    ).real
-                else:
-                    self.D[i][bl] = helpers.get_d(
-                        self.rho_qp[i][bl], self.lopsided_ke_qp[i][bl]
-                    )
-                    # self.D[i][bl] = helpers.get_d2(self.rho_qp[i][bl], self.ke_qp[i][bl], self.R[i][bl])
-                    self.Lambda_c[i][bl] = helpers.get_lambda_c(
-                        self.rho_qp[i][bl],
-                        self.R[i][bl],
-                        self.Lambda[i][bl],
-                        self.D[i][bl],
-                    )
+                    self._warn_if_complex(self.D[i][bl], "D", i, bl)
+                    self.D[i][bl] = self.D[i][bl].real
+                self.Lambda_c[i][bl] = helpers.get_lambda_c(
+                    self.rho_qp[i][bl],
+                    self.R[i][bl],
+                    self.Lambda[i][bl],
+                    self.D[i][bl],
+                )
 
         # Enforce matrix structure from symmetries
-        self.Lambda_c = self._project(self.Lambda_c, is_hermitian=True)
-        self.D = self._project(self.D, is_hermitian=False)
+        self.Lambda_c = self._project(self.Lambda_c, is_hermitian=True, name="Lambda_c")
+        self.D = self._project(self.D, is_hermitian=False, name="D")
         for symmetrize in self.symmetrizers:
             self.Lambda_c = symmetrize(self.Lambda_c)
             self.D = symmetrize(self.D)
@@ -146,8 +140,8 @@ class LatticeSolver(BaseLatticeSolver):
                 self.f2[i][bl] = helpers.get_f2(self.rho_f[i][bl], self.rho_qp[i][bl])
 
         # Enforce matrix structure from symmetries
-        self.f2 = self._project(self.f2, is_hermitian=True)
-        self.f1 = self._project(self.f1, is_hermitian=False)
+        self.f2 = self._project(self.f2, is_hermitian=True, name="f2")
+        self.f1 = self._project(self.f1, is_hermitian=False, name="f1")
         for symmetrize in self.symmetrizers:
             self.f1 = symmetrize(self.f1)
             self.f2 = symmetrize(self.f2)
@@ -166,12 +160,10 @@ class LatticeSolver(BaseLatticeSolver):
                     self.rho_f[i][bl],
                 )
                 R[i][bl] = helpers.get_r(self.rho_cf[i][bl], self.rho_f[i][bl])
-                if self.force_real:
-                    Lambda[i][bl], R[i][bl] = Lambda[i][bl].real, R[i][bl].real
 
         # Enforce matrix structure from symmetries
-        Lambda = self._project(Lambda, is_hermitian=True)
-        R = self._project(R, is_hermitian=False)
+        Lambda = self._project(Lambda, is_hermitian=True, name="Lambda")
+        R = self._project(R, is_hermitian=False, name="R")
         for symmetrize in self.symmetrizers:
             Lambda = symmetrize(Lambda)
             R = symmetrize(R)
