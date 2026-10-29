@@ -31,7 +31,7 @@ from fockit.algebra import OpSum, c, cdag, commutator, nc, normal_order, zero
 from numpy.typing import NDArray
 from pyblock2.driver.core import DMRGDriver, SymmetryTypes
 
-from risb.diagnostics.block2_output import (
+from risb.diagnostics.block2 import (
     Block2Observer,
     capture_block2,
     diagnostic_stage,

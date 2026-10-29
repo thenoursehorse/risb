@@ -56,7 +56,7 @@ from numpy.typing import NDArray
 from scipy.sparse.linalg import ArpackNoConvergence, aslinearoperator, eigsh
 
 from risb.diagnostics import FockitObserver
-from risb.diagnostics.fockit_output import FockitContext
+from risb.diagnostics.fockit import FockitContext
 from risb.diagnostics.output import stage
 from risb.helpers import get_entropy_impurity
 from risb.helpers_mpi import Comm, SerialComm, gather_tasks

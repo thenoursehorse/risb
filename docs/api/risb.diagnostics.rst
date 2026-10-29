@@ -13,11 +13,11 @@ Shared output
 Block2 hooks
 ------------
 
-.. automodule:: risb.diagnostics.block2_output
+.. automodule:: risb.diagnostics.block2
    :members: Block2Output, diagnostic_stage, capture_block2
 
 Fockit hooks
 ------------
 
-.. automodule:: risb.diagnostics.fockit_output
+.. automodule:: risb.diagnostics.fockit
    :members: FockitContext
