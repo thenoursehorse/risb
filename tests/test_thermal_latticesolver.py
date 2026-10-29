@@ -330,6 +330,7 @@ def test_default_solve_converges_at_high_temperature(model: str, T: float) -> No
     assert result.converged
     assert result.cycles < 100
     assert S.self_consistency_error < 1e-7
+    assert S.bath_fit_error < 1e-6
     if (model, T) == ("one_band_ghosts", 1.0):
         docc = impurity_solver.overlap(nc("up", 0) * nc("dn", 0))
         assert docc == pytest.approx(0.141837, abs=1e-6)

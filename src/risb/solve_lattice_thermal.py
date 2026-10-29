@@ -131,6 +131,10 @@ class ThermalLatticeSolver(BaseLatticeSolver):
         #: orbitals in no cluster, set each cycle.
         self.n_electrons: float
 
+        #: float : Largest absolute entry of the bath density and kinetic
+        #: matching residuals of the current cycle, excluding the anchor penalty.
+        self.bath_fit_error: float = np.inf
+
         # The strength and the reference parameters of each fit after anchor()
         self._anchor_alpha: float | None = None
         self._anchors: dict[
@@ -254,16 +258,28 @@ class ThermalLatticeSolver(BaseLatticeSolver):
                 for bl in self.rho_c[i]
             )
         )
+        self.bath_fit_error = 0.0
         for i in range(self.n_clusters):
             for bl, _ in self.gf_struct[i]:
                 R = self.R[i][bl]
-                _, rho_qpf, rho_f_emb = helpers.get_h0_emb_densities(
+                rho_qp_emb, rho_qpf, rho_f_emb = helpers.get_h0_emb_densities(
                     R,
                     self.Lambda[i][bl],
                     self.D[i][bl],
                     self.Lambda_c[i][bl],
                     self.beta,
                     self.mu,
+                )
+                self.bath_fit_error = max(
+                    self.bath_fit_error,
+                    float(np.max(np.abs(rho_qp_emb - self.rho_qp[i][bl]))),
+                    float(
+                        np.max(
+                            np.abs(
+                                rho_qpf @ self.D[i][bl] - self.lopsided_ke_qp[i][bl].T
+                            )
+                        )
+                    ),
                 )
                 self.f1[i][bl] = helpers.get_thermal_f1(self.rho_cf[i][bl], rho_qpf, R)
                 self.f2[i][bl] = helpers.get_thermal_f2(self.rho_f[i][bl], rho_f_emb)
