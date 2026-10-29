@@ -15,6 +15,7 @@ from test_common import (
 )
 
 from risb import LatticeSolver
+from risb.diagnostics import FockitDiagnostics, FockitThermalDiagnostics
 from risb.helpers_fockit import N_op, S2_op, h_int_kanamori
 from risb.impurity_solvers import FockitImpuritySolver, FockitThermalImpuritySolver
 from risb.kweight import SmearingKWeight
@@ -268,6 +269,43 @@ def test_solve(
         N_expected,
         S2_expected,
     )
+
+
+@pytest.mark.parametrize("thermal", [False, True])
+def test_fockit_diagnostics_report_work_and_can_be_disabled(
+    thermal: bool,
+    one_band: Model,
+    tmp_path: Path,
+) -> None:
+    spins, n_orb, Lambda_c, D, h0_loc, h_int = one_band
+    gf_struct = [(bl, n_orb) for bl in spins]
+    output = tmp_path / "fockit.out"
+    reporter = FockitThermalDiagnostics if thermal else FockitDiagnostics
+    with reporter(level="debug", output=output) as diagnostics:
+        solver = (
+            FockitThermalImpuritySolver(
+                h_int, gf_struct, beta=10, diagnostics=diagnostics, **EXACT_THERMAL
+            )
+            if thermal
+            else FockitImpuritySolver(h_int, gf_struct, diagnostics=diagnostics)
+        )
+        if not thermal:
+            assert "basis.started" in output.read_text()
+        solver.set_h_imp(Lambda_c, D, h0_loc)
+        solver.solve()
+        report = output.read_text()
+        assert "hamiltonian.finished" in report
+        assert "eigensolver.selected" in report
+        assert "solve.finished" in report
+        summary = "thermal.summary" if thermal else "ground_state.summary"
+        assert summary in report
+        solver.solve()
+        report = output.read_text()
+        assert "solve=2" in report
+        assert "cache.hit" in report
+        solver.diagnostics = None
+        solver.solve()
+        assert output.read_text() == report
 
 
 def test_fockit_solver_rejects_non_hermitian_hamiltonian() -> None:

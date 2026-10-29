@@ -62,6 +62,19 @@ matrix structure is stored in `impurity_solver.gf_struct`. The constructor
 also builds the basis of the half-filled particle sector of the impurity
 problem (physical and bath orbitals), stored in `impurity_solver.basis`.
 
+### Diagnostics
+
+```python
+from risb.diagnostics import FockitDiagnostics
+
+with FockitDiagnostics(level="debug", output="fockit.out") as diagnostics:
+    impurity_solver = FockitImpuritySolver(h_int, gf_struct, diagnostics=diagnostics)
+    impurity_solver.set_h_imp(Lambda_c, D)
+    impurity_solver.solve()
+```
+
+Use `FockitThermalDiagnostics` for `FockitThermalImpuritySolver`.
+
 ### Setting `h_imp`
 
 Next the impurity Hamiltonian `h_imp` has to be set with
