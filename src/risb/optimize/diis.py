@@ -43,7 +43,7 @@ class DIIS(NewtonSolver):
     alpha : float, optional
         Step size of the linear mixing step.
     error_fun : {'recursion', 'root'}, optional
-        The error of an iteration, see :class:`.NewtonSolver`.
+        The error of an iteration, see :class:`.NewtonSolver`. Default is ``'root'``.
 
     Notes
     -----
@@ -59,7 +59,7 @@ class DIIS(NewtonSolver):
         n_restart: int | None = None,
         n_period: int | None = None,
         alpha: float = 1.0,
-        error_fun: Literal["recursion", "root"] = "recursion",
+        error_fun: Literal["recursion", "root"] = "root",
     ) -> None:
         super().__init__(
             history_size=history_size, n_restart=n_restart, error_fun=error_fun

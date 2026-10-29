@@ -291,13 +291,12 @@ S.solve(optimizer=DIIS(history_size=10, alpha=0.5), tol=1e-10, maxiter=500)
 S.solve(optimizer=LinearMixing(alpha=0.3))
 ```
 
-The optimizer decides when the solve has converged: when `Lambda` and `R`
-stop changing (`error_fun="recursion"`, the default), or when the root
-functions `f1` and `f2` are zero (`error_fun="root"`, the default of
-`ThermalLatticeSolver`)
+By default, both lattice solvers stop when the root functions `f1` and `f2`
+are zero (`error_fun="root"`). To stop when `Lambda` and `R` stop changing
+instead
 
 ```python
-S.solve(optimizer=DIIS(error_fun="root"))
+S.solve(optimizer=DIIS(error_fun="recursion"))
 ```
 
 If you want to use {py:func}`scipy.optimize.root`, give its keyword arguments

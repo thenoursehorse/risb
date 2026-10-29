@@ -77,11 +77,11 @@ optimize.solve(fun = function returning (g_x, residual),
 )
 ```
 
-The error is the change `g_x - x` by default. If you want it to be the
-residual instead
+The error is the supplied root residual by default. To use the change
+`g_x - x` instead
 
 ```python
-optimize = DIIS(error_fun="root")
+optimize = DIIS(error_fun="recursion")
 ```
 
 ## Using with `LatticeSolver`

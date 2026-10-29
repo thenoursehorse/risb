@@ -520,10 +520,10 @@ class BaseLatticeSolver(ABC):
         Returns
         -------
         risb.optimize.NewtonSolver
-            :class:`.DIIS` with its default options.
+            :class:`.DIIS` with ``error_fun='root'``.
 
         """
-        return DIIS()
+        return DIIS(error_fun="root")
 
     def default_callbacks(self) -> list[Callback]:
         """

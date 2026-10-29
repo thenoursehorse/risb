@@ -304,7 +304,7 @@ def test_three_orbital_kanamori_is_a_paramagnetic_mott_insulator() -> None:
         update_weights=SmearingKWeight(beta=40, n_target=n_orb).update_weights,
         symmetrizers=[symmetrize_blocks],
     )
-    assert S.solve(tol=1e-8).converged
+    assert S.solve(DIIS(error_fun="recursion"), tol=1e-8).converged
     for bl in S.Z[0]:
         assert S.Z[0][bl] == pytest.approx(np.zeros((n_orb, n_orb)), abs=1e-6)
     # The ground state of the impurity is a spin multiplet, and the symmetrizer

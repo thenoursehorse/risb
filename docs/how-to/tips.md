@@ -24,13 +24,19 @@ S.solve(optimizer=DIIS(history_size=10))
 S.solve(optimizer=LinearMixing(alpha=0.5))
 ```
 
-If `LatticeSolver` warns that the self-consistency equations are not
-satisfied, and you are not in a Mott insulator, stop on the root functions
-instead of on the change of `Lambda` and `R`
+Both lattice solvers and {{DIIS}} stop on the root functions by default.
+
+For `LatticeSolver`, recursion can converge faster near a metal-insulator
+transition. Without ghosts, it can also help in the atomic Mott limit
+(`R = 0`), where the decoupled bath can leave nonzero density residuals
 
 ```python
-S.solve(optimizer=DIIS(error_fun="root"))
+S.solve(optimizer=DIIS(error_fun="recursion"))
 ```
+
+Check `S.self_consistency_error` and the physical filling: unchanged parameters
+can still be a non-solution. With ghosts, a Mott insulator can retain finite
+hybridization, so being insulating alone does not justify ignoring residuals.
 
 `ThermalLatticeSolver` restarts or anchors the solve when it stalls (see
 {py:class}`~risb.optimize.OnPlateau`). If you want it to act sooner or later
@@ -54,9 +60,9 @@ potential (see [Finite temperature](lattice_solver.md#finite-temperature)).
 
 ## A temperature for the impurity problem of `LatticeSolver`
 
-In or near a Mott insulator the bath orbitals decouple from the impurity, and
-in its ground state they are completely full or empty, while the
-quasiparticles they must match are smeared by the temperature of
+Decoupled bath orbitals can be completely full or empty in the embedding
+ground state, while the quasiparticles they must match are smeared by the
+temperature of
 {py:class}`~risb.kweight.SmearingKWeight`. This can make the solve slow or
 stop it from converging. Giving the impurity solver the same inverse
 temperature can help
