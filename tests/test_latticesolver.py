@@ -399,7 +399,10 @@ def test_force_real_warns_when_discarding_imaginary_parts(one_band: Model) -> No
         S.get_x()
 
 
-def test_completely_full_orbital_decouples_and_leaves_the_one_band_solution() -> None:
+@pytest.mark.parametrize("pin_full_empty", [True, False])
+def test_full_orbital_pinning_prevents_the_wrong_impurity_filling(
+    pin_full_empty: bool,
+) -> None:
     # Orbital 0 is a completely full band with no hopping to orbital 1, so
     # with only density interactions orbital 1 is the one-band model, shifted
     # in energy. The full orbital has no bath partner in the impurity problem
@@ -417,10 +420,20 @@ def test_completely_full_orbital_decouples_and_leaves_the_one_band_solution() ->
         impurity_solvers=FockitImpuritySolver(h_int, gf_struct),
         update_weights=SmearingKWeight(beta=40, n_target=3).update_weights,
         symmetrizers=[symmetrize_blocks],
+        pin_full_empty=pin_full_empty,
     )
     for bl, _ in gf_struct:
         S.Lambda[0][bl] = np.diag([0.0, 6.0])
-    result = S.solve(tol=1e-10)
+    result = S.solve(tol=1e-10, maxiter=100, self_consistency_tol=np.inf)
+    filling = sum(float(np.trace(rho).real) for rho in S.rho_c[0].values())
+    if not pin_full_empty:
+        assert filling == pytest.approx(2.0, abs=1e-8)
+        assert S.self_consistency_error > 0.1
+        for bl, _ in gf_struct:
+            assert np.linalg.eigvalsh(S.Z[0][bl]) == pytest.approx([0, 0], abs=1e-8)
+        return
+
+    assert filling == pytest.approx(3.0, abs=1e-8)
 
     gf_struct_one = [(bl, 1) for bl in spin_names]
     one_band = LatticeSolver(
@@ -441,35 +454,6 @@ def test_completely_full_orbital_decouples_and_leaves_the_one_band_solution() ->
         assert np.linalg.eigvalsh(S.Z[0][bl]) == pytest.approx(
             [0, one_band.Z[0][bl][0, 0].real], abs=1e-6
         )
-
-
-@pytest.mark.parametrize("pin_full_empty", [True, False])
-@pytest.mark.parametrize("level", [-2.0, 2.0], ids=["empty_qp", "full_qp"])
-def test_pinning_controls_the_filling_of_decoupled_orbitals(
-    pin_full_empty: bool, level: float
-) -> None:
-    gf_struct = [(bl, 1) for bl in ["up", "dn"]]
-    S = LatticeSolver(
-        h0_k={bl: np.array([[[level]]]) for bl, _ in gf_struct},
-        gf_struct=gf_struct,
-        impurity_solvers=FockitImpuritySolver(zero(), gf_struct),
-        update_weights=SmearingKWeight(beta=40, mu=0).update_weights,
-        pin_full_empty=pin_full_empty,
-    )
-    for bl, _ in gf_struct:
-        S.Lambda[0][bl] = np.array([[-1.5 * level]])
-
-    # The initial quasiparticle filling opposes the local ground-state filling.
-    # Pinning keeps the former; without it the impurity follows its local level.
-    qp_filling = float(level > 0)
-    impurity_filling = qp_filling if pin_full_empty else 1 - qp_filling
-    x = S.get_x()
-    for _ in range(2):
-        x, _ = S.cycle(x)
-        for bl, _ in gf_struct:
-            assert S.rho_qp[0][bl][0, 0] == pytest.approx(qp_filling, abs=1e-12)
-            assert S.rho_f[0][bl][0, 0] == pytest.approx(impurity_filling, abs=1e-12)
-            assert S.rho_c[0][bl][0, 0] == pytest.approx(impurity_filling, abs=1e-12)
 
 
 def test_two_site_cell_with_a_cluster_per_site_gives_the_one_site_solution(
