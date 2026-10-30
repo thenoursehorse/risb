@@ -4,6 +4,7 @@ from collections.abc import Callable, Mapping
 from typing import Protocol
 
 import numpy as np
+from fockit.algebra import OpSum
 from numpy.typing import NDArray
 
 type GfStruct = list[tuple[str, int]]
@@ -39,6 +40,9 @@ class ImpuritySolver(Protocol):
     gf_struct: GfStruct
     """Block structure of the physical orbitals (c-electrons)."""
 
+    h_int: OpSum
+    """Interaction of the physical orbitals."""
+
     rho_f: BlockMatrix
     """f-electron density matrix of each block in :attr:`gf_struct`, set by :meth:`solve`."""
 
@@ -71,6 +75,28 @@ class ImpuritySolver(Protocol):
 
     def get_rho_c(self, bl: str) -> NDArray[np.inexact]:
         """Return the c-electron density matrix of block ``bl``."""
+
+
+class PinFullEmpty(Protocol):
+    """Levels of the auxiliary orbitals that are full or empty, for :class:`risb.LatticeSolver`."""
+
+    def bath_levels(
+        self,
+        Lambda_c: NDArray[np.inexact],
+        rho_qp: NDArray[np.inexact],
+        energy_scale: float,
+    ) -> NDArray[np.inexact]:
+        """Return the bath levels ``Lambda_c`` of one block, set where the quasiparticle orbitals of ``rho_qp`` are full or empty."""
+
+    def qp_levels(
+        self,
+        Lambda: NDArray[np.inexact],
+        Lambda_in: NDArray[np.inexact],
+        rho_f: NDArray[np.inexact],
+        energy_scale: float,
+        half_bandwidth: float,
+    ) -> NDArray[np.inexact]:
+        """Return the new quasiparticle levels ``Lambda`` of one block, set where the orbitals of ``rho_f`` are full or empty, from the levels ``Lambda_in`` of the cycle."""
 
 
 class FixedPointProblem(Protocol):

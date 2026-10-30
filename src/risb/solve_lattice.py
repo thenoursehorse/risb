@@ -21,10 +21,10 @@ from collections.abc import Callable, Mapping, Sequence
 from typing import override
 
 import numpy as np
-from numpy.typing import NDArray
 
 from risb import helpers
 from risb.diagnostics import DiagnosticObserver
+from risb.pinning import FullEmptyPinning
 from risb.solve_lattice_base import BaseLatticeSolver
 from risb.types import (
     BlockMatrix,
@@ -32,9 +32,12 @@ from risb.types import (
     BlockRealArray,
     GfStruct,
     ImpuritySolver,
+    PinFullEmpty,
     Symmetrize,
     UpdateWeights,
 )
+
+_DEFAULT_PINNING = FullEmptyPinning()
 
 
 class LatticeSolver(BaseLatticeSolver):
@@ -50,16 +53,10 @@ class LatticeSolver(BaseLatticeSolver):
         lattice. It is called as ``update_weights(energies)``,
         where the energies are a dictionary with each key a list.
         See class :class:`.SmearingKWeight`.
-    pin_full_empty : bool, optional
-        Whether to move the levels of full or empty auxiliary orbitals far from
-        the active levels. Default is ``True``. An orbital is treated as frozen
-        when its density eigenvalue satisfies ``n * (1 - n) < helpers.EDGE_TOL``
-        (``1e-12``). Bath levels use :attr:`rho_qp`; quasiparticle levels use
-        :attr:`rho_f` after the impurity solve. This enforces complementary bath
-        occupations in the decoupled limit, but can affect convergence and
-        solution selection. With ``False``, both level shifts are disabled;
-        the pseudo-inverse treatment of singular factors is unchanged, and
-        decoupled baths can have inconsistent occupations.
+    pin_full_empty : risb.types.PinFullEmpty or None, optional
+        Sets the levels of full or empty auxiliary orbitals. Default is
+        :class:`risb.pinning.FullEmptyPinning` with its default parameters.
+        ``None`` does no pinning.
     diagnostics : risb.diagnostics.DiagnosticObserver, optional
         Use :class:`~risb.diagnostics.LatticeDiagnostics` for progress reports.
 
@@ -84,7 +81,7 @@ class LatticeSolver(BaseLatticeSolver):
         double_counting: Callable[[int, BlockMatrix], BlockMatrixLike] | None = None,
         *,
         bath_size: Sequence[Mapping[str, int]] | None = None,
-        pin_full_empty: bool = True,
+        pin_full_empty: PinFullEmpty | None = _DEFAULT_PINNING,
         force_real_atol: float = 1e-12,
         force_real_rtol: float = 1e-10,
         diagnostics: DiagnosticObserver | None = None,
@@ -135,17 +132,12 @@ class LatticeSolver(BaseLatticeSolver):
             self.Lambda_c = symmetrize(self.Lambda_c)
             self.D = symmetrize(self.D)
 
-        # A completely full (empty) quasiparticle orbital has no bath partner.
-        # Its D is zero, and the limit of the gradient term that would put its
-        # bath orbital empty (full) is not finite, so put the bath level far
-        # away instead. Otherwise the bath orbital competes for electrons and
-        # the impurity problem can end at R = 0 with the wrong filling
-        if self.pin_full_empty:
-            core_scale = self._core_scale()
+        if self.pin_full_empty is not None:
+            energy_scale = self._energy_scale()
             for i in range(self.n_clusters):
                 for bl in self.Lambda_c[i]:
-                    self.Lambda_c[i][bl] = _pin_full_empty_bath_levels(
-                        self.Lambda_c[i][bl], self.rho_qp[i][bl], core_scale
+                    self.Lambda_c[i][bl] = self.pin_full_empty.bath_levels(
+                        self.Lambda_c[i][bl], self.rho_qp[i][bl], energy_scale
                     )
 
     @override
@@ -185,84 +177,29 @@ class LatticeSolver(BaseLatticeSolver):
             Lambda = symmetrize(Lambda)
             R = symmetrize(R)
 
-        # The quasiparticle level of a full (empty) orbital is only fixed to be
-        # below (above) the chemical potential, so keep it below (above) every
-        # other quasiparticle band. This finds the solution where the orbital
-        # stays decoupled. A solution with a lower energy, where the
-        # quasiparticle orbital is not exactly full (empty) and is an extra
-        # channel for the other orbitals, can also exist
-        if self.pin_full_empty:
-            core_scale = self._core_scale()
+        if self.pin_full_empty is not None:
+            energy_scale = self._energy_scale()
             for i in range(self.n_clusters):
                 for bl in Lambda[i]:
-                    Lambda[i][bl] = _pin_full_empty_qp_levels(
+                    Lambda[i][bl] = self.pin_full_empty.qp_levels(
                         Lambda[i][bl],
+                        self.Lambda[i][bl],
                         self.rho_f[i][bl],
-                        self._kinetic_half_bandwidth + core_scale,
+                        energy_scale,
+                        self._kinetic_half_bandwidth,
                     )
         return R, Lambda
 
-    def _core_scale(self) -> float:
-        # An energy far from every energy of the model, leaving out the
-        # levels of full or empty orbitals, which are themselves set far away
+    def _energy_scale(self) -> float:
+        # The largest energy of the model. It is set by the model and not by
+        # Lambda, which can drift together with the chemical potential, so
+        # that the pinned levels do not grow from cycle to cycle
         largest = max(
-            float(np.max(np.abs(A[i][bl]), initial=0))
-            for A in (self.h0_loc_matrix,)
-            for i in range(self.n_clusters)
-            for bl in A[i]
+            float(np.max(np.abs(A[bl]), initial=0))
+            for A in self.h0_loc_matrix
+            for bl in A
         )
-        for i in range(self.n_clusters):
-            for bl in self.Lambda[i]:
-                _, vectors, edge = _edge_orbitals(self.rho_qp[i][bl])
-                active = vectors[:, ~edge].conj()
-                if active.size:
-                    levels = np.linalg.eigvalsh(
-                        active.conj().T @ self.Lambda[i][bl] @ active
-                    )
-                    largest = max(largest, float(np.max(np.abs(levels))))
-        return 10 * (self._kinetic_half_bandwidth + largest)
-
-
-def _edge_orbitals(
-    rho: NDArray[np.inexact],
-) -> tuple[NDArray[np.float64], NDArray[np.inexact], NDArray[np.bool_]]:
-    # Eigenvalues, eigenvectors, and which eigenvalues are 0 or 1
-    eigenvalues, vectors = np.linalg.eigh(rho)
-    return eigenvalues, vectors, eigenvalues * (1 - eigenvalues) < helpers.EDGE_TOL
-
-
-def _pin_full_empty_bath_levels(
-    Lambda_c: NDArray[np.inexact], rho_qp: NDArray[np.inexact], scale: float
-) -> NDArray[np.inexact]:
-    eigenvalues, vectors, edge = _edge_orbitals(rho_qp)
-    # The bath term is f Lambda_c f^dag, so filling the bath orbital costs
-    # -Lambda_c: empty for a full quasiparticle orbital, full for an empty one
-    for delta, v in zip(eigenvalues[edge], vectors[:, edge].T, strict=True):
-        level = -scale if delta > 0.5 else scale
-        Lambda_c = Lambda_c + (level - np.real(v.conj() @ Lambda_c @ v)) * np.outer(
-            v, v.conj()
-        )
-    return Lambda_c
-
-
-def _pin_full_empty_qp_levels(
-    Lambda: NDArray[np.inexact], rho_f: NDArray[np.inexact], margin: float
-) -> NDArray[np.inexact]:
-    eigenvalues, vectors, edge = _edge_orbitals(rho_f)
-    if not edge.any():
-        return Lambda
-    # rho_qp is the transpose of n_F(lambda - mu), so these are the
-    # eigenvectors of lambda
-    vectors = vectors.conj()
-    active = vectors[:, ~edge]
-    others = (
-        np.linalg.eigvalsh(active.conj().T @ Lambda @ active)
-        if active.size
-        else np.zeros(1)
-    )
-    for delta, v in zip(eigenvalues[edge], vectors[:, edge].T, strict=True):
-        level = others.min() - margin if delta > 0.5 else others.max() + margin
-        Lambda = Lambda + (level - np.real(v.conj() @ Lambda @ v)) * np.outer(
-            v, v.conj()
-        )
-    return Lambda
+        for solver in self.impurity_solvers:
+            terms = solver.h_int.terms.values()
+            largest = max([largest, *(abs(complex(coeff)) for coeff in terms)])
+        return self._kinetic_half_bandwidth + largest

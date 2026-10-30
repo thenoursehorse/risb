@@ -58,6 +58,7 @@ class DummyImpuritySolver(ImpuritySolver):
         self.rotations = rotations
 
         self.gf_struct = impurity_solver.gf_struct
+        self.h_int = impurity_solver.h_int
         self.rho_f: BlockMatrix = {}
         self.rho_cf: BlockMatrix = {}
         self.rho_c: BlockMatrix = {}

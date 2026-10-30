@@ -19,7 +19,8 @@ from risb.helpers_fockit import h_int_kanamori
 from risb.impurity_solvers import FockitImpuritySolver
 from risb.kweight import SmearingKWeight
 from risb.optimize import DIIS, ScipyRoot, SolveResult
-from risb.types import BlockMatrix, GfStruct, ImpuritySolver
+from risb.pinning import FullEmptyPinning
+from risb.types import BlockMatrix, GfStruct, ImpuritySolver, PinFullEmpty
 
 type Model = tuple[
     GfStruct,
@@ -399,9 +400,11 @@ def test_force_real_warns_when_discarding_imaginary_parts(one_band: Model) -> No
         S.get_x()
 
 
-@pytest.mark.parametrize("pin_full_empty", [True, False])
+@pytest.mark.parametrize(
+    "pin_full_empty", [FullEmptyPinning(), None], ids=["pinned", "not pinned"]
+)
 def test_full_orbital_pinning_prevents_the_wrong_impurity_filling(
-    pin_full_empty: bool,
+    pin_full_empty: PinFullEmpty | None,
 ) -> None:
     # Orbital 0 is a completely full band with no hopping to orbital 1, so
     # with only density interactions orbital 1 is the one-band model, shifted
@@ -426,7 +429,7 @@ def test_full_orbital_pinning_prevents_the_wrong_impurity_filling(
         S.Lambda[0][bl] = np.diag([0.0, 6.0])
     result = S.solve(tol=1e-10, maxiter=100, self_consistency_tol=np.inf)
     filling = sum(float(np.trace(rho).real) for rho in S.rho_c[0].values())
-    if not pin_full_empty:
+    if pin_full_empty is None:
         assert filling == pytest.approx(2.0, abs=1e-8)
         assert S.self_consistency_error > 0.1
         for bl, _ in gf_struct:
@@ -454,6 +457,63 @@ def test_full_orbital_pinning_prevents_the_wrong_impurity_filling(
         assert np.linalg.eigvalsh(S.Z[0][bl]) == pytest.approx(
             [0, one_band.Z[0][bl][0, 0].real], abs=1e-6
         )
+
+
+def test_ghost_risb_from_a_perturbed_start_reaches_the_solution_of_the_default_start() -> (
+    None
+):
+    # Two-orbital Kanamori model on the Bethe lattice at quarter filling, with
+    # three quasiparticles per orbital and spin. From this start, ghost levels
+    # close to empty grow from cycle to cycle unless their steps are limited
+    B = 3
+    n_orb = 2
+    U, J = 3.0, 0.45
+    spin_names = ["up", "dn"]
+    gf_struct = [(bl, n_orb) for bl in spin_names]
+    bath_size = dict.fromkeys(spin_names, B * n_orb)
+    Up = U - 2 * J
+    off_diag = 1 - np.eye(n_orb)
+    h_int = h_int_kanamori(
+        spin_names,
+        n_orb,
+        U=(Up - J) * off_diag,
+        Uprime=U * np.eye(n_orb) + Up * off_diag,
+        J_hund=J,
+    )
+    Sz = zero()
+    for o in range(n_orb):
+        Sz += nc("up", o) - nc("dn", o)
+    for a in range(B * n_orb):
+        Sz += nc("bath_up", a) - nc("bath_dn", a)
+
+    def solve(seed: int | None) -> tuple[LatticeSolver, FockitImpuritySolver]:
+        impurity_solver = FockitImpuritySolver(
+            h_int, gf_struct, diagonal_symmetries={Sz: 0}, bath_size=bath_size
+        )
+        kweight = SmearingKWeight(beta=2000, n_target=1)
+        S = LatticeSolver(
+            h0_k={bl: bethe_h0_k(2000) * np.eye(n_orb) for bl in spin_names},
+            gf_struct=gf_struct,
+            impurity_solvers=impurity_solver,
+            update_weights=kweight.update_weights,
+            symmetrizers=[symmetrize_blocks],
+            force_real=True,
+            bath_size=[bath_size],
+        )
+        kweight.n_target = 1 + S.n_ghost_electrons
+        x0 = S.get_x()
+        if seed is not None:
+            x0 = x0 + 0.05 * np.random.default_rng(seed).standard_normal(x0.shape)
+        assert S.solve(tol=1e-10, maxiter=400, x0=x0).converged
+        return S, impurity_solver
+
+    S, impurity_solver = solve(None)
+    perturbed, perturbed_solver = solve(4)
+    assert perturbed.Z[0]["up"] == pytest.approx(S.Z[0]["up"], abs=1e-6)
+    docc = nc("up", 0) * nc("dn", 0)
+    assert perturbed_solver.overlap(docc) == pytest.approx(
+        impurity_solver.overlap(docc), abs=1e-6
+    )
 
 
 def test_two_site_cell_with_a_cluster_per_site_gives_the_one_site_solution(
