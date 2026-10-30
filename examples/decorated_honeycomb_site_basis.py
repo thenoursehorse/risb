@@ -166,7 +166,7 @@ S = LatticeSolver(
 )
 
 # Solve
-result = S.solve(tol=1e-4)
+result = S.solve(tol=1e-6)
 
 # Print out some interesting observables
 with np.printoptions(formatter={"float": "{: 0.4f}".format}):

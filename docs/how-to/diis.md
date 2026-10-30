@@ -38,22 +38,28 @@ To clear it
 optimize.reset()
 ```
 
-## Linear mixing step
+## Step size
 
-Our implementation takes a single linear mixing step every `n_period`
-iterations.
-
-To change how frequently a linear mixing step is taken
-
-```python
-optimize = DIIS(n_period=...)
-```
-
-The size of the linear mixing step $\alpha$ is specified when creating the
-solver
+Each new guess moves a fraction $\alpha$ of the way from the extrapolated
+guess toward the extrapolated fixed-point function. A smaller step is slower
+but more stable, e.g., when the error grows or oscillates from one iteration to
+the next. It is the mixing parameter of Pulay mixing in DFT codes
+(`mixing_beta` in Quantum ESPRESSO)
 
 ```python
 optimize = DIIS(alpha=...)
+```
+
+## Linear mixing step
+
+Our implementation takes a single linear mixing step, with the same $\alpha$,
+every `n_period` iterations.
+
+To change how frequently a linear mixing step is taken, or to never take one
+with `None`
+
+```python
+optimize = DIIS(n_period=...)
 ```
 
 ## Only linear mixing

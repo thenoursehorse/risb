@@ -36,6 +36,20 @@ def test_solver_finds_fixed_point(solver: NewtonSolver) -> None:
     assert x == pytest.approx(2.0)
 
 
+def test_diis_with_a_history_of_one_is_linear_mixing_with_the_same_step() -> None:
+    def nonlinear(
+        x: NDArray[np.float64],
+    ) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
+        g_x = np.cos(x)
+        return g_x, g_x - x
+
+    diis = DIIS(history_size=1, n_period=None, alpha=0.3)
+    mixing = LinearMixing(alpha=0.3)
+    x_diis = diis.solve(nonlinear, np.zeros(2), tol=0, maxiter=5)
+    x_mixing = mixing.solve(nonlinear, np.zeros(2), tol=0, maxiter=5)
+    assert x_diis == pytest.approx(x_mixing, abs=1e-14)
+
+
 def test_diis_keeps_history_size_vectors() -> None:
     solver = DIIS(history_size=4)
     solver.solve(fixed_point, np.zeros(3), tol=0, maxiter=10)
@@ -67,14 +81,14 @@ def test_diis_is_anderson_acceleration_on_a_linear_problem() -> None:
 
     # Without the periodic linear mixing steps. With every vector in the
     # history it converges in at most n + 1 iterations, like GMRES
-    solver = DIIS(history_size=n + 2, n_period=10**9)
+    solver = DIIS(history_size=n + 2, n_period=None)
     x = solver.solve(linear, np.zeros(n), tol=1e-12)
     assert solver.success
     assert solver.n <= n + 1
     assert x == pytest.approx(x_star, abs=1e-10)
 
     # With a short history it still converges to the tolerance
-    solver = DIIS(history_size=3, n_period=10**9)
+    solver = DIIS(history_size=3, n_period=None)
     solver.solve(linear, np.zeros(n), tol=1e-12, maxiter=100)
     assert solver.success
 
@@ -181,7 +195,7 @@ def test_a_plateau_on_the_converged_cycle_leaves_the_solve_to_continue() -> None
 def test_a_callback_can_replace_the_optimizer_mid_solve() -> None:
     def switch(loop: FixedPointLoop, _problem: FixedPointProblem) -> None:
         if loop.cycle == 2:
-            loop.optimizer = DIIS(history_size=10, n_period=10**9)
+            loop.optimizer = DIIS(history_size=10, n_period=None)
 
     result = solve_fixed_point(
         Linear(), LinearMixing(alpha=0.1), callbacks=[switch], tol=1e-12

@@ -37,11 +37,14 @@ class DIIS(NewtonSolver):
         Maximum size of subspace.
     n_restart : int, optional
         Fully reset subspace after this many iterations. Defaults to never.
-    n_period : int, optional
-        Take a single linear mixing step afer this many iterations. Defaults
-        to round(history_size / 2).
+    n_period : int or None, optional
+        Take a single linear mixing step every this many iterations, or never
+        if None. Default is ``3``.
     alpha : float, optional
-        Step size of the linear mixing step.
+        Step size of every iteration, as the mixing parameter of Pulay
+        mixing (``mixing_beta`` in Quantum ESPRESSO). Each new guess moves
+        this fraction of the way from the extrapolated guess toward the
+        extrapolated fixed-point function. Default is ``1``, the full step.
     error_fun : {'recursion', 'root'}, optional
         The error of an iteration, see :class:`.NewtonSolver`. Default is ``'root'``.
 
@@ -57,7 +60,7 @@ class DIIS(NewtonSolver):
         self,
         history_size: int = 6,
         n_restart: int | None = None,
-        n_period: int | None = None,
+        n_period: int | None = 3,
         alpha: float = 1.0,
         error_fun: Literal["recursion", "root"] = "root",
     ) -> None:
@@ -65,17 +68,14 @@ class DIIS(NewtonSolver):
             history_size=history_size, n_restart=n_restart, error_fun=error_fun
         )
         self.alpha = alpha
-
-        if n_period is None:
-            self.n_period = int(np.round(self.history_size / 2.0))
-        else:
-            self.n_period = n_period
+        self.n_period = n_period
 
     @staticmethod
     def extrapolate(
         x: Sequence[NDArray[np.float64]],
         g_x: Sequence[NDArray[np.float64]],
         error: Sequence[NDArray[np.float64]],
+        alpha: float = 1.0,
     ) -> NDArray[np.float64]:
         """DIIS extrapolation algorithm for the new guess for :attr:`.NewtonSolver.x`."""
         # Construct the B matrix
@@ -100,22 +100,24 @@ class DIIS(NewtonSolver):
 
         c = np.dot(scipy.linalg.pinv(B), rhs)
 
-        # Calculate optimal x(n)
-        x_opt = np.zeros(x[0].shape)
+        # Step alpha of the way from the combination of x to that of g(x)
+        x_bar = np.zeros(x[0].shape)
+        g_bar = np.zeros(x[0].shape)
         for i in range(m):
-            x_opt += c[i] * g_x[i]
-        return x_opt
+            x_bar += c[i] * x[i]
+            g_bar += c[i] * g_x[i]
+        return x_bar + alpha * (g_bar - x_bar)
 
     # x_i, error(x_i), g(x_i) where g(x_i) is the fixed-point function
     # that gives a new x_i
     @override
     def update_x(self) -> NDArray[np.float64]:
         """Return a new guess for the vector x."""
-        if (self.n + 1) % self.n_period == 0:
+        if self.n_period is not None and (self.n + 1) % self.n_period == 0:
             # Do linear mixing
             x_opt = self.x[0] + self.alpha * (self.g_x[0] - self.x[0])
         else:
             # Do DIIS
-            x_opt = self.extrapolate(self.x, self.g_x, self.error)
+            x_opt = self.extrapolate(self.x, self.g_x, self.error, self.alpha)
 
         return x_opt
