@@ -1,6 +1,6 @@
 """Levels of the auxiliary orbitals that are full or empty, for :class:`risb.LatticeSolver`."""
 
-from typing import override
+from typing import Literal, override
 
 import numpy as np
 from numpy.typing import NDArray
@@ -28,18 +28,21 @@ class FullEmptyPinning(PinFullEmpty):
     ----------
     edge_tol : float, optional
         An orbital is full or empty when ``n * (1 - n)`` is below this.
-        Default is ``1e-12``. The gradients in :mod:`risb.helpers` keep
-        :data:`risb.helpers.EDGE_TOL`.
+        The gradients in :mod:`risb.helpers` use :data:`risb.helpers.EDGE_TOL`.
     margin : float, optional
         Distance of the pinned levels from the active levels, in units of the
-        energy scale of the model. Default is ``10``.
+        energy scale of the model.
     near_edge_tol : float, optional
         A quasiparticle orbital that is not full or empty is nearly full or
-        empty when ``n * (1 - n)`` is below this. Default is ``1e-3``.
+        empty when ``n * (1 - n)`` is below this.
     step_cap : float or None, optional
-        Largest change in a cycle (spectral norm) of the levels of the nearly
-        full or empty quasiparticle orbitals, in units of the kinetic
-        half-bandwidth. ``None`` does not limit it. Default is ``2``.
+        Scale for limiting quasiparticle level changes, in units of the
+        kinetic half-bandwidth. ``None`` disables limiting.
+    step_cap_method : {"clip", "smooth"}, optional
+        ``"clip"`` selects non-frozen near-edge orbitals and clips the
+        spectral norm of their level change. ``"smooth"`` gradually
+        increases the orbital weights towards full or empty occupation
+        and smoothly limits the weighted change using the Frobenius norm.
 
     """
 
@@ -49,11 +52,18 @@ class FullEmptyPinning(PinFullEmpty):
         margin: float = 10.0,
         near_edge_tol: float = 1e-3,
         step_cap: float | None = 2.0,
+        *,
+        step_cap_method: Literal["clip", "smooth"] = "smooth",
     ) -> None:
         self.edge_tol = edge_tol
         self.margin = margin
         self.near_edge_tol = near_edge_tol
         self.step_cap = step_cap
+        methods = {"clip": self._clip_level_step, "smooth": self._smooth_level_step}
+        if step_cap_method not in methods:
+            msg = f"Unknown step-cap method {step_cap_method!r}."
+            raise ValueError(msg)
+        self._limit_level_step = methods[step_cap_method]
 
     @override
     def bath_levels(
@@ -110,13 +120,13 @@ class FullEmptyPinning(PinFullEmpty):
         vectors = vectors.conj()
 
         if self.step_cap is not None:
-            near = vectors[:, ~edge & (spread < self.near_edge_tol)]
-            P = near @ near.conj().T
-            step = P @ (Lambda - Lambda_in) @ P
-            norm = np.linalg.norm(step, 2)
-            limit = self.step_cap * half_bandwidth
-            if norm > limit:
-                Lambda = Lambda - (1 - limit / norm) * step
+            Lambda = self._limit_level_step(
+                Lambda,
+                Lambda_in,
+                spread,
+                vectors,
+                self.step_cap * half_bandwidth,
+            )
 
         if not edge.any():
             return Lambda
@@ -133,3 +143,36 @@ class FullEmptyPinning(PinFullEmpty):
                 v, v.conj()
             )
         return Lambda
+
+    def _clip_level_step(
+        self,
+        Lambda: NDArray[np.inexact],
+        Lambda_in: NDArray[np.inexact],
+        spread: NDArray[np.floating],
+        vectors: NDArray[np.inexact],
+        limit: float,
+    ) -> NDArray[np.inexact]:
+        near = vectors[:, (spread >= self.edge_tol) & (spread < self.near_edge_tol)]
+        P = near @ near.conj().T
+        step = P @ (Lambda - Lambda_in) @ P
+        norm = np.linalg.norm(step, 2)
+        if norm > limit:
+            Lambda = Lambda - (1 - limit / norm) * step
+        return Lambda
+
+    def _smooth_level_step(
+        self,
+        Lambda: NDArray[np.inexact],
+        Lambda_in: NDArray[np.inexact],
+        spread: NDArray[np.floating],
+        vectors: NDArray[np.inexact],
+        limit: float,
+    ) -> NDArray[np.inexact]:
+        x = np.clip(spread / self.near_edge_tol, 0, 1)
+        weights = 1 - x**3 * (10 - 15 * x + 6 * x**2)
+        Q = (vectors * weights) @ vectors.conj().T
+        step = Q @ (Lambda - Lambda_in) @ Q
+        squared_norm = float(np.vdot(step, step).real)
+        factor = limit / np.sqrt(limit**2 + squared_norm) if limit else 0.0
+        result: NDArray[np.inexact] = Lambda - (1 - factor) * step
+        return result
