@@ -395,6 +395,13 @@ def get_fermi_density_response(
     response : numpy.ndarray
         Change in rho to first order in dh, with the same shape as dh.
 
+    Notes
+    -----
+    The response is the Frechet derivative of the matrix Fermi function,
+    evaluated with the Daleckii-Krein formula; see
+    `Giuli et al., GEM, Appendix A, Eq. (A.3)
+    <https://arxiv.org/html/2609.32633v2#A1>`_.
+
     """
     rho, energies, vectors = _fermi_density(h, beta)
     distance = beta * np.abs(energies[:, None] - energies[None, :])
@@ -619,6 +626,8 @@ def get_thermal_d_lambda_c(
         Use finite differences (``"2-point"``) or analytic
         derivatives (``"analytic"``) to match the density matrices.
     regularization : {"uniform", "response-weighted"}, optional
+        Generalized Tikhonov regularization adds a squared, weighted
+        distance from ``anchor`` to the matching objective.
         ``"uniform"`` penalizes all parameter changes equally.
         ``"response-weighted"`` penalizes combinations that barely affect
         the density matrices more heavily than those that affect them
@@ -775,6 +784,8 @@ def get_thermal_r_lambda(
         Use finite differences (``"2-point"``) or analytic
         derivatives (``"analytic"``) to match the density matrices.
     regularization : {"uniform", "response-weighted"}, optional
+        Generalized Tikhonov regularization adds a squared, weighted
+        distance from ``anchor`` to the matching objective.
         ``"uniform"`` penalizes all parameter changes equally.
         ``"response-weighted"`` penalizes combinations that barely affect
         the density matrices more heavily than those that affect them

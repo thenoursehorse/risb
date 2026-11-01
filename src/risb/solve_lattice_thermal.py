@@ -80,6 +80,8 @@ class ThermalLatticeSolver(BaseLatticeSolver):
         Use finite differences (``"2-point"``) or analytic
         derivatives (``"analytic"``) for both density-matching steps.
     density_matching_regularization : {"uniform", "response-weighted"}, optional
+        Generalized Tikhonov regularization adds a squared, weighted
+        distance from the anchor to the matching objective.
         ``"uniform"`` penalizes all parameter changes equally.
         ``"response-weighted"`` penalizes combinations that barely affect
         the density matrices more heavily than those that affect them
