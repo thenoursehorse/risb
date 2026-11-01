@@ -51,14 +51,14 @@ type FixedPointFunction = Callable[
 @dataclass(frozen=True)
 class Checkpoint:
     """
-    A recipe for reconstructing a saved calculation.
+    Saved state and the function used to restore it.
 
     Parameters
     ----------
     restore : callable
-        Restore carried state and recalculate any discarded outputs.
+        Restore saved data and recalculate outputs as needed.
     evaluations : int, optional
-        Number of fixed-point cycles performed by restore.
+        Number of cycle evaluations needed to restore the saved state.
 
     """
 
@@ -68,7 +68,7 @@ class Checkpoint:
 
 @runtime_checkable
 class Checkpointable(Protocol):
-    """A calculation that can reconstruct its last evaluated state."""
+    """A calculation whose saved state can be restored."""
 
     def checkpoint(self) -> Checkpoint:
         """Return a checkpoint of the last completed calculation."""
@@ -102,11 +102,11 @@ class ImpuritySolver(Protocol):
 
     def checkpoint(self) -> Checkpoint:
         """
-        Save continuation data needed before repeating the impurity solve.
+        Save any state that affects the next impurity solve.
 
-        The default stores nothing. Override this for a solver whose result
-        depends on earlier solves; the lattice rebuilds its Hamiltonian and
-        observables.
+        Override this if solve uses results from earlier solves. The default
+        saves nothing. When restoring its checkpoint, the lattice sets the
+        Hamiltonian and solves the impurity again.
         """
         return Checkpoint(lambda: None)
 

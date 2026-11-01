@@ -618,25 +618,24 @@ def get_thermal_d_lambda_c(
     Lambda_c : numpy.ndarray
         Bath coupling to start the fit from.
     anchor : tuple of numpy.ndarray, optional
-        ``(D, Lambda_c)`` to also minimize ``alpha`` times the squared
-        distance from. It pins combinations that the equations barely fix.
+        Reference values for (D, Lambda_c). With positive alpha, the fit
+        penalizes deviations from these values.
     alpha : float, optional
         Strength of ``anchor``.
     jacobian : {"2-point", "analytic"}, optional
         Use finite differences (``"2-point"``) or analytic
         derivatives (``"analytic"``) to match the density matrices.
     regularization : {"uniform", "response-weighted"}, optional
-        Generalized Tikhonov regularization adds a squared, weighted
-        distance from ``anchor`` to the matching objective.
-        ``"uniform"`` penalizes all parameter changes equally.
-        ``"response-weighted"`` penalizes combinations that barely affect
-        the density matrices more heavily than those that affect them
-        strongly. Only used with ``anchor``.
+        Generalized Tikhonov regularization penalizes the squared distance
+        from ``anchor``. ``"uniform"`` gives all parameter directions the same
+        weight. ``"response-weighted"`` gives more weight to directions
+        in which changes have little effect on the density matrices.
+        Only used when an anchor is supplied.
     regularization_scale : float, optional
-        Scale for the singular values from an SVD of the matching
-        residual's Jacobian. Singular values well below this scale get
-        almost the full anchor penalty; larger values get less. Must be
-        positive. The value depends on the energy units.
+        Positive scale for weighting the singular values from an SVD of
+        the matching Jacobian. Directions with singular values much smaller
+        than this scale receive nearly the full anchor penalty; directions
+        with larger values receive less. The value depends on the energy units.
     force_real : bool, optional
         Whether the matrices are real.
     diagnostics : callable, optional
@@ -776,25 +775,24 @@ def get_thermal_r_lambda(
     Lambda : numpy.ndarray
         Correlation potential to start the fit from.
     anchor : tuple of numpy.ndarray, optional
-        ``(R, Lambda)`` to also minimize ``alpha`` times the squared distance
-        from. It pins combinations that the equations barely fix.
+        Reference values for (R, Lambda). With positive alpha, the fit
+        penalizes deviations from these values.
     alpha : float, optional
         Strength of ``anchor``.
     jacobian : {"2-point", "analytic"}, optional
         Use finite differences (``"2-point"``) or analytic
         derivatives (``"analytic"``) to match the density matrices.
     regularization : {"uniform", "response-weighted"}, optional
-        Generalized Tikhonov regularization adds a squared, weighted
-        distance from ``anchor`` to the matching objective.
-        ``"uniform"`` penalizes all parameter changes equally.
-        ``"response-weighted"`` penalizes combinations that barely affect
-        the density matrices more heavily than those that affect them
-        strongly. Only used with ``anchor``.
+        Generalized Tikhonov regularization penalizes the squared distance
+        from ``anchor``. ``"uniform"`` gives all parameter directions the same
+        weight. ``"response-weighted"`` gives more weight to directions
+        in which changes have little effect on the density matrices.
+        Only used when an anchor is supplied.
     regularization_scale : float, optional
-        Scale for the singular values from an SVD of the matching
-        residual's Jacobian. Singular values well below this scale get
-        almost the full anchor penalty; larger values get less. Must be
-        positive. The value depends on the energy units.
+        Positive scale for weighting the singular values from an SVD of
+        the matching Jacobian. Directions with singular values much smaller
+        than this scale receive nearly the full anchor penalty; directions
+        with larger values receive less. The value depends on the energy units.
     force_real : bool, optional
         Whether the matrices are real.
     diagnostics : callable, optional
@@ -2484,7 +2482,7 @@ def _select_matching_derivatives(
     analytic: Callable[[], _MatchingEvaluation] | None,
     method: DensityMatchingJacobian,
 ) -> tuple[_MatchingFunction, _SolverJacobian, _MatchingFunction]:
-    """Select the residual and derivatives for the solver and anchor."""
+    """Choose how to evaluate the matching residual and its Jacobian."""
     if method not in ("2-point", "analytic"):
         msg = f"Unknown density-matching Jacobian: {method}"
         raise ValueError(msg)

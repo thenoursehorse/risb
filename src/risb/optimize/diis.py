@@ -40,9 +40,11 @@ class Pulay:
     alpha : float, optional
         Fraction of the extrapolated fixed-point correction to take.
     mixing_period : int or None, optional
-        Use linear mixing every this many steps, or never if None.
+        Take a linear mixing step every ``mixing_period`` steps.
+        None disables periodic linear mixing.
     restart_period : int or None, optional
-        Clear the subspace every this many steps, or never if None.
+        Clear the history every ``restart_period`` steps.
+        None disables scheduled restarts.
     error_fun : {'root', 'recursion'}, optional
         Minimize the supplied root residual or the change ``g(x) - x``.
 
@@ -74,14 +76,16 @@ class BianLi:
     """
     Bian-Li Algorithm 1, using the recursion residual ``g(x) - x``.
 
-    Accept an Anderson step when its residual norm is at most
-    ``gamma * max(history norms)``. Otherwise take a damped fixed-point
-    step from the last accepted point and restart the subspace.
+    Accept an Anderson guess if the norm of ``g(x) - x`` is at most gamma
+    times the largest residual norm in the current history. Otherwise,
+    restore the last accepted state, take a damped fixed-point step, and
+    clear the history.
 
     Parameters
     ----------
     schedule : {'iteration', 'residual', 'constant', 'combined'}, optional
-        With step index k, largest history norm W and initial norm W0:
+        For step index k, let W be the largest residual norm in the current
+        history and W0 the initial residual norm:
         ``iteration`` uses ``1 - 1/(k+2)``;
         ``residual`` uses ``1 - W/(2*(W0+W))``;
         ``constant`` uses `gamma`; and
@@ -123,7 +127,7 @@ class BianLi:
     def acceptance_factor(
         self, iteration: int, window_norm: float, initial_norm: float
     ) -> float:
-        """Return the paper's gamma for this step."""
+        """Return the factor used to accept or reject the Anderson guess."""
         if self.schedule == "iteration":
             gamma = 1 - 1 / (iteration + 2)
         elif self.schedule == "residual":
@@ -144,7 +148,7 @@ class BianLi:
         error: Sequence[NDArray[np.float64]],
         _iteration: int,
     ) -> NDArray[np.float64]:
-        """Return the unregularized Anderson step."""
+        """Calculate the next guess with Anderson acceleration."""
         return DIIS.extrapolate(x, g_x, error)
 
 
@@ -155,10 +159,11 @@ class DIIS(NewtonSolver):
     Parameters
     ----------
     history_size : int, optional
-        Maximum number of accepted points in the subspace. This is the
-        paper's memory parameter m plus one.
+        Maximum number of accepted guesses kept in the history.
+        For BianLi, this equals the paper's memory parameter m plus one.
     policy : Pulay or BianLi, optional
-        Mixing, acceptance and restart rules. Defaults to Pulay.
+        Rules for mixing guesses, rejecting steps and clearing history.
+        None selects Pulay.
 
     Notes
     -----
@@ -195,13 +200,13 @@ class DIIS(NewtonSolver):
     @override
     @property
     def can_reject(self) -> bool:
-        """Whether a step can reject an evaluated point."""
+        """Whether the policy can reject a guess after evaluating it."""
         return self.policy.can_reject
 
     @override
     @property
     def max_candidate_evaluations(self) -> int:
-        """Maximum candidate evaluations needed to complete a step."""
+        """Maximum evaluations per step, excluding checkpoint restoration."""
         return self.policy.max_candidate_evaluations
 
     @staticmethod
@@ -211,7 +216,7 @@ class DIIS(NewtonSolver):
         error: Sequence[NDArray[np.float64]],
         alpha: float = 1.0,
     ) -> NDArray[np.float64]:
-        """Minimize the combined residual with coefficients that sum to one."""
+        """Return the DIIS guess using coefficients that minimize the residual."""
         m = len(error)
         B = np.array([[np.dot(a, b) for b in error] for a in error])
         if np.max(np.abs(B)) > 0:
@@ -250,7 +255,7 @@ class DIIS(NewtonSolver):
         NDArray[np.float64],
         int,
     ]:
-        """Accept the evaluated point, or restore and evaluate the Bian-Li fallback."""
+        """Accept the guess or restore the last accepted state and try a damped step."""
         extra_cycles = 0
         if isinstance(self.policy, BianLi):
             if self.n == 0:

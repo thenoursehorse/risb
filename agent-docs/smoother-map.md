@@ -798,15 +798,17 @@ floating-point reconstruction differences.
 
 Retries restore D, Lambda_c and rho_c from the same accepted state.
 Rejected trials never enter DIIS history. Accepted trial results are
-reused, rather than repeating every successful evaluation. A final replay
-uses the original evaluation seed to check the reported physical point.
-Actual impurity.solve calls, including rejects and replay, are counted.
+reused, rather than repeating every successful evaluation. The final cycle
+is rerun from its original starting state to check the reported physical point.
+Every impurity.solve call counts, including those at rejected guesses
+and those used to recalculate the final cycle.
 
 ### Controlled T = 0 results
 
 Six models, default start plus seeds 1 and 2 with noise 0.01. Equal budget
-of 300 cycle evaluations, including final replay. Stop only when the outer
-residual norm is <1e-9 and every original matching error is <1e-8.
+of 300 cycle evaluations, including recalculation of the final cycle. Stop
+only when the outer residual norm is <1e-9 and every original matching
+error is <1e-8.
 Models: full-orbital charge transfer, B=3 metal/Mott, B=5 ground state,
 noninteracting B=3, two-orbital quarter filling. All use LatticeSolver;
 the existing B=3 metal/Mott controls use beta=200 impurity averaging as a
@@ -975,7 +977,8 @@ A bad result here does not rule out other trust-region models.
 
 Same six LatticeSolver models and starts as the preceding comparison:
 default plus seeds 1 and 2, noise 0.01, budget 300 including probes,
-rejects, Jacobian evaluations and final replay. Current smooth cap.
+rejects, Jacobian evaluations and recalculation of the final cycle.
+Current smooth cap.
 Full-orbital, B=5 and quarter-filled embeddings use ground states;
 B=3 controls retain their beta=200 impurity averaging. There are no inner
 thermal density fits.
@@ -1047,8 +1050,9 @@ are not used for speed comparisons.
   and residual selection. BianLi implements Algorithm 1 with the iteration,
   bounded-residual, constant and combined schedules. Pulay remains default.
 - Preserve callbacks and SolveResult.x_next. Acceptance precedes convergence
-  and best-point bookkeeping. Budgets include candidates, replay and fallback;
-  stop before a step that cannot fit and retain x_next for continuation.
+  and best-point bookkeeping. Budgets count candidate and fallback evaluations,
+  and cycles rerun to restore checkpoints. Stop before a step that cannot
+  fit and retain x_next for continuation.
 - Reconstruction checkpoints retain pre-cycle parameters and DC density.
   Thermal checkpoints add previous D/Lambda_c and anchor strength/references.
   Block2 ground state saves only its previous sector. Fockit, thermal Block2
@@ -1057,13 +1061,15 @@ are not used for speed comparisons.
   This differs numerically from the temporary SVD prototype.
 - Actual implementation, same 18 starts, 300-cycle budget: Pulay passes
   physical matching and stopping on 15/18, BianLi on 16/18. Non-B=5 controls
-  cost 216 versus 266 cycles, including replay. Total costs: 1116 versus 914.
+  cost 216 versus 266 cycles, including checkpoint restoration. Total costs:
+  1116 versus 914.
   B=5 seed 0 converges in 50 evaluations with BianLi; seeds 1 and 2 fail.
   Do not carry over the SVD prototype's 17/18 or extended 5/8 results.
 - Paper cycling example: ordinary AA fails within 500 evaluations; BianLi
   takes four transitions (five accepted evaluations including the initial point).
 - Temporary stateful checks: T=0/DC converges in 29 evaluations; thermal/DC
-  in 85. Thermal/DC/anchor replay reproduces all compared arrays exactly.
+  in 85. Restoring the thermal/DC/anchor checkpoint reproduces all compared
+  arrays exactly.
   Budget pause/continuation agrees with uninterrupted runs for T=0 and thermal.
 - No permanent tests added. Existing optimizer tests migrated: 20 pass.
   Full suite: 213 passed, 111 subtests passed, same pre-existing missing-warning

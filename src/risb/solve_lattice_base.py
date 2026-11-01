@@ -545,10 +545,11 @@ class BaseLatticeSolver(ABC):
 
     def checkpoint(self) -> Checkpoint:
         """
-        Reconstruct the last cycle from its parameters and carried state.
+        Return a checkpoint that can restore the last completed cycle.
 
-        Restoring reruns the cycle, including the impurity solves. Evaluation
-        counters and diagnostic output continue to include that work.
+        Restoring it reruns the cycle from its saved starting state, including
+        the impurity solves. These evaluations count toward the solve budget
+        and appear in the diagnostic output.
 
         Returns
         -------
@@ -817,7 +818,7 @@ class BaseLatticeSolver(ABC):
             keeps its history from before, so passing the same one again
             continues it. Default is a new :meth:`default_optimizer`.
         callbacks : sequence of callable, optional
-            Called after every cycle, see
+            Called after each accepted step, see
             :func:`risb.optimize.solve_fixed_point`. Default is
             :meth:`default_callbacks`, and ``[]`` is none.
         tol : float, optional

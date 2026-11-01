@@ -21,31 +21,33 @@ logger = logging.getLogger(__name__)
 class SolveResult:
     """The outcome of :func:`solve_fixed_point`."""
 
-    #: numpy.ndarray : The last input of :meth:`risb.types.FixedPointProblem.cycle`.
+    #: numpy.ndarray : Last accepted input of :meth:`risb.types.FixedPointProblem.cycle`.
     x: NDArray[np.float64]
 
     #: bool : Whether the error fell below the tolerance.
     converged: bool
 
-    #: int : Number of evaluations, including rejected points and replay.
+    #: int : Total number of cycle evaluations, including rejected steps
+    #: and any extra cycles needed to restore a checkpoint.
     cycles: int
 
-    #: float : 2-norm of the error of the last cycle.
+    #: float : Error norm at the last accepted guess.
     error: float
 
     #: list of float : Error norms at accepted points.
     history: list[float] = field(default_factory=list)
 
-    #: numpy.ndarray or None : The next guess, where a following solve can
-    #: start. None with a :class:`ScipyRoot`.
+    #: numpy.ndarray or None : Next guess for continuing the solve.
+    #: None when using :class:`ScipyRoot`.
     x_next: NDArray[np.float64] | None = None
 
 
 class ScipyRoot:
     """
-    :func:`scipy.optimize.root` as a one-shot optimizer for :func:`solve_fixed_point`.
+    Use :func:`scipy.optimize.root` with :func:`solve_fixed_point`.
 
-    It runs to the end in one call, so the callbacks are not called.
+    SciPy controls the iterations. The callbacks of :func:`solve_fixed_point`
+    are not called.
 
     Parameters
     ----------
@@ -65,35 +67,35 @@ class ScipyRoot:
 
 
 type Callback = Callable[["FixedPointLoop", FixedPointProblem], None]
-"""Called after every cycle of :func:`solve_fixed_point` as ``callback(loop, problem)``."""
+"""Called after each accepted step as ``callback(loop, problem)``."""
 
 
 class FixedPointLoop:
     """
-    The loop of :func:`solve_fixed_point`.
+    Run a fixed-point iteration with an optimizer and callbacks.
 
-    After every cycle, including the last, each callback gets the loop. It
-    can read :attr:`cycle`, :attr:`error`, :attr:`history`, :attr:`converged`,
-    the input :attr:`x` of the cycle, and :attr:`best_x`, replace
-    :attr:`optimizer` or the next input :attr:`x_next`, or end the loop with
-    :meth:`stop`.
+    Callbacks run after each accepted step, including the last. They can
+    inspect the loop, replace :attr:`optimizer` or the next guess
+    :attr:`x_next`, or call :meth:`stop` to end the solve.
 
     Parameters
     ----------
     problem : risb.types.FixedPointProblem
-        The problem to solve. With a rejecting optimizer, implement
-        ``checkpoint()`` if state beyond x affects subsequent cycles.
+        The problem to solve. If a cycle depends on state other than x,
+        implement ``checkpoint()`` so the optimizer can restore that state
+        after rejecting a step.
     optimizer : risb.optimize.NewtonSolver
         Gives the next guess after each cycle. It keeps its history from
         before; :meth:`~risb.optimize.NewtonSolver.reset` clears it.
     callbacks : sequence of callable, optional
-        Called after every cycle as ``callback(loop, problem)``.
+        Called after each accepted step as ``callback(loop, problem)``.
     tol : float, optional
         Stop when the 2-norm of the error is below this.
     maxiter : int, optional
-        Maximum number of evaluations, including rejected points and replay.
-        A rejecting optimizer stops early if the remaining budget cannot
-        cover a complete step; continue from ``x_next`` with the same optimizer.
+        Maximum number of cycle evaluations. This includes rejected steps
+        and any extra cycles needed to restore a checkpoint.
+        The loop stops before a step if too few evaluations remain to finish
+        it. Continue from ``x_next`` with the same optimizer.
     x0 : numpy.ndarray, optional
         Where to start. Default is the current guess of `problem`.
     diagnostics : risb.diagnostics.DiagnosticObserver, optional
@@ -121,7 +123,7 @@ class FixedPointLoop:
         self.tol = tol
         self.maxiter = maxiter
 
-        #: numpy.ndarray : The input of the last cycle.
+        #: numpy.ndarray : The last accepted guess.
         self.x = problem.get_x() if x0 is None else x0
 
         #: numpy.ndarray : The input of the next cycle, from the optimizer.
@@ -130,7 +132,7 @@ class FixedPointLoop:
         #: int : Number of cycles so far.
         self.cycle = 0
 
-        #: float : 2-norm of the error of the last cycle.
+        #: float : Error norm at the last accepted guess.
         self.error = np.inf
 
         #: list of float : Error norms at accepted points.
@@ -238,23 +240,24 @@ def solve_fixed_point(
     Parameters
     ----------
     problem : risb.types.FixedPointProblem
-        The problem to solve, e.g., a :class:`risb.LatticeSolver`. With a
-        rejecting optimizer, implement ``checkpoint()`` if state beyond x
-        affects subsequent cycles.
+        The problem to solve, e.g., a :class:`risb.LatticeSolver`. If a cycle
+        depends on state other than x, implement ``checkpoint()`` so the
+        optimizer can restore that state after rejecting a step.
     optimizer : risb.optimize.NewtonSolver or risb.optimize.ScipyRoot
         Gives the next guess after each cycle, e.g., :class:`.DIIS`. It keeps
         its history from before; :meth:`~risb.optimize.NewtonSolver.reset`
         clears it.
     callbacks : sequence of callable, optional
-        Called after every cycle as ``callback(loop, problem)``, with the
+        Called after each accepted step as ``callback(loop, problem)``, with the
         :class:`FixedPointLoop`. Not called with a :class:`ScipyRoot`.
     tol : float, optional
-        Stop when the 2-norm of the error is below this. A :class:`ScipyRoot`
-        stops by its own options.
+        Stop when the error norm is below this. With :class:`ScipyRoot`,
+        set the tolerance in its constructor instead.
     maxiter : int, optional
-        Maximum number of evaluations, including rejected points and replay.
-        A rejecting optimizer stops early if the remaining budget cannot
-        cover a complete step; continue from ``x_next`` with the same optimizer.
+        Maximum number of cycle evaluations. This includes rejected steps
+        and any extra cycles needed to restore a checkpoint.
+        The loop stops before a step if too few evaluations remain to finish
+        it. Continue from ``x_next`` with the same optimizer.
         Not used with a :class:`ScipyRoot`.
     x0 : numpy.ndarray, optional
         Where to start. Default is the current guess of `problem`.

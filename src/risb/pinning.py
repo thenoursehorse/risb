@@ -39,10 +39,10 @@ class FullEmptyPinning(PinFullEmpty):
         Scale for limiting quasiparticle level changes, in units of the
         kinetic half-bandwidth. ``None`` disables limiting.
     step_cap_method : {"clip", "smooth"}, optional
-        ``"clip"`` selects non-frozen near-edge orbitals and clips the
-        spectral norm of their level change. ``"smooth"`` gradually
-        increases the orbital weights towards full or empty occupation
-        and smoothly limits the weighted change using the Frobenius norm.
+        ``"clip"`` limits changes to the levels of nearly full or empty
+        orbitals, excluding those already pinned. It uses the spectral norm.
+        ``"smooth"`` weights the change continuously as occupations approach
+        0 or 1 and limits its Frobenius norm.
 
     """
 

@@ -903,7 +903,7 @@ class Block2ImpuritySolver(_Block2Base):
 
     @override
     def checkpoint(self) -> Checkpoint:
-        """Save the sector used to break near-degenerate ground-state ties."""
+        """Save the previous ground-state sector to resolve nearly equal energies."""
         previous = self._previous
 
         def restore() -> None:

@@ -99,12 +99,12 @@ class NewtonSolver(ABC):
 
     @property
     def can_reject(self) -> bool:
-        """Whether a step can reject an evaluated point."""
+        """Whether the method can reject a guess after evaluating it."""
         return False
 
     @property
     def max_candidate_evaluations(self) -> int:
-        """Maximum candidate evaluations needed to complete a step."""
+        """Maximum evaluations per step, excluding checkpoint restoration."""
         return 1
 
     @staticmethod
@@ -113,7 +113,6 @@ class NewtonSolver(ABC):
         vec_new: NDArray[np.float64],
         max_size: int | None = None,
     ) -> None:
-        # Note these operations are mutable on input list
         vec.insert(0, vec_new)
         if max_size is not None and len(vec) > max_size:
             vec.pop()
@@ -121,7 +120,7 @@ class NewtonSolver(ABC):
     @abstractmethod
     def update_x(self) -> NDArray[np.float64]:
         """
-        Return a single iteration for the new guess for :attr:`x`.
+        Calculate the next guess from the stored history.
 
         Parameters of the method, such as a mixing step, are set when the
         solver is constructed.
@@ -129,7 +128,7 @@ class NewtonSolver(ABC):
         Returns
         -------
         numpy.ndarray
-            New guess for x to add to history.
+            Next guess, not yet evaluated.
 
         """
 
@@ -192,20 +191,20 @@ class NewtonSolver(ABC):
         Parameters
         ----------
         x, g_x, residual : numpy.ndarray
-            Evaluated input, fixed-point output and root residual.
+            Input x, its fixed-point output g_x, and the root residual at x.
         cycle : callable
-            Evaluate another input if the method rejects this one.
+            Evaluate a fallback guess if this guess is rejected.
         checkpoint : risb.types.Checkpoint, optional
-            Reconstruct the previous accepted calculation before a fallback.
+            State to restore before evaluating a fallback guess.
 
         Returns
         -------
         x, g_x, residual : numpy.ndarray
-            Accepted input, fixed-point output and root residual.
+            Accepted guess, its fixed-point output, and its root residual.
         x_next : numpy.ndarray
             Next guess, not yet evaluated.
         extra_cycles : int
-            Additional evaluations, including checkpoint reconstruction.
+            Extra evaluations needed to restore a checkpoint and evaluate a fallback.
 
         """
         error = self.error_of(x, g_x, residual)
@@ -232,7 +231,7 @@ class NewtonSolver(ABC):
         """
         Find the root of a function.
 
-        It continues the history from before; :meth:`reset` clears it.
+        Reuse the stored history. Call :meth:`reset` to clear it.
 
         Parameters
         ----------
@@ -248,15 +247,16 @@ class NewtonSolver(ABC):
             Stop when the 2-norm of the error (see :attr:`error_fun`) is below
             this.
         maxiter : int, optional
-            Maximum number of evaluations, including rejected points and replay.
+            Maximum number of function evaluations. This includes evaluations
+            of rejected guesses and any extra calls needed to restore a checkpoint.
         checkpoint : callable, optional
-            Return a checkpoint of the last accepted calculation. Required
-            for rejection when the function has state beyond its input.
+            Save the state of the last accepted calculation. Supply this if
+            the function uses state other than x and the optimizer can reject steps.
 
         Returns
         -------
         numpy.ndarray
-            Root of ``fun``.
+            Last accepted guess, even if the evaluation limit was reached.
 
         """
         self.success = False

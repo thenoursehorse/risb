@@ -82,19 +82,18 @@ class ThermalLatticeSolver(BaseLatticeSolver):
         Use finite differences (``"2-point"``) or analytic
         derivatives (``"analytic"``) for both density-matching steps.
     density_matching_regularization : {"uniform", "response-weighted"}, optional
-        Generalized Tikhonov regularization adds a squared, weighted
-        distance from the anchor to the matching objective.
-        ``"uniform"`` penalizes all parameter changes equally.
-        ``"response-weighted"`` penalizes combinations that barely affect
-        the density matrices more heavily than those that affect them
-        strongly.
-        The penalty is only used after :meth:`anchor` is called, for
-        example by :class:`~risb.optimize.OnPlateau`.
+        Generalized Tikhonov regularization penalizes the squared distance
+        from the reference values set by :meth:`anchor`.
+        ``"uniform"`` gives all parameter directions the same weight.
+        ``"response-weighted"`` gives more weight to directions in which
+        changes have little effect on the density matrices. The penalty
+        applies only after :meth:`anchor` is called, for example by
+        :class:`~risb.optimize.OnPlateau`.
     density_matching_regularization_scale : float, optional
-        Scale for the singular values from an SVD of the matching
-        residual's Jacobian. Singular values well below this scale get
-        almost the full anchor penalty; larger values get less. Must be
-        positive. The value depends on the energy units.
+        Positive scale for weighting the singular values from an SVD of
+        the matching Jacobian. Directions with singular values much smaller
+        than this scale receive nearly the full anchor penalty; directions
+        with larger values receive less. The value depends on the energy units.
     diagnostics : risb.diagnostics.DiagnosticObserver, optional
         Use :class:`~risb.diagnostics.ThermalLatticeDiagnostics` for progress
         and fit reports.
@@ -401,7 +400,9 @@ class ThermalLatticeSolver(BaseLatticeSolver):
         self, x: NDArray[np.float64]
     ) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
         """
-        Run :meth:`one_cycle` from the :attr:`Lambda`, :attr:`R`, and with ``n_target`` :attr:`mu`, in ``x``.
+        Run one cycle using the parameters packed in x.
+
+        The vector contains Lambda and R, and also mu when n_target is set.
 
         Parameters
         ----------
@@ -411,11 +412,11 @@ class ThermalLatticeSolver(BaseLatticeSolver):
         Returns
         -------
         x_new : numpy.ndarray
-            The new :attr:`Lambda` and :attr:`R`, and with ``n_target`` the
-            next guess for :attr:`mu`, moved by the error of the filling.
+            Next Lambda and R, followed by ``mu + n_target - n_electrons``
+            when solving at fixed filling.
         residual : numpy.ndarray
-            The root functions :attr:`f2` and :attr:`f1`, and with
-            ``n_target`` ``n_electrons - n_target``, zero at a solution.
+            Packed f2 and f1, followed by ``n_electrons - n_target``
+            when n_target is set.
 
         """
         D, Lambda_c = deepcopy(self.D), deepcopy(self.Lambda_c)
@@ -448,9 +449,9 @@ class ThermalLatticeSolver(BaseLatticeSolver):
         Returns
         -------
         risb.optimize.NewtonSolver
-            :class:`.DIIS` with its default :class:`.Pulay` policy. At high temperature
-            :attr:`Lambda` and :attr:`R` can keep changing at a solution, so
-            their change is not a good error.
+            :class:`.DIIS` with the default :class:`.Pulay` policy, using the
+            matching residuals. At high temperature, Lambda and R can keep
+            changing even when the matching equations are satisfied.
 
         """
         return DIIS()
@@ -485,9 +486,10 @@ class ThermalLatticeSolver(BaseLatticeSolver):
         """
         Keep :attr:`D`, :attr:`Lambda_c`, :attr:`R` and :attr:`Lambda` close to fixed reference values.
 
-        Each fit takes its starting parameters as the reference on its
-        first call after this method. At high temperature, some combinations
-        of parameters can move without changing the density matrices much.
+        Each matching fit saves its starting parameters on its first call
+        after this method. Later fits penalize deviations from those values.
+        At high temperature, some combinations of parameters can move
+        without changing the density matrices much.
         The anchor limits that motion until :meth:`release` or the next
         :meth:`solve`. Use ``density_matching_regularization`` to choose
         which parameter changes to penalize.
@@ -515,7 +517,6 @@ class ThermalLatticeSolver(BaseLatticeSolver):
         key: tuple[str, int, str],
         start: tuple[NDArray[np.inexact], NDArray[np.inexact]],
     ) -> tuple[NDArray[np.inexact], NDArray[np.inexact]] | None:
-        # Where the first fit of key after anchor started, if anchored
         if self._anchor_alpha is None:
             return None
         return self._anchors.setdefault(key, (start[0].copy(), start[1].copy()))
