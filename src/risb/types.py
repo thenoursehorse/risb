@@ -1,7 +1,8 @@
 """Type aliases and interfaces used across risb."""
 
 from collections.abc import Callable, Mapping
-from typing import Literal, Protocol
+from dataclasses import dataclass
+from typing import Literal, Protocol, runtime_checkable
 
 import numpy as np
 from fockit.algebra import OpSum
@@ -41,6 +42,38 @@ type SmearFunction = Callable[[NDArray[np.float64], float, float], NDArray[np.fl
 """Smears band energies at inverse temperature beta and chemical potential mu into occupations."""
 
 
+type FixedPointFunction = Callable[
+    [NDArray[np.float64]], tuple[NDArray[np.float64], NDArray[np.float64]]
+]
+"""One evaluation of a fixed-point map and its root residual."""
+
+
+@dataclass(frozen=True)
+class Checkpoint:
+    """
+    A recipe for reconstructing a saved calculation.
+
+    Parameters
+    ----------
+    restore : callable
+        Restore carried state and recalculate any discarded outputs.
+    evaluations : int, optional
+        Number of fixed-point cycles performed by restore.
+
+    """
+
+    restore: Callable[[], None]
+    evaluations: int = 0
+
+
+@runtime_checkable
+class Checkpointable(Protocol):
+    """A calculation that can reconstruct its last evaluated state."""
+
+    def checkpoint(self) -> Checkpoint:
+        """Return a checkpoint of the last completed calculation."""
+
+
 class ImpuritySolver(Protocol):
     """
     Solver for the impurity problem of one cluster.
@@ -66,6 +99,16 @@ class ImpuritySolver(Protocol):
 
     entropy: float
     """Entropy of the states of the impurity problem, set by :meth:`solve`."""
+
+    def checkpoint(self) -> Checkpoint:
+        """
+        Save continuation data needed before repeating the impurity solve.
+
+        The default stores nothing. Override this for a solver whose result
+        depends on earlier solves; the lattice rebuilds its Hamiltonian and
+        observables.
+        """
+        return Checkpoint(lambda: None)
 
     def set_h_imp(
         self,

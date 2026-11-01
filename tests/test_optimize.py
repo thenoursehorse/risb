@@ -11,9 +11,9 @@ from risb.diagnostics import LatticeDiagnostics
 from risb.optimize import (
     DIIS,
     FixedPointLoop,
-    LinearMixing,
     NewtonSolver,
     OnPlateau,
+    Pulay,
     ScipyRoot,
     solve_fixed_point,
 )
@@ -28,7 +28,16 @@ def fixed_point(
 
 
 @pytest.mark.parametrize(
-    "solver", [DIIS(), DIIS(alpha=0.5), LinearMixing(), LinearMixing(alpha=0.5)]
+    "solver",
+    [
+        DIIS(),
+        DIIS(policy=Pulay(alpha=0.5)),
+        DIIS(history_size=1, policy=Pulay(error_fun="recursion", mixing_period=1)),
+        DIIS(
+            history_size=1,
+            policy=Pulay(alpha=0.5, error_fun="recursion", mixing_period=1),
+        ),
+    ],
 )
 def test_solver_finds_fixed_point(solver: NewtonSolver) -> None:
     x = solver.solve(fixed_point, np.zeros(3), tol=1e-10)
@@ -43,11 +52,12 @@ def test_diis_with_a_history_of_one_is_linear_mixing_with_the_same_step() -> Non
         g_x = np.cos(x)
         return g_x, g_x - x
 
-    diis = DIIS(history_size=1, n_period=None, alpha=0.3)
-    mixing = LinearMixing(alpha=0.3)
+    diis = DIIS(history_size=1, policy=Pulay(mixing_period=None, alpha=0.3))
     x_diis = diis.solve(nonlinear, np.zeros(2), tol=0, maxiter=5)
-    x_mixing = mixing.solve(nonlinear, np.zeros(2), tol=0, maxiter=5)
-    assert x_diis == pytest.approx(x_mixing, abs=1e-14)
+    expected = np.zeros(2)
+    for _ in range(4):
+        expected += 0.3 * (np.cos(expected) - expected)
+    assert x_diis == pytest.approx(expected, abs=1e-14)
 
 
 def test_diis_keeps_history_size_vectors() -> None:
@@ -60,7 +70,7 @@ def test_diis_keeps_history_size_vectors() -> None:
 def test_diis_restarts_history_after_n_restart_iterations(
     n_restart: int | None, n_vectors: int
 ) -> None:
-    solver = DIIS(n_restart=n_restart)
+    solver = DIIS(policy=Pulay(restart_period=n_restart))
     solver.solve(fixed_point, np.zeros(3), tol=0, maxiter=3)
     assert len(solver.error) == n_vectors
 
@@ -80,15 +90,15 @@ def test_diis_is_anderson_acceleration_on_a_linear_problem() -> None:
         return g_x, g_x - x
 
     # Without the periodic linear mixing steps. With every vector in the
-    # history it converges in at most n + 1 iterations, like GMRES
-    solver = DIIS(history_size=n + 2, n_period=None)
+    # history it needs at most n + 1 updates plus the initial evaluation
+    solver = DIIS(history_size=n + 2, policy=Pulay(mixing_period=None))
     x = solver.solve(linear, np.zeros(n), tol=1e-12)
     assert solver.success
-    assert solver.n <= n + 1
+    assert solver.n <= n + 2
     assert x == pytest.approx(x_star, abs=1e-10)
 
     # With a short history it still converges to the tolerance
-    solver = DIIS(history_size=3, n_period=None)
+    solver = DIIS(history_size=3, policy=Pulay(mixing_period=None))
     solver.solve(linear, np.zeros(n), tol=1e-12, maxiter=100)
     assert solver.success
 
@@ -121,7 +131,7 @@ def test_solve_fixed_point_solves_a_problem_like_the_optimizer_on_its_own() -> N
     assert result.x == pytest.approx(Linear().solution, abs=1e-10)
     alone = DIIS()
     alone.solve(Linear().cycle, np.zeros(6), tol=1e-12)
-    assert result.cycles == alone.n + 1
+    assert result.cycles == alone.n
     assert len(result.history) == result.cycles
 
 
@@ -135,9 +145,15 @@ def test_solve_fixed_point_stops_on_the_error_the_optimizer_chooses() -> None:
             x_new, change = super().cycle(x)
             return x_new, 1e-6 * change
 
-    root = solve_fixed_point(Scaled(), LinearMixing(error_fun="root"), tol=1e-10)
+    root = solve_fixed_point(
+        Scaled(),
+        DIIS(history_size=1, policy=Pulay(error_fun="root", mixing_period=1)),
+        tol=1e-10,
+    )
     recursion = solve_fixed_point(
-        Scaled(), LinearMixing(error_fun="recursion"), tol=1e-10
+        Scaled(),
+        DIIS(history_size=1, policy=Pulay(error_fun="recursion", mixing_period=1)),
+        tol=1e-10,
     )
     assert root.converged
     assert recursion.converged
@@ -195,10 +211,16 @@ def test_a_plateau_on_the_converged_cycle_leaves_the_solve_to_continue() -> None
 def test_a_callback_can_replace_the_optimizer_mid_solve() -> None:
     def switch(loop: FixedPointLoop, _problem: FixedPointProblem) -> None:
         if loop.cycle == 2:
-            loop.optimizer = DIIS(history_size=10, n_period=None)
+            loop.optimizer = DIIS(history_size=10, policy=Pulay(mixing_period=None))
 
     result = solve_fixed_point(
-        Linear(), LinearMixing(alpha=0.1), callbacks=[switch], tol=1e-12
+        Linear(),
+        DIIS(
+            history_size=1,
+            policy=Pulay(alpha=0.1, error_fun="recursion", mixing_period=1),
+        ),
+        callbacks=[switch],
+        tol=1e-12,
     )
     assert result.converged
     assert result.x == pytest.approx(Linear().solution, abs=1e-10)
@@ -270,7 +292,7 @@ def test_a_plateau_near_a_solution_anchors_the_problem_once() -> None:
     problem = Stuck(1e-8, can_anchor=True)
     on_plateau = OnPlateau(patience=5)
     result = solve_fixed_point(
-        problem, DIIS(error_fun="root"), callbacks=[on_plateau], tol=1e-12
+        problem, DIIS(policy=Pulay(error_fun="root")), callbacks=[on_plateau], tol=1e-12
     )
     assert result.converged
     assert problem.anchors == 1
@@ -287,7 +309,10 @@ def test_a_plateau_far_from_a_solution_or_without_an_anchor_restarts(
     problem = Stuck(level, can_anchor)
     on_plateau = OnPlateau(patience=5)
     result = solve_fixed_point(
-        problem, DIIS(error_fun="root"), callbacks=[on_plateau], maxiter=20
+        problem,
+        DIIS(policy=Pulay(error_fun="root")),
+        callbacks=[on_plateau],
+        maxiter=20,
     )
     assert not result.converged
     assert problem.anchors == 0

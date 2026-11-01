@@ -20,11 +20,12 @@
 import logging
 from abc import ABC, abstractmethod
 from collections.abc import Callable
-from copy import deepcopy
 from typing import Concatenate, Literal
 
 import numpy as np
 from numpy.typing import NDArray
+
+from risb.types import Checkpoint, FixedPointFunction
 
 logger = logging.getLogger(__name__)
 
@@ -41,8 +42,6 @@ class NewtonSolver(ABC):
     ----------
     history_size : int, optional
         Maximum size of subspace.
-    n_restart : int, optional
-        Fully reset subspace after this many iterations. Defaults to never.
     error_fun : {'recursion', 'root'}, optional
         The error of an iteration: the change ``g_x - x`` of the fixed-point
         function (``'recursion'``), or the residual of the root functions
@@ -57,11 +56,12 @@ class NewtonSolver(ABC):
     def __init__(
         self,
         history_size: int = 6,
-        n_restart: int | None = None,
         error_fun: Literal["recursion", "root"] = "recursion",
     ) -> None:
+        if history_size < 1:
+            msg = "history_size must be positive."
+            raise ValueError(msg)
         self.history_size = history_size
-        self.n_restart = n_restart
         if error_fun not in {"recursion", "root"}:
             msg = f"Unrecognized error_fun {error_fun} !"
             raise ValueError(msg)
@@ -87,6 +87,25 @@ class NewtonSolver(ABC):
 
         # float : 2-norm of :attr:`error`.
         self.norm: float = np.inf
+
+    @property
+    def error_fun(self) -> Literal["recursion", "root"]:
+        """Residual used for extrapolation and stopping."""
+        return self._error_fun
+
+    @error_fun.setter
+    def error_fun(self, value: Literal["recursion", "root"]) -> None:
+        self._error_fun = value
+
+    @property
+    def can_reject(self) -> bool:
+        """Whether a step can reject an evaluated point."""
+        return False
+
+    @property
+    def max_candidate_evaluations(self) -> int:
+        """Maximum candidate evaluations needed to complete a step."""
+        return 1
 
     @staticmethod
     def _insert_vector(
@@ -157,37 +176,45 @@ class NewtonSolver(ABC):
         x: NDArray[np.float64],
         g_x: NDArray[np.float64],
         residual: NDArray[np.float64],
-    ) -> NDArray[np.float64]:
+        cycle: FixedPointFunction,  # noqa: ARG002
+        *,
+        checkpoint: Checkpoint | None = None,  # noqa: ARG002
+    ) -> tuple[
+        NDArray[np.float64],
+        NDArray[np.float64],
+        NDArray[np.float64],
+        NDArray[np.float64],
+        int,
+    ]:
         """
-        Add an iteration to the history and return the next guess.
+        Accept an evaluated point and calculate the next guess.
 
         Parameters
         ----------
-        x : numpy.ndarray
-            The input of the iteration.
-        g_x : numpy.ndarray
-            The fixed-point function of ``x``.
-        residual : numpy.ndarray
-            The residual of the root functions at ``x``.
+        x, g_x, residual : numpy.ndarray
+            Evaluated input, fixed-point output and root residual.
+        cycle : callable
+            Evaluate another input if the method rejects this one.
+        checkpoint : risb.types.Checkpoint, optional
+            Reconstruct the previous accepted calculation before a fallback.
 
         Returns
         -------
-        numpy.ndarray
-            The next guess for x.
+        x, g_x, residual : numpy.ndarray
+            Accepted input, fixed-point output and root residual.
+        x_next : numpy.ndarray
+            Next guess, not yet evaluated.
+        extra_cycles : int
+            Additional evaluations, including checkpoint reconstruction.
 
         """
         error = self.error_of(x, g_x, residual)
-        if self.history_size > 0:
-            self._insert_vector(self.x, x, self.history_size)
-            self._insert_vector(self.g_x, g_x, self.history_size)
-            self._insert_vector(self.error, error, self.history_size)
+        self._insert_vector(self.x, x.copy(), self.history_size)
+        self._insert_vector(self.g_x, g_x.copy(), self.history_size)
+        self._insert_vector(self.error, error.copy(), self.history_size)
         x_next = self.update_x()
-        if self.n_restart is not None and (self.n + 1) % self.n_restart == 0:
-            self.x = []
-            self.g_x = []
-            self.error = []
         self.n += 1
-        return x_next
+        return x, g_x, residual, x_next, 0
 
     def solve(
         self,
@@ -199,6 +226,8 @@ class NewtonSolver(ABC):
         args: tuple[object, ...] = (),
         tol: float = 1e-12,
         maxiter: int = 1000,
+        *,
+        checkpoint: Callable[[], Checkpoint] | None = None,
     ) -> NDArray[np.float64]:
         """
         Find the root of a function.
@@ -219,7 +248,10 @@ class NewtonSolver(ABC):
             Stop when the 2-norm of the error (see :attr:`error_fun`) is below
             this.
         maxiter : int, optional
-            Maximum number of iterations.
+            Maximum number of evaluations, including rejected points and replay.
+        checkpoint : callable, optional
+            Return a checkpoint of the last accepted calculation. Required
+            for rejection when the function has state beyond its input.
 
         Returns
         -------
@@ -228,13 +260,34 @@ class NewtonSolver(ABC):
 
         """
         self.success = False
-        x = deepcopy(x0)
-        for _ in range(maxiter):
-            g_x, residual = fun(x, *args)
-            self.norm = float(np.linalg.norm(self.error_of(x, g_x, residual)))
+        x = x0.copy()
+        accepted_x = self.x[0].copy() if self.x else x.copy()
+        cycles = 0
+
+        def cycle(
+            value: NDArray[np.float64],
+        ) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
+            return fun(value, *args)
+
+        while cycles < maxiter:
+            saved = (
+                checkpoint()
+                if self.can_reject and self.x and checkpoint is not None
+                else None
+            )
+            needed = self.max_candidate_evaluations if self.x else 1
+            if saved is not None:
+                needed += (needed - 1) * saved.evaluations
+            if cycles + needed > maxiter:
+                break
+            g_x, residual = cycle(x)
+            accepted_x, g_x, residual, x, extra = self.step(
+                x, g_x, residual, cycle, checkpoint=saved
+            )
+            cycles += 1 + extra
+            self.norm = float(np.linalg.norm(self.error_of(accepted_x, g_x, residual)))
             logger.info(f"n: {self.n}, error: {self.norm}")
             if self.norm < tol:
                 self.success = True
                 break
-            x = self.step(x, g_x, residual)
-        return x
+        return accepted_x

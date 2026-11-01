@@ -285,10 +285,12 @@ and are called in the sequence they are given in the list.
 another optimizer, or other options for it
 
 ```python
-from risb.optimize import DIIS, LinearMixing
+from risb.optimize import DIIS, Pulay
 
-S.solve(optimizer=DIIS(history_size=10, alpha=0.5), tol=1e-10, maxiter=500)
-S.solve(optimizer=LinearMixing(alpha=0.3))
+S.solve(
+    optimizer=DIIS(history_size=10, policy=Pulay(alpha=0.5)), tol=1e-10, maxiter=500
+)
+S.solve(optimizer=DIIS(history_size=1, policy=Pulay(alpha=0.3, error_fun="recursion")))
 ```
 
 By default, both lattice solvers stop when the root functions `f1` and `f2`
@@ -296,7 +298,7 @@ are zero (`error_fun="root"`). To stop when `Lambda` and `R` stop changing
 instead
 
 ```python
-S.solve(optimizer=DIIS(error_fun="recursion"))
+S.solve(optimizer=DIIS(policy=Pulay(error_fun="recursion")))
 ```
 
 If you want to use {py:func}`scipy.optimize.root`, give its keyword arguments

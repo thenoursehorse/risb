@@ -38,7 +38,13 @@ from risb.diagnostics.block2 import (
 )
 from risb.helpers_fockit import Op_to_tensors
 from risb.helpers_mpi import Comm, SerialComm, gather_tasks, round_robin
-from risb.types import BlockMatrix, BlockMatrixLike, GfStruct, ImpuritySolver
+from risb.types import (
+    BlockMatrix,
+    BlockMatrixLike,
+    Checkpoint,
+    GfStruct,
+    ImpuritySolver,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -894,6 +900,16 @@ class Block2ImpuritySolver(_Block2Base):
 
         #: float : Entropy of the ground state, zero.
         self.entropy = 0.0
+
+    @override
+    def checkpoint(self) -> Checkpoint:
+        """Save the sector used to break near-degenerate ground-state ties."""
+        previous = self._previous
+
+        def restore() -> None:
+            self._previous = previous
+
+        return Checkpoint(restore)
 
     @override
     @diagnostic_stage

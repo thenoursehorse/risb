@@ -18,10 +18,10 @@ S_next.solve(tol=...)
 Try another history size for {{DIIS}}, or plain linear mixing
 
 ```python
-from risb.optimize import DIIS, LinearMixing
+from risb.optimize import DIIS, Pulay
 
 S.solve(optimizer=DIIS(history_size=10))
-S.solve(optimizer=LinearMixing(alpha=0.5))
+S.solve(optimizer=DIIS(history_size=1, policy=Pulay(alpha=0.5, error_fun="recursion")))
 ```
 
 Both lattice solvers and {{DIIS}} stop on the root functions by default.
@@ -31,7 +31,7 @@ transition. Without ghosts, it can also help in the atomic Mott limit
 (`R = 0`), where the decoupled bath can leave nonzero density residuals
 
 ```python
-S.solve(optimizer=DIIS(error_fun="recursion"))
+S.solve(optimizer=DIIS(policy=Pulay(error_fun="recursion")))
 ```
 
 Check `S.self_consistency_error` and the physical filling: unchanged parameters

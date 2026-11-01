@@ -10,7 +10,7 @@ from numpy.typing import NDArray
 from scipy.optimize import root
 
 from risb.diagnostics import DiagnosticObserver
-from risb.types import FixedPointProblem
+from risb.types import Checkpointable, FixedPointProblem
 
 from .solver_newton import NewtonSolver
 
@@ -27,13 +27,13 @@ class SolveResult:
     #: bool : Whether the error fell below the tolerance.
     converged: bool
 
-    #: int : Number of cycles.
+    #: int : Number of evaluations, including rejected points and replay.
     cycles: int
 
     #: float : 2-norm of the error of the last cycle.
     error: float
 
-    #: list of float : 2-norm of the error of every cycle.
+    #: list of float : Error norms at accepted points.
     history: list[float] = field(default_factory=list)
 
     #: numpy.ndarray or None : The next guess, where a following solve can
@@ -81,7 +81,8 @@ class FixedPointLoop:
     Parameters
     ----------
     problem : risb.types.FixedPointProblem
-        The problem to solve.
+        The problem to solve. With a rejecting optimizer, implement
+        ``checkpoint()`` if state beyond x affects subsequent cycles.
     optimizer : risb.optimize.NewtonSolver
         Gives the next guess after each cycle. It keeps its history from
         before; :meth:`~risb.optimize.NewtonSolver.reset` clears it.
@@ -90,7 +91,9 @@ class FixedPointLoop:
     tol : float, optional
         Stop when the 2-norm of the error is below this.
     maxiter : int, optional
-        Maximum number of cycles.
+        Maximum number of evaluations, including rejected points and replay.
+        A rejecting optimizer stops early if the remaining budget cannot
+        cover a complete step; continue from ``x_next`` with the same optimizer.
     x0 : numpy.ndarray, optional
         Where to start. Default is the current guess of `problem`.
     diagnostics : risb.diagnostics.DiagnosticObserver, optional
@@ -130,7 +133,7 @@ class FixedPointLoop:
         #: float : 2-norm of the error of the last cycle.
         self.error = np.inf
 
-        #: list of float : 2-norm of the error of every cycle.
+        #: list of float : Error norms at accepted points.
         self.history: list[float] = []
 
         #: bool : Whether the error of the last cycle is below the tolerance.
@@ -161,9 +164,27 @@ class FixedPointLoop:
 
         """
         while self.cycle < self.maxiter:
-            self.x = self.x_next
-            x_new, residual = self.problem.cycle(self.x)
-            self.cycle += 1
+            saved = (
+                self.problem.checkpoint()
+                if self.optimizer.can_reject
+                and self.optimizer.x
+                and isinstance(self.problem, Checkpointable)
+                else None
+            )
+            needed = self.optimizer.max_candidate_evaluations if self.optimizer.x else 1
+            if saved is not None:
+                needed += (needed - 1) * saved.evaluations
+            if self.cycle + needed > self.maxiter:
+                if self.optimizer.x:
+                    self.x = self.optimizer.x[0].copy()
+                    self.error = float(np.linalg.norm(self.optimizer.error[0]))
+                    self.converged = self.error < self.tol
+                break
+            x_new, residual = self.problem.cycle(self.x_next)
+            self.x, x_new, residual, self.x_next, extra = self.optimizer.step(
+                self.x_next, x_new, residual, self.problem.cycle, checkpoint=saved
+            )
+            self.cycle += 1 + extra
             self.error = float(
                 np.linalg.norm(self.optimizer.error_of(self.x, x_new, residual))
             )
@@ -172,7 +193,6 @@ class FixedPointLoop:
             self.history.append(self.error)
             error_fun = self.optimizer.error_fun
             logger.info(f"cycle: {self.cycle}, error: {self.error}")
-            self.x_next = self.optimizer.step(self.x, x_new, residual)
             self.converged = self.error < self.tol
             for callback in self.callbacks:
                 callback(self, self.problem)
@@ -218,7 +238,9 @@ def solve_fixed_point(
     Parameters
     ----------
     problem : risb.types.FixedPointProblem
-        The problem to solve, e.g., a :class:`risb.LatticeSolver`.
+        The problem to solve, e.g., a :class:`risb.LatticeSolver`. With a
+        rejecting optimizer, implement ``checkpoint()`` if state beyond x
+        affects subsequent cycles.
     optimizer : risb.optimize.NewtonSolver or risb.optimize.ScipyRoot
         Gives the next guess after each cycle, e.g., :class:`.DIIS`. It keeps
         its history from before; :meth:`~risb.optimize.NewtonSolver.reset`
@@ -230,7 +252,10 @@ def solve_fixed_point(
         Stop when the 2-norm of the error is below this. A :class:`ScipyRoot`
         stops by its own options.
     maxiter : int, optional
-        Maximum number of cycles. Not used with a :class:`ScipyRoot`.
+        Maximum number of evaluations, including rejected points and replay.
+        A rejecting optimizer stops early if the remaining budget cannot
+        cover a complete step; continue from ``x_next`` with the same optimizer.
+        Not used with a :class:`ScipyRoot`.
     x0 : numpy.ndarray, optional
         Where to start. Default is the current guess of `problem`.
     diagnostics : risb.diagnostics.DiagnosticObserver, optional

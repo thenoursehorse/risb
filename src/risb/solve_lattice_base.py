@@ -21,6 +21,7 @@ import warnings
 from abc import ABC, abstractmethod
 from collections.abc import Callable, Mapping, Sequence
 from contextlib import AbstractContextManager
+from copy import deepcopy
 from typing import TypeIs
 
 import numpy as np
@@ -35,6 +36,7 @@ from risb.types import (
     BlockMatrix,
     BlockMatrixLike,
     BlockRealArray,
+    Checkpoint,
     GaugeFix,
     GfStruct,
     ImpuritySolver,
@@ -302,6 +304,8 @@ class BaseLatticeSolver(ABC):
                 self.R[i][bl] = np.kron(np.array(r)[:, None], eye).astype(dtype)
                 self.Lambda[i][bl] = np.kron(np.diag(levels), eye).astype(dtype)
 
+        self._checkpoint: Checkpoint | None = None
+
         #: list of risb.types.BlockMatrix : Bath coupling of the impurity problem for each cluster.
         self.Lambda_c: list[BlockMatrix] = [{} for i in range(self.n_clusters)]
 
@@ -509,6 +513,19 @@ class BaseLatticeSolver(ABC):
             The root functions :attr:`f2` and :attr:`f1`, zero at a solution.
 
         """
+        cycle_x = x.copy()
+        rho_c = deepcopy(self.rho_c) if self.double_counting is not None else None
+        mu = self.mu
+        impurities = [solver.checkpoint() for solver in self.impurity_solvers]
+
+        def restore() -> None:
+            if rho_c is not None:
+                self.rho_c = deepcopy(rho_c)
+            self.mu = mu
+            for saved in impurities:
+                saved.restore()
+            BaseLatticeSolver.cycle(self, cycle_x)
+
         self._set_lambda_r(x)
         Lambda, R, self.f1, self.f2 = self.one_cycle()
         if self.gauge_fix is not None:
@@ -523,7 +540,25 @@ class BaseLatticeSolver(ABC):
             self._flatten_matrix(Lambda, is_hermitian=True, name="Lambda")
             + self._flatten_matrix(R, is_hermitian=False, name="R")
         )
+        self._checkpoint = Checkpoint(restore, evaluations=1)
         return x_new, residual
+
+    def checkpoint(self) -> Checkpoint:
+        """
+        Reconstruct the last cycle from its parameters and carried state.
+
+        Restoring reruns the cycle, including the impurity solves. Evaluation
+        counters and diagnostic output continue to include that work.
+
+        Returns
+        -------
+        risb.types.Checkpoint
+
+        """
+        if self._checkpoint is None:
+            msg = "Run a cycle before taking a checkpoint."
+            raise RuntimeError(msg)
+        return self._checkpoint
 
     def default_optimizer(self) -> NewtonSolver:
         """
@@ -532,10 +567,10 @@ class BaseLatticeSolver(ABC):
         Returns
         -------
         risb.optimize.NewtonSolver
-            :class:`.DIIS` with ``error_fun='root'``.
+            :class:`.DIIS` with its default :class:`.Pulay` policy.
 
         """
-        return DIIS(error_fun="root")
+        return DIIS()
 
     def default_callbacks(self) -> list[Callback]:
         """
@@ -789,7 +824,8 @@ class BaseLatticeSolver(ABC):
             Stop when the 2-norm of the error (see ``error_fun`` of the
             optimizer) is below this. Default is ``1e-12``.
         maxiter : int, optional
-            Maximum number of cycles. Default is ``1000``.
+            Maximum number of evaluations, including rejected steps and
+            checkpoint reconstruction.
         self_consistency_tol : float, optional
             Warn if :attr:`self_consistency_error` is above this after a
             self-consistent solve. The optimizer can stop where the guess of

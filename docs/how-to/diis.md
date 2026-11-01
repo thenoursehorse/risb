@@ -14,7 +14,7 @@ guesses that have too much influence on new gusses for $x$.
 To specify how big the history should be
 
 ```python
-from risb.optimize import DIIS
+from risb.optimize import DIIS, Pulay
 
 optimize = DIIS(history_size=...)
 ```
@@ -22,7 +22,7 @@ optimize = DIIS(history_size=...)
 If you want to reset the entire history after $n$ iterations
 
 ```python
-optimize = DIIS(n_restart=...)
+optimize = DIIS(policy=Pulay(restart_period=...))
 ```
 
 The history is kept between solves, so passing the same optimizer to another
@@ -47,19 +47,19 @@ the next. It is the mixing parameter of Pulay mixing in DFT codes
 (`mixing_beta` in Quantum ESPRESSO)
 
 ```python
-optimize = DIIS(alpha=...)
+optimize = DIIS(policy=Pulay(alpha=...))
 ```
 
 ## Linear mixing step
 
 Our implementation takes a single linear mixing step, with the same $\alpha$,
-every `n_period` iterations.
+every `mixing_period` iterations.
 
 To change how frequently a linear mixing step is taken, or to never take one
 with `None`
 
 ```python
-optimize = DIIS(n_period=...)
+optimize = DIIS(policy=Pulay(mixing_period=...))
 ```
 
 ## Only linear mixing
@@ -67,9 +67,9 @@ optimize = DIIS(n_period=...)
 If you just want to use linear mixing with nothing special
 
 ```python
-from risb.optimize import LinearMixing
+from risb.optimize import DIIS, Pulay
 
-optimize = LinearMixing(alpha=...)
+optimize = DIIS(history_size=1, policy=Pulay(alpha=..., error_fun="recursion"))
 ```
 
 ## Arguments to `solve()`
@@ -87,7 +87,7 @@ The error is the supplied root residual by default. To use the change
 `g_x - x` instead
 
 ```python
-optimize = DIIS(error_fun="recursion")
+optimize = DIIS(policy=Pulay(error_fun="recursion"))
 ```
 
 ## Using with `LatticeSolver`
@@ -99,7 +99,7 @@ optimize = DIIS(error_fun="recursion")
 If you want to use your customized {{DIIS}} solver
 
 ```python
-S.solve(optimizer=DIIS(alpha=...), tol=..., maxiter=...)
+S.solve(optimizer=DIIS(policy=Pulay(alpha=...)), tol=..., maxiter=...)
 ```
 
 [^Chupin2021]:

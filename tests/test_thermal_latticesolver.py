@@ -16,7 +16,7 @@ from risb import LatticeSolver, ThermalLatticeSolver, helpers
 from risb.helpers_fockit import h_int_kanamori
 from risb.impurity_solvers import FockitImpuritySolver, FockitThermalImpuritySolver
 from risb.kweight import SmearingKWeight
-from risb.optimize import LinearMixing
+from risb.optimize import DIIS, Pulay
 from risb.types import BlockMatrixLike, GfStruct
 
 ONE_BAND: GfStruct = [("up", 1), ("dn", 1)]
@@ -280,7 +280,7 @@ def test_four_ghosts_per_orbital_converge_to_the_two_ghost_solution() -> None:
     )
 
 
-@pytest.mark.parametrize("optimizer", ["DIIS", "LinearMixing"])
+@pytest.mark.parametrize("optimizer", ["DIIS", "mixing"])
 def test_fixed_filling_is_the_fixed_mu_solution_at_the_mu_it_finds(
     optimizer: str,
 ) -> None:
@@ -289,7 +289,12 @@ def test_fixed_filling_is_the_fixed_mu_solution_at_the_mu_it_finds(
     if optimizer == "DIIS":
         S.solve(tol=1e-10)
     else:
-        S.solve(optimizer=LinearMixing(error_fun="root"), tol=1e-10)
+        S.solve(
+            optimizer=DIIS(
+                history_size=1, policy=Pulay(error_fun="root", mixing_period=1)
+            ),
+            tol=1e-10,
+        )
     assert S.n_electrons == pytest.approx(n_target, abs=1e-8)
     assert S.mu < 0
     S_mu, _ = bethe_lattice(hubbard(2.0), 3, T, mu=S.mu)

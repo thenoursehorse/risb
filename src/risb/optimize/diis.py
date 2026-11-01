@@ -15,60 +15,194 @@
 #
 # Authors: H. L. Nourse
 
-"""DIIS optimizers."""
+"""Pulay mixing and safeguarded Anderson acceleration."""
 
 from collections.abc import Sequence
+from dataclasses import dataclass
 from typing import Literal, override
 
 import numpy as np
 import scipy
 from numpy.typing import NDArray
 
+from risb.types import Checkpoint, FixedPointFunction
+
 from .solver_newton import NewtonSolver
+
+
+@dataclass
+class Pulay:
+    """
+    Periodic Pulay mixing.
+
+    Parameters
+    ----------
+    alpha : float, optional
+        Fraction of the extrapolated fixed-point correction to take.
+    mixing_period : int or None, optional
+        Use linear mixing every this many steps, or never if None.
+    restart_period : int or None, optional
+        Clear the subspace every this many steps, or never if None.
+    error_fun : {'root', 'recursion'}, optional
+        Minimize the supplied root residual or the change ``g(x) - x``.
+
+    """
+
+    alpha: float = 1.0
+    mixing_period: int | None = 3
+    restart_period: int | None = None
+    error_fun: Literal["root", "recursion"] = "root"
+
+    can_reject = False
+    max_candidate_evaluations = 1
+
+    def update_x(
+        self,
+        x: Sequence[NDArray[np.float64]],
+        g_x: Sequence[NDArray[np.float64]],
+        error: Sequence[NDArray[np.float64]],
+        iteration: int,
+    ) -> NDArray[np.float64]:
+        """Mix the latest point or extrapolate from the subspace."""
+        if self.mixing_period is not None and (iteration + 1) % self.mixing_period == 0:
+            return x[0] + self.alpha * (g_x[0] - x[0])
+        return DIIS.extrapolate(x, g_x, error, self.alpha)
+
+
+@dataclass
+class BianLi:
+    """
+    Bian-Li Algorithm 1, using the recursion residual ``g(x) - x``.
+
+    Accept an Anderson step when its residual norm is at most
+    ``gamma * max(history norms)``. Otherwise take a damped fixed-point
+    step from the last accepted point and restart the subspace.
+
+    Parameters
+    ----------
+    schedule : {'iteration', 'residual', 'constant', 'combined'}, optional
+        With step index k, largest history norm W and initial norm W0:
+        ``iteration`` uses ``1 - 1/(k+2)``;
+        ``residual`` uses ``1 - W/(2*(W0+W))``;
+        ``constant`` uses `gamma`; and
+        ``combined`` uses ``1 - max(1/(k+2), W/(2*W0))``.
+    fallback_mixing : float, optional
+        Mixing fraction lambda for the fallback step. Use less than one
+        for the paper's nonexpansive case.
+    gamma : float, optional
+        Acceptance factor for the constant schedule.
+
+    Notes
+    -----
+    See Bian and Li, https://arxiv.org/abs/2609.28950.
+    The convergence results require assumptions on the fixed-point map;
+    these have not been established for RISB. The combined rule raises
+    ValueError if its required residual bound fails.
+
+    """
+
+    schedule: Literal["iteration", "residual", "constant", "combined"] = "iteration"
+    fallback_mixing: float = 0.5
+    gamma: float = 0.5
+
+    can_reject = True
+    max_candidate_evaluations = 2
+
+    def __post_init__(self) -> None:
+        """Check the schedule and mixing fraction."""
+        if self.schedule not in {"iteration", "residual", "constant", "combined"}:
+            msg = f"Unknown Bian-Li schedule: {self.schedule}"
+            raise ValueError(msg)
+        if not 0 < self.fallback_mixing <= 1:
+            msg = "fallback_mixing must be in (0, 1]."
+            raise ValueError(msg)
+        if not 0 < self.gamma < 1:
+            msg = "gamma must be in (0, 1)."
+            raise ValueError(msg)
+
+    def acceptance_factor(
+        self, iteration: int, window_norm: float, initial_norm: float
+    ) -> float:
+        """Return the paper's gamma for this step."""
+        if self.schedule == "iteration":
+            gamma = 1 - 1 / (iteration + 2)
+        elif self.schedule == "residual":
+            gamma = 1 - window_norm / (2 * (initial_norm + window_norm))
+        elif self.schedule == "constant":
+            gamma = self.gamma
+        else:
+            gamma = 1 - max(1 / (iteration + 2), window_norm / (2 * initial_norm))
+        if not 0 < gamma < 1:
+            msg = "Bian-Li gamma is outside (0, 1); the schedule's assumptions failed."
+            raise ValueError(msg)
+        return gamma
+
+    def update_x(
+        self,
+        x: Sequence[NDArray[np.float64]],
+        g_x: Sequence[NDArray[np.float64]],
+        error: Sequence[NDArray[np.float64]],
+        _iteration: int,
+    ) -> NDArray[np.float64]:
+        """Return the unregularized Anderson step."""
+        return DIIS.extrapolate(x, g_x, error)
 
 
 class DIIS(NewtonSolver):
     """
-    Direct inversion in the iterative subspace to minimize a function.
+    Direct inversion in the iterative subspace.
 
     Parameters
     ----------
     history_size : int, optional
-        Maximum size of subspace.
-    n_restart : int, optional
-        Fully reset subspace after this many iterations. Defaults to never.
-    n_period : int or None, optional
-        Take a single linear mixing step every this many iterations, or never
-        if None. Default is ``3``.
-    alpha : float, optional
-        Step size of every iteration, as the mixing parameter of Pulay
-        mixing (``mixing_beta`` in Quantum ESPRESSO). Each new guess moves
-        this fraction of the way from the extrapolated guess toward the
-        extrapolated fixed-point function. Default is ``1``, the full step.
-    error_fun : {'recursion', 'root'}, optional
-        The error of an iteration, see :class:`.NewtonSolver`. Default is ``'root'``.
+        Maximum number of accepted points in the subspace. This is the
+        paper's memory parameter m plus one.
+    policy : Pulay or BianLi, optional
+        Mixing, acceptance and restart rules. Defaults to Pulay.
 
     Notes
     -----
-    Algorithm 2 (Anderson type) in `10.1051/m2an/2021069 <hal-02492983v5_>`__.
-
-    .. _hal-02492983v5: https://doi.org/10.1051/m2an/2021069
+    With recursion residuals this is Anderson acceleration: algorithm 2 in
+    https://doi.org/10.1051/m2an/2021069. A history of one gives linear mixing.
 
     """
 
     def __init__(
-        self,
-        history_size: int = 6,
-        n_restart: int | None = None,
-        n_period: int | None = 3,
-        alpha: float = 1.0,
-        error_fun: Literal["recursion", "root"] = "root",
+        self, history_size: int = 6, *, policy: Pulay | BianLi | None = None
     ) -> None:
-        super().__init__(
-            history_size=history_size, n_restart=n_restart, error_fun=error_fun
-        )
-        self.alpha = alpha
-        self.n_period = n_period
+        self.policy = Pulay() if policy is None else policy
+        super().__init__(history_size=history_size, error_fun=self.error_fun)
+        self._initial_norm = 0.0
+
+    @property  # type: ignore[explicit-override]
+    @override
+    def error_fun(self) -> Literal["root", "recursion"]:
+        """Residual chosen by the policy."""
+        return self.policy.error_fun if isinstance(self.policy, Pulay) else "recursion"
+
+    @error_fun.setter
+    @override
+    def error_fun(self, value: Literal["root", "recursion"]) -> None:
+        if value not in {"root", "recursion"}:
+            msg = f"Unknown error_fun: {value}"
+            raise ValueError(msg)
+        if isinstance(self.policy, Pulay):
+            self.policy.error_fun = value
+        elif value != "recursion":
+            msg = "BianLi uses the recursion residual."
+            raise ValueError(msg)
+
+    @override
+    @property
+    def can_reject(self) -> bool:
+        """Whether a step can reject an evaluated point."""
+        return self.policy.can_reject
+
+    @override
+    @property
+    def max_candidate_evaluations(self) -> int:
+        """Maximum candidate evaluations needed to complete a step."""
+        return self.policy.max_candidate_evaluations
 
     @staticmethod
     def extrapolate(
@@ -77,30 +211,17 @@ class DIIS(NewtonSolver):
         error: Sequence[NDArray[np.float64]],
         alpha: float = 1.0,
     ) -> NDArray[np.float64]:
-        """DIIS extrapolation algorithm for the new guess for :attr:`.NewtonSolver.x`."""
-        # Construct the B matrix
+        """Minimize the combined residual with coefficients that sum to one."""
         m = len(error)
-        B = np.empty(shape=(m, m))
-        for i in range(m):
-            for j in range(m):
-                B[i, j] = np.dot(error[i], error[j])
-        # Scale to order 1, else near convergence the pseudo-inverse treats B
-        # as zero next to the constraint row. The constraint fixes the scale of c
+        B = np.array([[np.dot(a, b) for b in error] for a in error])
         if np.max(np.abs(B)) > 0:
             B = B / np.max(np.abs(B))
-
-        # Add the constraint lambda
-        B = np.column_stack((B, -np.ones(B.shape[0])))
-        B = np.vstack((B, -np.ones(B.shape[1])))
+        B = np.column_stack((B, -np.ones(m)))
+        B = np.vstack((B, -np.ones(m + 1)))
         B[m, m] = 0.0
-
-        # Solve for the c coefficients (last element in c gives lambda constraint)
-        rhs = np.zeros(B.shape[0])
+        rhs = np.zeros(m + 1)
         rhs[-1] = -1.0
-
-        c = np.dot(scipy.linalg.pinv(B), rhs)
-
-        # Step alpha of the way from the combination of x to that of g(x)
+        c = scipy.linalg.pinv(B) @ rhs
         x_bar = np.zeros(x[0].shape)
         g_bar = np.zeros(x[0].shape)
         for i in range(m):
@@ -108,16 +229,60 @@ class DIIS(NewtonSolver):
             g_bar += c[i] * g_x[i]
         return x_bar + alpha * (g_bar - x_bar)
 
-    # x_i, error(x_i), g(x_i) where g(x_i) is the fixed-point function
-    # that gives a new x_i
     @override
     def update_x(self) -> NDArray[np.float64]:
-        """Return a new guess for the vector x."""
-        if self.n_period is not None and (self.n + 1) % self.n_period == 0:
-            # Do linear mixing
-            x_opt = self.x[0] + self.alpha * (self.g_x[0] - self.x[0])
-        else:
-            # Do DIIS
-            x_opt = self.extrapolate(self.x, self.g_x, self.error, self.alpha)
+        """Return the next guess using the policy."""
+        return self.policy.update_x(self.x, self.g_x, self.error, self.n)
 
-        return x_opt
+    @override
+    def step(
+        self,
+        x: NDArray[np.float64],
+        g_x: NDArray[np.float64],
+        residual: NDArray[np.float64],
+        cycle: FixedPointFunction,
+        *,
+        checkpoint: Checkpoint | None = None,
+    ) -> tuple[
+        NDArray[np.float64],
+        NDArray[np.float64],
+        NDArray[np.float64],
+        NDArray[np.float64],
+        int,
+    ]:
+        """Accept the evaluated point, or restore and evaluate the Bian-Li fallback."""
+        extra_cycles = 0
+        if isinstance(self.policy, BianLi):
+            if self.n == 0:
+                self._initial_norm = float(np.linalg.norm(g_x - x))
+            if self.x:
+                window = max(float(np.linalg.norm(e)) for e in self.error)
+                gamma = (
+                    self.policy.acceptance_factor(
+                        self.n - 1, window, self._initial_norm
+                    )
+                    if window > 0
+                    else 0.5
+                )
+                if not np.linalg.norm(g_x - x) <= gamma * window:
+                    x = self.x[0] + self.policy.fallback_mixing * (
+                        self.g_x[0] - self.x[0]
+                    )
+                    if checkpoint is not None:
+                        checkpoint.restore()
+                        extra_cycles += checkpoint.evaluations
+                    g_x, residual = cycle(x)
+                    extra_cycles += 1
+                    self.x = []
+                    self.g_x = []
+                    self.error = []
+        x, g_x, residual, x_next, _ = super().step(x, g_x, residual, cycle)
+        if (
+            isinstance(self.policy, Pulay)
+            and self.policy.restart_period is not None
+            and self.n % self.policy.restart_period == 0
+        ):
+            self.x = []
+            self.g_x = []
+            self.error = []
+        return x, g_x, residual, x_next, extra_cycles

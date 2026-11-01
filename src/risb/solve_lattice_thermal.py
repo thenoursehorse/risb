@@ -18,6 +18,7 @@
 """Solver for finite-temperature rotationally invariant slave-boson mean-field theory on a lattice."""
 
 from collections.abc import Callable, Mapping, Sequence
+from copy import deepcopy
 from functools import partial
 from typing import Any, override
 
@@ -35,6 +36,7 @@ from risb.types import (
     BlockMatrix,
     BlockMatrixLike,
     BlockRealArray,
+    Checkpoint,
     DensityMatchingJacobian,
     DensityMatchingRegularization,
     GaugeFix,
@@ -416,14 +418,27 @@ class ThermalLatticeSolver(BaseLatticeSolver):
             ``n_target`` ``n_electrons - n_target``, zero at a solution.
 
         """
+        D, Lambda_c = deepcopy(self.D), deepcopy(self.Lambda_c)
+        alpha, anchors = self._anchor_alpha, deepcopy(self._anchors)
         if self.n_target is None:
-            return super().cycle(x)
-        self.mu = float(x[-1])
-        x_new, residual = super().cycle(x[:-1])
-        mu_new = self.mu + self.n_target - self.n_electrons
-        return np.append(x_new, mu_new), np.append(
-            residual, self.n_electrons - self.n_target
-        )
+            x_new, residual = super().cycle(x)
+        else:
+            self.mu = float(x[-1])
+            x_new, residual = super().cycle(x[:-1])
+            mu_new = self.mu + self.n_target - self.n_electrons
+            x_new = np.append(x_new, mu_new)
+            residual = np.append(residual, self.n_electrons - self.n_target)
+        base_checkpoint = super().checkpoint()
+
+        def restore() -> None:
+            self.D, self.Lambda_c = deepcopy(D), deepcopy(Lambda_c)
+            self._anchor_alpha, self._anchors = alpha, deepcopy(anchors)
+            base_checkpoint.restore()
+            self._checkpoint = saved
+
+        saved = Checkpoint(restore, evaluations=base_checkpoint.evaluations)
+        self._checkpoint = saved
+        return x_new, residual
 
     @override
     def default_optimizer(self) -> NewtonSolver:
@@ -433,12 +448,12 @@ class ThermalLatticeSolver(BaseLatticeSolver):
         Returns
         -------
         risb.optimize.NewtonSolver
-            :class:`.DIIS` with ``error_fun='root'``. At high temperature
+            :class:`.DIIS` with its default :class:`.Pulay` policy. At high temperature
             :attr:`Lambda` and :attr:`R` can keep changing at a solution, so
             their change is not a good error.
 
         """
-        return DIIS(error_fun="root")
+        return DIIS()
 
     @override
     def default_callbacks(self) -> list[Callback]:
@@ -474,7 +489,7 @@ class ThermalLatticeSolver(BaseLatticeSolver):
         first call after this method. At high temperature, some combinations
         of parameters can move without changing the density matrices much.
         The anchor limits that motion until :meth:`release` or the next
-        :meth:`solve`. Use :attr:`density_matching_regularization` to choose
+        :meth:`solve`. Use ``density_matching_regularization`` to choose
         which parameter changes to penalize.
 
         Parameters

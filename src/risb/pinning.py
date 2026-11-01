@@ -28,7 +28,7 @@ class FullEmptyPinning(PinFullEmpty):
     ----------
     edge_tol : float, optional
         An orbital is full or empty when ``n * (1 - n)`` is below this.
-        The gradients in :mod:`risb.helpers` use :data:`risb.helpers.EDGE_TOL`.
+        The gradients in :mod:`risb.helpers` use ``risb.helpers.EDGE_TOL``.
     margin : float, optional
         Distance of the pinned levels from the active levels, in units of the
         energy scale of the model.

@@ -7,8 +7,8 @@ physical residuals, not only iteration count. Keep prototypes outside the reposi
 
 - Analytic thermal-fit Jacobians and directional penalties apply to
   ThermalLatticeSolver only. LatticeSolver has no thermal fits.
-- T = 0 follow-up: inverse square roots, full/empty pinning, ground-state
-  crossings, and consistent continuation. Not covered by these prototypes.
+- T = 0 spectral cutoffs and full/empty pinning are prototyped below.
+  Ground-state crossings and consistent continuation remain open.
 - Directional Tikhonov regularization belongs inside both nonlinear
   least-squares fits, not DIIS. It penalizes motion along weak response
   directions more than well-determined ones.
@@ -32,7 +32,15 @@ physical residuals, not only iteration count. Keep prototypes outside the reposi
 7. [x] Record results, limitations and recommended next step.
 8. [x] Add analytic derivatives and response-weighted anchoring as
    optional features, preserving current defaults.
-9. [ ] Investigate T = 0 smoothing separately.
+9. [x] Prototype T = 0 spectral regularization; reject the tested forms after physical regressions.
+10. [x] Prototype smooth full/empty pinning and a smooth near-edge step cap.
+11. [x] Add clip/smooth step-cap methods; compare both defaults across the full suite.
+12. [x] Prototype bounded corrections using the original matching equations; compare core choices.
+13. [ ] Find a variant that improves reliability across starts without relying on a branch change.
+14. [x] Review current line-search/trust-region literature and prototype T=0 safeguards.
+15. [x] Prototype matching-residual models and test the published Anderson algorithms with g(x)-x.
+16. [x] Add and evaluate iteration-scheduled safeguarded Anderson as an optional DIIS policy.
+17. [ ] Investigate the separate direct-variational T=0 route.
 
 ## Results
 
@@ -379,3 +387,721 @@ pass. The same known complex embedding was also checked with weighted
 anchoring under both derivative methods; its reported physical errors
 agree with errors calculated directly from the density matrices.
 No tests or benchmark files were added for this refactor.
+
+## T = 0 prototypes (2026-11-01)
+
+Prototypes only: /tmp/risb-smoother-map/zero_temperature.py and
+/tmp/risb-smoother-map/zero_checks.py. No production changes, new suite
+tests or benchmark additions.
+
+### Spectral regularization
+
+Tried two functions of K = n (1 - n):
+- Floor: f(K) = sqrt(K + epsilon), inverse 1 / f(K).
+- Taper: f(K) = K / sqrt(K + epsilon), with damped inverse
+  K / (K + epsilon)^(3/2). This inverse is deliberately approximate.
+
+Each gradient differentiates its corresponding forward function using
+stable divided differences. The taper's divided difference is
+(1 - n_i - n_j) (1 + epsilon / (a_i a_j)) / (a_i + a_j),
+where a_i = sqrt(K_i + epsilon). It stays finite at repeated levels.
+Finite-difference gradient checks: about 3e-8 relative error for the
+real floor examples, 9e-8 for a complex repeated-level example, and
+7e-8 for the taper. These are experiment checks, not added tests.
+
+The tapered forward function and damped inverse do not multiply to one:
+their product is K^2 / (K + epsilon)^2. Dropping them into the existing
+closed-form R update therefore makes its fixed point incompatible with
+exact matching for nonzero epsilon and correlations. A residual-correction
+update would be a different experiment; tuning this taper alone is
+insufficient. The floor keeps that inverse identity but changes the
+exact-edge constraints.
+
+Neither version is ready for production:
+- The floor alone breaks exact-edge controls. Combining it with smooth
+  pinning helps the custom controls but fails the existing pinned
+  full-orbital regression: active Z changes from 0.86117659 to 0.91988525.
+  The no-pinning negative control also changes its wrong-filling result.
+- Floor epsilon = 1e-8 can leave original matching errors above 1e-8
+  despite the modified equations converging. At epsilon = 1e-10 the
+  custom controls pass, but reducing epsilon to 1e-12 leaves one of
+  three noninteracting starts unconverged; 1e-14 leaves all three
+  unconverged within 200 cycles. Pinning width was 100 epsilon in this
+  sweep, so it does not isolate the source of that sensitivity.
+- The taper preserves zero at exact edges but is worse overall: only
+  one of three full-orbital starts and none of three metal starts
+  converge within 200 cycles, with or without smooth pinning.
+- Custom full-orbital controls use dense impurity diagonalization and
+  force_real=True; the existing regression uses the usual solver options.
+  Passing the custom controls did not establish equivalent behavior.
+
+### Smooth pinning and step cap
+
+For occupation spread K, use p = 1 - smoothstep(K / width), with the
+quintic smoothstep clipped to [0, 1]. Replace eigenvector-by-eigenvector
+diagonal changes with a matrix blend:
+A Lambda A + V diag((2 p - p^2) target) V^dag, A = V diag(1 - p) V^dag.
+This also damps couplings to pinned orbitals. Quasiparticle targets use
+smooth bounds of A Lambda A; log-sum-exp replaces switching active
+subspaces and hard extrema.
+
+The step cap uses a tapered near-edge matrix Q and step
+Q (Lambda - Lambda_in) Q. Multiply that step by
+limit / sqrt(limit^2 + ||step||_F^2), rather than switching a spectral-norm
+cap on at a threshold. Edge pinning and the cap can be tried separately.
+
+Direct prescribed-matrix probes cross the old thresholds:
+- Bath pinning: the old output jump remains 15 as the perturbation shrinks.
+- QP pinning: the old jump remains 19.5.
+- Near-edge cap: the old jump remains 3.
+- The smooth versions' differences tend to zero in each probe.
+These probes establish local continuity of those operations, not the
+whole interacting map. The hard spectral cutoff remains with pinning alone.
+
+### Convergence comparisons
+
+Same starts per variant; default start and two 0.01 perturbations;
+outer tolerance 1e-9, limit 200 cycles; one BLAS/OpenMP thread.
+Model controls: full-orbital charge transfer, B=3 Hubbard metal and Mott
+state, B=5 ground-state impurity, and B=3 noninteracting limit.
+The criterion is optimizer convergence and original f1/f2 errors < 1e-8.
+
+| Case | Baseline cycles | Smooth pinning cycles |
+| --- | --- | --- |
+| Full orbital | 14, 11, 12 | 14, 11, 11 |
+| B=3 metal | 11, 14, 14 | 11, 14, 14 |
+| B=3 Mott | 17, 14, 14 | 17, 14, 14 |
+| B=5 ground state | all reach 200 | all reach 200 |
+| B=3 noninteracting | 7, 7, 7 | 2, 3, 3 |
+
+Both pass 12/15 starts. Smooth pinning does not rescue B=5 and can increase
+its residual. Widths 1e-10, 1e-8 and 1e-6 retain convergence and matching
+physics on the full-orbital and noninteracting controls.
+
+Known two-orbital B=3 quarter-filling regression, 2000 Bethe points,
+beta=2000, U=3, J=0.45, default start and seeds 1, 2, 4 with noise 0.05:
+baseline cycles 26, 26, 24, 40; smooth pinning 20, 24, 26, 25.
+All converge; energy differences are below 7e-10. At seed 4, cap-only
+takes 25 cycles, edge-transition-only 40, and both 25. The speedup in
+this case comes from the step cap. This is no improvement in success rate.
+
+### Existing tests and assessment
+
+Six existing physical cases: full-orbital pinned/unpinned, noninteracting
+ghosts, published Hubbard metal/Mott results, and complex Lagrangian
+stationarity. Baseline: 6 pass. Smooth pinning alone: 6 pass in 0.61 s.
+Floor plus smooth pinning: 2 fail, 4 pass; floor alone: 3 fail, 3 pass.
+No assertions or tolerances were changed. Ruff, Ruff LSP and strict mypy
+pass for both external prototype files.
+
+The smooth cap is the most promising feature candidate. The full/empty
+transition removes a real switch but has no demonstrated general
+convergence benefit. Reject the two spectral prototypes in their present
+form. More smoothness alone did not improve reliable convergence here.
+
+Reproduce from the repository root, with OMP_NUM_THREADS=1,
+OPENBLAS_NUM_THREADS=1 and VECLIB_MAXIMUM_THREADS=1:
+- uv run python /tmp/risb-smoother-map/zero_temperature.py continuity
+- uv run python /tmp/risb-smoother-map/zero_temperature.py cycles
+- uv run python /tmp/risb-smoother-map/zero_temperature.py cycles --spectrum-model taper
+- uv run python /tmp/risb-smoother-map/zero_temperature.py cycles --cases quarter --variants baseline,pinning --noise 0.05 --maxiter 400
+- uv run python /tmp/risb-smoother-map/zero_temperature.py cycles --cases quarter --variants pinning --pinning-parts cap --seed-start 4 --seeds 1 --noise 0.05 --maxiter 400
+- uv run python /tmp/risb-smoother-map/zero_checks.py matrix
+- uv run python /tmp/risb-smoother-map/zero_checks.py scales
+- uv run python /tmp/risb-smoother-map/zero_checks.py suite --variant pinning
+
+Raw records: zero-starts.jsonl, zero-scales.jsonl, zero-taper.jsonl,
+zero-quarter.jsonl, zero-quarter-starts.jsonl, zero-cap-only.jsonl,
+zero-edges-only.jsonl and zero-pinning-widths.jsonl under
+/tmp/risb-smoother-map/.
+
+## Combining the thermal features with the T = 0 prototypes
+
+These are different recurring update maps. ThermalLatticeSolver uses the
+analytic/finite-difference density fits and optional Tikhonov anchors.
+LatticeSolver uses the square-root updates and full/empty pinning; it
+does not call those thermal fits.
+
+One overlap: ThermalLatticeSolver.update_bath uses get_d and get_lambda_c
+to seed the first bath fit when no previous bath parameters exist.
+Spectral changes could therefore change the thermal starting guess.
+They do not smooth its recurring fitted map. ThermalLatticeSolver never
+calls FullEmptyPinning. No combined convergence improvement has been
+established; the previous experiments must not be described as testing
+all these features together in one loop.
+
+## Residual corrections and core alternatives (2026-11-01)
+
+Prototype: /tmp/risb-smoother-map/residual_correction.py.
+Goal: bound the correction without replacing the matching target.
+
+For S = sqrt(rho (1 - rho)), use
+G_epsilon = V diag(K / (K + epsilon)^(3/2)) V^dag, K = n (1 - n).
+The R correction is
+R_next^T = R^T + (rho_cf - R^T S_f) G_epsilon(rho_f).
+Using rho_f follows the current get_r algebra; once f2 = 0 it is
+equivalent to the original f1 equation using rho_qp. The original f1/f2
+remain the stopping residuals. An exploratory rho_qp correction was also
+tried, but is a different update even without damping and was not used
+for the final comparison.
+
+The D correction is
+D_next = D + G_epsilon(rho_qp) (ke^T - S_qp D).
+D is explicit in the outer vector; it is not taken from hidden previous
+fits. The expanded root vector includes the original bath equation,
+scaled only for units. One baseline cycle seeds D; evaluation counts
+include that extra impurity solve.
+
+S, its gradient and the level equations are unchanged. Lambda_c is still
+computed algebraically from current D, R, Lambda and rho_qp; Lambda still
+uses the current get_lambda update. This is a partial smoothing of the
+updates, not a removal of all edge and level discontinuities. G_epsilon
+vanishes at exact edges, so physical residuals must be checked directly:
+a small preconditioned correction alone is not convergence.
+
+Both core policies were tried:
+- zero: retain the current choice of zero R/D components at the edge;
+- keep: let residual corrections retain those undetermined components.
+The existing choice is a control, not a requirement or a claim of optimality.
+User explicitly permits changing existing choices when that improves the
+whole procedure. No variant is rejected just for differing from zero.
+
+### Results
+
+Same five models, three starts, tol 1e-9, 200-cycle limit, epsilon 1e-6,
+existing DIIS settings, original f1/f2 and bath errors < 1e-8.
+The following comparison uses the zero-core control.
+
+| Case | Baseline | R correction | R and D corrections |
+| --- | --- | --- | --- |
+| Full orbital | 14, 11, 12 | 14, 12, 12 | 12, 15, 15 |
+| B=3 metal | 11, 14, 14 | 11, 14, 14 | 15, 21, 19 |
+| B=3 Mott | 17, 14, 14 | 17, 14, 14 | 24, 25, 23 |
+| Noninteracting | 7, 7, 7 | 7, 7, 7 | 7, 7, 7 |
+| B=5 | 0/3 match | 0/3 match | 1/3 match |
+
+R+D needs one additional seeding solve beyond the cycles in this table.
+The extra B=5 root is an atomic state: docc ~0, Z=0, energy -1.2, rather
+than the metallic iterates with docc ~0.053 and energy near -1.26185.
+It also has a large parameter recursion despite tiny physical residuals.
+Report the additional matching root, but do not call it reliable recovery
+of the metallic branch or a stable parameter fixed point.
+
+B=5 controls:
+- Expanded D with no damping (epsilon=0): 0/3 match.
+- Epsilon=1e-4: 2/3 match, both atomic states.
+- Epsilon=1e-8: 1/3 match, a low-Z branch with docc 0.02681594 and
+  energy -1.25511949; another run stops at the impurity symmetry check.
+- R correction plus smooth cap, epsilon=1e-6: 1/3 match, again the
+  docc 0.02681594 branch.
+- R+D plus smooth cap, epsilon=1e-6: 0/3 match; it can be much worse
+  than either component alone.
+
+Two-orbital quarter-filling case, seed 4, noise 0.05:
+baseline 40 cycles; R correction 39; R+D 42 plus one seed solve.
+Smooth cap alone 25; cap plus R correction 24; cap plus R+D 43 plus
+one seed solve. Matched solutions have the same energy to ~1e-9.
+
+Keeping core parameters does not improve these comparisons:
+- Full-orbital controls still converge, but retaining R changes its
+  undetermined full-orbital component; no physical equivalence is assumed.
+- B=5: no starts match for R or R+D; one R+D run stops at the impurity
+  symmetry check.
+- Noninteracting R: 43, limit 200, 64 cycles; R+D: 70, limit 200, 194
+  plus the seed solve. Each matches 2/3, versus 3/3 for the zero-core control.
+This rejects blindly retaining everything as a robustness improvement,
+not other possible treatments of core orbitals.
+
+### Smooth cap clarified
+
+It is a limiter for the proposed quasiparticle Lambda update inside
+FullEmptyPinning.qp_levels, before DIIS. It does not cap DIIS extrapolation.
+The existing limiter selects near-edge orbitals sharply, then limits
+the spectral norm of their level change. The prototype uses occupation
+weights that turn on gradually and rounds the norm clipping, using the
+Frobenius norm. For one selected scalar step d with limit L, the smooth
+step is d / sqrt(1 + (d/L)^2). With L=2, d=1 gives 0.894 and d=8 gives
+1.940; the current cap gives 1 and 2.
+
+Cap-only quarter-filling runs confirm both help and harm:
+baseline 26, 26, 24, 40 cycles for starts 0, 1, 2, 4;
+smooth cap 20, 24, 26, 25. It can shorten useful steps and change the basin.
+An optional feature would be an alternative policy for the existing
+FullEmptyPinning step limiter, not a new optimizer or a thermal solver option.
+No production API has been added.
+
+### Verification and assessment
+
+The selected R residual correction passes the same six existing physical
+test cases in 0.64 s. No test cases or assertions were added or changed.
+Known matching inputs have zero correction; revisiting identical expanded
+inputs after a different input gives identical maps and residuals.
+Ruff, Ruff LSP and strict mypy pass for the external prototype.
+
+Residual damping avoids the inconsistent-inverse flaw of the earlier
+taper, but did not deliver a general reliability or speed improvement.
+It can find additional matching roots and change their basin. Expanding
+D is usually slower here, and combining modifications can make them worse.
+Keep all of these as experiments until a more reliable variant is found.
+
+Commands: use the same one-thread environment as above.
+- uv run python /tmp/risb-smoother-map/residual_correction.py cycles
+- uv run python /tmp/risb-smoother-map/residual_correction.py cycles --smooth-cap
+- uv run python /tmp/risb-smoother-map/residual_correction.py cycles --cases full,b5,u0 --core-policy keep
+- uv run python /tmp/risb-smoother-map/residual_correction.py cycles --cases b5 --variants rd --epsilon 0
+- uv run python /tmp/risb-smoother-map/residual_correction.py cycles --cases quarter --seed-start 4 --seeds 1 --noise 0.05 --maxiter 400
+- uv run python /tmp/risb-smoother-map/residual_correction.py checks
+- uv run python /tmp/risb-smoother-map/residual_correction.py suite
+
+Raw JSONL under /tmp/risb-smoother-map/: residual-starts,
+residual-cap-starts, residual-keep-core, residual-b5-unfiltered,
+residual-b5-stronger, residual-b5-weaker, residual-quarter,
+residual-quarter-cap. Earlier exploratory runs are residual-initial.
+Cap-only additional starts are zero-cap-starts.jsonl.
+
+## Smooth step-cap feature and full-suite default comparison (2026-11-01)
+
+Implemented in src/risb/pinning.py:
+- FullEmptyPinning accepts keyword-only step_cap_method="clip" or "smooth".
+- Smooth is the default. Clip retains the previous limiting calculation;
+  step_cap=None still disables limiting.
+- The constructor selects the limiter once. qp_levels reuses its
+  eigensystem and calls the selected helper; both remain inside the
+  existing pinning interface. No new LatticeSolver or DIIS arguments.
+- Smooth uses the measured prototype's quintic occupation weights and
+  rounded Frobenius-norm limit. Full/empty level pinning is unchanged.
+- Option details are in the class docstring only. No how-to example,
+  benchmark additions or new tests.
+
+Full suites, run sequentially with one BLAS/OpenMP thread:
+
+| Default | Passed | Subtests passed | Failed | Wall time |
+| --- | --- | --- | --- | --- |
+| Previous clipping | 213 | 111 | 1 | 82.74 s |
+| Smooth | 213 | 111 | 1 | 81.27 s |
+
+No new failures. Both fail
+test_complex_two_orbital_model_reaches_the_mott_state_with_a_thermal_impurity:
+the expected self-consistency warning is not emitted. The failure occurs
+in the unchanged baseline before adding this feature.
+
+Repeated the three largest relevant timing changes twice per method,
+sequentially. Median call times and logged solve cycles:
+
+| Existing test | Clip | Smooth | Cycles, clip -> smooth |
+| --- | --- | --- | --- |
+| Perturbed two-orbital ghosts, free gauge | 3.33 s | 2.24 s | 27 + 42 -> 21 + 26 |
+| Same, Lambda eigenbasis | 2.79 s | 3.14 s | 23 + 36 -> 34 + 33 |
+| Double-counting restart | 0.56 s | 0.41 s | 200 + 1 -> 146 + 1 |
+
+The Lambda-eigenbasis slowdown is reproducible (~13%). Free gauge improves
+~33%; double counting improves ~26%. These do not establish a universal
+speedup. Smooth is retained as default because it passes the same physical
+assertions without new failures and improves the net cost of these
+affected tests. Clip remains selectable.
+
+Complete per-test call-time comparison:
+/tmp/risb-smoother-map/step-cap-suite/timings.csv.
+Raw reports, logs, summary JSON and repeated timings are in the same
+directory. Temporary runner: /tmp/risb-smoother-map/step_cap_suite.py.
+Its method override changes constructor defaults only in the test process;
+no test files or assertions were edited.
+
+Ruff, Ruff LSP and strict mypy pass (51 project files). The safeguard
+prototype is still separate future work: residual-based acceptance with
+backtracking would be a line-search method, beyond fixed DIIS alpha.
+
+## Current globalization literature and T = 0 safeguards (2026-11-01)
+
+Reviewed current work before choosing a prototype. Line searches and trust
+regions remain active frameworks; recent work changes the models,
+acceptance rules, regularization and cost management rather than replacing
+those frameworks solely because they are old.
+
+Primary references:
+- Herbst and Levitt, JCP 2022, "A robust and efficient line search for
+  self-consistent field iterations":
+  https://doi.org/10.1016/j.jcp.2022.111127 .
+  Cost-aware SCF backtracking with an inexpensive energy model. Its
+  energy-based setting is different from our auxiliary-variable root problem.
+- Ouyang, Tao, Milzarek and Deng, JSC 2023, "Nonmonotone Globalization for
+  Anderson Acceleration via Adaptive Regularization":
+  https://doi.org/10.1007/s10915-023-02231-4 .
+  Adjusts regularization using a nonmonotone actual/predicted reduction
+  test. Useful design for a small history solve, not a guarantee for RISB.
+- Bian and Li, September 2026 preprint, "A nonmonotone globalization
+  framework for Anderson acceleration for contractive and nonexpansive
+  fixed point problems":
+  https://arxiv.org/abs/2609.28950 .
+  Windowed residual acceptance with relaxed fixed-point fallback.
+  Contractivity/nonexpansiveness assumptions are not established here.
+- Greiner et al., 2025 preprint, OpenTrustRegion:
+  https://arxiv.org/abs/2509.13931 .
+  Reusable second-order orbital optimization using Hessian-vector products.
+  Full Newton-style curvature is a larger implementation task; history-based
+  trust-region ideas need no such full outer derivative.
+- Bao and Shi, August 2026 preprint, AURORA-SCF:
+  https://arxiv.org/abs/2608.07354 .
+  Auxiliary curvature, target-level secant corrections and target acceptance.
+  It requires a useful cheap response model; it is not a drop-in RISB method.
+- Current SCS implementation:
+  https://www.cvxgrp.org/scs/algorithm/acceleration.html .
+  Uses AA regularization, residual checks, rejection and history resets.
+  Safeguarding remains a practical current technique.
+- Tagliente, Pasqua and Fabrizio, July 2026 preprint:
+  https://arxiv.org/abs/2607.27156 .
+  Directly compares iterative ghost-Gutzwiller embedding with variational
+  minimization, finding Mott/Zeeman-field artifacts avoided by the latter.
+  Direct minimization deserves a separate T=0 investigation.
+
+The older Jacobian comment was too broad: the full orbital trust-region
+schemes need curvature, but adaptive regularization of Anderson's small
+history solve does not. Both derivative-free safeguards and history-based
+regularization were therefore prototyped on LatticeSolver, not restricted
+to ThermalLatticeSolver. The inner thermal Jacobian is not an outer RISB
+Jacobian.
+
+### Prototype
+
+File: /tmp/risb-smoother-map/backtracking.py. No production changes.
+No tests or benchmarks added.
+
+Policies:
+- plain: current DIIS, alpha=1, history=6, periodic mixing every 3 steps;
+- monotone: backtrack the whole proposal displacement, checking reduction
+  against the current physical residual norm;
+- nonmonotone: the same bounded search, but against the maximum of the
+  last five accepted norms;
+- safeguard: a recent-AA-inspired windowed accept/reject rule with
+  gamma_k = 1 - 1/(k+2); rejected proposals reset history and use a
+  relaxed fixed-point step of size 0.2;
+- regularized: an adaptation of the 2023 adaptive history-coefficient
+  method, using a best-residual history anchor, residual-scaled ridge,
+  actual/predicted reduction, and fixed-point fallback.
+
+These are physical-residual adaptations. The cited AA papers use the
+fixed-point residual g(x)-x and assumptions about their fallback maps.
+Our default DIIS uses the physical matching equations instead. We do not
+claim a faithful reproduction of their convergence theorems.
+
+All runs use the current smooth level cap and the original matching
+equations. Merit includes original f1/f2 and the bath equation
+ke^T - sqrt(rho_qp (1-rho_qp)) D, with only energy-unit normalization.
+The original residual vector drives DIIS. Acceptance does not add an
+anchor or change a physical equation.
+
+The bounded searches try the full step and five halvings, then a separately
+backtracked 0.2 mixing direction. They stop as stalled if no step passes
+within that bound; this is not proof that no smaller acceptable step exists.
+A full trial uses the original proposed array, avoiding unnecessary
+floating-point reconstruction differences.
+
+Retries restore D, Lambda_c and rho_c from the same accepted state.
+Rejected trials never enter DIIS history. Accepted trial results are
+reused, rather than repeating every successful evaluation. A final replay
+uses the original evaluation seed to check the reported physical point.
+Actual impurity.solve calls, including rejects and replay, are counted.
+
+### Controlled T = 0 results
+
+Six models, default start plus seeds 1 and 2 with noise 0.01. Equal budget
+of 300 cycle evaluations, including final replay. Stop only when the outer
+residual norm is <1e-9 and every original matching error is <1e-8.
+Models: full-orbital charge transfer, B=3 metal/Mott, B=5 ground state,
+noninteracting B=3, two-orbital quarter filling. All use LatticeSolver;
+the existing B=3 metal/Mott controls use beta=200 impurity averaging as a
+T=0 convergence aid. B=5, full-orbital and two-orbital cases use ground
+states.
+
+| Policy | Matching solutions / 18 | B=5 / 3 |
+| --- | --- | --- |
+| Plain DIIS | 15 | 0 |
+| Monotone backtracking | 14 | 0 |
+| Nonmonotone backtracking | 15 | 0 |
+| Window safeguard | 16 | 1 |
+| Adaptive regularization | 15 | 0 |
+
+Monotone backtracking also stalls one noninteracting start. Both bounded
+searches stall on all three B=5 starts. Counting fewer accepted iterations
+would hide their rejected-trial cost. On paired successful cases, monotone
+backtracking uses 277 solves versus 223 for plain DIIS.
+
+The window safeguard's B=5 root has energy -1.261517085, docc 0.053344852
+and Z 0.16424070, close to the B=3 solution; it does not establish recovery
+of the lower-energy metallic iterates approached by the failed runs.
+Adaptive regularization can be substantially worse on B=5, ending with
+original residuals of order 0.35-0.6 after its budget.
+
+Extended B=5 check, seeds 0 through 7:
+- plain DIIS: 1/8 matching roots (seed 6, docc 0.02681594,
+  energy -1.25511949);
+- window safeguard: 1/8 (seed 0, the B=3-like solution above).
+Different starts and different branches succeed. The initial 1/3 rescue
+did not become an overall success-rate improvement in the larger sample.
+
+Known difficult two-orbital start (seed 4, noise 0.05), impurity solves:
+
+| Plain | Monotone | Nonmonotone | Window safeguard | Adaptive regularization |
+| --- | --- | --- | --- | --- |
+| 26 | 31 | 26 | 29 | 28 |
+
+Counts include the final verification solve. Physical energies on paired
+successful controls agree within 1.8e-9. Additional investigations were
+run concurrently; their wall times are not used for speed claims.
+
+### Assessment and verification
+
+Do not ship simple monotone backtracking as a default. The nonmonotone
+and adaptive ideas are relevant modern choices, but these particular
+adaptations have not improved reliability enough for production adoption.
+A DIIS direction need not be a descent direction for the physical
+residual; shrinking it alone is not a complete remedy. A reliable fallback
+or a better residual model remains unresolved.
+
+Direct T=0 variational minimization is a separate research direction,
+especially for degenerate Mott states, not an assumption that any energy
+line search on the current unconstrained auxiliary variables is valid.
+
+Existing optimizer tests: 20 passed in 0.28 s. Ruff, Ruff LSP and strict
+mypy pass for the prototype. No production files changed.
+
+Artifacts under /tmp/risb-smoother-map/:
+- backtracking-controlled.jsonl: main four-policy comparison;
+- backtracking-regularized.jsonl: adaptive history regularization;
+- backtracking-b5-extra.jsonl: extended baseline/window starts;
+- backtracking-quarter-hard.jsonl: known difficult two-orbital start;
+- backtracking-summary.json and backtracking-comparison.csv: summaries.
+
+Reproduce with OMP_NUM_THREADS=1, OPENBLAS_NUM_THREADS=1,
+VECLIB_MAXIMUM_THREADS=1:
+- uv run python /tmp/risb-smoother-map/backtracking.py
+- uv run python /tmp/risb-smoother-map/backtracking.py --policies regularized
+- uv run python /tmp/risb-smoother-map/backtracking.py --cases b5 --policies plain,safeguard --seed-start 3 --seeds 5
+- uv run python /tmp/risb-smoother-map/backtracking.py --cases quarter --policies plain,monotone,nonmonotone,safeguard,regularized --seed-start 4 --seeds 1 --noise 0.05
+
+## Published Anderson algorithms and matching-residual models (2026-11-01)
+
+The preceding safeguard experiments changed the papers' residual to the
+matching equations. They were adaptations, not tests of the published
+algorithms. The comparisons below keep those experiments separate.
+
+### Residuals and current behavior
+
+x packs Lambda and R. g(x) is one cycle, before DIIS extrapolation.
+NewtonSolver.error_of already supports both:
+- recursion: g(x) - x;
+- root: the packed f2 and f1 from cycle(x), the default.
+
+The matching equations are f2 = rho_f - rho_qp and
+f1 = rho_cf - R.T sqrt(rho_qp (I-rho_qp)). Here rho_f follows the
+embedding bath-hole convention. The bath check is
+ke.T - sqrt(rho_qp (I-rho_qp)) D.
+
+Small matching errors and small parameter updates are different criteria.
+For example, the FD-initialized model in the full-orbital control reaches
+max matching error 7e-11 while ||g(x)-x|| is 49.5. A completely occupied
+auxiliary direction has R approximately 1; the map sets it to 0 and moves
+its Lambda from approximately 0 to -35. The matching equations leave
+parameters undetermined there. This does not decide which edge convention
+is better.
+
+### Published algorithms: use g(x)-x throughout
+
+Prototype: /tmp/risb-smoother-map/paper_anderson.py.
+
+- recursion-diis: existing DIIS(error_fun="recursion"), including its
+  periodic mixing.
+- pure-aa: unregularized Anderson with no periodic mixing.
+- glob-aa: Bian and Li Algorithm 1, Eq. 2.26,
+  gamma_k = 1 - max(1/(k+2), W_k/(2 W_0)), KM weight 0.5,
+  and history reset after fallback.
+- glob-aa-regularized: the same with the paper's Eq. 3.2 stabilization,
+  eta = 1e-10.
+- glob-aa-schedule: Algorithm 1 with the published Remark 2.6 schedule
+  gamma_k = 1 - 1/(k+2), KM weight 0.5.
+- lm-aa: Ouyang et al. Algorithm 1, best/newest residual anchor,
+  lambda_k = mu_k ||g(x_anchor)-x_anchor||^2, gamma = 1e-4,
+  p1 = 0.01, p2 = 0.25, eta1 = 2, eta2 = 0.25, mu0 = 1,
+  c = 0.99. Rejection uses g(x_anchor), without an added history reset.
+
+These implement the stated coefficient, acceptance and fallback equations,
+not the authors' programs. The small least-squares problems use NumPy's
+dense SVD solve; Bian and Li use LSQR. We choose an absolute update
+tolerance of 1e-9 and a 300-evaluation budget for these RISB comparisons.
+The matching equations are checked independently and do not alter paper
+steps or stopping. Ouyang's returned g(x) is evaluated on stopping.
+
+References:
+- Bian and Li, September 2026 preprint:
+  https://arxiv.org/html/2609.28950 .
+- Ouyang et al., adaptive regularization:
+  https://arxiv.org/html/2006.02559v3 ;
+  published JSC paper https://doi.org/10.1007/s10915-023-02231-4 .
+
+On B=5, Eq. 2.26 gives gamma <= 0 for all three initial starts.
+Its assumed bound W_k <= W_0 fails here. Those runs stop with
+gamma-outside-domain; we do not clip gamma and call that the paper's rule.
+The iteration-based schedule remains defined. No convergence theorem is
+claimed for the RISB map.
+
+Positive control: reproduce section 3.1's contraction, n=200, m=1,
+x0=2.1, KM weight 1. Plain AA cycles through its 501-evaluation budget;
+the published iteration schedule converges in four iterations, agreeing
+with the paper. This checks the safeguard outside RISB's unverified
+assumptions.
+
+### Separate matching-residual trust-region models
+
+Prototype: /tmp/risb-smoother-map/physical_residual_trust.py.
+
+Both minimize a local approximation of the original matching norm at
+x + step, with actual/predicted squared-norm reduction for acceptance and
+radius updates. Neither uses g(x)-x as its objective.
+
+- history-trust: infer a response in the span of recent displacements;
+  include probes along the map direction outside that span.
+- fd-trust: initialize a full forward-difference outer Jacobian, then
+  use Broyden secant updates; refresh after three rejected steps or
+  twelve accepted steps. This is an FD-initialized model, not a fresh
+  full Jacobian at every iteration.
+
+Lambda is scaled by the model energy scale; R is dimensionless.
+The linear trust-region subproblem uses an SVD and solves for the
+multiplier that enforces the radius. Independent linear controls satisfy
+the constrained and unconstrained optimality equations to <5e-16.
+A bad result here does not rule out other trust-region models.
+
+### Controlled results
+
+Same six LatticeSolver models and starts as the preceding comparison:
+default plus seeds 1 and 2, noise 0.01, budget 300 including probes,
+rejects, Jacobian evaluations and final replay. Current smooth cap.
+Full-orbital, B=5 and quarter-filled embeddings use ground states;
+B=3 controls retain their beta=200 impurity averaging. There are no inner
+thermal density fits.
+
+"Matching" below means every f1/f2/bath entry <1e-8.
+"Strict" additionally requires ||packed(f2,f1)|| <1e-9.
+A point can pass matching while the algorithm reports a budget/stall.
+
+| Method | Matching /18 | Strict /18 | Solves on 15 non-B=5 controls |
+| --- | ---: | ---: | ---: |
+| Current root DIIS | 15 | 15 | 231 |
+| Existing recursion DIIS | 15 | 15 | 247 |
+| Pure Anderson | 15 | 15 | 316 |
+| Bian-Li Eq. 2.26 | 15 | 15 | 256 |
+| Eq. 2.26 with stabilization | 15 | 15 | 256 |
+| Bian-Li iteration schedule | 17 | 16 | 254 |
+| Ouyang adaptive regularization | 15 | 15 | 312 |
+| Matching history trust region | 12 | 11 | 1341 |
+| Matching FD-initialized trust region | 9 | 8 | 2720 |
+
+The two matching-residual models are worse than current DIIS on this
+sample. Their counts include substantial derivative/probe overhead.
+Neither rescues B=5. Do not adopt these prototypes.
+
+Extended B=5, seeds 0 through 7, with both baselines repeated locally:
+- root DIIS: matching 1/8, strict 1/8;
+- recursion DIIS: matching 0/8;
+- published iteration schedule: matching 5/8, strict 4/8.
+
+The fifth scheduled-AA point has max error 5.75e-10 and packed norm
+1.50e-9: a threshold difference, not a large hidden matching error.
+Successful scheduled runs cost 42, 108, 189, 213 and 215 impurity solves.
+One reaches the B=3-like branch (energy -1.261517085); four reach
+energy approximately -1.261595334, docc 0.05341123, Z 0.16168111.
+Baseline's one root has energy -1.255119491 and docc 0.02681594.
+These results do not establish a unique root or the lowest-energy solution.
+
+Known difficult quarter-filled start, seed 4, noise 0.05:
+root DIIS 26 solves; recursion DIIS 36; pure AA 47;
+Bian-Li variants 32; Ouyang 47. Both matching trust-region models
+exhaust 300 evaluations without passing matching.
+
+Recommendation: the published iteration-scheduled safeguard merits an
+optional optimizer implementation. Keep the current default: it is about
+10% cheaper across the 15 controls (231 versus 254 solves), and the new
+method still fails some starts. Earlier matching-residual adaptations did
+not test this algorithm and should not be used to dismiss it.
+
+Only this running note changes in the repository. No production changes,
+benchmark additions or permanent tests. Existing optimizer tests: 20 pass.
+Ruff, Ruff LSP and strict mypy check the temporary prototypes.
+
+Artifacts under /tmp/risb-smoother-map/:
+- paper-anderson-controlled.jsonl, paper-anderson-schedule.jsonl;
+- paper-anderson-b5-extra.jsonl, paper-anderson-b5-baselines.jsonl;
+- paper-anderson-quarter-hard.jsonl;
+- physical-model-controlled.jsonl, physical-model-quarter-hard.jsonl;
+- model-controls.json, residual-model-summary.json.
+
+Run the two prototype scripts with --help for cases, starts and budget;
+set OMP_NUM_THREADS=1, OPENBLAS_NUM_THREADS=1,
+VECLIB_MAXIMUM_THREADS=1. Wall times from overlapping investigations
+are not used for speed comparisons.
+
+
+## Bian-Li policy implementation
+
+- DIIS owns accepted history; Pulay owns periodic mixing, damping, restart
+  and residual selection. BianLi implements Algorithm 1 with the iteration,
+  bounded-residual, constant and combined schedules. Pulay remains default.
+- Preserve callbacks and SolveResult.x_next. Acceptance precedes convergence
+  and best-point bookkeeping. Budgets include candidates, replay and fallback;
+  stop before a step that cannot fit and retain x_next for continuation.
+- Reconstruction checkpoints retain pre-cycle parameters and DC density.
+  Thermal checkpoints add previous D/Lambda_c and anchor strength/references.
+  Block2 ground state saves only its previous sector. Fockit, thermal Block2
+  and Dummy add no independent state; no RNG snapshots or MPS copies.
+- Existing DIIS Gram/pseudoinverse calculation is shared by both policies.
+  This differs numerically from the temporary SVD prototype.
+- Actual implementation, same 18 starts, 300-cycle budget: Pulay passes
+  physical matching and stopping on 15/18, BianLi on 16/18. Non-B=5 controls
+  cost 216 versus 266 cycles, including replay. Total costs: 1116 versus 914.
+  B=5 seed 0 converges in 50 evaluations with BianLi; seeds 1 and 2 fail.
+  Do not carry over the SVD prototype's 17/18 or extended 5/8 results.
+- Paper cycling example: ordinary AA fails within 500 evaluations; BianLi
+  takes four transitions (five accepted evaluations including the initial point).
+- Temporary stateful checks: T=0/DC converges in 29 evaluations; thermal/DC
+  in 85. Thermal/DC/anchor replay reproduces all compared arrays exactly.
+  Budget pause/continuation agrees with uninterrupted runs for T=0 and thermal.
+- No permanent tests added. Existing optimizer tests migrated: 20 pass.
+  Full suite: 213 passed, 111 subtests passed, same pre-existing missing-warning
+  failure in the complex two-orbital thermal-impurity Mott test (243.74 s).
+  Block2 tests included. No benchmark changes.
+- Local artifacts: /tmp/risb-smoother-map/implemented.py,
+  implemented-results.jsonl and implemented-stateful.py.
+- Public lattice solve entry points also checked with DC: T=0 converges
+  in 29 evaluations; thermal with its default OnPlateau callback in 60,
+  with physical error 1.32e-10 and unregularized bath error 1.33e-15.
+- Final affected tests: 41 passed. Ruff, Ruff LSP, strict mypy (50 files),
+  and strict Sphinx build pass. Fixed two unresolved docstring references.
+
+## Full-suite BianLi comparison
+
+- Temporary runner: /tmp/risb-smoother-map/bian_li_suite.py.
+  All lattice DIIS solves use the iteration schedule and fallback 0.5;
+  explicit Pulay optimizer checks and SciPy keep their own algorithms.
+  Production defaults unchanged. Sequential runs with one BLAS/OpenMP thread.
+- Pulay: 213 passed, 1 failed, 111 subtests; 81.16 s, 2651 lattice evaluations.
+  BianLi: 210 passed, 4 failed, 108 subtests; 688.71 s, 5448 evaluations.
+- New failures: thermal two-orbital Block2 exhausts its budget (998
+  evaluations, 579.22 s for its Block2 solve, versus 21 and 11.90 s);
+  both maxiter=1 continuation tests stall; thermal site-outside-cluster
+  T=1 converges in 153 evaluations but exceeds the test's 100-evaluation cap.
+- Block2 max physical residual is 5.47e-8 but recursion norm is 8.74e-5.
+  Physical matching and stopping on fitted parameter changes differ sharply.
+- The old missing-warning Mott test passes with BianLi, but its matching
+  residual is 0.00352. This is not a physical-matching improvement.
+- Of 71 lattice tests passing both runs: 10 use fewer evaluations, 41 more,
+  20 unchanged. One apparent improvement is the deliberately unpinned
+  negative control; exclude it from convergence successes.
+- Clear gains: one-band thermal ghosts T=10, 25 to 4 evaluations,
+  0.596 to 0.091 s; T=1, 29 to 20, 0.773 to 0.489 s.
+  Clear losses: thermal B=5/B=3 comparison, 40 to 108, 5.02 to 14.50 s;
+  thermal Hubbard example, 114 to 344, 2.72 to 7.24 s.
+- Follow-up profiling inside solve_fixed_point preserves the native
+  lattice solve caller/warning path: all other tests repeated, 210 passed,
+  same three failures, one long Block2 case deselected (102.75 s).
+- Keep BianLi optional. Full per-test tables, CSV, logs and residuals:
+  /tmp/risb-smoother-map/bian-li-suite/.

@@ -19,7 +19,7 @@ from risb.gauge import lambda_eigenbasis
 from risb.helpers_fockit import h_int_kanamori
 from risb.impurity_solvers import FockitImpuritySolver
 from risb.kweight import SmearingKWeight
-from risb.optimize import DIIS, ScipyRoot, SolveResult
+from risb.optimize import DIIS, Pulay, ScipyRoot, SolveResult
 from risb.pinning import FullEmptyPinning
 from risb.types import BlockMatrix, GaugeFix, GfStruct, ImpuritySolver, PinFullEmpty
 
@@ -306,7 +306,7 @@ def test_three_orbital_kanamori_is_a_paramagnetic_mott_insulator() -> None:
         update_weights=SmearingKWeight(beta=40, n_target=n_orb).update_weights,
         symmetrizers=[symmetrize_blocks],
     )
-    assert S.solve(DIIS(error_fun="recursion"), tol=1e-8).converged
+    assert S.solve(DIIS(policy=Pulay(error_fun="recursion")), tol=1e-8).converged
     for bl in S.Z[0]:
         assert S.Z[0][bl] == pytest.approx(np.zeros((n_orb, n_orb)), abs=1e-6)
     # The ground state of the impurity is a spin multiplet, and the symmetrizer
