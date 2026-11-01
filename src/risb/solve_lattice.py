@@ -30,6 +30,7 @@ from risb.types import (
     BlockMatrix,
     BlockMatrixLike,
     BlockRealArray,
+    GaugeFix,
     GfStruct,
     ImpuritySolver,
     PinFullEmpty,
@@ -62,7 +63,7 @@ class LatticeSolver(BaseLatticeSolver):
 
     Other Parameters
     ----------------
-    h0_k, gf_struct, impurity_solvers, projectors, gf_struct_mapping, symmetrizers, force_real, force_real_atol, force_real_rtol, check_projectors, double_counting, bath_size
+    h0_k, gf_struct, impurity_solvers, projectors, gf_struct_mapping, symmetrizers, force_real, force_real_atol, force_real_rtol, check_projectors, double_counting, bath_size, gauge_fix
         As in :class:`.BaseLatticeSolver`.
 
     """
@@ -82,6 +83,7 @@ class LatticeSolver(BaseLatticeSolver):
         *,
         bath_size: Sequence[Mapping[str, int]] | None = None,
         pin_full_empty: PinFullEmpty | None = _DEFAULT_PINNING,
+        gauge_fix: GaugeFix | None = None,
         force_real_atol: float = 1e-12,
         force_real_rtol: float = 1e-10,
         diagnostics: DiagnosticObserver | None = None,
@@ -100,6 +102,7 @@ class LatticeSolver(BaseLatticeSolver):
             check_projectors=check_projectors,
             double_counting=double_counting,
             bath_size=bath_size,
+            gauge_fix=gauge_fix,
         )
         self._update_weights = update_weights
         self.pin_full_empty = pin_full_empty

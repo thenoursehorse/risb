@@ -35,6 +35,7 @@ from risb.types import (
     BlockMatrix,
     BlockMatrixLike,
     BlockRealArray,
+    GaugeFix,
     GfStruct,
     ImpuritySolver,
     Symmetrize,
@@ -130,6 +131,11 @@ class BaseLatticeSolver(ABC):
         Chemical potential that :meth:`solve_impurities` passes to the
         ``set_h_imp`` of each impurity solver. Default is None, which passes
         none.
+    gauge_fix : risb.types.GaugeFix, optional
+        Rotates the next :attr:`R` and :attr:`Lambda` of each block into a
+        chosen quasiparticle basis, which does not change the physics, before
+        the optimizer sees them, e.g., :func:`risb.gauge.lambda_eigenbasis`.
+        Default is None, which leaves the basis free.
     diagnostics : risb.diagnostics.DiagnosticObserver, optional
         Passive reporter of lattice events. None disables reporting.
 
@@ -149,6 +155,7 @@ class BaseLatticeSolver(ABC):
         *,
         bath_size: Sequence[Mapping[str, int]] | None = None,
         mu: float | None = None,
+        gauge_fix: GaugeFix | None = None,
         force_real_atol: float = 1e-12,
         force_real_rtol: float = 1e-10,
         diagnostics: DiagnosticObserver | None = None,
@@ -202,6 +209,7 @@ class BaseLatticeSolver(ABC):
         self.mu = mu
 
         self.symmetrizers = symmetrizers
+        self.gauge_fix = gauge_fix
         self.force_real = force_real
         self.force_real_atol = force_real_atol
         self.force_real_rtol = force_real_rtol
@@ -503,6 +511,10 @@ class BaseLatticeSolver(ABC):
         """
         self._set_lambda_r(x)
         Lambda, R, self.f1, self.f2 = self.one_cycle()
+        if self.gauge_fix is not None:
+            for i in range(self.n_clusters):
+                for bl in Lambda[i]:
+                    R[i][bl], Lambda[i][bl] = self.gauge_fix(R[i][bl], Lambda[i][bl])
         residual = np.array(
             self._flatten_matrix(self.f2, is_hermitian=True, name="f2")
             + self._flatten_matrix(self.f1, is_hermitian=False, name="f1")

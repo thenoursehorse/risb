@@ -27,6 +27,7 @@ api/risb.diagnostics
 api/risb.kweight
 api/risb.optimize
 api/risb.pinning
+api/risb.gauge
 api/risb.helpers
 api/risb.helpers_fockit
 api/risb.helpers_mpi

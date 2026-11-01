@@ -328,6 +328,25 @@ result.converged, result.cycles, result.error
 Afterwards `S.R`, `S.Lambda` and every other attribute of `S`, and the
 impurity solvers, are those of `result.x`, the last guess of the solve.
 
+## Fixing the quasiparticle basis
+
+Rotating the quasiparticle orbitals of a block changes `R` and `Lambda` but not
+the physics. If you want the optimizer to see them in one basis from cycle to
+cycle, give a function that rotates the `R` and `Lambda` of a block
+
+```python
+from risb.gauge import lambda_eigenbasis
+
+S = LatticeSolver(...,
+                  gauge_fix = lambda_eigenbasis,
+                  ...
+)
+```
+
+{py:func}`~risb.gauge.lambda_eigenbasis` puts `Lambda` in its eigenbasis. Your
+own function takes `R` and `Lambda` of a block and returns them rotated by the
+same unitary, `U^dag R` and `U^dag Lambda U`.
+
 ## Diagnostics
 
 ```python

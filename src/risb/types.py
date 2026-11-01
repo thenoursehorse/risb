@@ -25,6 +25,12 @@ type UpdateWeights = Callable[[BlockRealArray], BlockRealArray]
 type Symmetrize = Callable[[list[BlockMatrix]], list[BlockMatrix]]
 """Takes a block matrix for each cluster and returns the symmetrized ones."""
 
+type GaugeFix = Callable[
+    [NDArray[np.inexact], NDArray[np.inexact]],
+    tuple[NDArray[np.inexact], NDArray[np.inexact]],
+]
+"""Takes the R and Lambda of a block and returns them rotated into a chosen quasiparticle basis."""
+
 type SmearFunction = Callable[[NDArray[np.float64], float, float], NDArray[np.float64]]
 """Smears band energies at inverse temperature beta and chemical potential mu into occupations."""
 

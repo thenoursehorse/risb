@@ -15,12 +15,13 @@ from test_common import (
 )
 
 from risb import DiscardedImaginaryWarning, LatticeSolver, helpers
+from risb.gauge import lambda_eigenbasis
 from risb.helpers_fockit import h_int_kanamori
 from risb.impurity_solvers import FockitImpuritySolver
 from risb.kweight import SmearingKWeight
 from risb.optimize import DIIS, ScipyRoot, SolveResult
 from risb.pinning import FullEmptyPinning
-from risb.types import BlockMatrix, GfStruct, ImpuritySolver, PinFullEmpty
+from risb.types import BlockMatrix, GaugeFix, GfStruct, ImpuritySolver, PinFullEmpty
 
 type Model = tuple[
     GfStruct,
@@ -459,9 +460,12 @@ def test_full_orbital_pinning_prevents_the_wrong_impurity_filling(
         )
 
 
-def test_ghost_risb_from_a_perturbed_start_reaches_the_solution_of_the_default_start() -> (
-    None
-):
+@pytest.mark.parametrize(
+    "gauge_fix", [None, lambda_eigenbasis], ids=["free gauge", "lambda eigenbasis"]
+)
+def test_ghost_risb_from_a_perturbed_start_reaches_the_solution_of_the_default_start(
+    gauge_fix: GaugeFix | None,
+) -> None:
     # Two-orbital Kanamori model on the Bethe lattice at quarter filling, with
     # three quasiparticles per orbital and spin. From this start, ghost levels
     # close to empty grow from cycle to cycle unless their steps are limited
@@ -499,6 +503,7 @@ def test_ghost_risb_from_a_perturbed_start_reaches_the_solution_of_the_default_s
             symmetrizers=[symmetrize_blocks],
             force_real=True,
             bath_size=[bath_size],
+            gauge_fix=gauge_fix,
         )
         kweight.n_target = 1 + S.n_ghost_electrons
         x0 = S.get_x()
