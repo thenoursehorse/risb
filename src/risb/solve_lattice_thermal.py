@@ -35,6 +35,8 @@ from risb.types import (
     BlockMatrix,
     BlockMatrixLike,
     BlockRealArray,
+    DensityMatchingJacobian,
+    DensityMatchingRegularization,
     GaugeFix,
     GfStruct,
     ImpuritySolver,
@@ -74,6 +76,21 @@ class ThermalLatticeSolver(BaseLatticeSolver):
         Number of electrons per unit cell. The chemical potential :attr:`mu`
         is then solved for with :attr:`Lambda` and :attr:`R`, and the root
         functions include ``n_electrons - n_target``. Default is a fixed `mu`.
+    density_matching_jacobian : {"2-point", "analytic"}, optional
+        Use finite differences (``"2-point"``) or analytic
+        derivatives (``"analytic"``) for both density-matching steps.
+    density_matching_regularization : {"uniform", "response-weighted"}, optional
+        ``"uniform"`` penalizes all parameter changes equally.
+        ``"response-weighted"`` penalizes combinations that barely affect
+        the density matrices more heavily than those that affect them
+        strongly.
+        The penalty is only used after :meth:`anchor` is called, for
+        example by :class:`~risb.optimize.OnPlateau`.
+    density_matching_regularization_scale : float, optional
+        Scale for the singular values from an SVD of the matching
+        residual's Jacobian. Singular values well below this scale get
+        almost the full anchor penalty; larger values get less. Must be
+        positive. The value depends on the energy units.
     diagnostics : risb.diagnostics.DiagnosticObserver, optional
         Use :class:`~risb.diagnostics.ThermalLatticeDiagnostics` for progress
         and fit reports.
@@ -101,6 +118,9 @@ class ThermalLatticeSolver(BaseLatticeSolver):
         *,
         bath_size: Sequence[Mapping[str, int]] | None = None,
         n_target: float | None = None,
+        density_matching_jacobian: DensityMatchingJacobian = "2-point",
+        density_matching_regularization: DensityMatchingRegularization = "uniform",
+        density_matching_regularization_scale: float = 1e-3,
         gauge_fix: GaugeFix | None = None,
         force_real_atol: float = 1e-12,
         force_real_rtol: float = 1e-10,
@@ -125,6 +145,11 @@ class ThermalLatticeSolver(BaseLatticeSolver):
         )
         #: float : Inverse temperature.
         self.beta = beta
+        self.density_matching_jacobian = density_matching_jacobian
+        self.density_matching_regularization = density_matching_regularization
+        self.density_matching_regularization_scale = (
+            density_matching_regularization_scale
+        )
 
         #: float or None : Number of electrons per unit cell to solve for.
         self.n_target = n_target
@@ -178,6 +203,9 @@ class ThermalLatticeSolver(BaseLatticeSolver):
             "beta": self.beta,
             "mu": self.mu,
             "n_target": self.n_target,
+            "density_matching_jacobian": self.density_matching_jacobian,
+            "density_matching_regularization": self.density_matching_regularization,
+            "density_matching_regularization_scale": self.density_matching_regularization_scale,
         }
 
     @override
@@ -229,6 +257,9 @@ class ThermalLatticeSolver(BaseLatticeSolver):
                             Lambda_c,
                             anchor=self._anchor_of(("bath", i, bl), (D, Lambda_c)),
                             alpha=self._anchor_alpha or 0.0,
+                            jacobian=self.density_matching_jacobian,
+                            regularization=self.density_matching_regularization,
+                            regularization_scale=self.density_matching_regularization_scale,
                             force_real=self.force_real,
                             diagnostics=partial(
                                 self._emit,
@@ -323,6 +354,9 @@ class ThermalLatticeSolver(BaseLatticeSolver):
                         Lambda,
                         anchor=self._anchor_of(("qp", i, bl), (R, Lambda)),
                         alpha=self._anchor_alpha or 0.0,
+                        jacobian=self.density_matching_jacobian,
+                        regularization=self.density_matching_regularization,
+                        regularization_scale=self.density_matching_regularization_scale,
                         force_real=self.force_real,
                         diagnostics=partial(
                             self._emit,
@@ -432,18 +466,19 @@ class ThermalLatticeSolver(BaseLatticeSolver):
 
     def anchor(self, alpha: float = 1e-8) -> None:
         """
-        Anchor the fits of :attr:`D`, :attr:`Lambda_c`, :attr:`Lambda`, and :attr:`R` to their current values.
+        Keep :attr:`D`, :attr:`Lambda_c`, :attr:`R` and :attr:`Lambda` close to fixed reference values.
 
-        Each fit then also minimizes ``alpha`` times the squared distance of
-        its parameters from where its first fit after this starts. At high
-        temperature the equations barely fix some combinations of the
-        parameters, and the anchor pins them. The anchor holds until
-        :meth:`release` or the next :meth:`solve`.
+        Each fit takes its starting parameters as the reference on its
+        first call after this method. At high temperature, some combinations
+        of parameters can move without changing the density matrices much.
+        The anchor limits that motion until :meth:`release` or the next
+        :meth:`solve`. Use :attr:`density_matching_regularization` to choose
+        which parameter changes to penalize.
 
         Parameters
         ----------
         alpha : float, optional
-            Strength of the anchor. Default is ``1e-8``.
+            Strength of the anchor.
 
         """
         self._anchor_alpha = alpha

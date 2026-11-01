@@ -1,7 +1,7 @@
 """Type aliases and interfaces used across risb."""
 
 from collections.abc import Callable, Mapping
-from typing import Protocol
+from typing import Literal, Protocol
 
 import numpy as np
 from fockit.algebra import OpSum
@@ -18,6 +18,12 @@ type BlockMatrixLike = Mapping[str, NDArray[np.inexact]]
 
 type BlockRealArray = dict[str, NDArray[np.float64]]
 """Real array for each block, e.g. band energies, k-weights."""
+
+type DensityMatchingJacobian = Literal["2-point", "analytic"]
+"""Derivative method for thermal density matching."""
+
+type DensityMatchingRegularization = Literal["uniform", "response-weighted"]
+"""How the anchor penalizes changes to the thermal matching parameters."""
 
 type UpdateWeights = Callable[[BlockRealArray], BlockRealArray]
 """Takes band energies for each block and returns the k-space integration weights."""

@@ -435,6 +435,18 @@ If you want to turn this off
 S.solve(callbacks=[])
 ```
 
+You can calculate the derivatives analytically. This example also puts
+more of the anchor penalty on changes that barely affect the density
+matrices:
+
+```python
+S = ThermalLatticeSolver(
+    ...,
+    density_matching_jacobian="analytic",
+    density_matching_regularization="response-weighted",
+)
+```
+
 The grand potential and the entropy per unit cell are
 
 ```python

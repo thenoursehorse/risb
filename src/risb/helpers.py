@@ -21,8 +21,9 @@
 # from scipy.special import binom
 import warnings
 from collections.abc import Callable, Mapping, Sequence
-from functools import cache
+from functools import cache, lru_cache
 from itertools import product
+from typing import Literal
 
 import numpy as np
 from numpy.linalg import inv
@@ -31,10 +32,24 @@ from scipy.linalg import sqrtm
 from scipy.optimize import least_squares
 from scipy.special import expit
 
-from risb.types import BlockMatrix, BlockMatrixLike, BlockRealArray
+from risb.types import (
+    BlockMatrix,
+    BlockMatrixLike,
+    BlockRealArray,
+    DensityMatchingJacobian,
+    DensityMatchingRegularization,
+)
 
 # Eigenvalues of rho (1 - rho) below this are a completely full or empty orbital
 EDGE_TOL = 1e-12
+
+type _MatchingFunction = Callable[[NDArray[np.float64]], NDArray[np.float64]]
+type _SolverJacobian = Literal["2-point"] | _MatchingFunction
+
+type _MatchingEvaluation = Callable[
+    [NDArray[np.float64]],
+    tuple[NDArray[np.float64], NDArray[np.float64]],
+]
 
 ## Formula is (1-A)^{-1/2} = sum_r=0^{infty} (-1)^r * 1/2 choose r * A^r
 # def one_sqrtm_inv(A, tol=np.finfo(float).eps, N=10000):
@@ -356,6 +371,48 @@ def get_h0_emb(
     return h
 
 
+def get_fermi_density_response(
+    h: NDArray[np.inexact],
+    dh: NDArray[np.inexact],
+    beta: float,
+) -> tuple[NDArray[np.inexact], NDArray[np.inexact]]:
+    """
+    Return the thermal density matrix and its response to changes in h.
+
+    Parameters
+    ----------
+    h : numpy.ndarray
+        Hermitian one-body Hamiltonian with the chemical potential subtracted.
+    dh : numpy.ndarray
+        Change in h: one Hermitian matrix or a stack with shape (..., n, n).
+    beta : float
+        Inverse temperature.
+
+    Returns
+    -------
+    rho : numpy.ndarray
+        Thermal averages rho[i, j] = <a_i^dag a_j>.
+    response : numpy.ndarray
+        Change in rho to first order in dh, with the same shape as dh.
+
+    """
+    rho, energies, vectors = _fermi_density(h, beta)
+    distance = beta * np.abs(energies[:, None] - energies[None, :])
+    ratio = np.divide(
+        -np.expm1(-distance),
+        distance,
+        out=np.ones_like(distance),
+        where=distance != 0,
+    )
+    low = np.minimum(energies[:, None], energies[None, :])
+    high = np.maximum(energies[:, None], energies[None, :])
+    divided = -beta * expit(-beta * low) * expit(beta * high) * ratio
+    response = (
+        vectors @ (divided * (vectors.conj().T @ dh @ vectors)) @ vectors.conj().T
+    ).swapaxes(-1, -2)
+    return rho, response
+
+
 def get_h0_emb_densities(
     R: NDArray[np.inexact],
     Lambda: NDArray[np.inexact],
@@ -399,11 +456,8 @@ def get_h0_emb_densities(
 
     """
     h = get_h0_emb(R, Lambda, D, Lambda_c, mu)
-    M = Lambda.shape[-1]
-    energies, vectors = np.linalg.eigh(h)
-    # The thermal average of psi^dag_i psi_j is [n_F(h)]_ji
-    rho = ((vectors * expit(-beta * energies)) @ _dagger(vectors)).T
-    return rho[:M, :M], rho[:M, M:], np.eye(M) - rho[M:, M:]
+    rho, _, _ = _fermi_density(h, beta)
+    return _extract_embedding_densities(rho)
 
 
 def get_h0_emb_grand_potential(
@@ -525,6 +579,9 @@ def get_thermal_d_lambda_c(
     *,
     anchor: tuple[NDArray[np.inexact], NDArray[np.inexact]] | None = None,
     alpha: float = 1e-8,
+    jacobian: DensityMatchingJacobian = "2-point",
+    regularization: DensityMatchingRegularization = "uniform",
+    regularization_scale: float = 1e-3,
     force_real: bool = False,
     diagnostics: Callable[..., None] | None = None,
 ) -> tuple[NDArray[np.inexact], NDArray[np.inexact]]:
@@ -558,6 +615,19 @@ def get_thermal_d_lambda_c(
         distance from. It pins combinations that the equations barely fix.
     alpha : float, optional
         Strength of ``anchor``.
+    jacobian : {"2-point", "analytic"}, optional
+        Use finite differences (``"2-point"``) or analytic
+        derivatives (``"analytic"``) to match the density matrices.
+    regularization : {"uniform", "response-weighted"}, optional
+        ``"uniform"`` penalizes all parameter changes equally.
+        ``"response-weighted"`` penalizes combinations that barely affect
+        the density matrices more heavily than those that affect them
+        strongly. Only used with ``anchor``.
+    regularization_scale : float, optional
+        Scale for the singular values from an SVD of the matching
+        residual's Jacobian. Singular values well below this scale get
+        almost the full anchor penalty; larger values get less. Must be
+        positive. The value depends on the energy units.
     force_real : bool, optional
         Whether the matrices are real.
     diagnostics : callable, optional
@@ -592,15 +662,65 @@ def get_thermal_d_lambda_c(
             D_y, False, force_real
         )
 
+    def get_matching_residual(
+        D_y: NDArray[np.inexact],
+        density: NDArray[np.inexact],
+        cross: NDArray[np.inexact],
+    ) -> NDArray[np.float64]:
+        return _entries(density - rho_qp, cross @ D_y - ke.T)
+
     def residual(y: NDArray[np.float64]) -> NDArray[np.float64]:
         D_y, Lambda_c_y = unflatten(y)
-        rho_qp_emb, rho_qpf, _ = get_h0_emb_densities(
-            R, Lambda, D_y, Lambda_c_y, beta, mu
+        density, cross, _ = get_h0_emb_densities(R, Lambda, D_y, Lambda_c_y, beta, mu)
+        return get_matching_residual(D_y, density, cross)
+
+    y0 = flatten(D, Lambda_c)
+
+    def analytic() -> _MatchingEvaluation:
+        directions = [unflatten(v) for v in np.eye(len(y0))]
+        zero = np.zeros_like(Lambda)
+        dh = np.stack(
+            [get_h0_emb(R, zero, dD, dLambda_c) for dD, dLambda_c in directions]
         )
-        return _entries(rho_qp_emb - rho_qp, rho_qpf @ D_y - ke.T)
+        M = Lambda.shape[0]
+
+        def evaluate(
+            y: NDArray[np.float64],
+        ) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
+            D_y, Lambda_c_y = unflatten(y)
+            rho, drho = get_fermi_density_response(
+                get_h0_emb(R, Lambda, D_y, Lambda_c_y, mu), dh, beta
+            )
+            density, cross, _ = _extract_embedding_densities(rho)
+            value = get_matching_residual(D_y, density, cross)
+            jac = np.stack(
+                [
+                    _entries(
+                        change[:M, :M],
+                        change[:M, M:] @ D_y + cross @ dD,
+                    )
+                    for change, (dD, _) in zip(drho, directions, strict=True)
+                ],
+                axis=1,
+            )
+            return value, jac
+
+        return evaluate
 
     y_anchor = None if anchor is None else flatten(*anchor)
-    return unflatten(_fit(residual, flatten(D, Lambda_c), y_anchor, alpha, diagnostics))
+    return unflatten(
+        _fit(
+            residual,
+            y0,
+            y_anchor,
+            alpha,
+            diagnostics,
+            analytic=analytic,
+            jacobian=jacobian,
+            regularization=regularization,
+            regularization_scale=regularization_scale,
+        )
+    )
 
 
 def get_thermal_r_lambda(
@@ -615,6 +735,9 @@ def get_thermal_r_lambda(
     *,
     anchor: tuple[NDArray[np.inexact], NDArray[np.inexact]] | None = None,
     alpha: float = 1e-8,
+    jacobian: DensityMatchingJacobian = "2-point",
+    regularization: DensityMatchingRegularization = "uniform",
+    regularization_scale: float = 1e-3,
     force_real: bool = False,
     diagnostics: Callable[..., None] | None = None,
 ) -> tuple[NDArray[np.inexact], NDArray[np.inexact]]:
@@ -648,6 +771,19 @@ def get_thermal_r_lambda(
         from. It pins combinations that the equations barely fix.
     alpha : float, optional
         Strength of ``anchor``.
+    jacobian : {"2-point", "analytic"}, optional
+        Use finite differences (``"2-point"``) or analytic
+        derivatives (``"analytic"``) to match the density matrices.
+    regularization : {"uniform", "response-weighted"}, optional
+        ``"uniform"`` penalizes all parameter changes equally.
+        ``"response-weighted"`` penalizes combinations that barely affect
+        the density matrices more heavily than those that affect them
+        strongly. Only used with ``anchor``.
+    regularization_scale : float, optional
+        Scale for the singular values from an SVD of the matching
+        residual's Jacobian. Singular values well below this scale get
+        almost the full anchor penalty; larger values get less. Must be
+        positive. The value depends on the energy units.
     force_real : bool, optional
         Whether the matrices are real.
     diagnostics : callable, optional
@@ -680,15 +816,63 @@ def get_thermal_r_lambda(
             R_y, False, force_real
         )
 
+    def get_matching_residual(
+        R_y: NDArray[np.inexact],
+        density: NDArray[np.inexact],
+        cross: NDArray[np.inexact],
+    ) -> NDArray[np.float64]:
+        return _entries(density - rho_f, R_y.T @ cross - rho_cf)
+
     def residual(y: NDArray[np.float64]) -> NDArray[np.float64]:
         R_y, Lambda_y = unflatten(y)
-        _, rho_qpf, rho_f_emb = get_h0_emb_densities(
-            R_y, Lambda_y, D, Lambda_c, beta, mu
-        )
-        return _entries(rho_f_emb - rho_f, R_y.T @ rho_qpf - rho_cf)
+        _, cross, density = get_h0_emb_densities(R_y, Lambda_y, D, Lambda_c, beta, mu)
+        return get_matching_residual(R_y, density, cross)
+
+    y0 = flatten(R, Lambda)
+
+    def analytic() -> _MatchingEvaluation:
+        directions = [unflatten(v) for v in np.eye(len(y0))]
+        zero = np.zeros_like(Lambda_c)
+        dh = np.stack([get_h0_emb(dR, dLambda, D, zero) for dR, dLambda in directions])
+        M = Lambda.shape[0]
+
+        def evaluate(
+            y: NDArray[np.float64],
+        ) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
+            R_y, Lambda_y = unflatten(y)
+            rho, drho = get_fermi_density_response(
+                get_h0_emb(R_y, Lambda_y, D, Lambda_c, mu), dh, beta
+            )
+            _, cross, density = _extract_embedding_densities(rho)
+            value = get_matching_residual(R_y, density, cross)
+            jac = np.stack(
+                [
+                    _entries(
+                        -change[M:, M:],
+                        dR.T @ cross + R_y.T @ change[:M, M:],
+                    )
+                    for change, (dR, _) in zip(drho, directions, strict=True)
+                ],
+                axis=1,
+            )
+            return value, jac
+
+        return evaluate
 
     y_anchor = None if anchor is None else flatten(*anchor)
-    return unflatten(_fit(residual, flatten(R, Lambda), y_anchor, alpha, diagnostics))
+    return unflatten(
+        _fit(
+            residual,
+            y0,
+            y_anchor,
+            alpha,
+            diagnostics,
+            analytic=analytic,
+            jacobian=jacobian,
+            regularization=regularization,
+            regularization_scale=regularization_scale,
+        )
+    )
 
 
 @cache
@@ -2265,25 +2449,126 @@ def _entries(*arrays: NDArray[np.inexact]) -> NDArray[np.float64]:
     )
 
 
+def _fermi_density(
+    h: NDArray[np.inexact], beta: float
+) -> tuple[NDArray[np.inexact], NDArray[np.floating], NDArray[np.inexact]]:
+    """Return the density matrix and the eigensystem used to calculate it."""
+    energies, vectors = np.linalg.eigh(h)
+    rho: NDArray[np.inexact] = (
+        (vectors * expit(-beta * energies)) @ _dagger(vectors)
+    ).T
+    return rho, energies, vectors
+
+
+def _extract_embedding_densities(
+    rho: NDArray[np.inexact],
+) -> tuple[NDArray[np.inexact], NDArray[np.inexact], NDArray[np.inexact]]:
+    """Return the quasiparticle density, its bath correlations and the bath-hole density."""
+    M = rho.shape[0] // 2
+    return rho[:M, :M], rho[:M, M:], np.eye(M) - rho[M:, M:]
+
+
+def _select_matching_derivatives(
+    residual: _MatchingFunction,
+    analytic: Callable[[], _MatchingEvaluation] | None,
+    method: DensityMatchingJacobian,
+) -> tuple[_MatchingFunction, _SolverJacobian, _MatchingFunction]:
+    """Select the residual and derivatives for the solver and anchor."""
+    if method not in ("2-point", "analytic"):
+        msg = f"Unknown density-matching Jacobian: {method}"
+        raise ValueError(msg)
+    if method == "2-point":
+
+        def numerical(y: NDArray[np.float64]) -> NDArray[np.float64]:
+            value = residual(y)
+            steps = (
+                np.sqrt(np.finfo(y.dtype).eps)
+                * np.where(y >= 0, 1, -1)
+                * np.maximum(1, np.abs(y))
+            )
+            columns = []
+            for i, step in enumerate(steps):
+                shifted = y.copy()
+                shifted[i] += step
+                columns.append((residual(shifted) - value) / (shifted[i] - y[i]))
+            return np.stack(columns, axis=1)
+
+        return residual, "2-point", numerical
+    if analytic is None:
+        msg = "Analytic derivatives are not available for this matching problem."
+        raise ValueError(msg)
+
+    evaluate = analytic()
+
+    @lru_cache(maxsize=1)
+    def cached(
+        parameters: tuple[float, ...],
+    ) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
+        return evaluate(np.asarray(parameters))
+
+    def value(y: NDArray[np.float64]) -> NDArray[np.float64]:
+        return cached(tuple(y))[0]
+
+    def derivative(y: NDArray[np.float64]) -> NDArray[np.float64]:
+        return cached(tuple(y))[1]
+
+    return value, derivative, derivative
+
+
 def _fit(
     residual: Callable[[NDArray[np.float64]], NDArray[np.float64]],
     y0: list[float],
     anchor: list[float] | None,
     alpha: float,
     diagnostics: Callable[..., None] | None = None,
+    *,
+    analytic: Callable[[], _MatchingEvaluation] | None = None,
+    jacobian: DensityMatchingJacobian = "2-point",
+    regularization: DensityMatchingRegularization = "uniform",
+    regularization_scale: float = 1e-3,
 ) -> NDArray[np.float64]:
-    # The least-squares solution of residual from y0, also pulled towards
-    # anchor by alpha times the squared distance
-    fun = residual
+    if regularization not in ("uniform", "response-weighted"):
+        msg = f"Unknown density-matching regularization: {regularization}"
+        raise ValueError(msg)
+    if regularization == "response-weighted" and regularization_scale <= 0:
+        msg = "regularization_scale must be positive."
+        raise ValueError(msg)
+
+    matching_residual, jac, derivative = _select_matching_derivatives(
+        residual, analytic, jacobian
+    )
+
+    fun = matching_residual
     if anchor is not None:
-        y_anchor, scale = np.array(anchor), np.sqrt(alpha)
+        y_anchor = np.array(anchor)
+        penalty = np.sqrt(alpha) * np.eye(len(y0))
+        if regularization == "response-weighted":
+            _, singular, vh = np.linalg.svd(
+                derivative(np.asarray(y0)), full_matrices=False
+            )
+            weights = regularization_scale / np.sqrt(
+                singular**2 + regularization_scale**2
+            )
+            penalty = np.sqrt(alpha) * (vh.T * weights) @ vh
 
         def fun(y: NDArray[np.float64]) -> NDArray[np.float64]:
-            return np.concatenate([residual(y), scale * (y - y_anchor)])
+            distance = y - y_anchor
+            pull = (
+                np.sqrt(alpha) * distance
+                if regularization == "uniform"
+                else penalty @ distance
+            )
+            return np.concatenate([matching_residual(y), pull])
 
-    result = least_squares(fun, y0, xtol=1e-15, ftol=1e-15, gtol=1e-15)
+        if callable(jac):
+            unregularized_jacobian = jac
+
+            def jac(y: NDArray[np.float64]) -> NDArray[np.float64]:
+                return np.vstack([unregularized_jacobian(y), penalty])
+
+    result = least_squares(fun, y0, jac=jac, xtol=1e-15, ftol=1e-15, gtol=1e-15)
     if diagnostics is not None:
-        physical = result.fun[: -len(y0)] if anchor is not None else result.fun
+        physical = residual(result.x)
         diagnostics(
             "fit.result",
             success=bool(result.success),
@@ -2294,6 +2579,10 @@ def _fit(
             residual_norm=float(np.linalg.norm(physical)),
             total_cost=float(result.cost),
             anchored=anchor is not None,
+            jacobian=jacobian,
+            regularization=regularization,
+            alpha=alpha,
+            regularization_scale=regularization_scale,
         )
     y: NDArray[np.float64] = result.x
     return y

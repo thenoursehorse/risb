@@ -1,6 +1,7 @@
 # ruff: noqa: D100, D103
 
 from pathlib import Path
+from typing import Literal
 
 import numpy as np
 import pytest
@@ -943,3 +944,73 @@ def test_thermal_bath_fit_gives_the_quasiparticle_density_and_kinetic_energy(
     )
     assert rho_qp_fit == pytest.approx(rho_qp, abs=1e-6)
     assert pytest.approx(ke, abs=1e-6) == (rho_qpf_fit @ D_fit).T
+
+
+def test_analytic_density_matching_agrees_with_finite_differences() -> None:
+    rng = np.random.default_rng(2)
+
+    def matrix(rows: int, cols: int) -> NDArray[np.complex128]:
+        return rng.normal(size=(rows, cols)) + 1j * rng.normal(size=(rows, cols))
+
+    R, D = 0.5 * matrix(3, 2), 0.2 * matrix(3, 2)
+    a, b = 0.2 * matrix(3, 3), 0.2 * matrix(3, 3)
+    beta, mu = 3.0, 0.3
+    Lambda = 0.5 * (a + a.conj().T) + mu * np.eye(3)
+    Lambda_c = 0.5 * (b + b.conj().T) - mu * np.eye(3)
+    a = 0.01 * matrix(3, 3)
+    shift = 0.5 * (a + a.conj().T)
+    rho_qp, cross, rho_f = helpers.get_h0_emb_densities(
+        R, Lambda, D, Lambda_c, beta, mu
+    )
+    kinetic, hybridization = cross @ D, R.T @ cross
+
+    def match(jacobian: Literal["2-point", "analytic"]) -> NDArray[np.inexact]:
+        D_fit, Lambda_c_fit = helpers.get_thermal_d_lambda_c(
+            rho_qp,
+            kinetic.T,
+            R,
+            Lambda,
+            beta,
+            mu,
+            1.05 * D,
+            Lambda_c + shift,
+            jacobian=jacobian,
+        )
+        density_qp, cross_qp, _ = helpers.get_h0_emb_densities(
+            R, Lambda, D_fit, Lambda_c_fit, beta, mu
+        )
+        R_fit, Lambda_fit = helpers.get_thermal_r_lambda(
+            rho_f,
+            hybridization,
+            D,
+            Lambda_c,
+            beta,
+            mu,
+            1.05 * R,
+            Lambda + shift,
+            jacobian=jacobian,
+        )
+        _, cross_f, density_f = helpers.get_h0_emb_densities(
+            R_fit, Lambda_fit, D, Lambda_c, beta, mu
+        )
+        return np.concatenate(
+            [
+                density_qp.ravel(),
+                (cross_qp @ D_fit).ravel(),
+                density_f.ravel(),
+                (R_fit.T @ cross_f).ravel(),
+            ]
+        )
+
+    expected = np.concatenate(
+        [
+            rho_qp.ravel(),
+            kinetic.ravel(),
+            rho_f.ravel(),
+            hybridization.ravel(),
+        ]
+    )
+    finite_difference = match("2-point")
+    analytic = match("analytic")
+    assert analytic == pytest.approx(finite_difference, abs=1e-8)
+    assert analytic == pytest.approx(expected, abs=1e-8)
