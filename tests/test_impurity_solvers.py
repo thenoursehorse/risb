@@ -537,8 +537,8 @@ def test_complex_two_orbital_model_reaches_the_mott_state_with_a_thermal_impurit
     None
 ):
     # In the Mott state the bath orbitals decouple. With the impurity problem
-    # at the temperature of the quasiparticles they are partly filled, close
-    # to the quasiparticles but not equal to them
+    # at the temperature of the quasiparticles they are half filled, like the
+    # quasiparticles, so the self-consistency equations hold
     U = 5
     J = 0.2 * U
     Up = U - 2 * J
@@ -560,11 +560,9 @@ def test_complex_two_orbital_model_reaches_the_mott_state_with_a_thermal_impurit
     )
     for bl, _ in gf_struct:
         S.Lambda[0][bl] = (0.5 * U + Up - 0.5 * J) * np.eye(2)
-    # In the atomic limit the bath decouples, and the self-consistency
-    # equations are not satisfied
-    with pytest.warns(RuntimeWarning, match="self-consistency"):
-        result = S.solve(tol=1e-8)
+    result = S.solve(tol=1e-8)
     assert result.converged
+    assert S.self_consistency_error < 1e-8
     for bl, _ in gf_struct:
         assert S.Z[0][bl] == pytest.approx(np.zeros((2, 2)), abs=1e-6)
 

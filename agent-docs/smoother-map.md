@@ -41,6 +41,11 @@ physical residuals, not only iteration count. Keep prototypes outside the reposi
 15. [x] Prototype matching-residual models and test the published Anderson algorithms with g(x)-x.
 16. [x] Add and evaluate iteration-scheduled safeguarded Anderson as an optional DIIS policy.
 17. [ ] Investigate the separate direct-variational T=0 route.
+18. [ ] Investigate BianLi continuation with maxiter=1: reserving enough
+   evaluations for a guarded step currently prevents further progress.
+19. [ ] Investigate thermal stopping with BianLi when matching residuals
+   are small but g(x)-x remains large; distinguish parameter drift from
+   failure to satisfy the matching equations.
 
 ## Results
 
@@ -1111,3 +1116,48 @@ are not used for speed comparisons.
   same three failures, one long Block2 case deselected (102.75 s).
 - Keep BianLi optional. Full per-test tables, CSV, logs and residuals:
   /tmp/risb-smoother-map/bian-li-suite/.
+
+## Gauge rules with Pulay and BianLi (2026-11-02)
+
+T = 0 LatticeSolver, default FullEmptyPinning with the smooth cap, tol 1e-9
+to 1e-10. Gauge rules through gauge_fix: free, risb.gauge.lambda_eigenbasis,
+and a prototype Hermitian-R rule (R rotated to [P; 0] with P = (R^dag R)^(1/2),
+Lambda diagonal and sorted on the quasiparticles R does not couple to).
+
+Cycles to converge, x = not converged.
+
+Double-counting ghost Hubbard (B = 3, U = 2, the restart test's model):
+
+| Policy | Free | Lambda | Hermitian R |
+| --- | --- | --- | --- |
+| Pulay root | 146 | x (1e-7 at 1000) | x |
+| Pulay recursion | 167 | 741 | x |
+| BianLi | 142 | 152 | 104 |
+
+Two-orbital B = 3 quarter filling (the perturbed-start test), default start
+and seeds 0-5, noise 0.05, cap 1000:
+
+| Policy | Free | Lambda | Hermitian R |
+| --- | --- | --- | --- |
+| Pulay root | 21-34 | 31-58 | x all 7 |
+| Pulay recursion | 25-43 | 39-170 | x 5 of 7 |
+| BianLi | 28-36 | 29-79 | x all 7 |
+
+Two orbitals with a crystal field at half filling, Bethe lattice, B = 3,
+density-density Kanamori, beta 100, Sz = 0 fockit impurity, up/dn averaged;
+U = 3, J = 0.5 at 8 crystal fields and U = 4, J = 0.7 at 7, cap 300.
+Lowest = converged with f1/f2 < 1e-8 onto the lowest energy found in any run.
+
+| Policy | Gauge | Converged | Lowest |
+| --- | --- | --- | --- |
+| Pulay root | free | 8/15 | 8/15 |
+| Pulay root | Lambda | 14/15 | 13/15 |
+| Pulay root | Hermitian R | 12/15 | 12/15 |
+| BianLi | free / Lambda / Hermitian R | 2/15 | 1-2/15 |
+
+- Hermitian R fails every degenerate two-orbital start; rejected.
+- Lambda eigenbasis helps the crystal-field model and only slows the easy
+  ghost cases, but needs BianLi on the double-counting case.
+- BianLi converges 2/15 crystal-field cases in 300 cycles, against 8/15 for
+  Pulay without a gauge.
+- No combination is best everywhere; lambda_eigenbasis stays opt-in.
