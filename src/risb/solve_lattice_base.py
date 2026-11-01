@@ -137,7 +137,11 @@ class BaseLatticeSolver(ABC):
         Rotates the next :attr:`R` and :attr:`Lambda` of each block into a
         chosen quasiparticle basis, which does not change the physics, before
         the optimizer sees them, e.g., :func:`risb.gauge.lambda_eigenbasis`.
-        Default is None, which leaves the basis free.
+        The rotation also rotates the bath orbitals of the impurity problem,
+        so it must keep any symmetries that an impurity solver states for
+        them, such as the permutation and onsite symmetries of
+        :class:`.FockitImpuritySolver`. Default is None, which leaves the
+        basis free.
     diagnostics : risb.diagnostics.DiagnosticObserver, optional
         Passive reporter of lattice events. None disables reporting.
 

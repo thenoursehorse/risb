@@ -783,7 +783,12 @@ class FockitImpuritySolver(_FockitBase):
             except ValueError:
                 phases = [np.nan]
             if not np.allclose(phases, 1):
-                msg = "h_imp does not have the permutation and onsite symmetries."
+                msg = (
+                    "h_imp does not have the permutation and onsite symmetries. "
+                    "They act on the bath orbitals in a fixed basis, so a rotation "
+                    "of the quasiparticles, e.g., a gauge_fix of the lattice "
+                    "solver, can break them."
+                )
                 raise ValueError(msg)
         H = self._hamiltonian(
             self._key, *_one_body(self.h_imp - self.h_int, self._index)

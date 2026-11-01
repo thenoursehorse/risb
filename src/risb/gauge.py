@@ -20,6 +20,11 @@ def lambda_eigenbasis(
     not well defined, the group is instead rotated as little as possible, and
     Lambda is diagonal only up to the splitting of the group.
 
+    A symmetry of Lambda that permutes quasiparticles usually mixes its
+    eigenvectors, so this basis breaks permutation and onsite symmetries
+    stated for the bath orbitals, e.g., a layer swap given to
+    :class:`.FockitImpuritySolver`.
+
     Parameters
     ----------
     R : numpy.ndarray
