@@ -58,7 +58,12 @@ class BandKIntegrationResult:
     With a supplied mesh, density_k contains the density matrix at each
     k-point, and weights contains the normalized mesh weights.
     quadrature_error estimates the error of the k-integration method;
-    temperature_error estimates the error of temperature extrapolation.
+    temperature_error estimates the combined temperature-extrapolation error
+    of the requested integrals and electron count. mu_temperature_error
+    separately estimates the temperature-extrapolation error of mu; it does
+    not include errors from the filling search or k integration.
+    During temperature extrapolation, converged checks the integrals and
+    electron count; mu's extrapolation error does not set this flag.
     temperature_errors gives the norm and maximum absolute entry of the
     extrapolation error for each requested matrix. An empty mapping means
     that per-matrix estimates are unavailable; None marks an unavailable
@@ -72,6 +77,7 @@ class BandKIntegrationResult:
     converged: bool = True
     quadrature_error: float | None = None
     temperature_error: float | None = None
+    mu_temperature_error: float | None = None
     temperature_errors: dict[Hashable, KIntegralError] = field(default_factory=dict)
     betas: tuple[float, ...] = ()
     density_k: BlockMatrix | None = None

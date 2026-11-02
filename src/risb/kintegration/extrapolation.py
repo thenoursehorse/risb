@@ -46,8 +46,8 @@ class TemperatureExtrapolatedKIntegrator:
         target beta. The spacing need not be uniform.
     atol, rtol : float
         Absolute and relative tolerances on the Euclidean norm of all
-        integrated matrix entries, the electron count and mu. These entries
-        are not rescaled.
+        integrated matrix entries and electron count. These entries are not
+        rescaled. Mu is extrapolated separately and does not set convergence.
     diagnostics : risb.diagnostics.DiagnosticObserver, optional
         Reporter such as KIntegrationDiagnostics. Debug output includes each
         beta, error estimate and stopping tolerance.
@@ -58,10 +58,11 @@ class TemperatureExtrapolatedKIntegrator:
     filling is fixed. beta is in inverse Hamiltonian-energy units; beta=infinity
     requests T=0.
 
-    For a regular metal the Sommerfeld expansion has even powers of 1/beta.
-    This class extrapolates the latest three samples in beta**-2 using
-    richardson_extrapolate. A candidate must meet tolerance and agree with
-    another three-sample extrapolation after a further cooling step.
+    For a regular metal the Sommerfeld expansion has even powers of 1/beta,
+    but partially occupied flat bands can introduce linear terms in both mu
+    and the matrices. This class fits the latest three samples as a quadratic
+    in 1/beta using richardson_extrapolate. A candidate must meet tolerance
+    and agree with another extrapolation after a further cooling step.
     At least four samples are therefore needed for convergence.
     The error estimate includes the change between these extrapolations.
     Results include the Frobenius norm and largest absolute entry of this
@@ -70,15 +71,22 @@ class TemperatureExtrapolatedKIntegrator:
     at different points can cancel in a sum. Too few k-points or a singular
     density of states can also make this estimate unreliable.
 
+    Mu uses the same temperature dependence but is fitted separately.
+    Its estimated error is returned as mu_temperature_error and does not
+    control integral convergence.
+
     The returned density matrices use the same extrapolation coefficients
-    as the k-integrals. The wrapped BandKIntegrator controls how mu is found
-    at each beta, including its use_midgap setting.
+    as the k-integrals. They retain fractional occupations at degenerate
+    levels; the extrapolated mu alone does not determine those occupations.
+    The wrapped BandKIntegrator controls how mu is found at each beta,
+    including its use_midgap setting.
 
     References
     ----------
     The use of Richardson extrapolation for T=0 band filling follows the
     `AutoBZ.jl electron-density example
     <https://lxvm.github.io/AutoBZ.jl/stable/pages/demo/density/#T0-electron-density>`__.
+    Here the fit uses 1/beta rather than 1/beta**2 to allow linear terms.
 
     """
 
@@ -131,6 +139,9 @@ class TemperatureExtrapolatedKIntegrator:
             arrays: list[NDArray[np.inexact]] = []
             extrapolated: ExtrapolationResult
             converged = False
+            target_mu: float
+            mu_temperature_error: float
+            previous_mu: float | None = None
             previous: ExtrapolationResult | None = None
             previous_meets_tolerance = False
             previous_quadrature_error = 0.0
@@ -155,16 +166,28 @@ class TemperatureExtrapolatedKIntegrator:
                     np.concatenate(
                         [
                             *(value.ravel() for value in sample.values.values()),
-                            np.asarray([sample.n_electrons, sample.mu]),
+                            np.asarray([sample.n_electrons]),
                         ]
                     )
                 )
                 window_size = min(3, len(samples))
+                temperatures = [1 / s.beta for s in samples[-window_size:]]
                 candidate = richardson_extrapolate(
-                    [1 / s.beta**2 for s in samples[-window_size:]],
-                    arrays[-window_size:],
-                    target=1 / beta**2,
+                    temperatures, arrays[-window_size:], target=1 / beta
                 )
+                mu_origin = sample.mu
+                mu_candidate = richardson_extrapolate(
+                    temperatures,
+                    [np.asarray(s.mu - mu_origin) for s in samples[-window_size:]],
+                    target=1 / beta,
+                )
+                target_mu = mu_origin + float(mu_candidate.value)
+                mu_temperature_error = (
+                    np.inf
+                    if previous_mu is None
+                    else max(mu_candidate.error, abs(target_mu - previous_mu))
+                )
+                previous_mu = target_mu
                 candidate = replace(
                     candidate,
                     coefficients=np.pad(
@@ -234,10 +257,11 @@ class TemperatureExtrapolatedKIntegrator:
                         smearing_width=1 / sample_beta,
                         target_beta=beta,
                         mu=sample.mu,
+                        extrapolated_mu=target_mu,
                         n_electrons=sample.n_electrons,
                         temperature_error=extrapolated.error,
-                        electron_count_error=float(extrapolated.absolute_error[-2]),
-                        mu_error=float(extrapolated.absolute_error[-1]),
+                        electron_count_error=float(extrapolated.absolute_error[-1]),
+                        mu_temperature_error=mu_temperature_error,
                         quadrature_error=(
                             None
                             if any(s.quadrature_error is None for s in samples)
@@ -298,9 +322,7 @@ class TemperatureExtrapolatedKIntegrator:
                     @ v.conj().swapaxes(-1, -2)
                     for block, v in samples[0].vectors.items()
                 }
-            self.mu = float(
-                sum(c * s.mu for c, s in zip(coefficients, samples, strict=True))
-            )
+            self.mu = target_mu
             result = replace(
                 samples[-1],
                 values=values,
@@ -314,6 +336,7 @@ class TemperatureExtrapolatedKIntegrator:
                 ),
                 converged=converged and all(s.converged for s in samples),
                 temperature_error=extrapolated.error,
+                mu_temperature_error=mu_temperature_error,
                 temperature_errors=temperature_errors,
                 quadrature_error=quadrature_error,
                 betas=tuple(s.beta for s in samples),
@@ -337,8 +360,8 @@ class TemperatureExtrapolatedKIntegrator:
                     mu=result.mu,
                     n_electrons=result.n_electrons,
                     temperature_error=result.temperature_error,
-                    electron_count_error=float(extrapolated.absolute_error[-2]),
-                    mu_error=float(extrapolated.absolute_error[-1]),
+                    electron_count_error=float(extrapolated.absolute_error[-1]),
+                    mu_temperature_error=mu_temperature_error,
                     quadrature_error=result.quadrature_error,
                     converged=result.converged,
                 )

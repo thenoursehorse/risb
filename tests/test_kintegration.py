@@ -61,6 +61,28 @@ def test_band_filling_handles_partial_flat_levels_and_gaps(
     if smearing is fermi_function:
         assert result.mu == pytest.approx(np.log(3) / 10)
 
+        extrapolation = TemperatureExtrapolatedKIntegrator(
+            BandKIntegrator(WeightedKPointIntegrator(), n_target=1.5),
+            betas=[10, 20, 40, 80],
+            atol=1e-8,
+            rtol=0,
+        )
+        zero = extrapolation.integrate(
+            flat,
+            observables=lambda _k, density: dict(density.items()),
+        )
+        assert zero.converged
+        assert zero.mu == pytest.approx(0, abs=1e-10)
+        assert zero.mu_temperature_error is not None
+        assert zero.mu_temperature_error < 1e-10
+        assert zero.n_electrons == pytest.approx(1.5, abs=1e-8)
+        assert zero.density_k is not None
+        for density in zero.density_k.values():
+            assert density == pytest.approx(np.full((100, 1, 1), 0.75), abs=1e-8)
+        finite = extrapolation.integrate(flat, beta=160)
+        assert finite.converged
+        assert finite.mu == pytest.approx(np.log(3) / 160, abs=1e-10)
+
     gapped = {"auxiliary": np.broadcast_to(np.diag([-2.0, 2.0, -0.2, 0.1]), (3, 4, 4))}
     mesh = WeightedKPointIntegrator(weights=[0.2, 0.3, 0.5])
     midpoint = BandKIntegrator(mesh, smearing=smearing, use_midgap=True).integrate(
@@ -107,7 +129,7 @@ def test_extrapolation_recovers_zero_temperature_integrals_of_a_complex_multiblo
     bands = BandKIntegrator(WeightedKPointIntegrator(kpoints))
     extrapolation = TemperatureExtrapolatedKIntegrator(
         bands,
-        betas=[20, 35, 65, 120, 250, 500],
+        betas=[20, 35, 65, 120, 250, 500, 1000, 2000, 4000, 8000, 16000, 32000],
         atol=1e-8,
         rtol=0,
     )
@@ -118,7 +140,11 @@ def test_extrapolation_recovers_zero_temperature_integrals_of_a_complex_multiblo
     expected_ke = u @ np.diag([-2 / np.pi * np.sin(0.7 * np.pi), 0]) @ u.conj().T
     assert result.converged
     assert result.n_electrons == pytest.approx(1.4, abs=1e-10)
-    assert result.mu == pytest.approx(-2 * np.cos(0.7 * np.pi), abs=1e-7)
+    levels = np.sort(-2 * np.cos(2 * np.pi * kpoints[:, 0]))
+    expected_mu = levels[int(0.7 * len(levels))]
+    assert result.mu_temperature_error is not None
+    assert np.isfinite(result.mu_temperature_error)
+    assert abs(result.mu - expected_mu) <= result.mu_temperature_error + 1e-10
     for block in ["alpha", "beta"]:
         assert result.values["density", block] == pytest.approx(
             expected_density, abs=1e-8
@@ -154,7 +180,7 @@ def test_lattice_cycle_accepts_temperature_extrapolation() -> None:
                 use_midgap=True,
                 diagnostics=diagnostics,
             ),
-            betas=[10, 20, 40, 80, 160, 320],
+            betas=[10, 20, 40, 80, 160, 320, 640, 1280, 2560, 5120, 10240, 20480],
             atol=1e-8,
             rtol=0,
             diagnostics=diagnostics,
@@ -180,6 +206,7 @@ def test_lattice_cycle_accepts_temperature_extrapolation() -> None:
         "kextrapolation.sample",
         "kextrapolation.result",
         "temperature_error=",
+        "mu_temperature_error=",
         "kextrapolation.matrix_error",
         "error_norm=",
         "error_max_abs=",
@@ -190,8 +217,10 @@ def test_lattice_cycle_accepts_temperature_extrapolation() -> None:
     for block, _ in gf_struct:
         assert solver.Z[0][block] == pytest.approx(np.eye(1), abs=1e-8)
         assert solver.rho_qp[0][block] == pytest.approx(np.array([[0.5]]), abs=1e-8)
+        levels = -2 * np.cos(2 * np.pi * kpoints[:, 0])
+        expected_ke = np.minimum(levels, 0).mean()
         assert solver.lopsided_ke_qp[0][block] == pytest.approx(
-            np.array([[-2 / np.pi]]), abs=1e-8
+            np.array([[expected_ke]]), abs=1e-8
         )
     assert solver.kintegration_result is not None
     density = helpers.get_density_matrix_k(

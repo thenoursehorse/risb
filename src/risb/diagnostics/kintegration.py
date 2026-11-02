@@ -15,7 +15,8 @@ class KIntegrationDiagnostics:
     Temperature extrapolation reports the Frobenius-norm error and largest
     absolute entry error of every requested matrix. Band results report
     whether midpoint selection was available and accepted; debug output
-    includes the candidate and colder-confirmation checks.
+    includes the candidate and colder-confirmation checks. Mu's temperature
+    error is reported separately from the integral error.
 
     Parameters
     ----------
