@@ -10,7 +10,10 @@ from .output import DiagnosticOutput, Output
 
 
 class KIntegrationDiagnostics:
-    """Report k-integrals, error estimates and temperature extrapolation.
+    """Report k-integrals and their error estimates.
+
+    Temperature extrapolation reports the Frobenius-norm error and largest
+    absolute entry error of every requested matrix.
 
     Parameters
     ----------
@@ -63,7 +66,11 @@ class KIntegrationDiagnostics:
         operation = event.rsplit(".", 1)[0]
         if event.endswith(".started"):
             self._calls[operation] = self._calls.get(operation, 0) + 1
-        level = logging.INFO if event.endswith(".result") else logging.DEBUG
+        level = (
+            logging.INFO
+            if event.endswith(".result") or event == "kextrapolation.matrix_error"
+            else logging.DEBUG
+        )
         if event.endswith(".failed"):
             level = logging.ERROR
         elif fields.get("converged") is False:

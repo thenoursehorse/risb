@@ -55,6 +55,9 @@ physical residuals, not only iteration count. Keep prototypes outside the reposi
    Migrate the lattice solvers and remove SmearingKWeight.
 23. [ ] Check adaptive detection of small pockets and sampling guides more
    broadly before changing any integration default.
+24. [ ] Make Richardson error control reliable on hard T=0 trajectories:
+   validate against colder samples, separate matrix tolerances from mu, and
+   check the filling solve at very large beta.
 
 ## Results
 
@@ -1298,3 +1301,33 @@ with separate quadrature and smearing checks. Items 20 and 22 remain open.
   and timings. The existing extrapolated lattice test checks this output.
 - The extrapolation docstrings cite Richardson (1911), the Richardson.jl
   sequence implementation, and AutoBZ's T=0 density example.
+
+## Per-matrix extrapolation errors and hard T=0 cases
+
+Report: /tmp/risb-smoother-map/hard-t0-extrapolation/report.md.
+72 production-integrator comparisons: square B=3/B=5, original Bethe B=5,
+three-orbital cubic Mott; three starts, Pulay/BianLi, original beta/beta800/
+T=0 extrapolation. No integration defaults changed.
+
+KIntegrationDiagnostics now reports Frobenius norm and largest absolute entry
+of the extrapolation error estimate for every requested matrix. Results retain
+these as temperature_errors. The existing total stopping rule is unchanged.
+Unknown fixed-mesh errors remain unknown; AutoBZ's scalar quadrature estimate
+is not presented as a per-matrix estimate.
+
+Square B=5 BianLi matching successes: 1/3 at beta200, 3/3 at beta800, 3/3
+with extrapolation. Extrapolation takes about five to seven times longer than
+beta800. Pulay extrapolation fails its integration tolerance from all three
+starts. Bethe extrapolation fails before its first completed cycle; mu can
+veto convergence despite small matrix errors. The three-orbital Mott failure
+is still unresolved.
+
+Independent exact T=0 sums on the same mesh expose optimistic Richardson
+estimates: converged square B=5 density has Frobenius error 9.87e-8 per spin,
+but the estimate is 1.91e-9. This is separate from mesh discretization.
+Colder frozen-state samples remove the bias; extending the outer solves'
+beta sequence alone does not fix the failures.
+
+Before trusting requested error tolerances, prototype a colder validation
+sample, separate matrix tolerances from mu, and check cold filling accuracy.
+Keep item 20 open. Production suite: 221 passed; no new test cases or benchmarks.

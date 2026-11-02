@@ -1,6 +1,6 @@
 """Richardson extrapolation of k-space integrals."""
 
-from collections.abc import Sequence
+from collections.abc import Hashable, Sequence
 from dataclasses import dataclass, replace
 
 import numpy as np
@@ -15,17 +15,23 @@ from .integrators import (
     BandObservables,
     Hamiltonian,
     IntegralValues,
+    KIntegralError,
     KIntegrator,
 )
 
 
 @dataclass
 class ExtrapolationResult:
-    """Extrapolated value, error estimate and coefficients of the input values."""
+    """Extrapolated value, total error and error of each array entry.
+
+    coefficients gives the weights applied to the input values.
+    absolute_error contains the estimated absolute error of each entry.
+    """
 
     value: NDArray[np.inexact]
     error: float
     coefficients: NDArray[np.float64]
+    absolute_error: NDArray[np.float64]
 
 
 class TemperatureExtrapolatedKIntegrator:
@@ -55,6 +61,8 @@ class TemperatureExtrapolatedKIntegrator:
     For a regular metal the Sommerfeld expansion has even powers of 1/beta.
     This class extrapolates in beta**-2 using richardson_extrapolate.
     The error estimate compares successive extrapolations of the k-sums.
+    Results include the Frobenius norm and largest absolute entry of this
+    error for each matrix; diagnostics report both.
     It does not check the density matrix at each individual k-point: errors
     at different points can cancel in a sum. Too few k-points or a singular
     density of states can also make this estimate unreliable.
@@ -118,6 +126,7 @@ class TemperatureExtrapolatedKIntegrator:
             arrays: list[NDArray[np.inexact]] = []
             extrapolated: ExtrapolationResult
             converged = False
+            temperature_errors: dict[Hashable, KIntegralError] = {}
             for sample_beta in self.betas:
                 sample = self.kintegrator.integrate(
                     hamiltonian,
@@ -145,6 +154,17 @@ class TemperatureExtrapolatedKIntegrator:
                 extrapolated = richardson_extrapolate(
                     [1 / s.beta**2 for s in samples], arrays, target=1 / beta**2
                 )
+                temperature_errors = {}
+                offset = 0
+                for key, value in sample.values.items():
+                    entry_errors = extrapolated.absolute_error[
+                        offset : offset + value.size
+                    ]
+                    temperature_errors[key] = KIntegralError(
+                        norm=float(np.linalg.norm(entry_errors)),
+                        max_abs=float(np.max(entry_errors)),
+                    )
+                    offset += value.size
                 q_error = sum(
                     abs(c) * s.quadrature_error
                     for c, s in zip(extrapolated.coefficients, samples, strict=True)
@@ -159,6 +179,14 @@ class TemperatureExtrapolatedKIntegrator:
                     and extrapolated.error + q_error <= tolerance
                 )
                 if self.diagnostics is not None:
+                    for key, error in temperature_errors.items():
+                        self.diagnostics.emit(
+                            "kextrapolation.matrix_sample",
+                            observable=key,
+                            beta=sample_beta,
+                            error_norm=error.norm,
+                            error_max_abs=error.max_abs,
+                        )
                     self.diagnostics.emit(
                         "kextrapolation.sample",
                         beta=sample_beta,
@@ -167,6 +195,8 @@ class TemperatureExtrapolatedKIntegrator:
                         mu=sample.mu,
                         n_electrons=sample.n_electrons,
                         temperature_error=extrapolated.error,
+                        electron_count_error=float(extrapolated.absolute_error[-2]),
+                        mu_error=float(extrapolated.absolute_error[-1]),
                         quadrature_error=(
                             None
                             if any(s.quadrature_error is None for s in samples)
@@ -235,6 +265,7 @@ class TemperatureExtrapolatedKIntegrator:
                 ),
                 converged=converged and all(s.converged for s in samples),
                 temperature_error=extrapolated.error,
+                temperature_errors=temperature_errors,
                 quadrature_error=quadrature_error,
                 betas=tuple(s.beta for s in samples),
                 density_k=density_k,
@@ -242,6 +273,14 @@ class TemperatureExtrapolatedKIntegrator:
             )
 
             if self.diagnostics is not None:
+                for key, error in temperature_errors.items():
+                    self.diagnostics.emit(
+                        "kextrapolation.matrix_error",
+                        observable=key,
+                        beta=result.beta,
+                        error_norm=error.norm,
+                        error_max_abs=error.max_abs,
+                    )
                 self.diagnostics.emit(
                     "kextrapolation.result",
                     beta=result.beta,
@@ -249,6 +288,8 @@ class TemperatureExtrapolatedKIntegrator:
                     mu=result.mu,
                     n_electrons=result.n_electrons,
                     temperature_error=result.temperature_error,
+                    electron_count_error=float(extrapolated.absolute_error[-2]),
+                    mu_error=float(extrapolated.absolute_error[-1]),
                     quadrature_error=result.quadrature_error,
                     converged=result.converged,
                 )
@@ -290,6 +331,7 @@ def richardson_extrapolate(
     coefficients: list[NDArray[np.float64]] = []
     best_value, best_error = np.asarray(values[0]), np.inf
     best_coefficients = np.eye(len(x))[0]
+    best_absolute_error = np.full(np.shape(values[0]), np.inf)
     for j, value in enumerate(values):
         if not np.all(np.isfinite(value)):
             msg = "Cannot extrapolate nonfinite values."
@@ -303,15 +345,18 @@ def richardson_extrapolate(
             coefficients[i] = coefficients[i + 1] + (
                 coefficients[i + 1] - coefficients[i]
             ) / (ratio - 1)
-            error = float(np.linalg.norm(table[i] - old))
-            error = max(
-                error,
+            absolute_error = np.maximum(
+                np.abs(table[i] - old),
                 np.finfo(float).eps
-                * float(np.linalg.norm(table[i]))
+                * np.abs(table[i])
                 * float(np.sum(np.abs(coefficients[i]))),
             )
+            error = float(np.linalg.norm(absolute_error))
             if error < best_error:
                 best_value = table[i].copy()
                 best_error = error
                 best_coefficients = coefficients[i].copy()
-    return ExtrapolationResult(best_value, float(best_error), best_coefficients)
+                best_absolute_error = np.asarray(absolute_error, dtype=float)
+    return ExtrapolationResult(
+        best_value, float(best_error), best_coefficients, best_absolute_error
+    )

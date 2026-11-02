@@ -105,6 +105,9 @@ def test_extrapolation_recovers_zero_temperature_integrals_of_a_complex_multiblo
             expected_density, abs=1e-8
         )
         assert result.values["kinetic", block] == pytest.approx(expected_ke, abs=1e-8)
+        for observable in ("density", "kinetic"):
+            error = result.temperature_errors[observable, block]
+            assert 0 <= error.max_abs <= error.norm <= 1e-8
     assert result.quadrature_error is None
 
     too_short = TemperatureExtrapolatedKIntegrator(bands, betas=[20], atol=1e-8, rtol=0)
@@ -151,6 +154,9 @@ def test_lattice_cycle_accepts_temperature_extrapolation() -> None:
         "kextrapolation.sample",
         "kextrapolation.result",
         "temperature_error=",
+        "kextrapolation.matrix_error",
+        "error_norm=",
+        "error_max_abs=",
         "quadrature_error=None",
         "betas=",
     ):

@@ -43,6 +43,14 @@ class KIntegrationResult:
     weights: NDArray[np.float64] | None = None
 
 
+@dataclass(frozen=True)
+class KIntegralError:
+    """Frobenius norm and largest absolute entry of a k-integral error estimate."""
+
+    norm: float
+    max_abs: float
+
+
 @dataclass
 class BandKIntegrationResult:
     """Brillouin-zone averages at the requested beta and mu.
@@ -51,7 +59,10 @@ class BandKIntegrationResult:
     k-point, and weights contains the normalized mesh weights.
     quadrature_error estimates the error of the k-integration method;
     temperature_error estimates the error of temperature extrapolation.
-    None means that no estimate is available.
+    temperature_errors gives the norm and maximum absolute entry of the
+    extrapolation error for each requested matrix. An empty mapping means
+    that per-matrix estimates are unavailable; None marks an unavailable
+    scalar estimate.
     """
 
     values: IntegralValues
@@ -61,6 +72,7 @@ class BandKIntegrationResult:
     converged: bool = True
     quadrature_error: float | None = None
     temperature_error: float | None = None
+    temperature_errors: dict[Hashable, KIntegralError] = field(default_factory=dict)
     betas: tuple[float, ...] = ()
     density_k: BlockMatrix | None = None
     energies: BlockRealArray = field(default_factory=dict)
