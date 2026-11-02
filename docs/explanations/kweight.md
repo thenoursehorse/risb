@@ -1,7 +1,7 @@
 # About k-integration
 
 :::{seealso}
-[Using `SmearingKWeight`](../how-to/kweight.md).
+[Using `BandKIntegrator`](../how-to/kintegration.md).
 :::
 
 {{RISB}} requires integrating many mean-field matrices as a function of $k$.

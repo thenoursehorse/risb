@@ -33,9 +33,10 @@ For each DFT update, you need
 - `n_target`: the number of electrons per unit cell in the band window,
   summed over all blocks, including the uncorrelated orbitals in that window.
 
-Use a full, uniform $k$-point mesh for the density and energy helpers below.
-Their averages over $k$ assume equal weights. The Hamiltonian, DFT density
-matrix, and projectors must use the same orthonormal lattice basis and
+Use the same $k$-point mesh and weights for the k-sums and charge correction.
+Pass the DFT weights to the kintegrator and the density and energy helpers.
+The Hamiltonian, DFT density matrix, and projectors must use the same
+orthonormal lattice basis and
 $k$-point ordering. Occupations are per spin orbital; if the DFT code
 includes a spin degeneracy factor, convert to the block convention used
 in `h0_k`.
@@ -84,18 +85,20 @@ then the lattice solver
 ```python
 from risb import LatticeSolver, helpers
 from risb.impurity_solvers import FockitImpuritySolver
-from risb.kweight import SmearingKWeight
+from risb.kintegration import BandKIntegrator, WeightedKPointIntegrator
 
 impurity_solvers = [
     FockitImpuritySolver(h_int[i], gf_struct[i]) for i in range(len(gf_struct))
 ]
-kweight = SmearingKWeight(beta=..., n_target=n_target)
+kintegrator = BandKIntegrator(
+    WeightedKPointIntegrator(weights=weights), beta=..., n_target=n_target
+)
 
 S = LatticeSolver(
     h0_k=h0_k,
     gf_struct=gf_struct,
     impurity_solvers=impurity_solvers,
-    update_weights=kweight.update_weights,
+    kintegrator=kintegrator,
     projectors=projectors,
     gf_struct_mapping=gf_struct_mapping,
     double_counting=double_counting,
@@ -119,7 +122,7 @@ calculation, see [finite temperature](lattice_solver.md#finite-temperature).
 
 :::{tip}
 For ghost {{RISB}}, set the same `bath_size` in the impurity and lattice
-solvers and include `S.n_ghost_electrons` in `kweight.n_target`. The DFT
+solvers and include `S.n_ghost_electrons` in `kintegrator.n_target`. The DFT
 occupations and charge correction still refer to physical electrons. See
 [ghost quasiparticles](lattice_solver.md#ghost-quasiparticles).
 :::
@@ -158,8 +161,8 @@ the physical density matrix in the basis of `h0_k`
 ```python
 density_k = helpers.get_density_matrix_k(
     R_full=S.R_full,
-    vectors=S.bloch_vector_qp,
-    kweights=S.kweights,
+    qp_density_k=S.qp_density_k,
+    weights=S.kintegration_result.weights,
     rho_c=S.rho_c,
     projectors=projectors,
     gf_struct_mapping=gf_struct_mapping,
@@ -241,8 +244,12 @@ double_counting_energy = ...  # Sum over clusters for your prescription
 
 total_energy = helpers.get_total_energy(
     dft_total_energy=...,
-    dft_band_energy=helpers.get_band_energy(h0_k, density_dft_k),
-    band_energy=helpers.get_band_energy(h0_k, density_k),
+    dft_band_energy=helpers.get_band_energy(
+        h0_k, density_dft_k, weights=S.kintegration_result.weights
+    ),
+    band_energy=helpers.get_band_energy(
+        h0_k, density_k, weights=S.kintegration_result.weights
+    ),
     interaction_energy=interaction_energy,
     double_counting_energy=double_counting_energy,
 )
@@ -270,7 +277,7 @@ For example, the structure of an outer loop could be
 dft = run_dft()
 for iteration in range(max_charge_iterations):
     # Read h0_k, the DFT density matrix, projectors and the electron count
-    S, kweight = prepare_risb(dft)
+    S, kintegrator = prepare_risb(dft)
     result = S.solve(tol=..., maxiter=..., self_consistency_tol=...)
 
     # Use the density and energy helpers above

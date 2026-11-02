@@ -63,13 +63,13 @@ potential (see [Finite temperature](lattice_solver.md#finite-temperature)).
 Decoupled bath orbitals can be completely full or empty in the embedding
 ground state, while the quasiparticles they must match are smeared by the
 temperature of
-{py:class}`~risb.kweight.SmearingKWeight`. This can make the solve slow or
+{py:class}`~risb.kintegration.BandKIntegrator`. This can make the solve slow or
 stop it from converging. Giving the impurity solver the same inverse
 temperature can help
 
 ```python
 impurity_solver = FockitImpuritySolver(h_int, gf_struct, beta=beta)
-kweight = SmearingKWeight(beta=beta, n_target=n_target)
+kintegrator = BandKIntegrator(WeightedKPointIntegrator(), beta=beta, n_target=n_target)
 ```
 
 In the atomic limit (`R = 0`) the self-consistency equations are then still

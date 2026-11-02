@@ -10,7 +10,7 @@ from risb import LatticeSolver
 from risb.helpers import block_to_full, get_h0_kin_k
 from risb.helpers_fockit import get_h0_loc
 from risb.impurity_solvers import DummyImpuritySolver, FockitImpuritySolver
-from risb.kweight import SmearingKWeight
+from risb.kintegration import BandKIntegrator, WeightedKPointIntegrator
 from risb.types import BlockMatrix, ImpuritySolver
 
 logging.basicConfig(level=logging.INFO, format="%(message)s")
@@ -143,10 +143,10 @@ tg = 0.5
 nkx = 18
 h0_k = get_h0_k(tg=tg, nkx=nkx, spin_names=spin_names)
 
-# Set up class to work out k-space integration weights
+# Set up the k-space sums and band filling.
 beta = 40  # inverse temperature
 n_target = 8  # 2/3rds filling
-kweight = SmearingKWeight(beta=beta, n_target=n_target)
+kintegrator = BandKIntegrator(WeightedKPointIntegrator(), beta=beta, n_target=n_target)
 
 # Set up gf_structure of clusters
 gf_struct_molecule = [
@@ -247,7 +247,7 @@ S = LatticeSolver(
     h0_k=h0_kin_k,
     gf_struct=gf_struct,
     impurity_solvers=impurity_solvers,
-    update_weights=kweight.update_weights,
+    kintegrator=kintegrator,
     projectors=projectors,
     symmetrizers=[symmetries],
     gf_struct_mapping=gf_struct_mapping,

@@ -216,7 +216,7 @@ impurity_solver = FockitImpuritySolver(h_int, gf_struct, beta=40)
 
 This can help `LatticeSolver` converge in or near a Mott insulator, and is
 not a finite-temperature solution. Use the same inverse temperature as in
-{py:class}`~risb.kweight.SmearingKWeight`. `overlap` then also gives thermal
+{py:class}`~risb.kintegration.BandKIntegrator`. `overlap` then also gives thermal
 averages.
 
 ### Grand-canonical impurity problem

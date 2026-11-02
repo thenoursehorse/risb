@@ -48,6 +48,13 @@ physical residuals, not only iteration count. Keep prototypes outside the reposi
    failure to satisfy the matching equations.
 20. [ ] Investigate smearing options: methods, beta and k-point convergence;
    check the three-orbital Mott case before changing defaults.
+21. [x] Prototype AutoBZCore integration of density and kinetic matrices on
+   general lattices; check filling, derivatives and T=0 self-consistency.
+22. [x] Add general k-integration interfaces, weighted NumPy sums, an optional
+   AutoBZCore adapter, and temperature extrapolation over supplied beta values.
+   Migrate the lattice solvers and remove SmearingKWeight.
+23. [ ] Check adaptive detection of small pockets and sampling guides more
+   broadly before changing any integration default.
 
 ## Results
 
@@ -1207,3 +1214,87 @@ error 0.049. Such points are excluded from the success counts.
 Matched high-spin roots agree in energy, density and spin but differ in
 chemical potential and Z; full physical equivalence remains unresolved.
 Do not ship alignment from this evidence. Item 13 stays open.
+
+## AutoBZCore integration prototype
+
+Scratch code and report: /tmp/risb-smoother-map/autobz/report.md.
+Uses registered AutoBZCore 0.4.1 directly; no copied quadrature code.
+No production solver, dependency, interface, how-to or benchmark changes.
+
+Custom matrix integrands work with AutoPTR and IAI. Nine model/width
+combinations cover complex 2D/3D bands, rectangular ghost matrices, a
+pocket and an insulator. Against converged NumPy meshes, maximum matrix
+discrepancies are 1.93e-11 for IAI and 2.64e-9 for AutoPTR at tolerance 1e-7.
+Filling and quasiparticle band-energy derivative checks also pass.
+
+Method selection matters: IAI helps several cold 2D integrands, but takes
+28 s versus AutoPTR's 1.1 s on the smoother 3D metal. The scratch AutoPTR
+rate estimate uses width, velocity and a conservative gap bound.
+
+Plain IAI misses an off-centre pocket: it reports Success and essentially
+zero filling, whereas dense meshes give 0.0003183935631. Adding a Lorentzian
+near mu to the error-controlled outputs recovers the pocket within the
+reference uncertainty, without changing occupations or matching equations.
+That sampling guide needs broader checks; it is not a production default.
+
+Square-lattice T=0 self-consistency uses pure Fockit ground states, Pulay,
+target filling and unchanged bath equations. Ordinary metal and one-band
+Mott controls agree between methods. Both fail the B=5 case at beta=200.
+At beta=800, IAI converges from two starts in 30/69 cycles (78/328 s),
+with refined matching errors 2.6e-11/2.0e-10. The 64x64 mesh reports
+convergence in 35/39 cycles (5/9 s), but refined matching errors remain
+3.3e-6/2.7e-6. Independent 256x256 and 512x512 sums confirm these findings.
+This does not resolve the earlier three-orbital Mott failure.
+
+Proceed with interface design, keeping fixed-mesh and adaptive methods
+available. No full CSC charge reconstruction, nuclear-force calculation
+or exactly zero-smearing integration was tested.
+
+Existing production suite: 219 tests and 111 subtests passed (236.80 s).
+AutoBZ checks ran separately in scratch space. Ruff, Ruff LSP and strict
+mypy pass for the three Python scratch scripts.
+
+
+## Fixed-input smearing errors
+
+Report: /tmp/risb-smoother-map/autobz/smearing-limit/report.md.
+47 samples at frozen R/Lambda; mu solved for the same filling at each
+width. No outer self-consistency solves. Uses upstream Richardson.jl
+power=2, as in AutoBZ's T=0 density recipe, applied to both matrix integrals.
+
+At beta=800, density smearing errors are 2.1e-4 for B=5 and 0.23 for
+the weak-ghost input, despite accurate quadrature. The frozen Mott input
+already agrees with T=0 within 5.8e-11 at beta=50.
+
+For a regular metal, extrapolation reaches measured error 2.7e-11 at
+beta=1600; raw integration first meets 1e-8 at beta=25600. B=5 needs
+beta=204800 for the extrapolator to certify 1e-8. Weak ghosts make its
+default error-growth stop terminate above tolerance; allowing continued
+cooling reaches measured error 4.6e-11 at beta=102400.
+
+Every reported 1e-8 success meets the independent T=0 reference. Estimates
+below input accuracy are not trustworthy; some unconverged extrapolations
+also violate density bounds. Target per-evaluation T=0 matrix accuracy,
+with separate quadrature and smearing checks. Items 20 and 22 remain open.
+
+## General k-integration implementation
+
+- `risb.kintegration` separates numerical integration from smearing, band
+  diagonalization, filling, and RISB observables. The solvers share the
+  projected density/kinetic integrands for every cluster and block.
+- Weighted supplied meshes retain quasiparticle densities for CSC. The density
+  and band-energy helpers accept nonuniform weights. Adaptive nodes are not
+  exposed as a replacement DFT mesh.
+- Temperature extrapolation uses a NumPy Richardson tableau in beta^-2.
+  It checks the requested integrals and mu; propagated numerical integration
+  errors enter stopping when available. Fixed-mesh discretization error remains
+  unknown. Pointwise CSC-density error is not estimated.
+- AutoBZCore is optional and runs in a persistent Julia worker. Generic Python
+  callbacks cross the process boundary; this is slower than a native Julia
+  integrand. No integration default changed.
+
+- KIntegrationDiagnostics reports k-sum results and extrapolation errors without
+  depending on a lattice solver. Debug output includes each beta, mu searches
+  and timings. The existing extrapolated lattice test checks this output.
+- The extrapolation docstrings cite Richardson (1911), the Richardson.jl
+  sequence implementation, and AutoBZ's T=0 density example.

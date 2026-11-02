@@ -18,7 +18,7 @@ from risb import LatticeSolver
 from risb.diagnostics import FockitDiagnostics, FockitThermalDiagnostics
 from risb.helpers_fockit import N_op, S2_op, h_int_kanamori
 from risb.impurity_solvers import FockitImpuritySolver, FockitThermalImpuritySolver
-from risb.kweight import SmearingKWeight
+from risb.kintegration import BandKIntegrator, WeightedKPointIntegrator
 from risb.types import BlockMatrix
 
 type Model = tuple[
@@ -556,7 +556,7 @@ def test_complex_two_orbital_model_reaches_the_mott_state_with_a_thermal_impurit
         h0_k=build_two_orbital_complex_h0_k(),
         gf_struct=gf_struct,
         impurity_solvers=FockitImpuritySolver(h_int, gf_struct, beta=beta),
-        update_weights=SmearingKWeight(beta=beta, n_target=2).update_weights,
+        kintegrator=BandKIntegrator(WeightedKPointIntegrator(), beta=beta, n_target=2),
     )
     for bl, _ in gf_struct:
         S.Lambda[0][bl] = (0.5 * U + Up - 0.5 * J) * np.eye(2)

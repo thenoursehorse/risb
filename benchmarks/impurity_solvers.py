@@ -19,7 +19,7 @@ from scipy.sparse.linalg import eigsh
 from risb import LatticeSolver
 from risb.helpers_fockit import h_int_kanamori
 from risb.impurity_solvers import FockitImpuritySolver
-from risb.kweight import SmearingKWeight
+from risb.kintegration import BandKIntegrator, WeightedKPointIntegrator
 from risb.types import BlockMatrix
 
 logger = logging.getLogger(__name__)
@@ -121,7 +121,9 @@ def time_lattice_solve(name: str, h_int: OpSum, n_orb: int, V: float = 0) -> Non
         h0_k=cubic_h0_k(n_orb, V),
         gf_struct=gf_struct,
         impurity_solvers=[FockitImpuritySolver(h_int, gf_struct)],
-        update_weights=SmearingKWeight(beta=40, n_target=n_orb).update_weights,
+        kintegrator=BandKIntegrator(
+            WeightedKPointIntegrator(), beta=40, n_target=n_orb
+        ),
         symmetrizers=[paramagnetic],
     )
     start = time.perf_counter()

@@ -24,18 +24,24 @@ from typing import Any, override
 
 import numpy as np
 from numpy.typing import NDArray
-from scipy.optimize import brentq
-from scipy.special import expit
 
 from risb import helpers
 from risb.diagnostics import DiagnosticObserver
+from risb.kintegration import (
+    BandKIntegration,
+    BandKIntegrationResult,
+    BandKIntegrator,
+    BandObservables,
+    Hamiltonian,
+    KPoints,
+    WeightedKPointIntegrator,
+)
 from risb.optimize import DIIS, NewtonSolver, OnPlateau, SolveResult
 from risb.optimize.fixed_point import Callback
 from risb.solve_lattice_base import BaseLatticeSolver
 from risb.types import (
     BlockMatrix,
     BlockMatrixLike,
-    BlockRealArray,
     Checkpoint,
     DensityMatchingJacobian,
     DensityMatchingRegularization,
@@ -78,6 +84,10 @@ class ThermalLatticeSolver(BaseLatticeSolver):
         Number of electrons per unit cell. The chemical potential :attr:`mu`
         is then solved for with :attr:`Lambda` and :attr:`R`, and the root
         functions include ``n_electrons - n_target``. Default is a fixed `mu`.
+    kintegrator : risb.kintegration.BandKIntegration, optional
+        Band integration method. If omitted, use Fermi smearing on the
+        supplied equally weighted mesh. Each cycle passes the physical beta
+        and the current outer-loop mu to this kintegrator.
     density_matching_jacobian : {"2-point", "analytic"}, optional
         Use finite differences (``"2-point"``) or analytic
         derivatives (``"analytic"``) for both density-matching steps.
@@ -100,7 +110,7 @@ class ThermalLatticeSolver(BaseLatticeSolver):
 
     Other Parameters
     ----------------
-    h0_k, gf_struct, projectors, gf_struct_mapping, symmetrizers, force_real, force_real_atol, force_real_rtol, check_projectors, double_counting, bath_size, gauge_fix
+    h0_k, gf_struct, projectors, gf_struct_mapping, symmetrizers, force_real, force_real_atol, force_real_rtol, check_projectors, double_counting, bath_size, h0_k_evaluator, projectors_evaluator, gauge_fix
         As in :class:`.BaseLatticeSolver`.
 
     """
@@ -121,6 +131,10 @@ class ThermalLatticeSolver(BaseLatticeSolver):
         *,
         bath_size: Sequence[Mapping[str, int]] | None = None,
         n_target: float | None = None,
+        kintegrator: BandKIntegration | None = None,
+        h0_k_evaluator: Callable[[KPoints], BlockMatrixLike] | None = None,
+        projectors_evaluator: Callable[[KPoints], Sequence[BlockMatrixLike]]
+        | None = None,
         density_matching_jacobian: DensityMatchingJacobian = "2-point",
         density_matching_regularization: DensityMatchingRegularization = "uniform",
         density_matching_regularization_scale: float = 1e-3,
@@ -143,6 +157,11 @@ class ThermalLatticeSolver(BaseLatticeSolver):
             check_projectors=check_projectors,
             double_counting=double_counting,
             bath_size=bath_size,
+            kintegrator=BandKIntegrator(WeightedKPointIntegrator())
+            if kintegrator is None
+            else kintegrator,
+            h0_k_evaluator=h0_k_evaluator,
+            projectors_evaluator=projectors_evaluator,
             gauge_fix=gauge_fix,
             mu=mu,
         )
@@ -189,13 +208,11 @@ class ThermalLatticeSolver(BaseLatticeSolver):
                 self._projectors_qp,
                 self.gf_struct_mapping,
             )
-            energies = {
-                bl: np.linalg.eigvalsh(
-                    helpers.get_h_qp(R_full[bl], Lambda_full[bl], h0_kin)
-                )
-                for bl, h0_kin in self.h0_kin_k.items()
-            }
-            self.mu = _mu_of_filling(energies, beta, n_target + self.n_ghost_electrons)
+            self.R_full, self.Lambda_full = R_full, Lambda_full
+            hamiltonian, _ = self._get_band_integrands()
+            self.mu = self.kintegrator.integrate(
+                hamiltonian, beta=beta, n_target=n_target + self.n_ghost_electrons
+            ).mu
         else:
             msg = "Need mu, or n_target to solve for it !"
             raise ValueError(msg)
@@ -212,25 +229,13 @@ class ThermalLatticeSolver(BaseLatticeSolver):
         }
 
     @override
-    def update_weights(self, energies: BlockRealArray) -> BlockRealArray:
-        """
-        Return the Fermi-Dirac occupation of each band at each k-point, divided by the number of k-points.
-
-        Parameters
-        ----------
-        energies : risb.types.BlockRealArray
-            Energies at each k-point in each block.
-
-        Returns
-        -------
-        risb.types.BlockRealArray
-            Integration weights at each k-point in each block.
-
-        """
-        return {
-            bl: expit(-self.beta * (e - self.mu)) / e.shape[0]
-            for bl, e in energies.items()
-        }
+    def integrate_bands(
+        self, hamiltonian: Hamiltonian, observables: BandObservables
+    ) -> BandKIntegrationResult:
+        """Integrate at the physical beta and the current outer-loop mu."""
+        return self.kintegrator.integrate(
+            hamiltonian, observables=observables, beta=self.beta, mu=self.mu
+        )
 
     @override
     def update_bath(self) -> None:
@@ -285,10 +290,11 @@ class ThermalLatticeSolver(BaseLatticeSolver):
 
     @override
     def update_residuals(self) -> None:
+        assert self.kintegration_result is not None
         # The electrons of the bands of the orbitals in no cluster are those of
         # all bands minus those of the clusters
         self.n_electrons = float(
-            sum(np.sum(w) for w in self.kweights.values())
+            self.kintegration_result.n_electrons
             + sum(
                 np.trace(self.rho_c[i][bl]).real - np.trace(self.rho_qp[i][bl]).real
                 for i in range(self.n_clusters)
@@ -520,18 +526,3 @@ class ThermalLatticeSolver(BaseLatticeSolver):
         if self._anchor_alpha is None:
             return None
         return self._anchors.setdefault(key, (start[0].copy(), start[1].copy()))
-
-
-def _mu_of_filling(
-    energies: Mapping[str, NDArray[np.floating]], beta: float, n: float
-) -> float:
-    # The chemical potential at which the bands hold n electrons
-    def excess(mu: float) -> float:
-        return float(
-            sum(np.sum(expit(-beta * (e - mu))) / e.shape[0] for e in energies.values())
-            - n
-        )
-
-    low = min(float(np.min(e)) for e in energies.values()) - 50 / beta
-    high = max(float(np.max(e)) for e in energies.values()) + 50 / beta
-    return float(brentq(excess, low, high))

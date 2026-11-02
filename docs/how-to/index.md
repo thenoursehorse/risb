@@ -4,7 +4,7 @@ Some how-to guides.
 
 ```{toctree}
 quadratic_terms
-kweight
+kintegration
 diis
 projectors
 impurity_solvers

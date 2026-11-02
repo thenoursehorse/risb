@@ -24,18 +24,17 @@ import numpy as np
 
 from risb import helpers
 from risb.diagnostics import DiagnosticObserver
+from risb.kintegration import BandKIntegration, KPoints
 from risb.pinning import FullEmptyPinning
 from risb.solve_lattice_base import BaseLatticeSolver
 from risb.types import (
     BlockMatrix,
     BlockMatrixLike,
-    BlockRealArray,
     GaugeFix,
     GfStruct,
     ImpuritySolver,
     PinFullEmpty,
     Symmetrize,
-    UpdateWeights,
 )
 
 _DEFAULT_PINNING = FullEmptyPinning()
@@ -49,11 +48,9 @@ class LatticeSolver(BaseLatticeSolver):
 
     Parameters
     ----------
-    update_weights : risb.types.UpdateWeights
-        The function that gives the integral weights at each k-point on the
-        lattice. It is called as ``update_weights(energies)``,
-        where the energies are a dictionary with each key a list.
-        See class :class:`.SmearingKWeight`.
+    kintegrator : risb.kintegration.BandKIntegration
+        Integrates the quasiparticle densities and kinetic matrices.
+        Configure beta and the band filling on the kintegrator.
     pin_full_empty : risb.types.PinFullEmpty or None, optional
         Sets the levels of full or empty auxiliary orbitals. Default is
         :class:`risb.pinning.FullEmptyPinning` with its default parameters.
@@ -63,7 +60,7 @@ class LatticeSolver(BaseLatticeSolver):
 
     Other Parameters
     ----------------
-    h0_k, gf_struct, impurity_solvers, projectors, gf_struct_mapping, symmetrizers, force_real, force_real_atol, force_real_rtol, check_projectors, double_counting, bath_size, gauge_fix
+    h0_k, gf_struct, impurity_solvers, projectors, gf_struct_mapping, symmetrizers, force_real, force_real_atol, force_real_rtol, check_projectors, double_counting, bath_size, h0_k_evaluator, projectors_evaluator, gauge_fix
         As in :class:`.BaseLatticeSolver`.
 
     """
@@ -73,7 +70,7 @@ class LatticeSolver(BaseLatticeSolver):
         h0_k: BlockMatrixLike,
         gf_struct: GfStruct | list[GfStruct],
         impurity_solvers: ImpuritySolver | Sequence[ImpuritySolver],
-        update_weights: UpdateWeights,
+        kintegrator: BandKIntegration,
         projectors: Sequence[BlockMatrixLike] | None = None,
         gf_struct_mapping: Sequence[Mapping[str, str]] | None = None,
         symmetrizers: Sequence[Symmetrize] = (),
@@ -82,6 +79,9 @@ class LatticeSolver(BaseLatticeSolver):
         double_counting: Callable[[int, BlockMatrix], BlockMatrixLike] | None = None,
         *,
         bath_size: Sequence[Mapping[str, int]] | None = None,
+        h0_k_evaluator: Callable[[KPoints], BlockMatrixLike] | None = None,
+        projectors_evaluator: Callable[[KPoints], Sequence[BlockMatrixLike]]
+        | None = None,
         pin_full_empty: PinFullEmpty | None = _DEFAULT_PINNING,
         gauge_fix: GaugeFix | None = None,
         force_real_atol: float = 1e-12,
@@ -102,14 +102,12 @@ class LatticeSolver(BaseLatticeSolver):
             check_projectors=check_projectors,
             double_counting=double_counting,
             bath_size=bath_size,
+            kintegrator=kintegrator,
+            h0_k_evaluator=h0_k_evaluator,
+            projectors_evaluator=projectors_evaluator,
             gauge_fix=gauge_fix,
         )
-        self._update_weights = update_weights
         self.pin_full_empty = pin_full_empty
-
-    @override
-    def update_weights(self, energies: BlockRealArray) -> BlockRealArray:
-        return self._update_weights(energies)
 
     @override
     def update_bath(self) -> None:

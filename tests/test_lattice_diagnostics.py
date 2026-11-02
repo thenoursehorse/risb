@@ -15,7 +15,7 @@ from risb.diagnostics import (
     ThermalLatticeDiagnostics,
 )
 from risb.impurity_solvers import FockitImpuritySolver, FockitThermalImpuritySolver
-from risb.kweight import SmearingKWeight
+from risb.kintegration import BandKIntegrator, WeightedKPointIntegrator
 from risb.optimize import FixedPointLoop
 from risb.types import FixedPointProblem
 
@@ -38,7 +38,7 @@ def lattice(thermal: bool, diagnostics: DiagnosticObserver) -> BaseLatticeSolver
         h0_k,
         ONE_BAND,
         FockitImpuritySolver(h_int, ONE_BAND),
-        update_weights=SmearingKWeight(beta=40, n_target=1).update_weights,
+        kintegrator=BandKIntegrator(WeightedKPointIntegrator(), beta=40, n_target=1),
         symmetrizers=[symmetrize_blocks],
         diagnostics=diagnostics,
     )

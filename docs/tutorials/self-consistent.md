@@ -249,13 +249,13 @@ for bl, bl_size in gf_struct:
     energies_qp[bl], bloch_vector_qp[bl] = np.linalg.eigh(h_qp)
 ```
 
-## D: Setup k-integrator function
+## D: Setup k-kintegrator function
 
 :::{seealso}
 [About k-integration](../explanations/kweight.md) for the theory of how
 $k$-space integration is numerically done in most condensed matter codes.
 
-[Using `SmearingKWeight`](../how-to/kweight.md) for a class that implements
+[Using `BandKIntegrator`](../how-to/kintegration.md) for a class that implements
 the below weighting factor.
 :::
 

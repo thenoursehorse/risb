@@ -26,9 +26,6 @@ type DensityMatchingJacobian = Literal["2-point", "analytic"]
 type DensityMatchingRegularization = Literal["uniform", "response-weighted"]
 """How the anchor penalizes changes to the thermal matching parameters."""
 
-type UpdateWeights = Callable[[BlockRealArray], BlockRealArray]
-"""Takes band energies for each block and returns the k-space integration weights."""
-
 type Symmetrize = Callable[[list[BlockMatrix]], list[BlockMatrix]]
 """Takes a block matrix for each cluster and returns the symmetrized ones."""
 

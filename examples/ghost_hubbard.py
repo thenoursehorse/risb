@@ -6,7 +6,7 @@ from numpy.typing import NDArray
 
 from risb import LatticeSolver, helpers
 from risb.impurity_solvers import FockitImpuritySolver
-from risb.kweight import SmearingKWeight
+from risb.kintegration import BandKIntegrator, WeightedKPointIntegrator
 from risb.types import BlockMatrix
 
 
@@ -51,27 +51,27 @@ def solve(B: int, U_arr: NDArray[np.float64]) -> tuple[list[float], list[float]]
         bath_size=bath_size,
     )
 
-    kweight = SmearingKWeight(beta=2000, n_target=1)
+    kintegrator = BandKIntegrator(WeightedKPointIntegrator(), beta=2000, n_target=1)
     S = LatticeSolver(
         h0_k=h0_k,
         gf_struct=gf_struct,
         impurity_solvers=impurity_solver,
-        update_weights=kweight.update_weights,
+        kintegrator=kintegrator,
         symmetrizers=[force_paramagnetic],
         force_real=True,
         bath_size=[bath_size],
     )
     # The quasiparticle bands hold the electrons of the ghosts as well
-    kweight.n_target = 1 + S.n_ghost_electrons
+    kintegrator.n_target = 1 + S.n_ghost_electrons
 
     Z = []
     double_occupancy = []
     for U in U_arr:
         impurity_solver.set_h_int(hubbard(U))
         S.solve(tol=1e-8)
-        assert kweight.mu is not None
+        assert kintegrator.mu is not None
         # With ghosts R^dag R is not the quasiparticle weight
-        Z_matrix = helpers.get_z(S.R[0]["up"], S.Lambda[0]["up"], kweight.mu)
+        Z_matrix = helpers.get_z(S.R[0]["up"], S.Lambda[0]["up"], kintegrator.mu)
         Z.append(float(np.real(Z_matrix[0, 0])))
         docc = impurity_solver.overlap(nc("up", 0) * nc("dn", 0))
         double_occupancy.append(float(np.real(docc)))

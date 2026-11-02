@@ -21,7 +21,7 @@ from risb import LatticeSolver, ThermalLatticeSolver
 from risb.diagnostics import Block2Diagnostics, Block2ThermalDiagnostics
 from risb.helpers_fockit import N_op, S2_op, h_int_kanamori
 from risb.impurity_solvers import FockitImpuritySolver, FockitThermalImpuritySolver
-from risb.kweight import SmearingKWeight
+from risb.kintegration import BandKIntegrator, WeightedKPointIntegrator
 
 pytest.importorskip("pyblock2")
 from risb.impurity_solvers import (
@@ -330,12 +330,12 @@ def test_two_orbital_kanamori_lattice_has_the_exact_quasiparticle_weight() -> No
             cutoff=CUTOFF,
         ),
     ):
-        kweight = SmearingKWeight(beta=40, n_target=2)
+        kintegrator = BandKIntegrator(WeightedKPointIntegrator(), beta=40, n_target=2)
         S = LatticeSolver(
             h0_k=h0_k,
             gf_struct=gf_struct,
             impurity_solvers=solver,
-            update_weights=kweight.update_weights,
+            kintegrator=kintegrator,
             symmetrizers=[symmetrize_blocks],
         )
         assert S.solve(tol=1e-8).converged

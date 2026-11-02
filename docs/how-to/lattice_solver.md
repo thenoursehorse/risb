@@ -25,17 +25,13 @@ the interactions `h_int` by hand if you want. It makes no difference to
 the solver.
 :::
 
-Next define a class that determines the integration weight at each $k$ point
-on the lattice, e.g., `class:SmearingKWeight`.
+Choose a k-space kintegrator:
 
 ```python
-kweight = KWeightClass(...)
-```
+from risb.kintegration import BandKIntegrator, WeightedKPointIntegrator
 
-It must have a member function `update_weights()` that is called as
-`update_weights(energies)` where `energies` are a `dict[ndarray]`
-that are the eigenenergies of `h0_k` in each block (e.g., `'up'` and `'dn'`
-spin blocks).
+kintegrator = BandKIntegrator(WeightedKPointIntegrator(), beta=beta, n_target=n_target)
+```
 
 Next define the local block matrix structure of the correlated subspace
 as a list of pairs. Each pair is the name of a block `bl` and the number of
@@ -74,7 +70,7 @@ S = LatticeSolver(
     h0_k=h0_k,
     gf_struct=gf_struct,
     impurity_solvers=impurity_solver,
-    update_weights=kweight.update_weights,
+    kintegrator=kintegrator,
 )
 S.solve(tol=...)
 ```
@@ -189,9 +185,9 @@ electrons per orbital. The quasiparticle bands then hold
 `n_target` of the $k$-space integration weights must include them
 
 ```python
-kweight = SmearingKWeight(beta=..., n_target=n_target)
-S = LatticeSolver(..., update_weights=kweight.update_weights, bath_size=...)
-kweight.n_target = n_target + S.n_ghost_electrons
+kintegrator = BandKIntegrator(WeightedKPointIntegrator(), beta=..., n_target=n_target)
+S = LatticeSolver(..., kintegrator=kintegrator, bath_size=...)
+kintegrator.n_target = n_target + S.n_ghost_electrons
 ```
 
 Half filling needs an even number of ghosts in a cluster, and for a paramagnet
@@ -227,9 +223,9 @@ quasiparticle weight and the self-energy of block `bl` of cluster `i` are
 ```python
 from risb import helpers
 
-Z = helpers.get_z(S.R[i][bl], S.Lambda[i][bl], kweight.mu)
+Z = helpers.get_z(S.R[i][bl], S.Lambda[i][bl], kintegrator.mu)
 Sigma = helpers.get_sigma_w(
-    omega, S.R[i][bl], S.Lambda[i][bl], kweight.mu, S.h0_loc_matrix[i][bl]
+    omega, S.R[i][bl], S.Lambda[i][bl], kintegrator.mu, S.h0_loc_matrix[i][bl]
 )
 ```
 

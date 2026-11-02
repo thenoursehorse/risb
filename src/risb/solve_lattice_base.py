@@ -30,6 +30,14 @@ from numpy.typing import NDArray
 from risb import helpers
 from risb.diagnostics import DiagnosticObserver
 from risb.diagnostics.output import stage
+from risb.kintegration import (
+    BandKIntegration,
+    BandKIntegrationResult,
+    BandObservables,
+    Hamiltonian,
+    IntegralValues,
+    KPoints,
+)
 from risb.optimize import DIIS, NewtonSolver, ScipyRoot, SolveResult, solve_fixed_point
 from risb.optimize.fixed_point import Callback
 from risb.types import (
@@ -57,11 +65,10 @@ class BaseLatticeSolver(ABC):
     """
     Base of the rotationally invariant slave-boson (RISB) lattice solvers with a local interaction on each cluster.
 
-    Each :meth:`one_cycle` finds the quasiparticle bands from :attr:`R` and
-    :attr:`Lambda`, their k-space weights from :meth:`update_weights`, and the
-    quasiparticle density matrices. It then calls :meth:`update_bath`,
+    Each :meth:`one_cycle` integrates the quasiparticle density and kinetic
+    matrices for the current :attr:`R` and :attr:`Lambda`. It then calls :meth:`update_bath`,
     :meth:`solve_impurities`, :meth:`update_residuals`, and
-    :meth:`next_r_lambda`. A subclass implements :meth:`update_weights`,
+    :meth:`next_r_lambda`. A subclass implements
     :meth:`update_bath`, :meth:`update_residuals`, and :meth:`next_r_lambda`.
     The attributes describe the :attr:`R` and :attr:`Lambda` of the cycle,
     and the next ones are returned.
@@ -127,8 +134,18 @@ class BaseLatticeSolver(ABC):
         of ghosts of a cluster, ``bath_size`` minus the size summed over its
         blocks, must be even. The quasiparticle bands then hold
         :attr:`n_ghost_electrons` more electrons than the physical ones, which
-        :meth:`update_weights` must include in its filling. Default is the size
+        the kintegrator must include in its filling. Default is the size
         of each block (``B = 1``), i.e., RISB without ghosts.
+    kintegrator : risb.kintegration.BandKIntegration
+        Integrates band observables and supplies the numerical k-integration
+        method used for the local Hamiltonians.
+    h0_k_evaluator : callable, optional
+        Evaluate the original Hamiltonian at points of shape (n_k, dimension).
+        Required when integration chooses new points. h0_k remains the
+        reference mesh for initialization and sampled outputs.
+    projectors_evaluator : callable, optional
+        Evaluate all cluster projectors at those points. Required for
+        k-dependent projectors when h0_k_evaluator is supplied.
     mu : float, optional
         Chemical potential that :meth:`solve_impurities` passes to the
         ``set_h_imp`` of each impurity solver. Default is None, which passes
@@ -160,6 +177,10 @@ class BaseLatticeSolver(ABC):
         double_counting: Callable[[int, BlockMatrix], BlockMatrixLike] | None = None,
         *,
         bath_size: Sequence[Mapping[str, int]] | None = None,
+        kintegrator: BandKIntegration,
+        h0_k_evaluator: Callable[[KPoints], BlockMatrixLike] | None = None,
+        projectors_evaluator: Callable[[KPoints], Sequence[BlockMatrixLike]]
+        | None = None,
         mu: float | None = None,
         gauge_fix: GaugeFix | None = None,
         force_real_atol: float = 1e-12,
@@ -168,6 +189,9 @@ class BaseLatticeSolver(ABC):
     ) -> None:
         #: risb.types.BlockMatrixLike : Non-interacting Hamiltonian in k-space.
         self.h0_k = h0_k
+        self.kintegrator = kintegrator
+        self.h0_k_evaluator = h0_k_evaluator
+        self.projectors_evaluator = projectors_evaluator
         self.diagnostics = diagnostics
 
         # FIXME is this the best way to make sure gf_struct is a list of gf_struct?
@@ -192,6 +216,16 @@ class BaseLatticeSolver(ABC):
             raise ValueError(msg)
 
         self.projectors = projectors
+        if (
+            h0_k_evaluator is not None
+            and projectors_evaluator is None
+            and projectors is not None
+            and any(P.ndim == 3 for cluster in projectors for P in cluster.values())
+        ):
+            msg = (
+                "Supply projectors_evaluator for k-dependent projectors at new points."
+            )
+            raise ValueError(msg)
         if (self.projectors is not None) and (len(self.projectors) != self.n_clusters):
             msg = f"Need a projector (got {len(self.projectors)}) for each cluster (got {self.n_clusters}) !"
             raise ValueError(msg)
@@ -265,14 +299,12 @@ class BaseLatticeSolver(ABC):
                 h0_k, self.bath_size, self.projectors, self.gf_struct_mapping
             )
 
-        #: risb.types.BlockMatrix : :attr:`h0_k` with the local couplings of
-        #: each cluster removed, so with the local terms of the orbitals that
-        #: are in no cluster.
-        self.h0_kin_k = helpers.get_h0_kin_k(h0_k, projectors, gf_struct_mapping)
-
-        #: list of risb.types.BlockMatrix : Matrices of non-interacting local hopping
-        #: terms and energies in :attr:`h0_k`.
+        #: list of risb.types.BlockMatrix : Local Hamiltonian of each cluster.
         self.h0_loc_matrix = self._get_h0_loc_matrix()
+        #: risb.types.BlockMatrix : Dispersion with the cluster local terms removed.
+        self.h0_kin_k = helpers.get_h0_kin_k(
+            h0_k, projectors, self.gf_struct_mapping, h0_loc_matrix=self.h0_loc_matrix
+        )
 
         # The largest energy of the bands of h0_kin_k from zero, an energy
         # scale of the quasiparticle bands
@@ -349,6 +381,10 @@ class BaseLatticeSolver(ABC):
         #: risb.types.BlockRealArray : k-space integration weights of the
         #: quasiparticles in each band.
         self.kweights: BlockRealArray = {}
+        #: risb.types.BlockMatrix or None : Quasiparticle densities on a supplied mesh.
+        self.qp_density_k: BlockMatrix | None = None
+        #: risb.kintegration.BandKIntegrationResult or None : Last completed band integral.
+        self.kintegration_result: BandKIntegrationResult | None = None
 
         #: risb.types.BlockRealArray : Band energy of quasiparticles.
         self.energies_qp: BlockRealArray = {}
@@ -447,27 +483,116 @@ class BaseLatticeSolver(ABC):
         return A_projected
 
     def _get_h0_loc_matrix(self) -> list[BlockMatrix]:
-        h0_loc_matrix = self._initialize_block_mf_matrix(
-            self.gf_struct, self.force_real
+        def get_local_terms(kpoints: KPoints | None) -> IntegralValues:
+            h0 = self.h0_k if kpoints is None else self._get_h0_at(kpoints)
+            projectors = self._get_projectors_at(kpoints)
+            values: IntegralValues = {}
+            for i, cluster in enumerate(self.gf_struct):
+                for block, _ in cluster:
+                    matrix = h0[self.gf_struct_mapping[i][block]]
+                    if projectors is not None:
+                        P = projectors[i][block]
+                        matrix = P @ matrix @ P.conj().swapaxes(-1, -2)
+                    values[i, block] = matrix
+            return values
+
+        samples = (
+            get_local_terms(None) if self.h0_k_evaluator is None else get_local_terms
         )
-
-        for i in range(self.n_clusters):
-            for bl, _bl_size in self.gf_struct[i]:
-                bl_full = self.gf_struct_mapping[i][bl]
-                if self.projectors is not None:
-                    h0_loc_matrix[i][bl] = helpers.get_h0_loc_matrix(
-                        self.h0_k[bl_full], self.projectors[i][bl]
-                    )
-                else:
-                    h0_loc_matrix[i][bl] = helpers.get_h0_loc_matrix(self.h0_k[bl_full])
-
+        result = self.kintegrator.kpoint_integrator.integrate(samples)
+        if not result.converged:
+            msg = "k-integration failed while calculating local Hamiltonians."
+            raise RuntimeError(msg)
+        h0_loc_matrix = [
+            {block: result.values[i, block] for block, _ in cluster}
+            for i, cluster in enumerate(self.gf_struct)
+        ]
         h0_loc_matrix = self._project(
             h0_loc_matrix, is_hermitian=True, name="h0_loc_matrix"
         )
         for symmetrize in self.symmetrizers:
             h0_loc_matrix = symmetrize(h0_loc_matrix)
-
         return h0_loc_matrix
+
+    def _get_h0_at(self, kpoints: KPoints) -> BlockMatrixLike:
+        assert self.h0_k_evaluator is not None
+        return self.h0_k_evaluator(kpoints)
+
+    def _get_projectors_at(
+        self, kpoints: KPoints | None
+    ) -> Sequence[BlockMatrixLike] | None:
+        if kpoints is not None and self.projectors_evaluator is not None:
+            return self.projectors_evaluator(kpoints)
+        return self.projectors
+
+    def _get_band_integrands(self) -> tuple[Hamiltonian, BandObservables]:
+        def lattice_fields(
+            kpoints: KPoints | None,
+        ) -> tuple[
+            BlockMatrixLike,
+            BlockMatrixLike,
+            BlockMatrixLike,
+            Sequence[BlockMatrixLike] | None,
+            Sequence[BlockMatrixLike] | None,
+        ]:
+            if kpoints is None:
+                return (
+                    self.h0_kin_k,
+                    self.R_full,
+                    self.Lambda_full,
+                    self.projectors,
+                    self._projectors_qp,
+                )
+            h0 = self._get_h0_at(kpoints)
+            projectors = self._get_projectors_at(kpoints)
+            kinetic = helpers.get_h0_kin_k(
+                h0, projectors, self.gf_struct_mapping, h0_loc_matrix=self.h0_loc_matrix
+            )
+            qp_projectors = projectors
+            if self.n_ghost_electrons:
+                qp_projectors = helpers.get_ghost_projectors(
+                    h0, self.bath_size, projectors, self.gf_struct_mapping
+                )
+            R, Lambda = helpers.upfold_r_lambda(
+                self.R, self.Lambda, kinetic, qp_projectors, self.gf_struct_mapping
+            )
+            return kinetic, R, Lambda, projectors, qp_projectors
+
+        def get_hamiltonian(kpoints: KPoints | None) -> BlockMatrix:
+            kinetic, R, Lambda, _, _ = lattice_fields(kpoints)
+            return {
+                block: helpers.get_h_qp(R[block], Lambda[block], h0)
+                for block, h0 in kinetic.items()
+            }
+
+        def get_risb_k_observables(
+            kpoints: KPoints | None, density_k: BlockMatrixLike
+        ) -> IntegralValues:
+            kinetic, R, _, projectors, qp_projectors = lattice_fields(kpoints)
+            values: IntegralValues = {}
+            for i, cluster in enumerate(self.gf_struct):
+                for block, _ in cluster:
+                    lattice_block = self.gf_struct_mapping[i][block]
+                    density = density_k[lattice_block]
+                    ke = (
+                        kinetic[lattice_block]
+                        @ R[lattice_block].conj().swapaxes(-1, -2)
+                        @ density
+                    )
+                    if projectors is not None:
+                        ke = projectors[i][block] @ ke
+                    if qp_projectors is not None:
+                        P = qp_projectors[i][block]
+                        density = P @ density @ P.conj().swapaxes(-1, -2)
+                        ke = ke @ P.conj().swapaxes(-1, -2)
+                    values["rho_qp", i, block] = density.swapaxes(-1, -2)
+                    values["lopsided_ke_qp", i, block] = ke
+            return values
+
+        hamiltonian = (
+            get_hamiltonian(None) if self.h0_k_evaluator is None else get_hamiltonian
+        )
+        return hamiltonian, get_risb_k_observables
 
     def get_x(self) -> NDArray[np.float64]:
         """
@@ -589,24 +714,11 @@ class BaseLatticeSolver(ABC):
         """
         return []
 
-    # TODO: consider renaming this, since it returns the weights rather than
-    # updating them
-    @abstractmethod
-    def update_weights(self, energies: BlockRealArray) -> BlockRealArray:
-        """
-        Update function that gives k-space integration weights.
-
-        Parameters
-        ----------
-        energies : risb.types.BlockRealArray
-            Energies at each k-point in each block.
-
-        Returns
-        -------
-        risb.types.BlockRealArray
-            Integration weights at each k-point in each block.
-
-        """
+    def integrate_bands(
+        self, hamiltonian: Hamiltonian, observables: BandObservables
+    ) -> BandKIntegrationResult:
+        """Integrate the quasiparticle density and kinetic observables."""
+        return self.kintegrator.integrate(hamiltonian, observables=observables)
 
     @abstractmethod
     def update_bath(self) -> None:
@@ -712,42 +824,31 @@ class BaseLatticeSolver(ABC):
                     self.gf_struct_mapping,
                 )
 
-                h0_k_R = {}
-                # R_h0_k_R = dict()
-                for bl in self.h0_kin_k:
-                    h_qp = helpers.get_h_qp(
-                        self.R_full[bl], self.Lambda_full[bl], self.h0_kin_k[bl]
-                    )
-                    self.energies_qp[bl], self.bloch_vector_qp[bl] = np.linalg.eigh(
-                        h_qp
-                    )
-                    h0_k_R[bl] = helpers.get_h0_kin_k_R(
-                        self.R_full[bl], self.h0_kin_k[bl], self.bloch_vector_qp[bl]
-                    )
-                    # R_h0_k_R[bl] = helpers.get_R_h0_kin_kR(R_full[bl], self.h0_kin_k[bl], self.bloch_vector_qp[bl])
-
-            with self._stage("weights"):
-                self.kweights = self.update_weights(self.energies_qp)
+                hamiltonian, observables = self._get_band_integrands()
 
             with self._stage("densities"):
-                for i in range(self.n_clusters):
-                    for bl, _ in self.gf_struct[i]:
-                        bl_full = self.gf_struct_mapping[i][bl]
-                        P = None if self.projectors is None else self.projectors[i][bl]
-                        P_qp = None
-                        if self._projectors_qp is not None:
-                            P_qp = self._projectors_qp[i][bl]
-                        self.rho_qp[i][bl] = helpers.get_rho_qp(
-                            self.bloch_vector_qp[bl_full], self.kweights[bl_full], P_qp
-                        )
-                        self.lopsided_ke_qp[i][bl] = helpers.get_ke(
-                            h0_k_R[bl_full],
-                            self.bloch_vector_qp[bl_full],
-                            self.kweights[bl_full],
-                            P,
-                            P_qp,
-                        )
-                        # self.ke_qp[i][bl] = helpers.get_ke(R_h0_k_R[bl_full], self.bloch_vector_qp[bl_full], self.kweights[bl_full], self.projectors[i][bl])
+                result = self.integrate_bands(hamiltonian, observables)
+                self.kintegration_result = result
+                if not result.converged:
+                    msg = "Band integration did not meet its requested accuracy."
+                    raise RuntimeError(msg)
+                self.energies_qp = result.energies
+                self.bloch_vector_qp = result.vectors
+                self.qp_density_k = result.density_k
+                self.kweights = (
+                    {
+                        block: f * result.weights[:, None]
+                        for block, f in result.band_weights.items()
+                    }
+                    if result.weights is not None
+                    else {}
+                )
+                for i, cluster in enumerate(self.gf_struct):
+                    for block, _ in cluster:
+                        self.rho_qp[i][block] = result.values["rho_qp", i, block]
+                        self.lopsided_ke_qp[i][block] = result.values[
+                            "lopsided_ke_qp", i, block
+                        ]
 
                 # FIXME More expensive to do this than just storing and working with the coefficients, but
                 # nothing compared to solving the impurity problem so this is likely fine

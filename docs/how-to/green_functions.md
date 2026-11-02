@@ -10,7 +10,7 @@ In `examples/green_functions.py` we provide an example.
 :::
 
 Below `S` is a solved `LatticeSolver` and the chemical potential $\mu$ is
-`kweight.mu`. The frequencies $\omega$ are relative to $\mu$, e.g., Matsubara
+`kintegrator.mu`. The frequencies $\omega$ are relative to $\mu$, e.g., Matsubara
 frequencies or real frequencies with a broadening $\eta$
 
 ```python

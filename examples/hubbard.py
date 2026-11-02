@@ -8,7 +8,7 @@ from fockit.algebra import OpSum, nc, zero
 from risb import LatticeSolver
 from risb.helpers_fockit import N_op, S2_op
 from risb.impurity_solvers import FockitImpuritySolver
-from risb.kweight import SmearingKWeight
+from risb.kintegration import BandKIntegrator, WeightedKPointIntegrator
 from risb.types import BlockMatrix
 
 
@@ -34,10 +34,10 @@ h0_k = {bl: dispersion[:, None, None] * np.eye(n_orb) for bl in spin_names}
 # Hubbard interaction
 h_int = hubbard(U=0, n_orb=n_orb)
 
-# Set up class to work out k-space integration weights
+# Set up the k-space sums and band filling.
 beta = 40  # inverse temperature
 n_target = 1  # half-filling
-kweight = SmearingKWeight(beta=beta, n_target=n_target)
+kintegrator = BandKIntegrator(WeightedKPointIntegrator(), beta=beta, n_target=n_target)
 
 
 # Symmetrize spin blocks to be the same (paramagnetism)
@@ -66,7 +66,7 @@ S = LatticeSolver(
     h0_k=h0_k,
     gf_struct=gf_struct,
     impurity_solvers=impurity_solver,
-    update_weights=kweight.update_weights,
+    kintegrator=kintegrator,
     symmetrizers=[force_paramagnetic],
     force_real=True,
 )

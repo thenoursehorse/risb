@@ -24,7 +24,7 @@ explanations/index
 api/risb
 api/risb.impurity_solvers
 api/risb.diagnostics
-api/risb.kweight
+api/risb.kintegration
 api/risb.optimize
 api/risb.pinning
 api/risb.gauge

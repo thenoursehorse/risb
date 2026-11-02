@@ -9,7 +9,7 @@ from numpy.typing import NDArray
 from risb import LatticeSolver
 from risb.helpers_fockit import N_op, S2_op
 from risb.impurity_solvers import DummyImpuritySolver, FockitImpuritySolver
-from risb.kweight import SmearingKWeight
+from risb.kintegration import BandKIntegrator, WeightedKPointIntegrator
 from risb.types import BlockMatrix, ImpuritySolver
 
 logging.basicConfig(level=logging.INFO, format="%(message)s")
@@ -71,10 +71,10 @@ gf_struct = [[(bl, n_orb) for bl in spin_names] for _ in range(n_clusters)]
 # Setup non-interacting Hamiltonian matrix on the lattice
 h0_k = get_h0_k(t=1, nkx=18, spin_names=spin_names)
 
-# Set up class to work out k-space integration weights
+# Set up the k-space sums and band filling.
 beta = 40  # inverse temperature
 n_target = 3  # half-filling
-kweight = SmearingKWeight(beta=beta, n_target=n_target)
+kintegrator = BandKIntegrator(WeightedKPointIntegrator(), beta=beta, n_target=n_target)
 
 # Define the local interaction
 U = 10
@@ -125,7 +125,7 @@ S = LatticeSolver(
     h0_k=h0_k,
     gf_struct=gf_struct,
     impurity_solvers=impurity_solvers,
-    update_weights=kweight.update_weights,
+    kintegrator=kintegrator,
     projectors=projectors,
     symmetrizers=[force_paramagnetic],
 )

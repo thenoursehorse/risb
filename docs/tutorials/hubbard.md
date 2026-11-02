@@ -206,15 +206,14 @@ def force_paramagnetic(A):
 :::{seealso}
 [About k-integration](../explanations/kweight.md).
 
-[Using `SmearKWeight`](../how-to/kweight.md).
+[Using `BandKIntegrator`](../how-to/kintegration.md).
 :::
 
-You need to specify a function to `LatticeSolver` that gives the integration
-weights at each $k$-point on the lattice. The easiest thing to do is to use
-the `SmearKWeight` class that assumes the weights are given by
-Fermi-Dirac functions
+Use `BandKIntegrator` with equally weighted k-points and Fermi smearing:
 
 ```python
+from risb.kintegration import BandKIntegrator, WeightedKPointIntegrator
+
 # The smearing, in units of inverse temperature. It is an approximation
 # because LatticeSolver is at zero temperature (see ThermalLatticeSolver)
 beta = 40
@@ -222,7 +221,7 @@ beta = 40
 # 1 electron on average per unit cell, half-filling
 n_target = 1  # half-filling
 
-kweight = SmearingKWeight(beta=beta, n_target=n_target)
+kintegrator = BandKIntegrator(WeightedKPointIntegrator(), beta=beta, n_target=n_target)
 ```
 
 ## Setup the solvers and find a self-consistent solution
@@ -256,7 +255,7 @@ S = LatticeSolver(
     h0_k=h0_k,
     gf_struct=gf_struct,
     impurity_solvers=impurity_solver,
-    update_weights=kweight.update_weights,
+    kintegrator=kintegrator,
     symmetrizers=[force_paramagnetic],
 )
 ```

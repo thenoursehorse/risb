@@ -1384,9 +1384,9 @@ def get_thermal_entropy(
 def get_density_matrix_k(
     *,
     R_full: BlockMatrixLike,
-    vectors: BlockMatrixLike,
-    kweights: BlockRealArray,
+    qp_density_k: BlockMatrixLike | None,
     rho_c: Sequence[BlockMatrixLike],
+    weights: NDArray[np.float64] | None = None,
     projectors: Sequence[BlockMatrixLike] | None = None,
     gf_struct_mapping: Sequence[Mapping[str, str]] | None = None,
 ) -> BlockMatrix:
@@ -1405,12 +1405,11 @@ def get_density_matrix_k(
         each quasiparticle and a column for each orbital, e.g.,
         :attr:`risb.LatticeSolver.R_full` or from :func:`upfold_r_lambda`. It
         can depend on k.
-    vectors : risb.types.BlockMatrixLike
-        Eigenvectors of the quasiparticle Hamiltonian at each k-point, e.g.,
-        :attr:`risb.LatticeSolver.bloch_vector_qp`.
-    kweights : risb.types.BlockRealArray
-        Integration weights of each quasiparticle band at each k-point, on a
-        uniform mesh, e.g., :attr:`risb.LatticeSolver.kweights`.
+    qp_density_k : risb.types.BlockMatrixLike
+        Quasiparticle density matrices at the supplied k-points, e.g.,
+        :attr:`risb.LatticeSolver.qp_density_k`.
+    weights : numpy.ndarray, optional
+        Relative k-point weights. Omitting them gives equal weights.
     rho_c : list of risb.types.BlockMatrixLike
         Density matrix of the physical orbitals in the impurity problem of
         each cluster, e.g., :attr:`risb.LatticeSolver.rho_c`, from the same
@@ -1436,25 +1435,33 @@ def get_density_matrix_k(
     quasiparticles.
 
     """
+    if qp_density_k is None:
+        msg = "Supply quasiparticle densities on the CSC k-point mesh."
+        raise ValueError(msg)
     density: BlockMatrix = {}
-    for bl, vec in vectors.items():
-        n_k = vec.shape[0]
-        n_qp = (vec * (kweights[bl] * n_k)[:, None, :]) @ _dagger(vec)
+    for bl, n_qp in qp_density_k.items():
         density[bl] = _dagger(R_full[bl]) @ n_qp @ R_full[bl]
     if gf_struct_mapping is None:
-        gf_struct_mapping = [{bl: bl for bl in vectors} for _ in range(len(rho_c))]
+        gf_struct_mapping = [{bl: bl for bl in qp_density_k} for _ in range(len(rho_c))]
     for i, rho_c_i in enumerate(rho_c):
         for bl, rho in rho_c_i.items():
             bl_full = gf_struct_mapping[i][bl]
             P = np.eye(rho.shape[-1]) if projectors is None else projectors[i][bl]
-            coherent = np.mean(P @ density[bl_full] @ _dagger(P), axis=0)
+            coherent = np.average(
+                P @ density[bl_full] @ _dagger(P), axis=0, weights=weights
+            )
             density[bl_full] = (
                 density[bl_full] + _dagger(P) @ (np.transpose(rho) - coherent) @ P
             )
     return density
 
 
-def get_band_energy(h0_k: BlockMatrixLike, density_k: BlockMatrixLike) -> float:
+def get_band_energy(
+    h0_k: BlockMatrixLike,
+    density_k: BlockMatrixLike,
+    *,
+    weights: NDArray[np.float64] | None = None,
+) -> float:
     """
     Return the energy of a dispersion with a density matrix at each k-point.
 
@@ -1466,16 +1473,20 @@ def get_band_energy(h0_k: BlockMatrixLike, density_k: BlockMatrixLike) -> float:
         Density matrix at each k-point in the convention of
         :func:`get_density_matrix_k`, e.g., its result, or the occupations of
         the bands of a DFT calculation on the diagonal.
+    weights : numpy.ndarray, optional
+        Relative k-point weights. Omitting them gives equal weights.
 
     Returns
     -------
     float
-        ``sum_k Tr[h0_k rho(k)] / n_k`` summed over blocks, on a uniform mesh.
+        Weighted band energy summed over blocks.
 
     """
     energy = 0.0
     for bl, h0 in h0_k.items():
-        energy += np.real(np.einsum("kab,kba->", h0, density_k[bl])) / h0.shape[0]
+        energy += np.average(
+            np.real(np.einsum("kab,kba->k", h0, density_k[bl])), weights=weights
+        )
     return float(energy)
 
 
@@ -2320,6 +2331,8 @@ def get_h0_kin_k(
     h0_k: BlockMatrixLike,
     projectors: Sequence[BlockMatrixLike] | None = None,
     gf_struct_mapping: Sequence[Mapping[str, str]] | None = None,
+    *,
+    h0_loc_matrix: Sequence[BlockMatrixLike] | None = None,
 ) -> BlockMatrix:
     """
     Return a non-interacting dispersion without the local terms of the clusters.
@@ -2336,6 +2349,9 @@ def get_h0_kin_k(
         The mapping from the symmetry blocks in the subspace to the
         symmetry blocks of h0_k. Default assumes the keys in `projectors`
         are the same as the keys in `h0_k`.
+    h0_loc_matrix : sequence of risb.types.BlockMatrixLike, optional
+        Local Hamiltonians to subtract from the dispersion. If omitted,
+        calculate them by averaging over equally weighted k-points.
 
     Returns
     -------
@@ -2354,14 +2370,21 @@ def get_h0_kin_k(
         for i, P in enumerate(projectors):
             for bl in P:
                 bl_full = gf_struct_mapping[i][bl]
-                h0_loc_matrix = get_h0_loc_matrix(h0_k[bl_full], P[bl])
-                h0_kin_k[bl_full] = (
-                    h0_kin_k[bl_full] - _dagger(P[bl]) @ h0_loc_matrix @ P[bl]
+                local = (
+                    get_h0_loc_matrix(h0_k[bl_full], P[bl])
+                    if h0_loc_matrix is None
+                    else h0_loc_matrix[i][bl]
                 )
+                h0_kin_k[bl_full] = h0_kin_k[bl_full] - _dagger(P[bl]) @ local @ P[bl]
                 # h0_kin_k[bl_full] = get_h0_kin_k_mat(h0_kin_k[bl_full], P[bl])
     else:
         for bl, mat in h0_k.items():
-            h0_kin_k[bl] = h0_kin_k[bl] - get_h0_loc_matrix(mat)
+            local = (
+                get_h0_loc_matrix(mat)
+                if h0_loc_matrix is None
+                else h0_loc_matrix[0][bl]
+            )
+            h0_kin_k[bl] = h0_kin_k[bl] - local
 
     return h0_kin_k
 
