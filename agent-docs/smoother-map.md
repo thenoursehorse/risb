@@ -58,6 +58,10 @@ physical residuals, not only iteration count. Keep prototypes outside the reposi
 24. [ ] Make Richardson error control reliable on hard T=0 trajectories:
    validate against colder samples, separate matrix tolerances from mu, and
    check the filling solve at very large beta.
+25. [x] Implement midpoint-first mu search in BandKIntegrator with
+   use_midgap and midgap_electron_count_atol; retain Brent fallback and
+   report midpoint availability. Require colder confirmation for temperature
+   extrapolation. The remaining mu and filling-accuracy work stays in item 24.
 
 ## Results
 
@@ -1331,3 +1335,89 @@ beta sequence alone does not fix the failures.
 Before trusting requested error tolerances, prototype a colder validation
 sample, separate matrix tolerances from mu, and check cold filling accuracy.
 Keep item 20 open. Production suite: 221 passed; no new test cases or benchmarks.
+
+## Colder confirmation prototype
+
+Report: /tmp/risb-smoother-map/colder-check/report.md.
+No production code, tests, benchmarks or defaults changed.
+
+Current acceptance takes the smallest preceding-table change, which can be
+accidentally small and can select an entry omitting the newest samples.
+The prototype uses the latest three samples and requires confirmation from
+the next colder three-sample window. The total criterion still includes mu.
+
+Across 16 frozen inputs and two beta budgets, confirmation removes all false
+1e-8 acceptances found here. Latest-three extrapolation alone does not.
+For matched square B=5 inputs, combined matrix norm error drops from 1.43e-7
+to about 9e-10, using 12 beta samples instead of 10.
+
+42 outer solves: square B=5 with confirmation and a 19-sample allowance passes
+3/3 starts with both Pulay and BianLi. All 15 matched outputs checked against
+exact same-mesh T=0 sums have per-matrix norm errors below 6.01e-10.
+Bethe and cubic Mott remain unresolved. Confirmation can also exhaust a supplied
+beta list before checking an accurate candidate. Item 24 remains open.
+
+VASP MIDGAP starts its filling bisection at the gap centre, accepts it if the
+count is already correct, otherwise continues the search. Next prototype this
+policy inside band filling; preserve the filling constraint. Sources:
+https://vasp.at/wiki/EFERMI and
+https://vasp.at/wiki/index.php/Smearing_technique#Calculation_of_the_Fermi_energy.
+
+## Lattice-side Lambda updates (2026-11-02)
+
+Scratch: /private/tmp/claude-501/-Users-henry-GitHub-risb/a31c7647-62cb-47a3-8fca-704239bcdc3b/scratchpad/diis/level_solve.py.
+No production code changed. Both keep get_r and replace part of get_lambda,
+solving f2 on the lattice side with rho_f fixed, no extra impurity solves.
+The k-integrator is a black box (finite differences); mu is re-solved per
+evaluation ("joint") or kept at the cycle's mu ("fixed").
+
+- linear: get_lambda, then each interior rho_f direction's level from one
+  Newton step on its f2. inner: the interior block of Lambda solves
+  logit(rho_qp) = logit(rho_f) by Newton with backtracking.
+- Needed: only interior directions, n(1-n) > 1e-3 (full/empty have no
+  finite level, so FullEmptyPinning stays); logit equations (Newton on n
+  fails in the smearing tail); a step cap.
+- Crystal-field model, 15 cases, Pulay root: default 9/15; linear joint
+  9/15, fixed 10/15, both only low spin, missing lower-energy states;
+  inner joint 6/15 (all orbitals in the cluster makes it overdetermined),
+  fixed 7/15. Not better than get_lambda.
+- Berlingreen beta=800 HS, from the 3.4e-3 state of the joint pin with root:
+  linear diverged at cycle 4 (19 eV level step, sc 0.23). inner converges
+  each solve (19 unknowns, 5-8 Newton steps, 100-170 band integrations,
+  9-13 min against 2 min for block2) and reaches sc 3.0e-3, then 3.1e-2
+  at cycle 4 as the Fe2 t2g ghost coupling grows 0.04 -> 0.13.
+- The remaining berlingreen instability is in R (that ghost's coupling),
+  not Lambda. The 0.05 pin threshold is crossed by the same drift.
+
+## Midpoint-first chemical potential prototype
+
+Report: /tmp/risb-smoother-map/midgap-policy/report.md.
+No production code, tests, benchmarks or defaults changed.
+
+The policy finds the filling boundary in the full weighted auxiliary spectrum,
+tries its midpoint, and checks the finite-beta electron count. A target cutting
+through a degenerate level has no gap; use that level only as a starting guess.
+Ghost states remain in the count even when their physical spectral weight is
+zero. A sampled gap is not proof of a bulk insulating gap.
+
+128 frozen comparisons: with colder confirmation, midpoint + Brent accepts
+15/16 inputs within the 19-sample budget, versus 10/16 for the original mu
+search. No accepted input fails measured 1e-8 matrix accuracy. Midpoint +
+bisection also accepts 15/16 but costs more count evaluations.
+
+24 outer solves: square B=5 stays 3/3 for Pulay and BianLi; original Bethe B=5
+improves from 0/3 to 3/3 (Pulay) and 2/3 (BianLi). All 14 matched outputs
+checked against exact same-mesh T=0 sums have matrix norm errors <=5.99e-10.
+The remaining Bethe start needs colder integration. Cubic Mott is unresolved.
+
+Recommend implementing colder confirmation in extrapolation.py and a separate
+midpoint-first band-filling option in integrators.py, retaining Brent fallback.
+The VASP-style bisection variant was tested separately. Item 24 remains open
+until production implementation and validation.
+
+Remaining issue: a partially occupied flat level has
+mu(beta)=E_g+log[p/(1-p)]/beta. Extrapolating mu in beta^-2 can reject accurate
+matrices. A 75%-occupied flat-level control has density error 7.4e-13 while
+mu still blocks 1e-8 acceptance. Midgap cannot remove this thermal shift.
+Also control the filling residual at very large beta; a converged mu root
+alone does not establish the required count accuracy.

@@ -19,6 +19,7 @@ from .integrators import (
     KIntegrator,
     KPoints,
     WeightedKPointIntegrator,
+    get_filling_edges,
 )
 from .smearing import fermi_function, gaussian_function, methfessel_paxton_function
 
@@ -40,6 +41,7 @@ __all__ = [
     "WeightedKPointIntegrator",
     "fermi_function",
     "gaussian_function",
+    "get_filling_edges",
     "methfessel_paxton_function",
     "richardson_extrapolate",
 ]

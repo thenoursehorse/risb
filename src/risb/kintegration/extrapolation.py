@@ -24,7 +24,7 @@ from .integrators import (
 class ExtrapolationResult:
     """Extrapolated value, total error and error of each array entry.
 
-    coefficients gives the weights applied to the input values.
+    coefficients contains the weights applied to the input values.
     absolute_error contains the estimated absolute error of each entry.
     """
 
@@ -59,8 +59,11 @@ class TemperatureExtrapolatedKIntegrator:
     requests T=0.
 
     For a regular metal the Sommerfeld expansion has even powers of 1/beta.
-    This class extrapolates in beta**-2 using richardson_extrapolate.
-    The error estimate compares successive extrapolations of the k-sums.
+    This class extrapolates the latest three samples in beta**-2 using
+    richardson_extrapolate. A candidate must meet tolerance and agree with
+    another three-sample extrapolation after a further cooling step.
+    At least four samples are therefore needed for convergence.
+    The error estimate includes the change between these extrapolations.
     Results include the Frobenius norm and largest absolute entry of this
     error for each matrix; diagnostics report both.
     It does not check the density matrix at each individual k-point: errors
@@ -68,7 +71,8 @@ class TemperatureExtrapolatedKIntegrator:
     density of states can also make this estimate unreliable.
 
     The returned density matrices use the same extrapolation coefficients
-    as the k-integrals.
+    as the k-integrals. The wrapped BandKIntegrator controls how mu is found
+    at each beta, including its use_midgap setting.
 
     References
     ----------
@@ -114,8 +118,9 @@ class TemperatureExtrapolatedKIntegrator:
     ) -> BandKIntegrationResult:
         """Extrapolate k-integrals to beta, using the supplied finite-beta sequence.
 
-        Sampling stops when the estimated error meets tolerance. If every
-        supplied beta is used without meeting tolerance, converged is False.
+        Sampling stops after a colder sample confirms the estimated accuracy.
+        If the sequence ends before confirmation, converged is False even
+        when the last candidate meets tolerance.
         """
         with stage(self.diagnostics, "kextrapolation"):
             beta = np.inf if beta is None else beta
@@ -126,6 +131,9 @@ class TemperatureExtrapolatedKIntegrator:
             arrays: list[NDArray[np.inexact]] = []
             extrapolated: ExtrapolationResult
             converged = False
+            previous: ExtrapolationResult | None = None
+            previous_meets_tolerance = False
+            previous_quadrature_error = 0.0
             temperature_errors: dict[Hashable, KIntegralError] = {}
             for sample_beta in self.betas:
                 sample = self.kintegrator.integrate(
@@ -151,9 +159,55 @@ class TemperatureExtrapolatedKIntegrator:
                         ]
                     )
                 )
-                extrapolated = richardson_extrapolate(
-                    [1 / s.beta**2 for s in samples], arrays, target=1 / beta**2
+                window_size = min(3, len(samples))
+                candidate = richardson_extrapolate(
+                    [1 / s.beta**2 for s in samples[-window_size:]],
+                    arrays[-window_size:],
+                    target=1 / beta**2,
                 )
+                candidate = replace(
+                    candidate,
+                    coefficients=np.pad(
+                        candidate.coefficients, (len(samples) - window_size, 0)
+                    ),
+                )
+                quadrature_error = sum(
+                    abs(c) * s.quadrature_error
+                    for c, s in zip(candidate.coefficients, samples, strict=True)
+                    if s.quadrature_error is not None
+                )
+                tolerance = max(
+                    self.atol, self.rtol * float(np.linalg.norm(candidate.value))
+                )
+                candidate_meets_tolerance = (
+                    sample.converged
+                    and len(samples) >= 3
+                    and candidate.error + quadrature_error <= tolerance
+                )
+                checked_error = (
+                    np.full_like(candidate.absolute_error, np.inf)
+                    if previous is None
+                    else np.maximum(
+                        candidate.absolute_error,
+                        np.abs(candidate.value - previous.value),
+                    )
+                )
+                extrapolated = replace(
+                    candidate,
+                    absolute_error=checked_error,
+                    error=float(np.linalg.norm(checked_error)),
+                )
+                confirmation_quadrature_error = (
+                    quadrature_error + previous_quadrature_error
+                )
+                meets_tolerance = (
+                    candidate_meets_tolerance
+                    and previous_meets_tolerance
+                    and extrapolated.error + confirmation_quadrature_error <= tolerance
+                )
+                previous = candidate
+                previous_meets_tolerance = candidate_meets_tolerance
+                previous_quadrature_error = quadrature_error
                 temperature_errors = {}
                 offset = 0
                 for key, value in sample.values.items():
@@ -165,19 +219,6 @@ class TemperatureExtrapolatedKIntegrator:
                         max_abs=float(np.max(entry_errors)),
                     )
                     offset += value.size
-                q_error = sum(
-                    abs(c) * s.quadrature_error
-                    for c, s in zip(extrapolated.coefficients, samples, strict=True)
-                    if s.quadrature_error is not None
-                )
-                tolerance = max(
-                    self.atol, self.rtol * float(np.linalg.norm(extrapolated.value))
-                )
-                meets_tolerance = (
-                    sample.converged
-                    and len(samples) >= 3
-                    and extrapolated.error + q_error <= tolerance
-                )
                 if self.diagnostics is not None:
                     for key, error in temperature_errors.items():
                         self.diagnostics.emit(
@@ -200,9 +241,17 @@ class TemperatureExtrapolatedKIntegrator:
                         quadrature_error=(
                             None
                             if any(s.quadrature_error is None for s in samples)
-                            else q_error
+                            else quadrature_error
                         ),
                         tolerance=tolerance,
+                        candidate_error=candidate.error,
+                        candidate_meets_tolerance=candidate_meets_tolerance,
+                        confirmed=meets_tolerance,
+                        confirmation_quadrature_error=(
+                            None
+                            if any(s.quadrature_error is None for s in samples)
+                            else confirmation_quadrature_error
+                        ),
                         kpoint_converged=sample.converged,
                     )
                 if not sample.converged:
@@ -221,13 +270,13 @@ class TemperatureExtrapolatedKIntegrator:
                 )
                 for key in samples[0].values
             }
-            q_errors = [sample.quadrature_error for sample in samples]
+            quadrature_errors = [sample.quadrature_error for sample in samples]
             quadrature_error = (
                 None
-                if any(e is None for e in q_errors)
+                if any(e is None for e in quadrature_errors)
                 else sum(
                     abs(c) * e
-                    for c, e in zip(coefficients, q_errors, strict=True)
+                    for c, e in zip(coefficients, quadrature_errors, strict=True)
                     if e is not None
                 )
             )
@@ -304,20 +353,21 @@ def richardson_extrapolate(
 ) -> ExtrapolationResult:
     """Estimate an array at target from values at decreasing points above it.
 
-    Neville interpolation removes successive terms in the expansion about
-    target. The error estimate is the norm of the change from the preceding
-    approximation, with a roundoff floor. Return the estimate with the
-    smallest such change. Its coefficients express it as a weighted sum of
-    the input values.
+    Neville interpolation uses every supplied point. The error estimate
+    compares the result with the extrapolation that omits the oldest point,
+    with a roundoff floor. Its coefficients express the result as a weighted
+    sum of the input values. A single point has an infinite error estimate.
 
     References
     ----------
     L. F. Richardson, Philos. Trans. R. Soc. A 210, 307-357 (1911),
     `doi:10.1098/rsta.1911.0009 <https://doi.org/10.1098/rsta.1911.0009>`__.
 
-    The sequence algorithm and error estimate follow
+    The interpolation recurrence is also used by
     `Richardson.jl <https://github.com/JuliaMath/Richardson.jl/blob/master/src/Richardson.jl>`__.
-    The implementation here uses NumPy.
+    This NumPy implementation returns the extrapolation through all supplied
+    points. The temperature wrapper chooses recent points and separately
+    checks agreement with a colder extrapolation.
 
     """
     x = np.asarray(points, dtype=float) - target
@@ -327,36 +377,31 @@ def richardson_extrapolate(
     if np.any(~np.isfinite(x)) or np.any(x <= 0) or np.any(np.diff(x) >= 0):
         msg = "Points must decrease strictly towards the target from above."
         raise ValueError(msg)
-    table: list[NDArray[np.inexact]] = []
-    coefficients: list[NDArray[np.float64]] = []
-    best_value, best_error = np.asarray(values[0]), np.inf
-    best_coefficients = np.eye(len(x))[0]
-    best_absolute_error = np.full(np.shape(values[0]), np.inf)
-    for j, value in enumerate(values):
-        if not np.all(np.isfinite(value)):
-            msg = "Cannot extrapolate nonfinite values."
-            raise ValueError(msg)
-        table.append(np.array(value, copy=True))
-        coefficients.append(np.eye(len(x))[j])
-        for i in range(j - 1, -1, -1):
-            old = table[i]
+    if any(not np.all(np.isfinite(value)) for value in values):
+        msg = "Cannot extrapolate nonfinite values."
+        raise ValueError(msg)
+    table = [np.array(value, copy=True) for value in values]
+    coefficients = list(np.eye(len(x)))
+    absolute_error = np.full(np.shape(values[0]), np.inf)
+    for width in range(1, len(x)):
+        for i in range(len(x) - width):
+            j = i + width
+            lower_order = table[i + 1].copy()
             ratio = x[i] / x[j]
-            table[i] = table[i + 1] + (table[i + 1] - old) / (ratio - 1)
+            table[i] = table[i + 1] + (table[i + 1] - table[i]) / (ratio - 1)
             coefficients[i] = coefficients[i + 1] + (
                 coefficients[i + 1] - coefficients[i]
             ) / (ratio - 1)
-            absolute_error = np.maximum(
-                np.abs(table[i] - old),
-                np.finfo(float).eps
-                * np.abs(table[i])
-                * float(np.sum(np.abs(coefficients[i]))),
-            )
-            error = float(np.linalg.norm(absolute_error))
-            if error < best_error:
-                best_value = table[i].copy()
-                best_error = error
-                best_coefficients = coefficients[i].copy()
-                best_absolute_error = np.asarray(absolute_error, dtype=float)
+            if width == len(x) - 1:
+                absolute_error = np.maximum(
+                    np.abs(table[i] - lower_order),
+                    np.finfo(float).eps
+                    * np.abs(table[i])
+                    * np.sum(abs(coefficients[i])),
+                )
     return ExtrapolationResult(
-        best_value, float(best_error), best_coefficients, best_absolute_error
+        table[0],
+        float(np.linalg.norm(absolute_error)),
+        coefficients[0],
+        np.asarray(absolute_error, dtype=float),
     )

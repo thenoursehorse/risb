@@ -13,7 +13,9 @@ class KIntegrationDiagnostics:
     """Report k-integrals and their error estimates.
 
     Temperature extrapolation reports the Frobenius-norm error and largest
-    absolute entry error of every requested matrix.
+    absolute entry error of every requested matrix. Band results report
+    whether midpoint selection was available and accepted; debug output
+    includes the candidate and colder-confirmation checks.
 
     Parameters
     ----------

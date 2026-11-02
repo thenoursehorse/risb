@@ -203,13 +203,30 @@ class BandKIntegrator:
         the required filling.
     n_target : float, optional
         Number of electrons represented by these bands per unit cell.
+    use_midgap : bool, optional
+        When solving for mu, try the midpoint of the occupied and empty
+        sampled levels first. If its electron count misses the target,
+        use Brent's method. Requires band energies and k-point weights;
+        otherwise use Brent's method directly. All bands enter the count,
+        including auxiliary bands with no physical spectral weight.
+    midgap_electron_count_atol : float, optional
+        Maximum absolute electron-count error per cell for accepting the
+        midpoint. Does not change Brent's stopping tolerances.
     diagnostics : risb.diagnostics.DiagnosticObserver, optional
         Reporter such as KIntegrationDiagnostics.
 
     Notes
     -----
-    Arguments to integrate override these settings. Supplying mu alone fixes
-    mu for that call; supplying n_target instead solves for it.
+    beta, mu and n_target passed to integrate override these settings.
+    Supplying mu alone fixes mu for that call; supplying n_target solves
+    for it. A gap between sampled levels need not be a bulk band gap.
+
+    References
+    ----------
+    The midpoint-first search follows VASP's
+    `EFERMI=MIDGAP policy
+    <https://vasp.at/wiki/index.php/Smearing_technique#Calculation_of_the_Fermi_energy>`__.
+    Brent's method is used for the fallback search.
 
     """
 
@@ -221,8 +238,18 @@ class BandKIntegrator:
         beta: float = np.inf,
         mu: float | None = None,
         n_target: float | None = None,
+        use_midgap: bool = True,
+        midgap_electron_count_atol: float = 1e-10,
         diagnostics: DiagnosticObserver | None = None,
     ) -> None:
+        if (
+            not np.isfinite(midgap_electron_count_atol)
+            or midgap_electron_count_atol < 0
+        ):
+            msg = "midgap_electron_count_atol must be finite and nonnegative."
+            raise ValueError(msg)
+        self.use_midgap = use_midgap
+        self.midgap_electron_count_atol = midgap_electron_count_atol
         self.diagnostics = diagnostics
         self.kpoint_integrator = kpoint_integrator
         self.smearing = smearing
@@ -300,19 +327,30 @@ class BandKIntegrator:
                     return self.kpoint_integrator.integrate(get_values(None))
                 return self.kpoint_integrator.integrate(get_values)
 
+            midgap_available: bool | None = None
+            midgap_accepted = False
+            sampled_gap: float | None = None
             if n_target is not None:
                 if not np.isfinite(beta):
                     msg = "Solving mu at beta=infinity requires temperature extrapolation."
                     raise ValueError(msg)
 
+                count_result: KIntegrationResult | None = None
+                filling_residuals: dict[float, float] = {}
+
                 def excess(chemical_potential: float) -> float:
+                    nonlocal count_result
+                    if chemical_potential in filling_residuals:
+                        return filling_residuals[chemical_potential]
                     result = integrate_at_mu(chemical_potential, False)
                     if not result.converged:
                         msg = (
                             "k-integration failed during the chemical-potential solve."
                         )
                         raise RuntimeError(msg)
+                    count_result = result
                     count = float(result.values[_ELECTRON_COUNT].real)
+                    filling_residuals[chemical_potential] = count - n_target
                     if self.diagnostics is not None:
                         self.diagnostics.emit(
                             "kintegration.mu",
@@ -342,7 +380,27 @@ class BandKIntegrator:
                     else:
                         msg = "Could not bracket the target band filling."
                         raise ValueError(msg)
-                mu = float(brentq(excess, low, high))
+                if self.use_midgap:
+                    if count_result is None:
+                        excess(low)
+                    assert count_result is not None
+                    midgap_available = count_result.weights is not None
+                    if count_result.weights is not None:
+                        occupied_edge, empty_edge = get_filling_edges(
+                            energies,
+                            count_result.weights,
+                            n_target,
+                            electron_count_atol=self.midgap_electron_count_atol,
+                        )
+                        sampled_gap = empty_edge - occupied_edge
+                        midpoint = occupied_edge + (empty_edge - occupied_edge) / 2
+                        midgap_accepted = (
+                            abs(excess(midpoint)) <= self.midgap_electron_count_atol
+                        )
+                        if midgap_accepted:
+                            mu = midpoint
+                if not midgap_accepted:
+                    mu = float(brentq(excess, low, high))
             assert mu is not None
             result = integrate_at_mu(mu, True)
             count = float(result.values.pop(_ELECTRON_COUNT).real)
@@ -370,8 +428,57 @@ class BandKIntegrator:
                     n_electrons=count,
                     quadrature_error=band_result.quadrature_error,
                     converged=band_result.converged,
+                    use_midgap=self.use_midgap,
+                    midgap_available=midgap_available,
+                    midgap_accepted=midgap_accepted,
+                    sampled_gap=sampled_gap,
+                    filling_residual=(None if n_target is None else count - n_target),
                 )
             return band_result
+
+
+def get_filling_edges(
+    energies: Mapping[str, NDArray[np.float64]],
+    weights: Sequence[float] | NDArray[np.float64],
+    n_target: float,
+    *,
+    electron_count_atol: float,
+) -> tuple[float, float]:
+    """Find the occupied and empty edges at the target weighted band filling.
+
+    energies contains arrays of shape (n_k, n_bands), one for each block.
+    weights are nonnegative k-point weights and are normalized here.
+    electron_count_atol is the absolute tolerance on the number of occupied
+    states per cell when locating the filling boundary.
+
+    If the target requires partial occupation of a level, both returned
+    edges equal that level. Zero-weight points are omitted. These edges
+    describe the supplied mesh; they do not establish a bulk band gap.
+    """
+    k_weights = np.asarray(weights, dtype=float)
+    k_weights = k_weights / k_weights.sum()
+    all_energies = np.concatenate([e.ravel() for e in energies.values()])
+    all_weights = np.concatenate(
+        [
+            np.broadcast_to(k_weights[:, None], e.shape).ravel()
+            for e in energies.values()
+        ]
+    )
+    positive = all_weights > 0
+    all_energies, all_weights = all_energies[positive], all_weights[positive]
+    order = np.argsort(all_energies, kind="stable")
+    levels, level_weights = all_energies[order], all_weights[order]
+    count = np.cumsum(level_weights, dtype=np.longdouble)
+    roundoff = 64 * np.finfo(float).eps * max(1, np.max(abs(levels)))
+    boundaries = np.flatnonzero(
+        (np.diff(levels) > roundoff)
+        & (abs(count[:-1] - n_target) <= electron_count_atol)
+    )
+    if len(boundaries):
+        boundary = int(boundaries[0])
+        return float(levels[boundary]), float(levels[boundary + 1])
+    boundary = min(int(np.searchsorted(count, n_target)), len(levels) - 1)
+    return float(levels[boundary]), float(levels[boundary])
 
 
 def _diagonalize(hamiltonian: BlockMatrixLike) -> tuple[BlockRealArray, BlockMatrix]:

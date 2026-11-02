@@ -49,7 +49,9 @@ def test_band_integration_without_mu_or_n_target_raises() -> None:
 @pytest.mark.parametrize(
     "smearing", [fermi_function, gaussian_function, methfessel_paxton_function]
 )
-def test_mu_of_a_flat_band_more_than_half_filled(smearing: SmearFunction) -> None:
+def test_band_filling_handles_partial_flat_levels_and_gaps(
+    smearing: SmearFunction,
+) -> None:
     flat = {block: np.zeros((100, 1, 1)) for block in ["first", "second"]}
     result = BandKIntegrator(WeightedKPointIntegrator(), smearing=smearing).integrate(
         flat, beta=10, n_target=1.5
@@ -58,6 +60,23 @@ def test_mu_of_a_flat_band_more_than_half_filled(smearing: SmearFunction) -> Non
     assert result.mu > 0
     if smearing is fermi_function:
         assert result.mu == pytest.approx(np.log(3) / 10)
+
+    gapped = {"auxiliary": np.broadcast_to(np.diag([-2.0, 2.0, -0.2, 0.1]), (3, 4, 4))}
+    mesh = WeightedKPointIntegrator(weights=[0.2, 0.3, 0.5])
+    midpoint = BandKIntegrator(mesh, smearing=smearing, use_midgap=True).integrate(
+        gapped, beta=800, n_target=2
+    )
+    direct = BandKIntegrator(mesh, smearing=smearing, use_midgap=False).integrate(
+        gapped, beta=800, n_target=2
+    )
+    assert midpoint.mu == pytest.approx(-0.05)
+    assert midpoint.n_electrons == pytest.approx(2, abs=1e-10)
+    assert direct.n_electrons == pytest.approx(2, abs=1e-10)
+    assert midpoint.density_k is not None
+    assert direct.density_k is not None
+    expected = np.broadcast_to(np.diag([1.0, 0.0, 1.0, 0.0]), (3, 4, 4))
+    assert midpoint.density_k["auxiliary"] == pytest.approx(expected, abs=1e-10)
+    assert direct.density_k["auxiliary"] == pytest.approx(expected, abs=1e-10)
 
 
 def test_extrapolation_recovers_zero_temperature_integrals_of_a_complex_multiblock_metal() -> (
@@ -110,7 +129,9 @@ def test_extrapolation_recovers_zero_temperature_integrals_of_a_complex_multiblo
             assert 0 <= error.max_abs <= error.norm <= 1e-8
     assert result.quadrature_error is None
 
-    too_short = TemperatureExtrapolatedKIntegrator(bands, betas=[20], atol=1e-8, rtol=0)
+    too_short = TemperatureExtrapolatedKIntegrator(
+        bands, betas=extrapolation.betas[-3:], atol=1e-8, rtol=0
+    )
     assert not too_short.integrate(hamiltonian, n_target=1.4).converged
 
 
@@ -130,6 +151,7 @@ def test_lattice_cycle_accepts_temperature_extrapolation() -> None:
             BandKIntegrator(
                 WeightedKPointIntegrator(kpoints, diagnostics=diagnostics),
                 n_target=1,
+                use_midgap=True,
                 diagnostics=diagnostics,
             ),
             betas=[10, 20, 40, 80, 160, 320],
@@ -151,6 +173,10 @@ def test_lattice_cycle_accepts_temperature_extrapolation() -> None:
         "ksum.result",
         "kintegration.mu",
         "kintegration.result",
+        "use_midgap=True",
+        "midgap_available=True",
+        "midgap_accepted=True",
+        "confirmed=True",
         "kextrapolation.sample",
         "kextrapolation.result",
         "temperature_error=",
