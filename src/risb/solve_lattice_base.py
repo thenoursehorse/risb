@@ -831,6 +831,7 @@ class BaseLatticeSolver(ABC):
         maxiter : int, optional
             Maximum number of evaluations, including rejected steps and
             checkpoint reconstruction.
+            A budget too small to complete an optimizer step raises ValueError.
         self_consistency_tol : float, optional
             Warn if :attr:`self_consistency_error` is above this after a
             self-consistent solve. The optimizer can stop where the guess of

@@ -107,6 +107,28 @@ class NewtonSolver(ABC):
         """Maximum evaluations per step, excluding checkpoint restoration."""
         return 1
 
+    def step_fits_budget(
+        self,
+        maxiter: int,
+        cycles_used: int,
+        *,
+        checkpoint: Checkpoint | None = None,
+    ) -> bool:
+        """
+        Return whether the next step fits in the remaining cycle budget.
+
+        Raise ValueError if maxiter cannot cover the candidate evaluations
+        and checkpoint restoration needed for a complete step.
+        """
+        required = self.max_candidate_evaluations
+        if checkpoint is not None:
+            required += (required - 1) * checkpoint.evaluations
+        if maxiter < required:
+            msg = f"maxiter must be at least {required} to complete an optimizer step."
+            raise ValueError(msg)
+        needed = required if self.x else 1
+        return cycles_used + needed <= maxiter
+
     @staticmethod
     def _insert_vector(
         vec: list[NDArray[np.float64]],
@@ -249,6 +271,7 @@ class NewtonSolver(ABC):
         maxiter : int, optional
             Maximum number of function evaluations. This includes evaluations
             of rejected guesses and any extra calls needed to restore a checkpoint.
+            A budget too small to complete an optimizer step raises ValueError.
         checkpoint : callable, optional
             Save the state of the last accepted calculation. Supply this if
             the function uses state other than x and the optimizer can reject steps.
@@ -259,6 +282,7 @@ class NewtonSolver(ABC):
             Last accepted guess, even if the evaluation limit was reached.
 
         """
+        self.step_fits_budget(maxiter, 0)
         self.success = False
         x = x0.copy()
         accepted_x = self.x[0].copy() if self.x else x.copy()
@@ -275,10 +299,7 @@ class NewtonSolver(ABC):
                 if self.can_reject and self.x and checkpoint is not None
                 else None
             )
-            needed = self.max_candidate_evaluations if self.x else 1
-            if saved is not None:
-                needed += (needed - 1) * saved.evaluations
-            if cycles + needed > maxiter:
+            if not self.step_fits_budget(maxiter, cycles, checkpoint=saved):
                 break
             g_x, residual = cycle(x)
             accepted_x, g_x, residual, x, extra = self.step(

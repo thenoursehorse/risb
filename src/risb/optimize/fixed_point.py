@@ -94,6 +94,7 @@ class FixedPointLoop:
     maxiter : int, optional
         Maximum number of cycle evaluations. This includes rejected steps
         and any extra cycles needed to restore a checkpoint.
+        A budget too small to complete an optimizer step raises ValueError.
         The loop stops before a step if too few evaluations remain to finish
         it. Continue from ``x_next`` with the same optimizer.
     x0 : numpy.ndarray, optional
@@ -165,6 +166,7 @@ class FixedPointLoop:
         risb.optimize.SolveResult
 
         """
+        self.optimizer.step_fits_budget(self.maxiter, self.cycle)
         while self.cycle < self.maxiter:
             saved = (
                 self.problem.checkpoint()
@@ -173,10 +175,9 @@ class FixedPointLoop:
                 and isinstance(self.problem, Checkpointable)
                 else None
             )
-            needed = self.optimizer.max_candidate_evaluations if self.optimizer.x else 1
-            if saved is not None:
-                needed += (needed - 1) * saved.evaluations
-            if self.cycle + needed > self.maxiter:
+            if not self.optimizer.step_fits_budget(
+                self.maxiter, self.cycle, checkpoint=saved
+            ):
                 if self.optimizer.x:
                     self.x = self.optimizer.x[0].copy()
                     self.error = float(np.linalg.norm(self.optimizer.error[0]))
@@ -256,6 +257,7 @@ def solve_fixed_point(
     maxiter : int, optional
         Maximum number of cycle evaluations. This includes rejected steps
         and any extra cycles needed to restore a checkpoint.
+        A budget too small to complete an optimizer step raises ValueError.
         The loop stops before a step if too few evaluations remain to finish
         it. Continue from ``x_next`` with the same optimizer.
         Not used with a :class:`ScipyRoot`.

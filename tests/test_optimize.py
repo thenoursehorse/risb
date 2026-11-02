@@ -10,6 +10,7 @@ from numpy.typing import NDArray
 from risb.diagnostics import LatticeDiagnostics
 from risb.optimize import (
     DIIS,
+    BianLi,
     FixedPointLoop,
     NewtonSolver,
     OnPlateau,
@@ -17,7 +18,7 @@ from risb.optimize import (
     ScipyRoot,
     solve_fixed_point,
 )
-from risb.types import FixedPointProblem
+from risb.types import Checkpoint, FixedPointProblem
 
 
 def fixed_point(
@@ -247,15 +248,89 @@ def test_scipy_root_solves_a_problem_in_one_shot() -> None:
     assert "optimizer.finished" in output.getvalue()
 
 
-def test_solving_one_cycle_at_a_time_from_x_next_is_one_solve() -> None:
+@pytest.mark.parametrize("api", ["fixed_point", "optimizer"])
+@pytest.mark.parametrize("with_checkpoint", [False, True])
+def test_a_budget_too_small_for_a_complete_step_raises(
+    api: str, with_checkpoint: bool
+) -> None:
+    class Stateful(Linear):
+        @override
+        def cycle(
+            self, x: NDArray[np.float64]
+        ) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
+            self.input = x.copy()
+            return super().cycle(x)
+
+        def checkpoint(self) -> Checkpoint:
+            x = self.input.copy()
+
+            def restore() -> None:
+                self.cycle(x)
+
+            return Checkpoint(restore, evaluations=1)
+
+    problem = Stateful() if with_checkpoint else Linear()
+    optimizer = DIIS(policy=BianLi())
+
+    def solve(budget: int) -> None:
+        if api == "optimizer":
+            optimizer.solve(
+                problem.cycle,
+                problem.get_x(),
+                tol=0,
+                maxiter=budget,
+                checkpoint=problem.checkpoint
+                if isinstance(problem, Stateful)
+                else None,
+            )
+        else:
+            solve_fixed_point(problem, optimizer, tol=0, maxiter=budget)
+
+    if with_checkpoint:
+        # The first cycle creates a checkpoint; the remaining budget is too
+        # small for another step, so this valid call stops normally.
+        solve(3)
+    minimum = 3 if with_checkpoint else 2
+    with pytest.raises(ValueError, match=f"maxiter must be at least {minimum}"):
+        solve(minimum - 1)
+
+
+@pytest.mark.parametrize(("policy", "budget"), [(Pulay(), 1), (BianLi(), 2)])
+def test_continuing_from_x_next_matches_an_uninterrupted_solve(
+    policy: Pulay | BianLi,
+    budget: int,
+) -> None:
     problem = Linear()
-    optimizer = DIIS()
-    result = solve_fixed_point(problem, optimizer, maxiter=1)
-    for _ in range(4):
-        result = solve_fixed_point(problem, optimizer, maxiter=1, x0=result.x_next)
-    whole = solve_fixed_point(Linear(), DIIS(), maxiter=5)
-    assert result.x == pytest.approx(whole.x)
-    assert result.x_next == pytest.approx(whole.x_next)
+    optimizer = DIIS(policy=policy)
+    x_next = problem.get_x()
+    accepted = []
+    cycles = 0
+    for _ in range(5):
+        result = solve_fixed_point(
+            problem,
+            optimizer,
+            tol=0,
+            maxiter=budget,
+            x0=x_next,
+        )
+        accepted.append(result.x.copy())
+        cycles += result.cycles
+        assert result.x_next is not None
+        x_next = result.x_next
+
+    uninterrupted = []
+
+    def stop_after_five(loop: FixedPointLoop, _problem: FixedPointProblem) -> None:
+        uninterrupted.append(loop.x.copy())
+        if len(uninterrupted) == 5:
+            loop.stop()
+
+    whole = solve_fixed_point(
+        Linear(), DIIS(policy=policy), callbacks=[stop_after_five], tol=0, maxiter=20
+    )
+    assert np.array(accepted) == pytest.approx(np.array(uninterrupted))
+    assert x_next == pytest.approx(whole.x_next)
+    assert cycles == whole.cycles
 
 
 class Stuck:

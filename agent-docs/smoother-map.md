@@ -41,11 +41,13 @@ physical residuals, not only iteration count. Keep prototypes outside the reposi
 15. [x] Prototype matching-residual models and test the published Anderson algorithms with g(x)-x.
 16. [x] Add and evaluate iteration-scheduled safeguarded Anderson as an optional DIIS policy.
 17. [ ] Investigate the separate direct-variational T=0 route.
-18. [ ] Investigate BianLi continuation with maxiter=1: reserving enough
-   evaluations for a guarded step currently prevents further progress.
+18. [x] Reject BianLi budgets that cannot complete a guarded step; keep
+   hard cycle limits and verify continuation with a valid budget.
 19. [ ] Investigate thermal stopping with BianLi when matching residuals
    are small but g(x)-x remains large; distinguish parameter drift from
    failure to satisfy the matching equations.
+20. [ ] Investigate smearing options: methods, beta and k-point convergence;
+   check the three-orbital Mott case before changing defaults.
 
 ## Results
 
@@ -1161,3 +1163,47 @@ Lowest = converged with f1/f2 < 1e-8 onto the lowest energy found in any run.
 - BianLi converges 2/15 crystal-field cases in 300 cycles, against 8/15 for
   Pulay without a gauge.
 - No combination is best everywhere; lambda_eigenbasis stays opt-in.
+
+## BianLi evaluation budgets (2026-11-02)
+
+NewtonSolver.step_fits_budget now supplies the budget check for both solve
+loops. The policy still declares max_candidate_evaluations; Checkpoint still
+declares its restoration cost. Neither loop needs a policy-specific branch.
+
+An impossible total budget raises ValueError. A valid budget with too few
+evaluations left stops normally. BianLi needs at least two evaluations
+without restoration, or three with the current lattice checkpoint.
+The checkpoint-specific requirement is checked once a checkpoint exists,
+so a fresh two-cycle lattice solve can accept its first point before raising.
+
+One parameterized public-API regression checks both solve entry points,
+with and without checkpoint restoration. The existing continuation test now
+also checks BianLi at a valid budget, comparing accepted points and total
+evaluations against an uninterrupted solve. No how-to or benchmark added.
+
+
+Scratch continuation checks also cover T=0, thermal fitting and
+density-dependent double counting. Chunked calls with maxiter=3 match the
+uninterrupted accepted points and next guesses bitwise, using the same
+30, 101 and 129 evaluations respectively.
+Full suite: 330 passed in 85.31 s.
+
+## Local auxiliary-basis alignment (2026-11-02)
+
+Scratch only: /tmp/risb-smoother-map/basis_alignment.py.
+Report and raw comparisons: /tmp/risb-smoother-map/basis-alignment/report.md.
+
+Locally rotate each updated R and Lambda toward the current input basis.
+Rotation invariants hold to roundoff. Compare free gauge, the existing
+Lambda eigenbasis and alignment across four T=0 models, three starts and
+both Pulay and BianLi: 72 runs at fixed model parameters and smearing.
+
+Original matching equations pass in 12/24 free-gauge runs, 17/24 Lambda
+runs and 14/24 aligned runs. Alignment rescues the high-spin crystal-field
+case with Pulay relative to free gauge, but usually costs more than Lambda.
+It also makes a quarter-filled BianLi run report convergence with matching
+error 0.049. Such points are excluded from the success counts.
+
+Matched high-spin roots agree in energy, density and spin but differ in
+chemical potential and Z; full physical equivalence remains unresolved.
+Do not ship alignment from this evidence. Item 13 stays open.
