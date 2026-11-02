@@ -62,6 +62,8 @@ class BandKIntegrationResult:
     of the requested integrals and electron count. mu_temperature_error
     separately estimates the temperature-extrapolation error of mu; it does
     not include errors from the filling search or k integration.
+    When solving for mu, converged also requires the final electron count
+    to meet the BandKIntegrator electron_count_atol.
     During temperature extrapolation, converged checks the integrals and
     electron count; mu's extrapolation error does not set this flag.
     temperature_errors gives the norm and maximum absolute entry of the
@@ -215,9 +217,10 @@ class BandKIntegrator:
         use Brent's method. Requires band energies and k-point weights;
         otherwise use Brent's method directly. All bands enter the count,
         including auxiliary bands with no physical spectral weight.
-    midgap_electron_count_atol : float, optional
-        Maximum absolute electron-count error per cell for accepting the
-        midpoint. Does not change Brent's stopping tolerances.
+    electron_count_atol : float, optional
+        Maximum absolute error in the electron count per cell when solving
+        for mu. Applies to midpoint selection and the final integrals.
+        If the count misses this tolerance, converged is False.
     diagnostics : risb.diagnostics.DiagnosticObserver, optional
         Reporter such as KIntegrationDiagnostics.
 
@@ -245,17 +248,14 @@ class BandKIntegrator:
         mu: float | None = None,
         n_target: float | None = None,
         use_midgap: bool = True,
-        midgap_electron_count_atol: float = 1e-10,
+        electron_count_atol: float = 1e-10,
         diagnostics: DiagnosticObserver | None = None,
     ) -> None:
-        if (
-            not np.isfinite(midgap_electron_count_atol)
-            or midgap_electron_count_atol < 0
-        ):
-            msg = "midgap_electron_count_atol must be finite and nonnegative."
+        if not np.isfinite(electron_count_atol) or electron_count_atol < 0:
+            msg = "electron_count_atol must be finite and nonnegative."
             raise ValueError(msg)
         self.use_midgap = use_midgap
-        self.midgap_electron_count_atol = midgap_electron_count_atol
+        self.electron_count_atol = electron_count_atol
         self.diagnostics = diagnostics
         self.kpoint_integrator = kpoint_integrator
         self.smearing = smearing
@@ -396,17 +396,17 @@ class BandKIntegrator:
                             energies,
                             count_result.weights,
                             n_target,
-                            electron_count_atol=self.midgap_electron_count_atol,
+                            electron_count_atol=self.electron_count_atol,
                         )
                         sampled_gap = empty_edge - occupied_edge
                         midpoint = occupied_edge + (empty_edge - occupied_edge) / 2
                         midgap_accepted = (
-                            abs(excess(midpoint)) <= self.midgap_electron_count_atol
+                            abs(excess(midpoint)) <= self.electron_count_atol
                         )
                         if midgap_accepted:
                             mu = midpoint
                 if not midgap_accepted:
-                    mu = float(brentq(excess, low, high))
+                    mu = float(brentq(excess, low, high, xtol=np.nextafter(0.0, 1.0)))
             assert mu is not None
             result = integrate_at_mu(mu, True)
             count = float(result.values.pop(_ELECTRON_COUNT).real)
@@ -417,7 +417,11 @@ class BandKIntegrator:
                 mu=mu,
                 beta=beta,
                 n_electrons=count,
-                converged=result.converged,
+                converged=result.converged
+                and (
+                    n_target is None
+                    or abs(count - n_target) <= self.electron_count_atol
+                ),
                 quadrature_error=result.error,
                 density_k=density_k if sampled else None,
                 energies=energies if sampled else {},
@@ -439,6 +443,7 @@ class BandKIntegrator:
                     midgap_accepted=midgap_accepted,
                     sampled_gap=sampled_gap,
                     filling_residual=(None if n_target is None else count - n_target),
+                    electron_count_atol=self.electron_count_atol,
                 )
             return band_result
 

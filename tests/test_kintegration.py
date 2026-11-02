@@ -36,6 +36,7 @@ def test_band_filling_matches_the_target_with_nonuniform_k_weights(
         smearing=smearing,
     )
     result = kintegrator.integrate(energies, beta=10, n_target=1.2)
+    assert result.converged
     assert result.n_electrons == pytest.approx(1.2)
     assert result.quadrature_error is None
 
@@ -53,13 +54,22 @@ def test_band_filling_handles_partial_flat_levels_and_gaps(
     smearing: SmearFunction,
 ) -> None:
     flat = {block: np.zeros((100, 1, 1)) for block in ["first", "second"]}
-    result = BandKIntegrator(WeightedKPointIntegrator(), smearing=smearing).integrate(
-        flat, beta=10, n_target=1.5
-    )
-    assert result.n_electrons == pytest.approx(1.5)
-    assert result.mu > 0
+    kintegrator = BandKIntegrator(WeightedKPointIntegrator(), smearing=smearing)
+    for beta in (10, 1e12):
+        result = kintegrator.integrate(flat, beta=beta, n_target=1.5)
+        assert result.converged
+        assert result.n_electrons == pytest.approx(
+            1.5, abs=kintegrator.electron_count_atol
+        )
+        assert result.mu > 0
+        if smearing is fermi_function:
+            assert beta * result.mu == pytest.approx(np.log(3), abs=1e-10)
+
     if smearing is fermi_function:
-        assert result.mu == pytest.approx(np.log(3) / 10)
+        shifted = {block: h + 1 for block, h in flat.items()}
+        limited = kintegrator.integrate(shifted, beta=1e16, n_target=1.5)
+        assert not limited.converged
+        assert abs(limited.n_electrons - 1.5) > kintegrator.electron_count_atol
 
         extrapolation = TemperatureExtrapolatedKIntegrator(
             BandKIntegrator(WeightedKPointIntegrator(), n_target=1.5),

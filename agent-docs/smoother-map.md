@@ -55,13 +55,16 @@ physical residuals, not only iteration count. Keep prototypes outside the reposi
    Migrate the lattice solvers and remove SmearingKWeight.
 23. [ ] Check adaptive detection of small pockets and sampling guides more
    broadly before changing any integration default.
-24. [ ] Make Richardson error control reliable on hard T=0 trajectories:
-   validate against colder samples, separate matrix tolerances from mu, and
-   check the filling solve at very large beta.
+24. [x] Strengthen Richardson error checks on the tested hard T=0 inputs:
+   require colder confirmation, separate mu's error, and check cold filling.
 25. [x] Implement midpoint-first mu search in BandKIntegrator with
-   use_midgap and midgap_electron_count_atol; retain Brent fallback and
-   report midpoint availability. Require colder confirmation for temperature
-   extrapolation. The remaining mu and filling-accuracy work stays in item 24.
+   use_midgap and electron_count_atol; retain Brent fallback and report
+   midpoint availability. Require colder confirmation for extrapolation.
+26. [x] Allow linear temperature terms in matrix and mu extrapolation.
+   Report mu_temperature_error separately from integral convergence.
+27. [x] Check the final electron count after solving mu. Tighten Brent's
+   tolerance and return converged=False when the count misses
+   electron_count_atol, including at floating-point precision limits.
 
 ## Results
 
@@ -1421,3 +1424,29 @@ matrices. A 75%-occupied flat-level control has density error 7.4e-13 while
 mu still blocks 1e-8 acceptance. Midgap cannot remove this thermal shift.
 Also control the filling residual at very large beta; a converged mu root
 alone does not establish the required count accuracy.
+
+## Cold filling accuracy
+
+Report and data: /tmp/risb-smoother-map/cold-filling/.
+No new test cases; extended the existing flat-level and weighted-filling checks.
+
+Brent's default absolute mu tolerance can exceed the thermal width. A flat
+level with target occupation 0.75 reports convergence with count error 0.077
+at beta=1e12. Resolving mu to floating-point precision removes that error
+when the level is at zero.
+
+On 14 saved hard-case inputs at five beta values, the old search misses
+1e-10 count accuracy in 15/70 integrations. Tightening Brent fixes 13 of
+these. The remaining two miss by 1.67e-9 and 1.75e-9 at beta=1e12; checking
+16 neighboring mu values on either side finds no better count. These now
+return converged=False. All 68 accepted integrations meet the count tolerance;
+the integrated density traces also agree with the returned electron counts.
+
+BandKIntegrator uses electron_count_atol for both midpoint acceptance and
+the final count, replacing midgap_electron_count_atol. The existing lattice
+and extrapolation code already rejects failed integration results.
+This checks the calculated count, not unknown k-mesh errors. It does not
+resolve the three-orbital Mott case.
+
+Verification: 221 tests and 111 subtests pass. Ruff, Ruff LSP and strict
+mypy pass. No new test cases or benchmark changes.
