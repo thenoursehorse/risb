@@ -66,6 +66,17 @@ physical residuals, not only iteration count. Keep prototypes outside the reposi
    tolerance and return converged=False when the count misses
    electron_count_atol, including at floating-point precision limits.
 
+28. [x] Keep the small mu correction when evaluating cold occupations.
+   BandKIntegrator refines mu when the initial count misses tolerance.
+   Results and extrapolation retain mu_reference and mu_correction;
+   the final count check remains required.
+29. [ ] Address weak level response near the atomic branch: the tested
+   density residual scales as R^2 but the level update scales as R^4.
+   Compare physical-residual stopping and response scaling.
+30. [ ] Treat atomic ground-state and band degeneracies consistently.
+   Validate the lower-energy, nearly singular-R root using physical spectra
+   and matching equations rather than requiring R^dag R=0.
+
 ## Results
 
 Prototypes: /tmp/risb-smoother-map/prototypes-3tjc2hu3/thermal_fit_prototype.py; runner:
@@ -1450,3 +1461,54 @@ resolve the three-orbital Mott case.
 
 Verification: 221 tests and 111 subtests pass. Ruff, Ruff LSP and strict
 mypy pass. No new test cases or benchmark changes.
+
+## Three-orbital Mott diagnosis
+
+Scratch report: /tmp/risb-smoother-map/mott-diagnosis/report.md.
+No production code, tests, benchmarks or defaults changed.
+
+All six original extrapolated trajectories first exhaust their beta lists.
+One to three colder samples fix their frozen inputs, but longer outer runs
+then expose count precision and weak level updates. Dense impurity solves
+agree with the original spin-averaged densities at those first failures.
+
+A relative-mu prototype retains the small correction in the Fermi function.
+With the existing Pulay(error_fun="root"), two of three starts reach matched
+roots; the default start remains unresolved. The unmodified production
+extrapolator independently confirms both outputs below 3.1e-9 matching error.
+
+Their energy is 3.5191354 per cell, below the atomic root's 3.6. Their nearly
+singular R has nonzero R^dag R, but the band at mu has negligible physical
+weight. Do not classify this root or reject it using R^dag R alone.
+
+At the symmetric atomic point, averaging the 80-state ground space removes
+a bath-density mismatch left by the ordinary pure-vector choice. This
+does not fix every trajectory or prescribe an ensemble for general cases.
+Items 20 and 28-30 remain open. Existing affected tests: 35 pass.
+
+## Relative-mu implementation
+
+BandKIntegrator now refines a failed count using a correction relative to
+the approximate mu. Smearing functions keep their signatures; the final
+electron-count tolerance still decides acceptance. Results expose the
+reference and correction, and mu remains their rounded sum.
+
+Temperature extrapolation retains the pair when fitting mu and estimating
+its error. Diagnostics report it. No optimizer, lattice-solver, backend,
+checkpoint or how-to changes were needed.
+
+The existing flat-level test now checks a shifted level at beta=1e16 and
+reconstructs its 75% occupations from the pair. Its extrapolation check
+also resolves a correction smaller than a floating-point step in absolute
+mu. No new test cases. Nineteen scratch checks across all built-in
+smearings and adaptive AutoBZ meet the count tolerance.
+
+On the three original Mott starts with the 27-sample beta allowance,
+physical-residual Pulay matches 2/3 in 98 and 122 cycles. Independent
+reevaluation confirms maximum matching errors <=3.1e-9 and energy about
+3.5191354. Recursion Pulay and BianLi match 0/3. The remaining failures are
+cooling-budget exhaustion or the previously identified stopping and
+atomic-density issues, rather than failed finite-beta count checks.
+
+Verification: 221 tests and 111 subtests pass. Ruff, Ruff LSP, strict mypy
+and the warning-free Sphinx build pass. No benchmark changes.

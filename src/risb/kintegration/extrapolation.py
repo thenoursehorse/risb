@@ -73,7 +73,8 @@ class TemperatureExtrapolatedKIntegrator:
 
     Mu uses the same temperature dependence but is fitted separately.
     Its estimated error is returned as mu_temperature_error and does not
-    control integral convergence.
+    control integral convergence. The fit keeps the reference and correction
+    separate so that small changes in mu are not rounded away.
 
     The returned density matrices use the same extrapolation coefficients
     as the k-integrals. They retain fractional occupations at degenerate
@@ -140,8 +141,10 @@ class TemperatureExtrapolatedKIntegrator:
             extrapolated: ExtrapolationResult
             converged = False
             target_mu: float
+            mu_reference: float
+            mu_correction: float
             mu_temperature_error: float
-            previous_mu: float | None = None
+            previous_mu: tuple[float, float] | None = None
             previous: ExtrapolationResult | None = None
             previous_meets_tolerance = False
             previous_quadrature_error = 0.0
@@ -175,19 +178,33 @@ class TemperatureExtrapolatedKIntegrator:
                 candidate = richardson_extrapolate(
                     temperatures, arrays[-window_size:], target=1 / beta
                 )
-                mu_origin = sample.mu
+                mu_reference = sample.mu
                 mu_candidate = richardson_extrapolate(
                     temperatures,
-                    [np.asarray(s.mu - mu_origin) for s in samples[-window_size:]],
+                    [
+                        np.asarray(
+                            s.mu - mu_reference
+                            if s.mu_reference is None
+                            else (s.mu_reference - mu_reference) + s.mu_correction
+                        )
+                        for s in samples[-window_size:]
+                    ],
                     target=1 / beta,
                 )
-                target_mu = mu_origin + float(mu_candidate.value)
+                mu_correction = float(mu_candidate.value)
+                target_mu = mu_reference + mu_correction
                 mu_temperature_error = (
                     np.inf
                     if previous_mu is None
-                    else max(mu_candidate.error, abs(target_mu - previous_mu))
+                    else max(
+                        mu_candidate.error,
+                        abs(
+                            (mu_reference - previous_mu[0])
+                            + (mu_correction - previous_mu[1])
+                        ),
+                    )
                 )
-                previous_mu = target_mu
+                previous_mu = mu_reference, mu_correction
                 candidate = replace(
                     candidate,
                     coefficients=np.pad(
@@ -258,6 +275,8 @@ class TemperatureExtrapolatedKIntegrator:
                         target_beta=beta,
                         mu=sample.mu,
                         extrapolated_mu=target_mu,
+                        extrapolated_mu_reference=mu_reference,
+                        extrapolated_mu_correction=mu_correction,
                         n_electrons=sample.n_electrons,
                         temperature_error=extrapolated.error,
                         electron_count_error=float(extrapolated.absolute_error[-1]),
@@ -328,6 +347,8 @@ class TemperatureExtrapolatedKIntegrator:
                 values=values,
                 beta=beta,
                 mu=self.mu,
+                mu_reference=mu_reference,
+                mu_correction=mu_correction,
                 n_electrons=float(
                     sum(
                         c * s.n_electrons
@@ -358,6 +379,8 @@ class TemperatureExtrapolatedKIntegrator:
                     beta=result.beta,
                     betas=result.betas,
                     mu=result.mu,
+                    mu_reference=result.mu_reference,
+                    mu_correction=result.mu_correction,
                     n_electrons=result.n_electrons,
                     temperature_error=result.temperature_error,
                     electron_count_error=float(extrapolated.absolute_error[-1]),

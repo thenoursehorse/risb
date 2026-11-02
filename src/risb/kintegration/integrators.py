@@ -70,6 +70,14 @@ class BandKIntegrationResult:
     extrapolation error for each requested matrix. An empty mapping means
     that per-matrix estimates are unavailable; None marks an unavailable
     scalar estimate.
+
+    mu is the rounded sum of mu_reference and mu_correction. Reproduce
+    finite-beta band weights with
+    smearing(energies - mu_reference, beta, mu_correction). Adding the
+    reference and correction before calling smearing can lose precision.
+    A None reference means only mu is available. After temperature
+    extrapolation, the pair describes the extrapolated mu; the densities
+    combine finite-beta results.
     """
 
     values: IntegralValues
@@ -87,6 +95,8 @@ class BandKIntegrationResult:
     vectors: BlockMatrix = field(default_factory=dict)
     band_weights: BlockRealArray = field(default_factory=dict)
     weights: NDArray[np.float64] | None = None
+    mu_reference: float | None = None
+    mu_correction: float = 0.0
 
 
 class KIntegrator(Protocol):
@@ -202,7 +212,9 @@ class BandKIntegrator:
     kpoint_integrator : KIntegrator
         Method for summing over supplied k-points or integrating over the BZ.
     smearing : callable, optional
-        Function f(energies, beta, mu) used to weight each band.
+        Function f(energies, beta, mu) used to weight each band. It must
+        depend on energies and mu through their difference; the filling
+        search may shift both by a common reference energy.
     beta : float, optional
         Inverse temperature in inverse Hamiltonian-energy units. For Gaussian
         and Methfessel-Paxton smearing, 1/beta is the broadening width.
@@ -229,6 +241,11 @@ class BandKIntegrator:
     beta, mu and n_target passed to integrate override these settings.
     Supplying mu alone fixes mu for that call; supplying n_target solves
     for it. A gap between sampled levels need not be a bulk band gap.
+
+    If the initial mu search misses electron_count_atol, Brent's method
+    solves for a small correction relative to that mu. Band weights retain
+    the correction separately to avoid rounding it away. The final count
+    must still meet tolerance.
 
     References
     ----------
@@ -302,8 +319,11 @@ class BandKIntegrator:
             energies: BlockRealArray = {}
             vectors: BlockMatrix = {}
 
+            mu_reference = 0.0
+            mu_correction = mu
+
             def integrate_at_mu(
-                chemical_potential: float, include_observables: bool
+                mu_correction: float, include_observables: bool
             ) -> KIntegrationResult:
                 def get_values(kpoints: KPoints | None) -> IntegralValues:
                     nonlocal density_k, band_weights, energies, vectors
@@ -314,7 +334,7 @@ class BandKIntegrator:
                     else:
                         energies, vectors = eigenstates
                     band_weights = {
-                        block: self.smearing(e, beta, chemical_potential)
+                        block: self.smearing(e - mu_reference, beta, mu_correction)
                         for block, e in energies.items()
                     }
                     count = sum(np.sum(f, axis=1) for f in band_weights.values())
@@ -342,13 +362,14 @@ class BandKIntegrator:
                     raise ValueError(msg)
 
                 count_result: KIntegrationResult | None = None
-                filling_residuals: dict[float, float] = {}
+                filling_residuals: dict[tuple[float, float], float] = {}
 
-                def excess(chemical_potential: float) -> float:
+                def electron_count_residual(mu_correction: float) -> float:
                     nonlocal count_result
-                    if chemical_potential in filling_residuals:
-                        return filling_residuals[chemical_potential]
-                    result = integrate_at_mu(chemical_potential, False)
+                    key = (mu_reference, mu_correction)
+                    if key in filling_residuals:
+                        return filling_residuals[key]
+                    result = integrate_at_mu(mu_correction, False)
                     if not result.converged:
                         msg = (
                             "k-integration failed during the chemical-potential solve."
@@ -356,11 +377,13 @@ class BandKIntegrator:
                         raise RuntimeError(msg)
                     count_result = result
                     count = float(result.values[_ELECTRON_COUNT].real)
-                    filling_residuals[chemical_potential] = count - n_target
+                    filling_residuals[key] = count - n_target
                     if self.diagnostics is not None:
                         self.diagnostics.emit(
                             "kintegration.mu",
-                            mu=chemical_potential,
+                            mu=mu_reference + mu_correction,
+                            mu_reference=mu_reference,
+                            mu_correction=mu_correction,
                             n_electrons=count,
                             n_target=n_target,
                             filling_residual=count - n_target,
@@ -379,7 +402,11 @@ class BandKIntegrator:
                     centre, margin = 0.0 if mu is None else mu, max(1.0, 50 / beta)
                     low, high = centre - margin, centre + margin
                     for _ in range(60):
-                        if excess(low) <= 0 <= excess(high):
+                        if (
+                            electron_count_residual(low)
+                            <= 0
+                            <= electron_count_residual(high)
+                        ):
                             break
                         margin *= 2
                         low, high = centre - margin, centre + margin
@@ -388,7 +415,7 @@ class BandKIntegrator:
                         raise ValueError(msg)
                 if self.use_midgap:
                     if count_result is None:
-                        excess(low)
+                        electron_count_residual(low)
                     assert count_result is not None
                     midgap_available = count_result.weights is not None
                     if count_result.weights is not None:
@@ -401,15 +428,39 @@ class BandKIntegrator:
                         sampled_gap = empty_edge - occupied_edge
                         midpoint = occupied_edge + (empty_edge - occupied_edge) / 2
                         midgap_accepted = (
-                            abs(excess(midpoint)) <= self.electron_count_atol
+                            abs(electron_count_residual(midpoint))
+                            <= self.electron_count_atol
                         )
                         if midgap_accepted:
                             mu = midpoint
                 if not midgap_accepted:
-                    mu = float(brentq(excess, low, high, xtol=np.nextafter(0.0, 1.0)))
-            assert mu is not None
-            result = integrate_at_mu(mu, True)
+                    mu = float(
+                        brentq(
+                            electron_count_residual,
+                            low,
+                            high,
+                            xtol=np.nextafter(0.0, 1.0),
+                        )
+                    )
+                assert mu is not None
+                count_error = electron_count_residual(mu)
+                mu_reference, mu_correction = mu, 0.0
+                if abs(count_error) > self.electron_count_atol:
+                    margin = max(50 / beta, 16 * abs(np.spacing(mu_reference)))
+                    mu_correction = float(
+                        brentq(
+                            electron_count_residual,
+                            -margin,
+                            margin,
+                            xtol=np.nextafter(0.0, 1.0),
+                        )
+                    )
+            assert mu_correction is not None
+            result = integrate_at_mu(mu_correction, True)
             count = float(result.values.pop(_ELECTRON_COUNT).real)
+            mu = mu_reference + mu_correction
+            if mu_reference == 0:
+                mu_reference, mu_correction = mu, 0.0
             self.mu = mu
             sampled = result.weights is not None
             band_result = BandKIntegrationResult(
@@ -428,6 +479,8 @@ class BandKIntegrator:
                 vectors=vectors if sampled else {},
                 band_weights=band_weights if sampled else {},
                 weights=result.weights,
+                mu_reference=mu_reference,
+                mu_correction=mu_correction,
             )
 
             if self.diagnostics is not None:
@@ -435,6 +488,8 @@ class BandKIntegrator:
                     "kintegration.result",
                     beta=beta,
                     mu=mu,
+                    mu_reference=mu_reference,
+                    mu_correction=mu_correction,
                     n_electrons=count,
                     quadrature_error=band_result.quadrature_error,
                     converged=band_result.converged,

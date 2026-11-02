@@ -67,31 +67,46 @@ def test_band_filling_handles_partial_flat_levels_and_gaps(
 
     if smearing is fermi_function:
         shifted = {block: h + 1 for block, h in flat.items()}
-        limited = kintegrator.integrate(shifted, beta=1e16, n_target=1.5)
-        assert not limited.converged
-        assert abs(limited.n_electrons - 1.5) > kintegrator.electron_count_atol
+        cold = kintegrator.integrate(shifted, beta=1e16, n_target=1.5)
+        assert cold.converged
+        assert cold.n_electrons == pytest.approx(
+            1.5, abs=kintegrator.electron_count_atol
+        )
+        assert cold.mu_reference is not None
+        assert cold.density_k is not None
+        for block, band_energies in cold.energies.items():
+            weights = fermi_function(
+                band_energies - cold.mu_reference, cold.beta, cold.mu_correction
+            )
+            assert weights == pytest.approx(np.full((100, 1), 0.75), abs=1e-10)
+            assert cold.density_k[block] == pytest.approx(
+                np.full((100, 1, 1), 0.75), abs=1e-10
+            )
 
         extrapolation = TemperatureExtrapolatedKIntegrator(
             BandKIntegrator(WeightedKPointIntegrator(), n_target=1.5),
-            betas=[10, 20, 40, 80],
+            betas=[1e15, 2e15, 4e15, 8e15],
             atol=1e-8,
             rtol=0,
         )
         zero = extrapolation.integrate(
-            flat,
+            shifted,
             observables=lambda _k, density: dict(density.items()),
         )
         assert zero.converged
-        assert zero.mu == pytest.approx(0, abs=1e-10)
+        assert zero.mu == pytest.approx(1, abs=1e-10)
         assert zero.mu_temperature_error is not None
-        assert zero.mu_temperature_error < 1e-10
+        assert zero.mu_temperature_error < 1e-27
         assert zero.n_electrons == pytest.approx(1.5, abs=1e-8)
         assert zero.density_k is not None
         for density in zero.density_k.values():
             assert density == pytest.approx(np.full((100, 1, 1), 0.75), abs=1e-8)
-        finite = extrapolation.integrate(flat, beta=160)
+        finite = extrapolation.integrate(shifted, beta=1.6e16)
         assert finite.converged
-        assert finite.mu == pytest.approx(np.log(3) / 160, abs=1e-10)
+        assert finite.mu_reference is not None
+        assert (finite.mu_reference - 1) + finite.mu_correction == pytest.approx(
+            np.log(3) / finite.beta, abs=1e-27
+        )
 
     gapped = {"auxiliary": np.broadcast_to(np.diag([-2.0, 2.0, -0.2, 0.1]), (3, 4, 4))}
     mesh = WeightedKPointIntegrator(weights=[0.2, 0.3, 0.5])
