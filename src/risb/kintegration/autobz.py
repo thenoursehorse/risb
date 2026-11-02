@@ -14,6 +14,12 @@ from risb.diagnostics.output import DiagnosticObserver, stage
 
 from .integrators import KIntegrand, KIntegrationResult
 
+# TODO: For CSC, accept a DFT k-point mesh separately from AutoBZ's nodes.
+# In the band layer, evaluate density matrices on that mesh using the same mu
+# as the integrals. For temperature extrapolation, do this at each beta and
+# combine them with the same Richardson coefficients. Preserve DFT ordering
+# and weights, and check convergence of the density used for the charge update.
+
 
 class AutoBZIntegrator:
     """Calculate Brillouin-zone averages with AutoBZCore.
