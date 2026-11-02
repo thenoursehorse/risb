@@ -52,10 +52,39 @@ class AutoBZIntegrator:
 
     Notes
     -----
+    Install `Julia <https://julialang.org/install/>`__, then create an
+    environment by running these commands in Julia:
+
+    .. code-block:: julia
+
+        using Pkg
+        Pkg.activate("/absolute/path/to/autobz-env")
+        Pkg.add(Pkg.PackageSpec(name="AutoBZCore", version="0.4.1"))
+        Pkg.add(Pkg.PackageSpec(name="JSON", version="1.13.4"))
+
+    Pass that directory as project. The julia executable must be on PATH,
+    or supplied through julia="/absolute/path/to/julia".
+
     A Julia process runs AutoBZCore and requests values from the Python
     integrand at each k-point. It is reused between integrals. Communication
     adds overhead compared with evaluating the integrand entirely in Julia.
     Use a context manager or call close when finished.
+
+    Examples
+    --------
+    After creating the Julia environment:
+
+    .. code-block:: python
+
+        from risb.kintegration import AutoBZIntegrator
+
+        with AutoBZIntegrator(
+            domain=[(0, 1)] * 3,
+            project="/absolute/path/to/autobz-env",
+        ) as kpoint_integrator:
+            result = kpoint_integrator.integrate(integrand)
+
+    The integrand must accept newly chosen k-points; see integrate.
 
     References
     ----------

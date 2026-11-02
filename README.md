@@ -2,8 +2,6 @@
 
 Documentation at [https://thenoursehorse.github.io/risb](https://thenoursehorse.github.io/risb)
 
-Copyright (C) 2016-2026 H. L. Nourse
-
 <!-- INDEX-START -->
 
 ## What is risb?
@@ -86,6 +84,32 @@ or add it to a [uv](https://docs.astral.sh/uv) project
 ```shell
 uv add risb
 ```
+
+### AutoBZ
+
+`AutoBZIntegrator` additionally requires [Julia](https://julialang.org/install/).
+Create a Julia environment by running these commands in Julia:
+
+```julia
+using Pkg
+Pkg.activate("/absolute/path/to/autobz-env")
+Pkg.add(Pkg.PackageSpec(name="AutoBZCore", version="0.4.1"))
+Pkg.add(Pkg.PackageSpec(name="JSON", version="1.13.4"))
+```
+
+Pass that environment to the k-integrator:
+
+```python
+from risb.kintegration import AutoBZIntegrator
+
+kpoint_integrator = AutoBZIntegrator(
+    domain=[(0, 1)] * 3,
+    project="/absolute/path/to/autobz-env",
+)
+```
+
+Julia must be on `PATH`, or supplied as `julia="/absolute/path/to/julia"`.
+Use a context manager or call `kpoint_integrator.close()` when finished.
 
 ### Uninstall
 
