@@ -221,7 +221,9 @@ beta = 40
 # 1 electron on average per unit cell, half-filling
 n_target = 1  # half-filling
 
-kintegrator = BandKIntegrator(WeightedKPointIntegrator(), beta=beta, n_target=n_target)
+band_integrator = BandKIntegrator(
+    WeightedKPointIntegrator(), beta=beta, n_target=n_target
+)
 ```
 
 ## Setup the solvers and find a self-consistent solution
@@ -255,7 +257,7 @@ S = LatticeSolver(
     h0_k=h0_k,
     gf_struct=gf_struct,
     impurity_solvers=impurity_solver,
-    kintegrator=kintegrator,
+    band_integrator=band_integrator,
     symmetrizers=[force_paramagnetic],
 )
 ```

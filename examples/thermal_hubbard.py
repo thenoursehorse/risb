@@ -13,9 +13,12 @@ def bethe_energies(n_k: int) -> NDArray[np.float64]:
     # Energies at equal steps of the cumulative distribution of the
     # semicircular density of states of half bandwidth 1, so that equal weights
     # at each k give the density of states
-    energies = np.linspace(-1, 1, 100001)
-    cdf = 0.5 + (energies * np.sqrt(1 - energies**2) + np.arcsin(energies)) / np.pi
-    return np.interp((np.arange(n_k) + 0.5) / n_k, cdf, energies)
+    eigenvalues = np.linspace(-1, 1, 100001)
+    cdf = (
+        0.5
+        + (eigenvalues * np.sqrt(1 - eigenvalues**2) + np.arcsin(eigenvalues)) / np.pi
+    )
+    return np.interp((np.arange(n_k) + 0.5) / n_k, cdf, eigenvalues)
 
 
 def hubbard(U: float) -> OpSum:
@@ -71,7 +74,7 @@ for T in T_arr:
     docc = impurity_solver.overlap(nc("up", 0) * nc("dn", 0))
     double_occupancy.append(float(np.real(docc)))
     omega = helpers.get_thermal_grand_potential(
-        energies=S.energies_qp,
+        eigenvalues=S.eigenvalues_qp,
         R=S.R,
         Lambda=S.Lambda,
         D=S.D,
@@ -81,7 +84,7 @@ for T in T_arr:
         impurity_grand_potential=[impurity_solver.grand_potential],
     )
     s = helpers.get_thermal_entropy(
-        energies=S.energies_qp,
+        eigenvalues=S.eigenvalues_qp,
         R=S.R,
         Lambda=S.Lambda,
         D=S.D,

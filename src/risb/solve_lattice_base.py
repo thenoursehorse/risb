@@ -134,9 +134,9 @@ class BaseLatticeSolver(ABC):
         of ghosts of a cluster, ``bath_size`` minus the size summed over its
         blocks, must be even. The quasiparticle bands then hold
         :attr:`n_ghost_electrons` more electrons than the physical ones, which
-        the kintegrator must include in its filling. Default is the size
+        must be included in the band filling. Default is the size
         of each block (``B = 1``), i.e., RISB without ghosts.
-    kintegrator : risb.kintegration.BandKIntegration
+    band_integrator : risb.kintegration.BandKIntegration
         Integrates band observables and supplies the numerical k-integration
         method used for the local Hamiltonians.
     h0_k_evaluator : callable, optional
@@ -177,7 +177,7 @@ class BaseLatticeSolver(ABC):
         double_counting: Callable[[int, BlockMatrix], BlockMatrixLike] | None = None,
         *,
         bath_size: Sequence[Mapping[str, int]] | None = None,
-        kintegrator: BandKIntegration,
+        band_integrator: BandKIntegration,
         h0_k_evaluator: Callable[[KPoints], BlockMatrixLike] | None = None,
         projectors_evaluator: Callable[[KPoints], Sequence[BlockMatrixLike]]
         | None = None,
@@ -189,7 +189,7 @@ class BaseLatticeSolver(ABC):
     ) -> None:
         #: risb.types.BlockMatrixLike : Non-interacting Hamiltonian in k-space.
         self.h0_k = h0_k
-        self.kintegrator = kintegrator
+        self.band_integrator = band_integrator
         self.h0_k_evaluator = h0_k_evaluator
         self.projectors_evaluator = projectors_evaluator
         self.diagnostics = diagnostics
@@ -378,19 +378,19 @@ class BaseLatticeSolver(ABC):
         #: are satisfied.
         self.self_consistency_error: float
 
-        #: risb.types.BlockRealArray : k-space integration weights of the
-        #: quasiparticles in each band.
-        self.kweights: BlockRealArray = {}
+        #: risb.types.BlockRealArray : k-point weights times the occupations
+        #: of each quasiparticle band.
+        self.weighted_occupations_qp: BlockRealArray = {}
         #: risb.types.BlockMatrix or None : Quasiparticle densities on a supplied mesh.
-        self.qp_density_k: BlockMatrix | None = None
+        self.density_qp_k: BlockMatrix | None = None
         #: risb.kintegration.BandKIntegrationResult or None : Last completed band integral.
-        self.kintegration_result: BandKIntegrationResult | None = None
+        self.band_integration_result: BandKIntegrationResult | None = None
 
-        #: risb.types.BlockRealArray : Band energy of quasiparticles.
-        self.energies_qp: BlockRealArray = {}
+        #: risb.types.BlockRealArray : Eigenvalues of the quasiparticle Hamiltonian.
+        self.eigenvalues_qp: BlockRealArray = {}
 
-        #: risb.types.BlockMatrix : Bloch band vectors of quasiparticles.
-        self.bloch_vector_qp: BlockMatrix = {}
+        #: risb.types.BlockMatrix : Eigenvectors of the quasiparticle Hamiltonian.
+        self.eigenvectors_qp: BlockMatrix = {}
 
         #: risb.types.BlockMatrix : :attr:`R` of the clusters in the blocks of
         #: :attr:`h0_k`, from :func:`risb.helpers.upfold_r_lambda`, set at the
@@ -499,7 +499,7 @@ class BaseLatticeSolver(ABC):
         samples = (
             get_local_terms(None) if self.h0_k_evaluator is None else get_local_terms
         )
-        result = self.kintegrator.kpoint_integrator.integrate(samples)
+        result = self.band_integrator.kpoint_integrator.integrate(samples)
         if not result.converged:
             msg = "k-integration failed while calculating local Hamiltonians."
             raise RuntimeError(msg)
@@ -718,7 +718,7 @@ class BaseLatticeSolver(ABC):
         self, hamiltonian: Hamiltonian, observables: BandObservables
     ) -> BandKIntegrationResult:
         """Integrate the quasiparticle density and kinetic observables."""
-        return self.kintegrator.integrate(hamiltonian, observables=observables)
+        return self.band_integrator.integrate(hamiltonian, observables=observables)
 
     @abstractmethod
     def update_bath(self) -> None:
@@ -828,17 +828,17 @@ class BaseLatticeSolver(ABC):
 
             with self._stage("densities"):
                 result = self.integrate_bands(hamiltonian, observables)
-                self.kintegration_result = result
+                self.band_integration_result = result
                 if not result.converged:
                     msg = "Band integration did not meet its requested accuracy."
                     raise RuntimeError(msg)
-                self.energies_qp = result.energies
-                self.bloch_vector_qp = result.vectors
-                self.qp_density_k = result.density_k
-                self.kweights = (
+                self.eigenvalues_qp = result.eigenvalues
+                self.eigenvectors_qp = result.eigenvectors
+                self.density_qp_k = result.density_k
+                self.weighted_occupations_qp = (
                     {
                         block: f * result.weights[:, None]
-                        for block, f in result.band_weights.items()
+                        for block, f in result.occupations.items()
                     }
                     if result.weights is not None
                     else {}

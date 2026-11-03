@@ -74,7 +74,9 @@ h0_k = get_h0_k(t=1, nkx=18, spin_names=spin_names)
 # Set up the k-space sums and band filling.
 beta = 40  # inverse temperature
 n_target = 3  # half-filling
-kintegrator = BandKIntegrator(WeightedKPointIntegrator(), beta=beta, n_target=n_target)
+band_integrator = BandKIntegrator(
+    WeightedKPointIntegrator(), beta=beta, n_target=n_target
+)
 
 # Define the local interaction
 U = 10
@@ -125,7 +127,7 @@ S = LatticeSolver(
     h0_k=h0_k,
     gf_struct=gf_struct,
     impurity_solvers=impurity_solvers,
-    kintegrator=kintegrator,
+    band_integrator=band_integrator,
     projectors=projectors,
     symmetrizers=[force_paramagnetic],
 )

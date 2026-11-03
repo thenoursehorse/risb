@@ -86,7 +86,9 @@ h0_k = get_h0_k(tg=tg, nkx=nkx, spin_names=spin_names)
 # Set up the k-space sums and band filling.
 beta = 40  # inverse temperature
 n_target = 8  # 2/3rds filling
-kintegrator = BandKIntegrator(WeightedKPointIntegrator(), beta=beta, n_target=n_target)
+band_integrator = BandKIntegrator(
+    WeightedKPointIntegrator(), beta=beta, n_target=n_target
+)
 
 # Set up gf_structure of clusters: the three sites of a triangle in each block
 gf_struct = [[(bl, n_orb) for bl in spin_names] for _ in range(n_clusters)]
@@ -159,7 +161,7 @@ S = LatticeSolver(
     h0_k=h0_kin_k,
     gf_struct=gf_struct,
     impurity_solvers=impurity_solvers,
-    kintegrator=kintegrator,
+    band_integrator=band_integrator,
     projectors=projectors,
     symmetrizers=[symmetries],
     force_real=True,

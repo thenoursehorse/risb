@@ -403,19 +403,21 @@ def get_fermi_density_response(
     <https://arxiv.org/html/2609.32633v2#A1>`_.
 
     """
-    rho, energies, vectors = _fermi_density(h, beta)
-    distance = beta * np.abs(energies[:, None] - energies[None, :])
+    rho, eigenvalues, eigenvectors = _fermi_density(h, beta)
+    distance = beta * np.abs(eigenvalues[:, None] - eigenvalues[None, :])
     ratio = np.divide(
         -np.expm1(-distance),
         distance,
         out=np.ones_like(distance),
         where=distance != 0,
     )
-    low = np.minimum(energies[:, None], energies[None, :])
-    high = np.maximum(energies[:, None], energies[None, :])
+    low = np.minimum(eigenvalues[:, None], eigenvalues[None, :])
+    high = np.maximum(eigenvalues[:, None], eigenvalues[None, :])
     divided = -beta * expit(-beta * low) * expit(beta * high) * ratio
     response = (
-        vectors @ (divided * (vectors.conj().T @ dh @ vectors)) @ vectors.conj().T
+        eigenvectors
+        @ (divided * (eigenvectors.conj().T @ dh @ eigenvectors))
+        @ eigenvectors.conj().T
     ).swapaxes(-1, -2)
     return rho, response
 
@@ -507,8 +509,10 @@ def get_h0_emb_grand_potential(
     .. _arXiv260320559: https://arxiv.org/abs/2603.20559
 
     """
-    energies = np.linalg.eigvalsh(get_h0_emb(R, Lambda, D, Lambda_c, mu))
-    omega = np.trace(Lambda_c).real - np.sum(np.logaddexp(0, -beta * energies)) / beta
+    eigenvalues = np.linalg.eigvalsh(get_h0_emb(R, Lambda, D, Lambda_c, mu))
+    omega = (
+        np.trace(Lambda_c).real - np.sum(np.logaddexp(0, -beta * eigenvalues)) / beta
+    )
     return float(omega)
 
 
@@ -1145,9 +1149,9 @@ def get_lagrangian(
     # The term of the quasiparticles has -mu n_g from the ghost electrons
     lagrangian = mu * n_ghost_electrons
     for bl, h0 in h0_kin_k.items():
-        energies = np.linalg.eigvalsh(get_h_qp(R_full[bl], Lambda_full[bl], h0, mu))
-        n_k = energies.shape[0]
-        lagrangian -= np.sum(np.logaddexp(0, -beta * energies)) / (beta * n_k)
+        eigenvalues = np.linalg.eigvalsh(get_h_qp(R_full[bl], Lambda_full[bl], h0, mu))
+        n_k = eigenvalues.shape[0]
+        lagrangian -= np.sum(np.logaddexp(0, -beta * eigenvalues)) / (beta * n_k)
 
     for i in range(n_clusters):
         lagrangian += h_loc_energy[i]
@@ -1164,15 +1168,15 @@ def get_lagrangian(
     return float(lagrangian)
 
 
-def get_entropy_qp(energies: BlockRealArray, beta: float, mu: float) -> float:
+def get_entropy_qp(eigenvalues: BlockRealArray, beta: float, mu: float) -> float:
     """
     Return the entropy of the quasiparticles per unit cell.
 
     Parameters
     ----------
-    energies : risb.types.BlockRealArray
+    eigenvalues : risb.types.BlockRealArray
         Energies of the quasiparticle bands in each block, indexed as k, band,
-        e.g., :attr:`risb.LatticeSolver.energies_qp`.
+        e.g., :attr:`risb.LatticeSolver.eigenvalues_qp`.
     beta : float
         Inverse temperature of the Fermi-Dirac occupations.
     mu : float
@@ -1187,7 +1191,7 @@ def get_entropy_qp(energies: BlockRealArray, beta: float, mu: float) -> float:
 
     """
     entropy = 0.0
-    for e in energies.values():
+    for e in eigenvalues.values():
         entropy += _fermi_entropy(beta * (e - mu)) / e.shape[0]
     return float(entropy)
 
@@ -1215,7 +1219,7 @@ def get_entropy_impurity(weights: NDArray[np.float64]) -> float:
 
 def get_entropy(
     *,
-    energies: BlockRealArray,
+    eigenvalues: BlockRealArray,
     beta: float,
     mu: float,
     impurity_entropy: Sequence[float],
@@ -1229,9 +1233,9 @@ def get_entropy(
 
     Parameters
     ----------
-    energies : risb.types.BlockRealArray
+    eigenvalues : risb.types.BlockRealArray
         Energies of the quasiparticle bands in each block, indexed as k, band,
-        e.g., :attr:`risb.LatticeSolver.energies_qp`.
+        e.g., :attr:`risb.LatticeSolver.eigenvalues_qp`.
     beta : float
         Inverse temperature.
     mu : float
@@ -1247,12 +1251,12 @@ def get_entropy(
         :func:`get_entropy_qp` plus the sum of ``impurity_entropy``.
 
     """
-    return get_entropy_qp(energies, beta, mu) + float(np.sum(impurity_entropy))
+    return get_entropy_qp(eigenvalues, beta, mu) + float(np.sum(impurity_entropy))
 
 
 def get_thermal_grand_potential(
     *,
-    energies: BlockRealArray,
+    eigenvalues: BlockRealArray,
     R: Sequence[BlockMatrixLike],
     Lambda: Sequence[BlockMatrixLike],
     D: Sequence[BlockMatrixLike],
@@ -1270,9 +1274,9 @@ def get_thermal_grand_potential(
 
     Parameters
     ----------
-    energies : risb.types.BlockRealArray
+    eigenvalues : risb.types.BlockRealArray
         Energies of the quasiparticle bands in each block, indexed as k, band,
-        e.g., :attr:`risb.ThermalLatticeSolver.energies_qp`.
+        e.g., :attr:`risb.ThermalLatticeSolver.eigenvalues_qp`.
     R : list of risb.types.BlockMatrixLike
         Renormalization matrix from electrons to quasiparticles.
     Lambda : list of risb.types.BlockMatrixLike
@@ -1309,7 +1313,7 @@ def get_thermal_grand_potential(
 
     """
     omega = 0.0
-    for e in energies.values():
+    for e in eigenvalues.values():
         omega -= np.sum(np.logaddexp(0, -beta * (e - mu))) / (beta * e.shape[0])
     for i, R_i in enumerate(R):
         omega += impurity_grand_potential[i]
@@ -1322,7 +1326,7 @@ def get_thermal_grand_potential(
 
 def get_thermal_entropy(
     *,
-    energies: BlockRealArray,
+    eigenvalues: BlockRealArray,
     R: Sequence[BlockMatrixLike],
     Lambda: Sequence[BlockMatrixLike],
     D: Sequence[BlockMatrixLike],
@@ -1340,9 +1344,9 @@ def get_thermal_entropy(
 
     Parameters
     ----------
-    energies : risb.types.BlockRealArray
+    eigenvalues : risb.types.BlockRealArray
         Energies of the quasiparticle bands in each block, indexed as k, band,
-        e.g., :attr:`risb.ThermalLatticeSolver.energies_qp`.
+        e.g., :attr:`risb.ThermalLatticeSolver.eigenvalues_qp`.
     R : list of risb.types.BlockMatrixLike
         Renormalization matrix from electrons to quasiparticles.
     Lambda : list of risb.types.BlockMatrixLike
@@ -1373,7 +1377,7 @@ def get_thermal_entropy(
     at fixed matrices, minus the entropy of each state.
 
     """
-    entropy = get_entropy_qp(energies, beta, mu) + float(np.sum(impurity_entropy))
+    entropy = get_entropy_qp(eigenvalues, beta, mu) + float(np.sum(impurity_entropy))
     for i, R_i in enumerate(R):
         for bl in R_i:
             h = get_h0_emb(R_i[bl], Lambda[i][bl], D[i][bl], Lambda_c[i][bl], mu)
@@ -1384,7 +1388,7 @@ def get_thermal_entropy(
 def get_density_matrix_k(
     *,
     R_full: BlockMatrixLike,
-    qp_density_k: BlockMatrixLike | None,
+    density_qp_k: BlockMatrixLike | None,
     rho_c: Sequence[BlockMatrixLike],
     weights: NDArray[np.float64] | None = None,
     projectors: Sequence[BlockMatrixLike] | None = None,
@@ -1405,9 +1409,9 @@ def get_density_matrix_k(
         each quasiparticle and a column for each orbital, e.g.,
         :attr:`risb.LatticeSolver.R_full` or from :func:`upfold_r_lambda`. It
         can depend on k.
-    qp_density_k : risb.types.BlockMatrixLike
+    density_qp_k : risb.types.BlockMatrixLike
         Quasiparticle density matrices at the supplied k-points, e.g.,
-        :attr:`risb.LatticeSolver.qp_density_k`.
+        :attr:`risb.LatticeSolver.density_qp_k`.
     weights : numpy.ndarray, optional
         Relative k-point weights. Omitting them gives equal weights.
     rho_c : list of risb.types.BlockMatrixLike
@@ -1435,14 +1439,14 @@ def get_density_matrix_k(
     quasiparticles.
 
     """
-    if qp_density_k is None:
+    if density_qp_k is None:
         msg = "Supply quasiparticle densities on the CSC k-point mesh."
         raise ValueError(msg)
     density: BlockMatrix = {}
-    for bl, n_qp in qp_density_k.items():
+    for bl, n_qp in density_qp_k.items():
         density[bl] = _dagger(R_full[bl]) @ n_qp @ R_full[bl]
     if gf_struct_mapping is None:
-        gf_struct_mapping = [{bl: bl for bl in qp_density_k} for _ in range(len(rho_c))]
+        gf_struct_mapping = [{bl: bl for bl in density_qp_k} for _ in range(len(rho_c))]
     for i, rho_c_i in enumerate(rho_c):
         for bl, rho in rho_c_i.items():
             bl_full = gf_struct_mapping[i][bl]
@@ -1514,9 +1518,9 @@ def project_charge_neutral_density_matrix_k(
         ):
             msg = "Density matrices must be finite and Hermitian."
             raise ValueError(msg)
-        values, vectors = np.linalg.eigh(0.5 * (rho + _dagger(rho)))
+        values, eigenvectors_bl = np.linalg.eigh(0.5 * (rho + _dagger(rho)))
         eigenvalues[bl] = np.asarray(values, dtype=float)
-        eigenvectors[bl] = vectors
+        eigenvectors[bl] = eigenvectors_bl
 
     mesh_weights = np.ones(n_k) if weights is None else np.asarray(weights, dtype=float)
     if (
@@ -1555,9 +1559,9 @@ def project_charge_neutral_density_matrix_k(
     upper = 1 - min(float(values.min()) for values in eigenvalues.values())
     shift = brentq(charge_error, lower, upper, xtol=1e-14)
     return {
-        bl: (vectors * np.clip(eigenvalues[bl] + shift, 0, 1)[:, None, :])
-        @ _dagger(vectors)
-        for bl, vectors in eigenvectors.items()
+        bl: (eigenvectors_bl * np.clip(eigenvalues[bl] + shift, 0, 1)[:, None, :])
+        @ _dagger(eigenvectors_bl)
+        for bl, eigenvectors_bl in eigenvectors.items()
     }
 
 
@@ -1965,8 +1969,8 @@ def get_g0_k_w(
     """
     g0_k_w: BlockMatrix = {}
     for bl, h0 in h0_k.items():
-        energies, vectors = np.linalg.eigh(h0)
-        g0_k_w[bl] = _resolvent(omega, mu, energies, vectors, vectors)
+        eigenvalues, eigenvectors = np.linalg.eigh(h0)
+        g0_k_w[bl] = _resolvent(omega, mu, eigenvalues, eigenvectors, eigenvectors)
     return g0_k_w
 
 
@@ -2008,8 +2012,10 @@ def get_g_qp_k_w(
     """
     g_qp_k_w: BlockMatrix = {}
     for bl, h0 in h0_kin_k.items():
-        energies, vectors = np.linalg.eigh(get_h_qp(R_full[bl], Lambda_full[bl], h0))
-        g_qp_k_w[bl] = _resolvent(omega, mu, energies, vectors, vectors)
+        eigenvalues, eigenvectors = np.linalg.eigh(
+            get_h_qp(R_full[bl], Lambda_full[bl], h0)
+        )
+        g_qp_k_w[bl] = _resolvent(omega, mu, eigenvalues, eigenvectors, eigenvectors)
     return g_qp_k_w
 
 
@@ -2051,9 +2057,11 @@ def get_g_k_w(
     """
     g_k_w: BlockMatrix = {}
     for bl, h0 in h0_kin_k.items():
-        energies, vectors = np.linalg.eigh(get_h_qp(R_full[bl], Lambda_full[bl], h0))
-        left = _dagger(R_full[bl]) @ vectors
-        g_k_w[bl] = _resolvent(omega, mu, energies, left, left)
+        eigenvalues, eigenvectors = np.linalg.eigh(
+            get_h_qp(R_full[bl], Lambda_full[bl], h0)
+        )
+        left = _dagger(R_full[bl]) @ eigenvectors
+        g_k_w[bl] = _resolvent(omega, mu, eigenvalues, left, left)
     return g_k_w
 
 
@@ -2141,13 +2149,15 @@ def get_h_qp(
     )
     if not np.allclose(h_qp, np.swapaxes(h_qp, 1, 2).conj()):
         warnings.warn("H_qp is not Hermitian !", RuntimeWarning, stacklevel=2)
-    # eig, vec = np.linalg.eigh(h_qp)
-    # return (eig, vec)
+    # eigenvalues, eigenvectors = np.linalg.eigh(h_qp)
+    # return (eigenvalues, eigenvectors)
     return h_qp
 
 
 def get_h0_kin_k_R(
-    R: NDArray[np.inexact], h0_kin_k: NDArray[np.inexact], vec: NDArray[np.inexact]
+    R: NDArray[np.inexact],
+    h0_kin_k: NDArray[np.inexact],
+    eigenvectors: NDArray[np.inexact],
 ) -> NDArray[np.inexact]:
     """
     Return the matrix representation of the lopsided kinetic energy term in the quasiparticle Hamiltonian of RISB.
@@ -2159,7 +2169,7 @@ def get_h0_kin_k_R(
     h0_kin_k : numpy.ndarray
         Single-particle dispersion between local clusters. Indexed as
         k, orb_i, orb_j.
-    vec : numpy.ndarray
+    eigenvectors : numpy.ndarray
         Eigenvectors of quasiparticle Hamiltonian. Indexed as k, each column
         an eigenvector.
 
@@ -2174,12 +2184,14 @@ def get_h0_kin_k_R(
     the renormalization matrix `R` multiplied on the left.
 
     """
-    h0_kin_k_R: NDArray[np.inexact] = h0_kin_k @ _dagger(R) @ vec
+    h0_kin_k_R: NDArray[np.inexact] = h0_kin_k @ _dagger(R) @ eigenvectors
     return h0_kin_k_R
 
 
 def get_R_h0_kin_k_R(
-    R: NDArray[np.inexact], h0_kin_k: NDArray[np.inexact], vec: NDArray[np.inexact]
+    R: NDArray[np.inexact],
+    h0_kin_k: NDArray[np.inexact],
+    eigenvectors: NDArray[np.inexact],
 ) -> NDArray[np.inexact]:
     """
     Return the matrix representation of the kinetic energy term in the quasiparticle Hamiltonian of RISB.
@@ -2191,7 +2203,7 @@ def get_R_h0_kin_k_R(
     h0_kin_k : numpy.ndarray
         Single-particle dispersion between local clusters. Indexed as
         k, orb_i, orb_j.
-    vec : numpy.ndarray
+    eigenvectors : numpy.ndarray
         Eigenvectors of quasiparticle Hamiltonian. Indexed as k, each column
         an eigenvector.
 
@@ -2203,15 +2215,15 @@ def get_R_h0_kin_k_R(
 
     """
     R_h0_kin_k_R: NDArray[np.inexact] = np.einsum(
-        "pa,kac,cd,kdb->kpb", R, h0_kin_k, R.conj().T, vec
+        "pa,kac,cd,kdb->kpb", R, h0_kin_k, R.conj().T, eigenvectors
     )
     return R_h0_kin_k_R
 
 
 # \sum_n \sum_k [A_k P_k]_{an} [D_k]_n  [P_k^+ B_k]_{nb}
 def get_rho_qp(
-    vec: NDArray[np.inexact],
-    kweights: NDArray[np.float64],
+    eigenvectors: NDArray[np.inexact],
+    weighted_occupations: NDArray[np.float64],
     P: NDArray[np.inexact] | None = None,
 ) -> NDArray[np.inexact]:
     r"""
@@ -2219,10 +2231,10 @@ def get_rho_qp(
 
     Parameters
     ----------
-    vec : numpy.ndarray
+    eigenvectors : numpy.ndarray
         Eigenvectors of quasiparticle Hamiltonian.
-    kweights : numpy.ndarray
-        Integration weights at each k-point for each band (eigenvector).
+    weighted_occupations : numpy.ndarray
+        k-point weights times the quasiparticle occupations, indexed as k, band.
     P : numpy.ndarray, optional
         Projection matrix onto correlated subspace.
 
@@ -2241,21 +2253,23 @@ def get_rho_qp(
     .. _PRL126401: https://doi.org/10.1103/PhysRevLett.118.126401
 
     """
-    vec_dag = np.swapaxes(vec.conj(), -1, -2)
+    eigenvectors_dag = np.swapaxes(eigenvectors.conj(), -1, -2)
     if P is None:
         rho_qp: NDArray[np.inexact] = np.einsum(
-            "kan,kn,knb->ab", vec, kweights, vec_dag
+            "kan,kn,knb->ab", eigenvectors, weighted_occupations, eigenvectors_dag
         ).T
         return rho_qp
     P_dag = np.swapaxes(P.conj(), -2, -1)
-    middle = np.einsum("kan,kn,knb->kab", vec, kweights, vec_dag)
+    middle = np.einsum(
+        "kan,kn,knb->kab", eigenvectors, weighted_occupations, eigenvectors_dag
+    )
     return np.sum(P @ middle @ P_dag, axis=0).T
 
 
 def get_ke(
     h0_kin_k_R: NDArray[np.inexact],
-    vec: NDArray[np.inexact],
-    kweights: NDArray[np.float64],
+    eigenvectors: NDArray[np.inexact],
+    weighted_occupations: NDArray[np.float64],
     P: NDArray[np.inexact] | None = None,
     projector_qp: NDArray[np.inexact] | None = None,
 ) -> NDArray[np.inexact]:
@@ -2267,10 +2281,10 @@ def get_ke(
     h0_kin_k_R : numpy.ndarray
         Single-particle dispersion between local clusters with `R` matrix
         multiplied on the right.
-    vec : numpy.ndarray
+    eigenvectors : numpy.ndarray
         Eigenvectors of quasiparticle Hamiltonian.
-    kweights : numpy.ndarray
-        Integration weights at each k-point for each band (eigenvector).
+    weighted_occupations : numpy.ndarray
+        k-point weights times the quasiparticle occupations, indexed as k, band.
     P : numpy.ndarray, optional
         Projection matrix onto correlated subspace.
     projector_qp : numpy.ndarray, optional
@@ -2289,13 +2303,15 @@ def get_ke(
     .. _PRX011008: https://doi.org/10.1103/PhysRevX.5.011008
 
     """
-    vec_dag = np.swapaxes(vec.conj(), -1, -2)
+    eigenvectors_dag = np.swapaxes(eigenvectors.conj(), -1, -2)
     if P is None and projector_qp is None:
         ke: NDArray[np.inexact] = np.einsum(
-            "kan,kn,knb->ab", h0_kin_k_R, kweights, vec_dag
+            "kan,kn,knb->ab", h0_kin_k_R, weighted_occupations, eigenvectors_dag
         )
         return ke
-    middle = np.einsum("kan,kn,knb->kab", h0_kin_k_R, kweights, vec_dag)
+    middle = np.einsum(
+        "kan,kn,knb->kab", h0_kin_k_R, weighted_occupations, eigenvectors_dag
+    )
     if P is not None:
         middle = P @ middle
     projector_qp = P if projector_qp is None else projector_qp
@@ -2306,8 +2322,8 @@ def get_ke(
 
 def get_ke2(
     R_h0_kin_k_R: NDArray[np.inexact],
-    vec: NDArray[np.inexact],
-    kweights: NDArray[np.float64],
+    eigenvectors: NDArray[np.inexact],
+    weighted_occupations: NDArray[np.float64],
     P: NDArray[np.inexact] | None = None,
 ) -> NDArray[np.inexact]:
     """
@@ -2317,10 +2333,10 @@ def get_ke2(
     ----------
     R_h0_kin_k_R : numpy.ndarray
         Kinetic part of quasiparticle Hamiltonain.
-    vec : numpy.ndarray
+    eigenvectors : numpy.ndarray
         Eigenvectors of quasiparticle Hamiltonian.
-    kweights : numpy.ndarray
-        Integration weights at each k-point for each band (eigenvector).
+    weighted_occupations : numpy.ndarray
+        k-point weights times the quasiparticle occupations, indexed as k, band.
     P : numpy.ndarray, optional
         Projection matrix onto correlated subspace.
 
@@ -2336,14 +2352,16 @@ def get_ke2(
     .. _PRX011008: https://doi.org/10.1103/PhysRevX.5.011008
 
     """
-    vec_dag = np.swapaxes(vec.conj(), -1, -2)
+    eigenvectors_dag = np.swapaxes(eigenvectors.conj(), -1, -2)
     if P is None:
         ke: NDArray[np.inexact] = np.einsum(
-            "kan,kn,knb->ab", R_h0_kin_k_R, kweights, vec_dag
+            "kan,kn,knb->ab", R_h0_kin_k_R, weighted_occupations, eigenvectors_dag
         )
         return ke
     P_dag = np.swapaxes(P.conj(), -2, -1)
-    middle = np.einsum("kan,kn,knb->kab", R_h0_kin_k_R, kweights, vec_dag)
+    middle = np.einsum(
+        "kan,kn,knb->kab", R_h0_kin_k_R, weighted_occupations, eigenvectors_dag
+    )
     return np.sum(P @ middle @ P_dag, axis=0)
 
 
@@ -2548,21 +2566,21 @@ def _self_energy_poles(
     U, singular_values, _ = np.linalg.svd(R)
     tol = np.max(singular_values, initial=0) * max(R.shape) * np.finfo(float).eps
     ghosts = U[:, np.sum(singular_values > tol) :]
-    poles, vectors = np.linalg.eigh(_dagger(ghosts) @ Lambda @ ghosts)
-    return _dagger(R) @ R, poles, _dagger(R) @ Lambda @ ghosts @ vectors
+    poles, eigenvectors = np.linalg.eigh(_dagger(ghosts) @ Lambda @ ghosts)
+    return _dagger(R) @ R, poles, _dagger(R) @ Lambda @ ghosts @ eigenvectors
 
 
 def _resolvent(
     omega: NDArray[np.inexact],
     mu: float,
-    energies: NDArray[np.floating],
+    eigenvalues: NDArray[np.floating],
     left: NDArray[np.inexact],
     right: NDArray[np.inexact],
 ) -> NDArray[np.complex128]:
-    # sum_n left[k, a, n] right[k, b, n]^* / (w + mu - energies[k, n]), indexed
+    # sum_n left[k, a, n] right[k, b, n]^* / (w + mu - eigenvalues[k, n]), indexed
     # as k, frequency, a, b
     z = np.asarray(omega) + mu
-    inverse = 1 / (z[None, :, None] - energies[:, None, :])
+    inverse = 1 / (z[None, :, None] - eigenvalues[:, None, :])
     resolvent: NDArray[np.complex128] = np.einsum(
         "kan,kwn,kbn->kwab", left, inverse, right.conj()
     )
@@ -2590,11 +2608,11 @@ def _fermi_density(
     h: NDArray[np.inexact], beta: float
 ) -> tuple[NDArray[np.inexact], NDArray[np.floating], NDArray[np.inexact]]:
     """Return the density matrix and the eigensystem used to calculate it."""
-    energies, vectors = np.linalg.eigh(h)
+    eigenvalues, eigenvectors = np.linalg.eigh(h)
     rho: NDArray[np.inexact] = (
-        (vectors * expit(-beta * energies)) @ _dagger(vectors)
+        (eigenvectors * expit(-beta * eigenvalues)) @ _dagger(eigenvectors)
     ).T
-    return rho, energies, vectors
+    return rho, eigenvalues, eigenvectors
 
 
 def _extract_embedding_densities(

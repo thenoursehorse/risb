@@ -121,7 +121,7 @@ def time_lattice_solve(name: str, h_int: OpSum, n_orb: int, V: float = 0) -> Non
         h0_k=cubic_h0_k(n_orb, V),
         gf_struct=gf_struct,
         impurity_solvers=[FockitImpuritySolver(h_int, gf_struct)],
-        kintegrator=BandKIntegrator(
+        band_integrator=BandKIntegrator(
             WeightedKPointIntegrator(), beta=40, n_target=n_orb
         ),
         symmetrizers=[paramagnetic],

@@ -38,7 +38,9 @@ for o in range(n_orb):
 # Set up the k-space sums and band filling.
 beta = 40  # inverse temperature
 n_target = 2  # half-filling
-kintegrator = BandKIntegrator(WeightedKPointIntegrator(), beta=beta, n_target=n_target)
+band_integrator = BandKIntegrator(
+    WeightedKPointIntegrator(), beta=beta, n_target=n_target
+)
 
 # Set up the impurity solver
 impurity_solver = FockitImpuritySolver(h_int, gf_struct)
@@ -48,13 +50,13 @@ S = LatticeSolver(
     h0_k=h0_k,
     gf_struct=gf_struct,
     impurity_solvers=impurity_solver,
-    kintegrator=kintegrator,
+    band_integrator=band_integrator,
 )
 
 # Solve
 result = S.solve(tol=1e-6)
-assert kintegrator.mu is not None
-mu = kintegrator.mu
+assert band_integrator.mu is not None
+mu = band_integrator.mu
 
 # R and Lambda in the blocks of the lattice. S.R_full and S.Lambda_full are
 # from the start of the last cycle, one step behind S.R and S.Lambda

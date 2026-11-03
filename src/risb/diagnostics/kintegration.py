@@ -12,11 +12,11 @@ from .output import DiagnosticOutput, Output
 class KIntegrationDiagnostics:
     """Report k-integrals and their error estimates.
 
-    Temperature extrapolation reports the Frobenius-norm error and largest
-    absolute entry error of every requested matrix. Band results report
-    whether midpoint selection was available and accepted; debug output
-    includes the candidate and colder-confirmation checks. Mu's temperature
-    error is reported separately from the integral error.
+    Temperature extrapolation reports the Frobenius norm and largest entry
+    of each matrix error. Band results report whether a midgap chemical
+    potential was tried and accepted. Debug output includes each extrapolation
+    and its check against a colder calculation. The extrapolation error in mu
+    is reported separately.
 
     Parameters
     ----------

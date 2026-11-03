@@ -12,7 +12,7 @@ from risb.kintegration import (
     BandKIntegrator,
     IntegralValues,
     KPoints,
-    TemperatureExtrapolatedKIntegrator,
+    TemperatureExtrapolatedBandKIntegrator,
     WeightedKPointIntegrator,
     fermi_function,
     gaussian_function,
@@ -20,7 +20,7 @@ from risb.kintegration import (
 )
 from risb.types import BlockMatrix, BlockMatrixLike, SmearFunction
 
-energies = {
+eigenvalues = {
     block: np.linspace(-1, 1, 100).reshape(100, 1, 1) for block in ["first", "second"]
 }
 
@@ -31,20 +31,20 @@ energies = {
 def test_band_filling_matches_the_target_with_nonuniform_k_weights(
     smearing: SmearFunction,
 ) -> None:
-    kintegrator = BandKIntegrator(
+    band_integrator = BandKIntegrator(
         WeightedKPointIntegrator(weights=np.linspace(1, 2, 100)),
         smearing=smearing,
     )
-    result = kintegrator.integrate(energies, beta=10, n_target=1.2)
+    result = band_integrator.integrate(eigenvalues, beta=10, n_target=1.2)
     assert result.converged
     assert result.n_electrons == pytest.approx(1.2)
     assert result.quadrature_error is None
 
 
 def test_band_integration_without_mu_or_n_target_raises() -> None:
-    kintegrator = BandKIntegrator(WeightedKPointIntegrator())
+    band_integrator = BandKIntegrator(WeightedKPointIntegrator())
     with pytest.raises(ValueError):  # noqa: PT011
-        kintegrator.integrate(energies, beta=10)
+        band_integrator.integrate(eigenvalues, beta=10)
 
 
 @pytest.mark.parametrize(
@@ -54,12 +54,12 @@ def test_band_filling_handles_partial_flat_levels_and_gaps(
     smearing: SmearFunction,
 ) -> None:
     flat = {block: np.zeros((100, 1, 1)) for block in ["first", "second"]}
-    kintegrator = BandKIntegrator(WeightedKPointIntegrator(), smearing=smearing)
+    band_integrator = BandKIntegrator(WeightedKPointIntegrator(), smearing=smearing)
     for beta in (10, 1e12):
-        result = kintegrator.integrate(flat, beta=beta, n_target=1.5)
+        result = band_integrator.integrate(flat, beta=beta, n_target=1.5)
         assert result.converged
         assert result.n_electrons == pytest.approx(
-            1.5, abs=kintegrator.electron_count_atol
+            1.5, abs=band_integrator.electron_count_atol
         )
         assert result.mu > 0
         if smearing is fermi_function:
@@ -67,23 +67,23 @@ def test_band_filling_handles_partial_flat_levels_and_gaps(
 
     if smearing is fermi_function:
         shifted = {block: h + 1 for block, h in flat.items()}
-        cold = kintegrator.integrate(shifted, beta=1e16, n_target=1.5)
+        cold = band_integrator.integrate(shifted, beta=1e16, n_target=1.5)
         assert cold.converged
         assert cold.n_electrons == pytest.approx(
-            1.5, abs=kintegrator.electron_count_atol
+            1.5, abs=band_integrator.electron_count_atol
         )
         assert cold.mu_reference is not None
         assert cold.density_k is not None
-        for block, band_energies in cold.energies.items():
+        for block, band_eigenvalues in cold.eigenvalues.items():
             weights = fermi_function(
-                band_energies - cold.mu_reference, cold.beta, cold.mu_correction
+                band_eigenvalues - cold.mu_reference, cold.beta, cold.mu_correction
             )
             assert weights == pytest.approx(np.full((100, 1), 0.75), abs=1e-10)
             assert cold.density_k[block] == pytest.approx(
                 np.full((100, 1, 1), 0.75), abs=1e-10
             )
 
-        extrapolation = TemperatureExtrapolatedKIntegrator(
+        extrapolation = TemperatureExtrapolatedBandKIntegrator(
             BandKIntegrator(WeightedKPointIntegrator(), n_target=1.5),
             betas=[1e15, 2e15, 4e15, 8e15],
             atol=1e-8,
@@ -95,8 +95,8 @@ def test_band_filling_handles_partial_flat_levels_and_gaps(
         )
         assert zero.converged
         assert zero.mu == pytest.approx(1, abs=1e-10)
-        assert zero.mu_temperature_error is not None
-        assert zero.mu_temperature_error < 1e-27
+        assert zero.mu_extrapolation_error is not None
+        assert zero.mu_extrapolation_error < 1e-27
         assert zero.n_electrons == pytest.approx(1.5, abs=1e-8)
         assert zero.density_k is not None
         for density in zero.density_k.values():
@@ -152,7 +152,7 @@ def test_extrapolation_recovers_zero_temperature_integrals_of_a_complex_multiblo
         }
 
     bands = BandKIntegrator(WeightedKPointIntegrator(kpoints))
-    extrapolation = TemperatureExtrapolatedKIntegrator(
+    extrapolation = TemperatureExtrapolatedBandKIntegrator(
         bands,
         betas=[20, 35, 65, 120, 250, 500, 1000, 2000, 4000, 8000, 16000, 32000],
         atol=1e-8,
@@ -167,20 +167,20 @@ def test_extrapolation_recovers_zero_temperature_integrals_of_a_complex_multiblo
     assert result.n_electrons == pytest.approx(1.4, abs=1e-10)
     levels = np.sort(-2 * np.cos(2 * np.pi * kpoints[:, 0]))
     expected_mu = levels[int(0.7 * len(levels))]
-    assert result.mu_temperature_error is not None
-    assert np.isfinite(result.mu_temperature_error)
-    assert abs(result.mu - expected_mu) <= result.mu_temperature_error + 1e-10
+    assert result.mu_extrapolation_error is not None
+    assert np.isfinite(result.mu_extrapolation_error)
+    assert abs(result.mu - expected_mu) <= result.mu_extrapolation_error + 1e-10
     for block in ["alpha", "beta"]:
         assert result.values["density", block] == pytest.approx(
             expected_density, abs=1e-8
         )
         assert result.values["kinetic", block] == pytest.approx(expected_ke, abs=1e-8)
         for observable in ("density", "kinetic"):
-            error = result.temperature_errors[observable, block]
+            error = result.temperature_extrapolation_errors[observable, block]
             assert 0 <= error.max_abs <= error.norm <= 1e-8
     assert result.quadrature_error is None
 
-    too_short = TemperatureExtrapolatedKIntegrator(
+    too_short = TemperatureExtrapolatedBandKIntegrator(
         bands, betas=extrapolation.betas[-3:], atol=1e-8, rtol=0
     )
     assert not too_short.integrate(hamiltonian, n_target=1.4).converged
@@ -198,7 +198,7 @@ def test_lattice_cycle_accepts_temperature_extrapolation() -> None:
 
     output = StringIO()
     with KIntegrationDiagnostics(level="debug", output=output) as diagnostics:
-        kintegrator = TemperatureExtrapolatedKIntegrator(
+        band_integrator = TemperatureExtrapolatedBandKIntegrator(
             BandKIntegrator(
                 WeightedKPointIntegrator(kpoints, diagnostics=diagnostics),
                 n_target=1,
@@ -214,7 +214,7 @@ def test_lattice_cycle_accepts_temperature_extrapolation() -> None:
             hamiltonian(kpoints),
             gf_struct,
             FockitImpuritySolver(zero(), gf_struct),
-            kintegrator,
+            band_integrator,
             h0_k_evaluator=hamiltonian,
         )
         assert solver.solve(tol=1e-9).converged
@@ -230,8 +230,8 @@ def test_lattice_cycle_accepts_temperature_extrapolation() -> None:
         "confirmed=True",
         "kextrapolation.sample",
         "kextrapolation.result",
-        "temperature_error=",
-        "mu_temperature_error=",
+        "temperature_extrapolation_error=",
+        "mu_extrapolation_error=",
         "kextrapolation.matrix_error",
         "error_norm=",
         "error_max_abs=",
@@ -247,12 +247,12 @@ def test_lattice_cycle_accepts_temperature_extrapolation() -> None:
         assert solver.lopsided_ke_qp[0][block] == pytest.approx(
             np.array([[expected_ke]]), abs=1e-8
         )
-    assert solver.kintegration_result is not None
+    assert solver.band_integration_result is not None
     density = helpers.get_density_matrix_k(
         R_full=solver.R_full,
-        qp_density_k=solver.qp_density_k,
+        density_qp_k=solver.density_qp_k,
         rho_c=solver.rho_c,
-        weights=solver.kintegration_result.weights,
+        weights=solver.band_integration_result.weights,
     )
     assert sum(
         np.trace(rho, axis1=1, axis2=2).real.mean() for rho in density.values()

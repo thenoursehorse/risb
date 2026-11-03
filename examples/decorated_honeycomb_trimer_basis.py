@@ -146,7 +146,9 @@ h0_k = get_h0_k(tg=tg, nkx=nkx, spin_names=spin_names)
 # Set up the k-space sums and band filling.
 beta = 40  # inverse temperature
 n_target = 8  # 2/3rds filling
-kintegrator = BandKIntegrator(WeightedKPointIntegrator(), beta=beta, n_target=n_target)
+band_integrator = BandKIntegrator(
+    WeightedKPointIntegrator(), beta=beta, n_target=n_target
+)
 
 # Set up gf_structure of clusters
 gf_struct_molecule = [
@@ -247,7 +249,7 @@ S = LatticeSolver(
     h0_k=h0_kin_k,
     gf_struct=gf_struct,
     impurity_solvers=impurity_solvers,
-    kintegrator=kintegrator,
+    band_integrator=band_integrator,
     projectors=projectors,
     symmetrizers=[symmetries],
     gf_struct_mapping=gf_struct_mapping,

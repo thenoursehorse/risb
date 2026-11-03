@@ -31,13 +31,13 @@ _ELECTRON_COUNT = object()
 class KIntegrationResult:
     """Results of a k-space sum or Brillouin-zone integral.
 
-    The error estimate is None when the method does not provide one.
+    quadrature_error is None when the method provides no error estimate.
     For a supplied mesh, weights contains its normalized k-point weights.
     A successful sum does not establish convergence with respect to k-points.
     """
 
     values: IntegralValues
-    error: float | None = None
+    quadrature_error: float | None = None
     converged: bool = True
     n_evaluations: int = 0
     weights: NDArray[np.float64] | None = None
@@ -56,24 +56,25 @@ class BandKIntegrationResult:
     """Brillouin-zone averages at the requested beta and mu.
 
     With a supplied mesh, density_k contains the density matrix at each
-    k-point, and weights contains the normalized mesh weights.
+    k-point. occupations contains the band occupations, without k-point
+    weights. weights contains the normalized mesh weights.
     quadrature_error estimates the error of the k-integration method;
-    temperature_error estimates the combined temperature-extrapolation error
-    of the requested integrals and electron count. mu_temperature_error
+    temperature_extrapolation_error estimates the combined extrapolation
+    error of the requested integrals and electron count. mu_extrapolation_error
     separately estimates the temperature-extrapolation error of mu; it does
     not include errors from the filling search or k integration.
     When solving for mu, converged also requires the final electron count
     to meet the BandKIntegrator electron_count_atol.
     During temperature extrapolation, converged checks the integrals and
     electron count; mu's extrapolation error does not set this flag.
-    temperature_errors gives the norm and maximum absolute entry of the
-    extrapolation error for each requested matrix. An empty mapping means
+    temperature_extrapolation_errors gives the norm and largest entry of
+    the extrapolation error for each requested matrix. An empty mapping means
     that per-matrix estimates are unavailable; None marks an unavailable
     scalar estimate.
 
     mu is the rounded sum of mu_reference and mu_correction. Reproduce
-    finite-beta band weights with
-    smearing(energies - mu_reference, beta, mu_correction). Adding the
+    finite-beta occupations with
+    smearing(eigenvalues - mu_reference, beta, mu_correction). Adding the
     reference and correction before calling smearing can lose precision.
     A None reference means only mu is available. After temperature
     extrapolation, the pair describes the extrapolated mu; the densities
@@ -86,14 +87,16 @@ class BandKIntegrationResult:
     n_electrons: float
     converged: bool = True
     quadrature_error: float | None = None
-    temperature_error: float | None = None
-    mu_temperature_error: float | None = None
-    temperature_errors: dict[Hashable, KIntegralError] = field(default_factory=dict)
+    temperature_extrapolation_error: float | None = None
+    mu_extrapolation_error: float | None = None
+    temperature_extrapolation_errors: dict[Hashable, KIntegralError] = field(
+        default_factory=dict
+    )
     betas: tuple[float, ...] = ()
     density_k: BlockMatrix | None = None
-    energies: BlockRealArray = field(default_factory=dict)
-    vectors: BlockMatrix = field(default_factory=dict)
-    band_weights: BlockRealArray = field(default_factory=dict)
+    eigenvalues: BlockRealArray = field(default_factory=dict)
+    eigenvectors: BlockMatrix = field(default_factory=dict)
+    occupations: BlockRealArray = field(default_factory=dict)
     weights: NDArray[np.float64] | None = None
     mu_reference: float | None = None
     mu_correction: float = 0.0
@@ -198,7 +201,7 @@ class WeightedKPointIntegrator:
                     "ksum.result",
                     n_k=n_k,
                     n_observables=len(values),
-                    quadrature_error=result.error,
+                    quadrature_error=result.quadrature_error,
                     converged=result.converged,
                 )
             return result
@@ -212,8 +215,8 @@ class BandKIntegrator:
     kpoint_integrator : KIntegrator
         Method for summing over supplied k-points or integrating over the BZ.
     smearing : callable, optional
-        Function f(energies, beta, mu) used to weight each band. It must
-        depend on energies and mu through their difference; the filling
+        Occupation function f(eigenvalues, beta, mu). It must depend on
+        eigenvalues and mu through their difference; the filling
         search may shift both by a common reference energy.
     beta : float, optional
         Inverse temperature in inverse Hamiltonian-energy units. For Gaussian
@@ -315,9 +318,9 @@ class BandKIntegrator:
             if not callable(hamiltonian):
                 eigenstates = _diagonalize(hamiltonian)
             density_k: BlockMatrix = {}
-            band_weights: BlockRealArray = {}
-            energies: BlockRealArray = {}
-            vectors: BlockMatrix = {}
+            occupations: BlockRealArray = {}
+            eigenvalues: BlockRealArray = {}
+            eigenvectors: BlockMatrix = {}
 
             mu_reference = 0.0
             mu_correction = mu
@@ -326,24 +329,24 @@ class BandKIntegrator:
                 mu_correction: float, include_observables: bool
             ) -> KIntegrationResult:
                 def get_values(kpoints: KPoints | None) -> IntegralValues:
-                    nonlocal density_k, band_weights, energies, vectors
+                    nonlocal density_k, occupations, eigenvalues, eigenvectors
                     if eigenstates is None:
                         assert callable(hamiltonian)
                         assert kpoints is not None
-                        energies, vectors = _diagonalize(hamiltonian(kpoints))
+                        eigenvalues, eigenvectors = _diagonalize(hamiltonian(kpoints))
                     else:
-                        energies, vectors = eigenstates
-                    band_weights = {
+                        eigenvalues, eigenvectors = eigenstates
+                    occupations = {
                         block: self.smearing(e - mu_reference, beta, mu_correction)
-                        for block, e in energies.items()
+                        for block, e in eigenvalues.items()
                     }
-                    count = sum(np.sum(f, axis=1) for f in band_weights.values())
+                    count = sum(np.sum(f, axis=1) for f in occupations.values())
                     values: IntegralValues = {_ELECTRON_COUNT: np.asarray(count)}
                     if include_observables:
                         density_k = {
-                            block: (v * band_weights[block][:, None, :])
+                            block: (v * occupations[block][:, None, :])
                             @ v.conj().swapaxes(-1, -2)
-                            for block, v in vectors.items()
+                            for block, v in eigenvectors.items()
                         }
                         if observables is not None:
                             values.update(observables(kpoints, density_k))
@@ -387,7 +390,7 @@ class BandKIntegrator:
                             n_electrons=count,
                             n_target=n_target,
                             filling_residual=count - n_target,
-                            quadrature_error=result.error,
+                            quadrature_error=result.quadrature_error,
                         )
                     return count - n_target
 
@@ -420,7 +423,7 @@ class BandKIntegrator:
                     midgap_available = count_result.weights is not None
                     if count_result.weights is not None:
                         occupied_edge, empty_edge = get_filling_edges(
-                            energies,
+                            eigenvalues,
                             count_result.weights,
                             n_target,
                             electron_count_atol=self.electron_count_atol,
@@ -473,11 +476,11 @@ class BandKIntegrator:
                     n_target is None
                     or abs(count - n_target) <= self.electron_count_atol
                 ),
-                quadrature_error=result.error,
+                quadrature_error=result.quadrature_error,
                 density_k=density_k if sampled else None,
-                energies=energies if sampled else {},
-                vectors=vectors if sampled else {},
-                band_weights=band_weights if sampled else {},
+                eigenvalues=eigenvalues if sampled else {},
+                eigenvectors=eigenvectors if sampled else {},
+                occupations=occupations if sampled else {},
                 weights=result.weights,
                 mu_reference=mu_reference,
                 mu_correction=mu_correction,
@@ -504,7 +507,7 @@ class BandKIntegrator:
 
 
 def get_filling_edges(
-    energies: Mapping[str, NDArray[np.float64]],
+    eigenvalues: Mapping[str, NDArray[np.float64]],
     weights: Sequence[float] | NDArray[np.float64],
     n_target: float,
     *,
@@ -512,7 +515,7 @@ def get_filling_edges(
 ) -> tuple[float, float]:
     """Find the occupied and empty edges at the target weighted band filling.
 
-    energies contains arrays of shape (n_k, n_bands), one for each block.
+    eigenvalues contains arrays of shape (n_k, n_bands), one for each block.
     weights are nonnegative k-point weights and are normalized here.
     electron_count_atol is the absolute tolerance on the number of occupied
     states per cell when locating the filling boundary.
@@ -523,17 +526,17 @@ def get_filling_edges(
     """
     k_weights = np.asarray(weights, dtype=float)
     k_weights = k_weights / k_weights.sum()
-    all_energies = np.concatenate([e.ravel() for e in energies.values()])
+    all_eigenvalues = np.concatenate([e.ravel() for e in eigenvalues.values()])
     all_weights = np.concatenate(
         [
             np.broadcast_to(k_weights[:, None], e.shape).ravel()
-            for e in energies.values()
+            for e in eigenvalues.values()
         ]
     )
     positive = all_weights > 0
-    all_energies, all_weights = all_energies[positive], all_weights[positive]
-    order = np.argsort(all_energies, kind="stable")
-    levels, level_weights = all_energies[order], all_weights[order]
+    all_eigenvalues, all_weights = all_eigenvalues[positive], all_weights[positive]
+    order = np.argsort(all_eigenvalues, kind="stable")
+    levels, level_weights = all_eigenvalues[order], all_weights[order]
     count = np.cumsum(level_weights, dtype=np.longdouble)
     roundoff = 64 * np.finfo(float).eps * max(1, np.max(abs(levels)))
     boundaries = np.flatnonzero(
@@ -548,9 +551,9 @@ def get_filling_edges(
 
 
 def _diagonalize(hamiltonian: BlockMatrixLike) -> tuple[BlockRealArray, BlockMatrix]:
-    energies: BlockRealArray = {}
-    vectors: BlockMatrix = {}
+    eigenvalues: BlockRealArray = {}
+    eigenvectors: BlockMatrix = {}
     for block, matrix in hamiltonian.items():
-        e, vectors[block] = np.linalg.eigh(matrix)
-        energies[block] = np.asarray(e, dtype=float)
-    return energies, vectors
+        e, eigenvectors[block] = np.linalg.eigh(matrix)
+        eigenvalues[block] = np.asarray(e, dtype=float)
+    return eigenvalues, eigenvectors

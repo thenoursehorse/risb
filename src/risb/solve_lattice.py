@@ -48,9 +48,9 @@ class LatticeSolver(BaseLatticeSolver):
 
     Parameters
     ----------
-    kintegrator : risb.kintegration.BandKIntegration
+    band_integrator : risb.kintegration.BandKIntegration
         Integrates the quasiparticle densities and kinetic matrices.
-        Configure beta and the band filling on the kintegrator.
+        Set beta and the band filling on this integrator.
     pin_full_empty : risb.types.PinFullEmpty or None, optional
         Sets the levels of full or empty auxiliary orbitals. Default is
         :class:`risb.pinning.FullEmptyPinning` with its default parameters.
@@ -70,7 +70,7 @@ class LatticeSolver(BaseLatticeSolver):
         h0_k: BlockMatrixLike,
         gf_struct: GfStruct | list[GfStruct],
         impurity_solvers: ImpuritySolver | Sequence[ImpuritySolver],
-        kintegrator: BandKIntegration,
+        band_integrator: BandKIntegration,
         projectors: Sequence[BlockMatrixLike] | None = None,
         gf_struct_mapping: Sequence[Mapping[str, str]] | None = None,
         symmetrizers: Sequence[Symmetrize] = (),
@@ -102,7 +102,7 @@ class LatticeSolver(BaseLatticeSolver):
             check_projectors=check_projectors,
             double_counting=double_counting,
             bath_size=bath_size,
-            kintegrator=kintegrator,
+            band_integrator=band_integrator,
             h0_k_evaluator=h0_k_evaluator,
             projectors_evaluator=projectors_evaluator,
             gauge_fix=gauge_fix,

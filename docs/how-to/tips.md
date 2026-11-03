@@ -69,7 +69,9 @@ temperature can help
 
 ```python
 impurity_solver = FockitImpuritySolver(h_int, gf_struct, beta=beta)
-kintegrator = BandKIntegrator(WeightedKPointIntegrator(), beta=beta, n_target=n_target)
+band_integrator = BandKIntegrator(
+    WeightedKPointIntegrator(), beta=beta, n_target=n_target
+)
 ```
 
 In the atomic limit (`R = 0`) the self-consistency equations are then still

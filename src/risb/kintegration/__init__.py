@@ -3,7 +3,7 @@
 from .autobz import AutoBZIntegrator
 from .extrapolation import (
     ExtrapolationResult,
-    TemperatureExtrapolatedKIntegrator,
+    TemperatureExtrapolatedBandKIntegrator,
     richardson_extrapolate,
 )
 from .integrators import (
@@ -37,7 +37,7 @@ __all__ = [
     "KIntegrationResult",
     "KIntegrator",
     "KPoints",
-    "TemperatureExtrapolatedKIntegrator",
+    "TemperatureExtrapolatedBandKIntegrator",
     "WeightedKPointIntegrator",
     "fermi_function",
     "gaussian_function",

@@ -242,46 +242,41 @@ finite grid.
 ```python
 from risb import helpers
 
-energies_qp = dict()
-bloch_vector_qp = dict()
+eigenvalues_qp = dict()
+eigenvectors_qp = dict()
 for bl, bl_size in gf_struct:
     h_qp = helpers.get_h_qp(R[bl], Lambda[bl], h0_kin_k[bl])
-    energies_qp[bl], bloch_vector_qp[bl] = np.linalg.eigh(h_qp)
+    eigenvalues_qp[bl], eigenvectors_qp[bl] = np.linalg.eigh(h_qp)
 ```
 
-## D: Setup k-kintegrator function
+## D: K-point weights and occupations
 
 :::{seealso}
 [About k-integration](../explanations/kweight.md) for the theory of how
 $k$-space integration is numerically done in most condensed matter codes.
 
-[Using `BandKIntegrator`](../how-to/kintegration.md) for a class that implements
-the below weighting factor.
+[Using `BandKIntegrator`](../how-to/kintegration.md) for the band integration API.
 :::
 
-Next you will need to construct how $k$-space integrals are performed. All
-integrals are with respect to the eigenenergies $\xi^{\mathrm{qp}}_{kn}$ ($n$
-is a band index) of $\hat{H}^{\mathrm{qp}}$.
-
-The simplest approximation for the integration weight is to just use the
-Fermi-Dirac distribution function $f(\xi)$ on a finite grid
-at the inverse temperature $\beta$. That is,
+On a uniform mesh of $N_k$ points, the k-point weights are $w_k = 1/N_k$.
+The quasiparticle occupations are $f_{kn} = f(\xi^{\mathrm{qp}}_{kn} - \mu)$,
+with $f$ the Fermi-Dirac function at inverse temperature $\beta$.
+The density and kinetic-energy sums below use their product,
 
 $$
-w(\xi^{\mathrm{qp}}_{kn}) = \frac{1}{\mathcal{N}} f(\xi^{\mathrm{qp}}_{kn}).
+W_{kn} = w_k f_{kn} = \frac{f_{kn}}{N_k}.
 $$
 
 The code to perform this is
 
 ```python
-def update_weights(energies, mu=0, beta=10):
+def update_weighted_occupations(eigenvalues, mu=0, beta=10):
     """
-    Return the integration weights for each band at each
-    k-point on the lattice.
+    Return the k-point weights times the band occupations.
 
     Parameters
     ----------
-    energies : dict[numpy.ndarray]
+    eigenvalues : dict[numpy.ndarray]
         Energies at each k-point. Each key is a symmetry block, and its value
         is the energy in each band n, indexed as k, n.
     mu : float, optional
@@ -291,18 +286,20 @@ def update_weights(energies, mu=0, beta=10):
 
     Returns
     -------
-    weights : dict[numpy.ndarray]
+    weighted_occupations : dict[numpy.ndarray]
     """
     return {
         bl: 1.0 / (np.exp(beta * (energy - mu)) + 1.0) / energy.shape[0]
-        for bl, energy in energies.items()
+        for bl, energy in eigenvalues.items()
     }
 ```
 
-Then the integration weight at each $k$-point can be calculated
+Calculate the weighted occupations with
 
 ```python
-kweights = update_weights(energies=energies_qp, mu=..., beta=...)
+weighted_occupations = update_weighted_occupations(
+    eigenvalues=eigenvalues_qp, mu=..., beta=...
+)
 ```
 
 ## E: Setup mean-field matrices
@@ -385,13 +382,13 @@ from risb import helpers
 
 # H^qp single-particle density
 for bl, bl_size in gf_struct:
-    rho_qp[bl] = helpers.get_rho_qp(bloch_vector_qp[bl], kweights[bl])
+    rho_qp[bl] = helpers.get_rho_qp(eigenvectors_qp[bl], weighted_occupations[bl])
 
 # H^qp (lopsided) quasiparticle kinetic energy
 for bl, bl_size in gf_struct:
-    h0_kin_k_R = helpers.get_h0_kin_k_R(R[bl], h0_kin_k[bl], bloch_vector_qp[bl])
+    h0_kin_k_R = helpers.get_h0_kin_k_R(R[bl], h0_kin_k[bl], eigenvectors_qp[bl])
     kinetic_energy_qp[bl] = helpers.get_ke(
-        h0_kin_k_R, bloch_vector_qp[bl], kweights[bl]
+        h0_kin_k_R, eigenvectors_qp[bl], weighted_occupations[bl]
     )
 
 # H^imp hybridization
@@ -531,7 +528,7 @@ h0_kin_k =
 h_loc =
 
 # Implement step D
-update_weights =
+update_weighted_occupations =
 
 # Implement step E
 initialized_mean_field_matrices =
@@ -554,18 +551,18 @@ for cycle in range(n_cycles):
     # Step C: construct H^qp
     for bl, bl_size in gf_struct:
         h_qp = helpers.get_h_qp(R[bl], Lambda[bl], h0_kin_k[bl])
-        energies_qp[bl], bloch_vector_qp[bl] = np.linalg.eigh(h_qp)
+        eigenvalues_qp[bl], eigenvectors_qp[bl] = np.linalg.eigh(h_qp)
 
-    # k-space integration weights
-    kweights = update_weights(energies_qp, beta = , mu = )
+    # k-point weights times band occupations
+    weighted_occupations = update_weighted_occupations(eigenvalues_qp, beta = , mu = )
 
     # Step E is below
 
     # H^qp density matrices
     for bl, bl_size in gf_struct:
-        rho_qp[bl] = helpers.get_rho_qp(bloch_vector_qp[bl], kweights[bl])
-        h0_kin_k_R = helpers.get_h0_kin_k_R(R[bl], h0_kin_k[bl], bloch_vector_qp[bl])
-        kinetic_energy_qp[bl] = helpers.get_ke(h0_kin_k_R, bloch_vector_qp[bl], kweights[bl])
+        rho_qp[bl] = helpers.get_rho_qp(eigenvectors_qp[bl], weighted_occupations[bl])
+        h0_kin_k_R = helpers.get_h0_kin_k_R(R[bl], h0_kin_k[bl], eigenvectors_qp[bl])
+        kinetic_energy_qp[bl] = helpers.get_ke(h0_kin_k_R, eigenvectors_qp[bl], weighted_occupations[bl])
 
     # H^imp parameters
     for bl, bl_size in gf_struct:

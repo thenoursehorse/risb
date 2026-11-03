@@ -22,24 +22,25 @@ from .integrators import (
 
 @dataclass
 class ExtrapolationResult:
-    """Extrapolated value, total error and error of each array entry.
+    """Extrapolated value and error estimates.
 
     coefficients contains the weights applied to the input values.
-    absolute_error contains the estimated absolute error of each entry.
+    absolute_error is the error estimate for each entry; error_norm
+    is its Frobenius norm.
     """
 
     value: NDArray[np.inexact]
-    error: float
+    error_norm: float
     coefficients: NDArray[np.float64]
     absolute_error: NDArray[np.float64]
 
 
-class TemperatureExtrapolatedKIntegrator:
+class TemperatureExtrapolatedBandKIntegrator:
     """Extrapolate k-integrals from finite smearing to the target temperature.
 
     Parameters
     ----------
-    kintegrator : BandKIntegrator
+    band_integrator : BandKIntegrator
         Calculates the band integrals at each supplied beta.
     betas : sequence of float
         Positive, finite, increasing inverse temperatures, all below the
@@ -72,7 +73,7 @@ class TemperatureExtrapolatedKIntegrator:
     density of states can also make this estimate unreliable.
 
     Mu uses the same temperature dependence but is fitted separately.
-    Its estimated error is returned as mu_temperature_error and does not
+    Its estimated error is returned as mu_extrapolation_error and does not
     control integral convergence. The fit keeps the reference and correction
     separate so that small changes in mu are not rounded away.
 
@@ -93,7 +94,7 @@ class TemperatureExtrapolatedKIntegrator:
 
     def __init__(
         self,
-        kintegrator: BandKIntegrator,
+        band_integrator: BandKIntegrator,
         *,
         betas: Sequence[float] | NDArray[np.float64],
         atol: float,
@@ -101,8 +102,8 @@ class TemperatureExtrapolatedKIntegrator:
         diagnostics: DiagnosticObserver | None = None,
     ) -> None:
         self.diagnostics = diagnostics
-        self.kintegrator = kintegrator
-        self.kpoint_integrator: KIntegrator = kintegrator.kpoint_integrator
+        self.band_integrator = band_integrator
+        self.kpoint_integrator: KIntegrator = band_integrator.kpoint_integrator
         self.betas = tuple(float(beta) for beta in betas)
         if not self.betas or any(not np.isfinite(b) or b <= 0 for b in self.betas):
             msg = "betas must be positive and finite."
@@ -143,14 +144,14 @@ class TemperatureExtrapolatedKIntegrator:
             target_mu: float
             mu_reference: float
             mu_correction: float
-            mu_temperature_error: float
+            mu_extrapolation_error: float
             previous_mu: tuple[float, float] | None = None
             previous: ExtrapolationResult | None = None
             previous_meets_tolerance = False
             previous_quadrature_error = 0.0
-            temperature_errors: dict[Hashable, KIntegralError] = {}
+            temperature_extrapolation_errors: dict[Hashable, KIntegralError] = {}
             for sample_beta in self.betas:
-                sample = self.kintegrator.integrate(
+                sample = self.band_integrator.integrate(
                     hamiltonian,
                     observables=observables,
                     beta=sample_beta,
@@ -161,8 +162,12 @@ class TemperatureExtrapolatedKIntegrator:
                     sample = replace(
                         sample,
                         density_k=None,
-                        energies=samples[0].energies if samples else sample.energies,
-                        vectors=samples[0].vectors if samples else sample.vectors,
+                        eigenvalues=samples[0].eigenvalues
+                        if samples
+                        else sample.eigenvalues,
+                        eigenvectors=samples[0].eigenvectors
+                        if samples
+                        else sample.eigenvectors,
                     )
                 samples.append(sample)
                 arrays.append(
@@ -193,11 +198,11 @@ class TemperatureExtrapolatedKIntegrator:
                 )
                 mu_correction = float(mu_candidate.value)
                 target_mu = mu_reference + mu_correction
-                mu_temperature_error = (
+                mu_extrapolation_error = (
                     np.inf
                     if previous_mu is None
                     else max(
-                        mu_candidate.error,
+                        mu_candidate.error_norm,
                         abs(
                             (mu_reference - previous_mu[0])
                             + (mu_correction - previous_mu[1])
@@ -222,7 +227,7 @@ class TemperatureExtrapolatedKIntegrator:
                 candidate_meets_tolerance = (
                     sample.converged
                     and len(samples) >= 3
-                    and candidate.error + quadrature_error <= tolerance
+                    and candidate.error_norm + quadrature_error <= tolerance
                 )
                 checked_error = (
                     np.full_like(candidate.absolute_error, np.inf)
@@ -235,7 +240,7 @@ class TemperatureExtrapolatedKIntegrator:
                 extrapolated = replace(
                     candidate,
                     absolute_error=checked_error,
-                    error=float(np.linalg.norm(checked_error)),
+                    error_norm=float(np.linalg.norm(checked_error)),
                 )
                 confirmation_quadrature_error = (
                     quadrature_error + previous_quadrature_error
@@ -243,24 +248,25 @@ class TemperatureExtrapolatedKIntegrator:
                 meets_tolerance = (
                     candidate_meets_tolerance
                     and previous_meets_tolerance
-                    and extrapolated.error + confirmation_quadrature_error <= tolerance
+                    and extrapolated.error_norm + confirmation_quadrature_error
+                    <= tolerance
                 )
                 previous = candidate
                 previous_meets_tolerance = candidate_meets_tolerance
                 previous_quadrature_error = quadrature_error
-                temperature_errors = {}
+                temperature_extrapolation_errors = {}
                 offset = 0
                 for key, value in sample.values.items():
                     entry_errors = extrapolated.absolute_error[
                         offset : offset + value.size
                     ]
-                    temperature_errors[key] = KIntegralError(
+                    temperature_extrapolation_errors[key] = KIntegralError(
                         norm=float(np.linalg.norm(entry_errors)),
                         max_abs=float(np.max(entry_errors)),
                     )
                     offset += value.size
                 if self.diagnostics is not None:
-                    for key, error in temperature_errors.items():
+                    for key, error in temperature_extrapolation_errors.items():
                         self.diagnostics.emit(
                             "kextrapolation.matrix_sample",
                             observable=key,
@@ -278,16 +284,16 @@ class TemperatureExtrapolatedKIntegrator:
                         extrapolated_mu_reference=mu_reference,
                         extrapolated_mu_correction=mu_correction,
                         n_electrons=sample.n_electrons,
-                        temperature_error=extrapolated.error,
+                        temperature_extrapolation_error=extrapolated.error_norm,
                         electron_count_error=float(extrapolated.absolute_error[-1]),
-                        mu_temperature_error=mu_temperature_error,
+                        mu_extrapolation_error=mu_extrapolation_error,
                         quadrature_error=(
                             None
                             if any(s.quadrature_error is None for s in samples)
                             else quadrature_error
                         ),
                         tolerance=tolerance,
-                        candidate_error=candidate.error,
+                        candidate_error=candidate.error_norm,
                         candidate_meets_tolerance=candidate_meets_tolerance,
                         confirmed=meets_tolerance,
                         confirmation_quadrature_error=(
@@ -324,22 +330,22 @@ class TemperatureExtrapolatedKIntegrator:
                 )
             )
             density_k: BlockMatrix | None = None
-            band_weights: BlockRealArray = {}
+            occupations: BlockRealArray = {}
             if all(s.weights is not None for s in samples):
-                band_weights = {
+                occupations = {
                     block: sum(
                         (
-                            c * s.band_weights[block]
+                            c * s.occupations[block]
                             for c, s in zip(coefficients, samples, strict=True)
                         ),
-                        np.zeros_like(samples[0].band_weights[block]),
+                        np.zeros_like(samples[0].occupations[block]),
                     )
-                    for block in samples[0].band_weights
+                    for block in samples[0].occupations
                 }
                 density_k = {
-                    block: (v * band_weights[block][:, None, :])
+                    block: (v * occupations[block][:, None, :])
                     @ v.conj().swapaxes(-1, -2)
-                    for block, v in samples[0].vectors.items()
+                    for block, v in samples[0].eigenvectors.items()
                 }
             self.mu = target_mu
             result = replace(
@@ -356,17 +362,17 @@ class TemperatureExtrapolatedKIntegrator:
                     )
                 ),
                 converged=converged and all(s.converged for s in samples),
-                temperature_error=extrapolated.error,
-                mu_temperature_error=mu_temperature_error,
-                temperature_errors=temperature_errors,
+                temperature_extrapolation_error=extrapolated.error_norm,
+                mu_extrapolation_error=mu_extrapolation_error,
+                temperature_extrapolation_errors=temperature_extrapolation_errors,
                 quadrature_error=quadrature_error,
                 betas=tuple(s.beta for s in samples),
                 density_k=density_k,
-                band_weights=band_weights,
+                occupations=occupations,
             )
 
             if self.diagnostics is not None:
-                for key, error in temperature_errors.items():
+                for key, error in temperature_extrapolation_errors.items():
                     self.diagnostics.emit(
                         "kextrapolation.matrix_error",
                         observable=key,
@@ -382,9 +388,9 @@ class TemperatureExtrapolatedKIntegrator:
                     mu_reference=result.mu_reference,
                     mu_correction=result.mu_correction,
                     n_electrons=result.n_electrons,
-                    temperature_error=result.temperature_error,
+                    temperature_extrapolation_error=result.temperature_extrapolation_error,
                     electron_count_error=float(extrapolated.absolute_error[-1]),
-                    mu_temperature_error=mu_temperature_error,
+                    mu_extrapolation_error=mu_extrapolation_error,
                     quadrature_error=result.quadrature_error,
                     converged=result.converged,
                 )

@@ -82,7 +82,7 @@ def grand_potential(
     S: ThermalLatticeSolver, impurity_solver: FockitThermalImpuritySolver
 ) -> float:
     return helpers.get_thermal_grand_potential(
-        energies=S.energies_qp,
+        eigenvalues=S.eigenvalues_qp,
         R=S.R,
         Lambda=S.Lambda,
         D=S.D,
@@ -97,7 +97,7 @@ def entropy(
     S: ThermalLatticeSolver, impurity_solver: FockitThermalImpuritySolver
 ) -> float:
     return helpers.get_thermal_entropy(
-        energies=S.energies_qp,
+        eigenvalues=S.eigenvalues_qp,
         R=S.R,
         Lambda=S.Lambda,
         D=S.D,
@@ -134,19 +134,19 @@ def test_low_temperature_solution_is_the_zero_temperature_solution(
     # Half filled. The quasiparticle bands of LatticeSolver also hold the
     # ghost electrons
     n_target = sum(size for _, size in gf_struct) / 2
-    kintegrator = BandKIntegrator(
+    band_integrator = BandKIntegrator(
         WeightedKPointIntegrator(), beta=beta, n_target=n_target * B
     )
     S0 = LatticeSolver(
         h0_k,
         gf_struct,
         FockitImpuritySolver(h, gf_struct, bath_size=bath_size),
-        kintegrator,
+        band_integrator,
         symmetrizers=[symmetrize_blocks],
         bath_size=[bath_size],
     )
     S0.solve(tol=1e-11)
-    assert kintegrator.mu is not None
+    assert band_integrator.mu is not None
     S = ThermalLatticeSolver(
         h0_k,
         gf_struct,
@@ -154,7 +154,7 @@ def test_low_temperature_solution_is_the_zero_temperature_solution(
             h, gf_struct, bath_size=bath_size, beta=beta, **EXACT_THERMAL
         ),
         beta=beta,
-        mu=kintegrator.mu if fixed == "mu" else None,
+        mu=band_integrator.mu if fixed == "mu" else None,
         symmetrizers=[symmetrize_blocks],
         bath_size=[bath_size],
         n_target=n_target if fixed == "filling" else None,
@@ -165,7 +165,7 @@ def test_low_temperature_solution_is_the_zero_temperature_solution(
             S.R[0][bl] = random_unitary(2, seed=1).conj().T
     S.solve(tol=1e-10)
     assert S.self_consistency_error < 1e-8
-    assert S.mu == pytest.approx(kintegrator.mu, abs=1e-8)
+    assert S.mu == pytest.approx(band_integrator.mu, abs=1e-8)
     for bl, _ in gf_struct:
         assert S.Z[0][bl] == pytest.approx(S0.Z[0][bl], abs=1e-8)
         assert S.rho_c[0][bl] == pytest.approx(S0.rho_c[0][bl], abs=1e-8)
@@ -236,7 +236,7 @@ def test_grand_potential_at_low_temperature_is_the_zero_temperature_lagrangian()
         h0_k={bl: bethe_h0_k(400) for bl, _ in ONE_BAND},
         gf_struct=ONE_BAND,
         impurity_solvers=impurity_solver_0,
-        kintegrator=BandKIntegrator(WeightedKPointIntegrator(), beta=beta, mu=mu),
+        band_integrator=BandKIntegrator(WeightedKPointIntegrator(), beta=beta, mu=mu),
         symmetrizers=[symmetrize_blocks],
         bath_size=[bath_size],
     )

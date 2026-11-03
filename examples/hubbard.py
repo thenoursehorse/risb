@@ -37,7 +37,9 @@ h_int = hubbard(U=0, n_orb=n_orb)
 # Set up the k-space sums and band filling.
 beta = 40  # inverse temperature
 n_target = 1  # half-filling
-kintegrator = BandKIntegrator(WeightedKPointIntegrator(), beta=beta, n_target=n_target)
+band_integrator = BandKIntegrator(
+    WeightedKPointIntegrator(), beta=beta, n_target=n_target
+)
 
 
 # Symmetrize spin blocks to be the same (paramagnetism)
@@ -66,7 +68,7 @@ S = LatticeSolver(
     h0_k=h0_k,
     gf_struct=gf_struct,
     impurity_solvers=impurity_solver,
-    kintegrator=kintegrator,
+    band_integrator=band_integrator,
     symmetrizers=[force_paramagnetic],
     force_real=True,
 )

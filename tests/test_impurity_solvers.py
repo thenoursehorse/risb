@@ -556,7 +556,9 @@ def test_complex_two_orbital_model_reaches_the_mott_state_with_a_thermal_impurit
         h0_k=build_two_orbital_complex_h0_k(),
         gf_struct=gf_struct,
         impurity_solvers=FockitImpuritySolver(h_int, gf_struct, beta=beta),
-        kintegrator=BandKIntegrator(WeightedKPointIntegrator(), beta=beta, n_target=2),
+        band_integrator=BandKIntegrator(
+            WeightedKPointIntegrator(), beta=beta, n_target=2
+        ),
     )
     for bl, _ in gf_struct:
         S.Lambda[0][bl] = (0.5 * U + Up - 0.5 * J) * np.eye(2)

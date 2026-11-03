@@ -40,8 +40,10 @@ for o in range(n_orb):
 # Set up the k-space sums and band filling.
 beta = 40  # inverse temperature
 n_target = 2  # half-filling
-kintegrator = BandKIntegrator(WeightedKPointIntegrator(), beta=beta, n_target=n_target)
-# or fix mu = U/2 -> kintegrator = BandKIntegrator(beta=beta, mu=mu)
+band_integrator = BandKIntegrator(
+    WeightedKPointIntegrator(), beta=beta, n_target=n_target
+)
+# or fix mu = U/2 -> band_integrator = BandKIntegrator(beta=beta, mu=mu)
 
 # (Optional) set up function to symmetrize mean-field matrices
 # def symmetries(A):
@@ -76,7 +78,7 @@ S = LatticeSolver(
     h0_k=h0_k,
     gf_struct=gf_struct,
     impurity_solvers=impurity_solver,
-    kintegrator=kintegrator,
+    band_integrator=band_integrator,
 )
 # symmetrizers=[symmetries])
 

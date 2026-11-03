@@ -32,17 +32,17 @@ def test_get_h_qp(subtests: pytest.Subtests) -> None:
     with np.load(helpers_filename) as f:
         h0_k = f["h0_k"]
         eig_expected = f["eig"]
-        vec_expected = f["vec"]
+        eigenvectors_expected = f["vec"]
     R = np.zeros(shape=(2, 2))
     np.fill_diagonal(R, 1)
     Lambda = np.zeros(shape=(2, 2))
     np.fill_diagonal(Lambda, 0.5)
     h_qp = helpers.get_h_qp(R, Lambda, h0_k)
-    eig, vec = np.linalg.eigh(h_qp)
+    eig, eigenvectors = np.linalg.eigh(h_qp)
     with subtests.test(msg="eigenvalues"):
         assert eig == pytest.approx(eig_expected, abs=abs)
     with subtests.test(msg="eigenvectors"):
-        assert vec == pytest.approx(vec_expected, abs=abs)
+        assert eigenvectors == pytest.approx(eigenvectors_expected, abs=abs)
 
 
 def test_get_h0_kin_k_R() -> None:
@@ -50,27 +50,27 @@ def test_get_h0_kin_k_R() -> None:
     np.fill_diagonal(R, 1)
     with np.load(helpers_filename) as f:
         h0_k = f["h0_k"]
-        vec = f["vec"]
+        eigenvectors = f["vec"]
         h0_k_R_expected = f["h0_R"]
-    h0_k_R = helpers.get_h0_kin_k_R(R, h0_k, vec)
+    h0_k_R = helpers.get_h0_kin_k_R(R, h0_k, eigenvectors)
     assert h0_k_R == pytest.approx(h0_k_R_expected, abs=abs)
 
 
 def test_get_ke() -> None:
     with np.load(helpers_filename) as f:
         h0_k_R = f["h0_R"]
-        vec = f["vec"]
+        eigenvectors = f["vec"]
         wks = f["wks"]
-    ke = helpers.get_ke(h0_k_R, vec, wks)
+    ke = helpers.get_ke(h0_k_R, eigenvectors, wks)
     ke_expected = np.array([[-0.36035732126514364, 0], [0, -0.36035732126514364]])
     assert ke == pytest.approx(ke_expected, abs=abs)
 
 
 def test_get_rho_qp() -> None:
     with np.load(helpers_filename) as f:
-        vec = f["vec"]
+        eigenvectors = f["vec"]
         wks = f["wks"]
-    rho_qp = helpers.get_rho_qp(vec, wks)
+    rho_qp = helpers.get_rho_qp(eigenvectors, wks)
     rho_qp_expected = np.array([[0.30667105643085796, 0], [0, 0.30667105643085796]])
     assert rho_qp == pytest.approx(rho_qp_expected, abs=abs)
 
@@ -131,10 +131,10 @@ def test_get_h0_kin_k_removes_local_terms_with_complex_projector() -> None:
 def assert_lagrangian_is_stationary(
     S: LatticeSolver,
     impurity_solvers: list[FockitImpuritySolver],
-    kintegrator: BandKIntegrator,
+    band_integrator: BandKIntegrator,
 ) -> None:
-    assert kintegrator.mu is not None
-    mu = kintegrator.mu
+    assert band_integrator.mu is not None
+    mu = band_integrator.mu
     variables = {
         "R": S.R,
         "Lambda": S.Lambda,
@@ -160,7 +160,7 @@ def assert_lagrangian_is_stationary(
             rho_f=S.rho_f,
             rho_cf=S.rho_cf,
             h_loc_energy=h_loc_energy,
-            beta=kintegrator.beta,
+            beta=band_integrator.beta,
             mu=mu,
             projectors=S.projectors,
             gf_struct_mapping=S.gf_struct_mapping,
@@ -205,13 +205,13 @@ def test_converged_solution_is_a_stationary_point_of_the_lagrangian() -> None:
         J_hund=J,
     )
     gf_struct = [(bl, 2) for bl in ["up", "dn"]]
-    kintegrator = BandKIntegrator(WeightedKPointIntegrator(), beta=40, n_target=2)
+    band_integrator = BandKIntegrator(WeightedKPointIntegrator(), beta=40, n_target=2)
     impurity_solver = FockitImpuritySolver(h_int, gf_struct)
     S = LatticeSolver(
         h0_k=build_two_orbital_complex_h0_k(),
         gf_struct=gf_struct,
         impurity_solvers=impurity_solver,
-        kintegrator=kintegrator,
+        band_integrator=band_integrator,
     )
     # A quasiparticle basis rotated away from R = 1
     u = random_unitary(2, seed=1)
@@ -219,7 +219,7 @@ def test_converged_solution_is_a_stationary_point_of_the_lagrangian() -> None:
         S.Lambda[0][bl] = 1.5 * np.eye(2)
         S.R[0][bl] = u.conj().T
     assert S.solve(tol=1e-8).converged
-    assert_lagrangian_is_stationary(S, [impurity_solver], kintegrator)
+    assert_lagrangian_is_stationary(S, [impurity_solver], band_integrator)
 
 
 def test_converged_solution_with_a_thermal_impurity_is_a_stationary_point_of_the_lagrangian() -> (
@@ -238,19 +238,19 @@ def test_converged_solution_with_a_thermal_impurity_is_a_stationary_point_of_the
     )
     gf_struct = [(bl, 2) for bl in ["up", "dn"]]
     beta = 20
-    kintegrator = BandKIntegrator(WeightedKPointIntegrator(), beta=beta, n_target=2)
+    band_integrator = BandKIntegrator(WeightedKPointIntegrator(), beta=beta, n_target=2)
     impurity_solver = FockitImpuritySolver(h_int, gf_struct, beta=beta)
     S = LatticeSolver(
         h0_k=build_two_orbital_complex_h0_k(),
         gf_struct=gf_struct,
         impurity_solvers=impurity_solver,
-        kintegrator=kintegrator,
+        band_integrator=band_integrator,
     )
     for bl, _ in gf_struct:
         S.Lambda[0][bl] = 1.5 * np.eye(2)
     assert S.solve(tol=1e-8).converged
     assert impurity_solver.entropy > 0.01
-    assert_lagrangian_is_stationary(S, [impurity_solver], kintegrator)
+    assert_lagrangian_is_stationary(S, [impurity_solver], band_integrator)
 
 
 def test_converged_solution_with_several_clusters_is_a_stationary_point_of_the_lagrangian() -> (
@@ -265,12 +265,12 @@ def test_converged_solution_with_several_clusters_is_a_stationary_point_of_the_l
     impurity_solvers = [
         FockitImpuritySolver(4 * nc("up", 0) * nc("dn", 0), gf) for gf in gf_struct
     ]
-    kintegrator = BandKIntegrator(WeightedKPointIntegrator(), beta=40, n_target=2)
+    band_integrator = BandKIntegrator(WeightedKPointIntegrator(), beta=40, n_target=2)
     S = LatticeSolver(
         h0_k=dict.fromkeys(spin_names, h0_k),
         gf_struct=gf_struct,
         impurity_solvers=impurity_solvers,
-        kintegrator=kintegrator,
+        band_integrator=band_integrator,
         projectors=[
             dict.fromkeys(spin_names, np.array([[1.0, 0.0]])),
             dict.fromkeys(spin_names, np.array([[0.0, 1.0]])),
@@ -280,7 +280,7 @@ def test_converged_solution_with_several_clusters_is_a_stationary_point_of_the_l
         for bl in spin_names:
             S.Lambda[i][bl] = np.array([[2.0]])
     assert S.solve(tol=1e-8).converged
-    assert_lagrangian_is_stationary(S, impurity_solvers, kintegrator)
+    assert_lagrangian_is_stationary(S, impurity_solvers, band_integrator)
 
 
 def test_completely_full_orbital_is_decoupled_and_the_rest_is_unchanged() -> None:
@@ -309,18 +309,18 @@ def test_converged_solution_with_an_orbital_in_no_cluster_is_a_stationary_point_
     impurity_solvers = [
         FockitImpuritySolver(4 * nc("up", 0) * nc("dn", 0), gf_struct[0])
     ]
-    kintegrator = BandKIntegrator(WeightedKPointIntegrator(), beta=40, n_target=2)
+    band_integrator = BandKIntegrator(WeightedKPointIntegrator(), beta=40, n_target=2)
     S = LatticeSolver(
         h0_k=dict.fromkeys(spin_names, one_band_cubic_h0_k(6, supercell=True)),
         gf_struct=gf_struct,
         impurity_solvers=impurity_solvers,
-        kintegrator=kintegrator,
+        band_integrator=band_integrator,
         projectors=[dict.fromkeys(spin_names, np.array([[1.0, 0.0]]))],
     )
     for bl in spin_names:
         S.Lambda[0][bl] = np.array([[2.0]])
     assert S.solve(tol=1e-8).converged
-    assert_lagrangian_is_stationary(S, impurity_solvers, kintegrator)
+    assert_lagrangian_is_stationary(S, impurity_solvers, band_integrator)
 
 
 def test_converged_solution_with_ghosts_is_a_stationary_point_of_the_lagrangian() -> (
@@ -336,18 +336,20 @@ def test_converged_solution_with_ghosts_is_a_stationary_point_of_the_lagrangian(
             4 * nc("up", 0) * nc("dn", 0), gf_struct[0], bath_size=bath_size[0]
         )
     ]
-    kintegrator = BandKIntegrator(WeightedKPointIntegrator(), beta=40, n_target=2 + 2)
+    band_integrator = BandKIntegrator(
+        WeightedKPointIntegrator(), beta=40, n_target=2 + 2
+    )
     S = LatticeSolver(
         h0_k=dict.fromkeys(spin_names, one_band_cubic_h0_k(6, supercell=True)),
         gf_struct=gf_struct,
         impurity_solvers=impurity_solvers,
-        kintegrator=kintegrator,
+        band_integrator=band_integrator,
         projectors=[dict.fromkeys(spin_names, np.array([[1.0, 0.0]]))],
         bath_size=bath_size,
     )
     assert S.solve(tol=1e-8).converged
     assert S.self_consistency_error < 1e-8
-    assert_lagrangian_is_stationary(S, impurity_solvers, kintegrator)
+    assert_lagrangian_is_stationary(S, impurity_solvers, band_integrator)
 
 
 @pytest.mark.parametrize(
@@ -383,7 +385,9 @@ def test_entropy_is_minus_the_temperature_derivative_of_the_lagrangian(
             h0_k=h0_k,
             gf_struct=gf_struct,
             impurity_solvers=impurity_solvers,
-            kintegrator=BandKIntegrator(WeightedKPointIntegrator(), beta=beta, mu=mu),
+            band_integrator=BandKIntegrator(
+                WeightedKPointIntegrator(), beta=beta, mu=mu
+            ),
             projectors=sites[:n_clusters],
             bath_size=bath_size,
         )
@@ -411,7 +415,10 @@ def test_entropy_is_minus_the_temperature_derivative_of_the_lagrangian(
             impurity_entropy=impurity_entropy,
         )
         entropy = helpers.get_entropy(
-            energies=S.energies_qp, beta=beta, mu=mu, impurity_entropy=impurity_entropy
+            eigenvalues=S.eigenvalues_qp,
+            beta=beta,
+            mu=mu,
+            impurity_entropy=impurity_entropy,
         )
         return lagrangian, entropy
 
@@ -460,31 +467,31 @@ def solved_lattice(
         projectors = [dict.fromkeys(spin_names, np.array([[1.0, 0.0]]))]
         n_target, start = 2, np.eye(n_qp)
         n_ghost_electrons = n_qp - 1
-    kintegrator = BandKIntegrator(
+    band_integrator = BandKIntegrator(
         WeightedKPointIntegrator(), beta=40, n_target=n_target + n_ghost_electrons
     )
     S = LatticeSolver(
         h0_k=h0_k,
         gf_struct=gf_struct,
         impurity_solvers=impurity_solvers,
-        kintegrator=kintegrator,
+        band_integrator=band_integrator,
         projectors=projectors,
         bath_size=bath_size,
     )
     for bl in spin_names:
         S.Lambda[0][bl] = S.Lambda[0][bl] + start
     assert S.solve(tol=1e-12).converged
-    return S, impurity_solvers, kintegrator, n_target
+    return S, impurity_solvers, band_integrator, n_target
 
 
 @pytest.mark.parametrize("model", ["complex", "a site in no cluster", "ghosts"])
 def test_density_matrix_k_has_the_local_density_of_each_impurity(model: str) -> None:
     S, _, _, n_target = solved_lattice(model)
-    assert S.kintegration_result is not None
+    assert S.band_integration_result is not None
     density = helpers.get_density_matrix_k(
         R_full=S.R_full,
-        qp_density_k=S.qp_density_k,
-        weights=S.kintegration_result.weights,
+        density_qp_k=S.density_qp_k,
+        weights=S.band_integration_result.weights,
         rho_c=S.rho_c,
         projectors=S.projectors,
     )
@@ -501,16 +508,16 @@ def test_density_matrix_k_has_the_local_density_of_each_impurity(model: str) -> 
 
 def test_charge_projection_preserves_converged_risb_density() -> None:
     S, _, _, n_target = solved_lattice("complex")
-    assert S.kintegration_result is not None
+    assert S.band_integration_result is not None
     density = helpers.get_density_matrix_k(
         R_full=S.R_full,
-        qp_density_k=S.qp_density_k,
-        weights=S.kintegration_result.weights,
+        density_qp_k=S.density_qp_k,
+        weights=S.band_integration_result.weights,
         rho_c=S.rho_c,
         projectors=S.projectors,
     )
     projected = helpers.project_charge_neutral_density_matrix_k(
-        density_k=density, n_target=n_target, weights=S.kintegration_result.weights
+        density_k=density, n_target=n_target, weights=S.band_integration_result.weights
     )
     for bl, rho in density.items():
         assert projected[bl] == pytest.approx(rho, abs=1e-10)
@@ -522,11 +529,11 @@ def test_charge_projection_neutralizes_an_unconverged_risb_density() -> None:
         for bl, value in cluster.items():
             cluster[bl] = value + 0.4 * np.eye(value.shape[0])
     S.one_cycle()
-    assert S.kintegration_result is not None
-    weights = S.kintegration_result.weights
+    assert S.band_integration_result is not None
+    weights = S.band_integration_result.weights
     density = helpers.get_density_matrix_k(
         R_full=S.R_full,
-        qp_density_k=S.qp_density_k,
+        density_qp_k=S.density_qp_k,
         weights=weights,
         rho_c=S.rho_c,
         projectors=S.projectors,
@@ -596,13 +603,13 @@ def test_charge_projection_handles_a_full_window() -> None:
 
 @pytest.mark.parametrize("model", ["complex", "a site in no cluster", "ghosts"])
 def test_band_and_interaction_energy_is_the_energy_of_risb(model: str) -> None:
-    S, impurity_solvers, kintegrator, n_target = solved_lattice(model)
-    assert kintegrator.mu is not None
-    assert S.kintegration_result is not None
+    S, impurity_solvers, band_integrator, n_target = solved_lattice(model)
+    assert band_integrator.mu is not None
+    assert S.band_integration_result is not None
     density = helpers.get_density_matrix_k(
         R_full=S.R_full,
-        qp_density_k=S.qp_density_k,
-        weights=S.kintegration_result.weights,
+        density_qp_k=S.density_qp_k,
+        weights=S.band_integration_result.weights,
         rho_c=S.rho_c,
         projectors=S.projectors,
     )
@@ -622,18 +629,19 @@ def test_band_and_interaction_energy_is_the_energy_of_risb(model: str) -> None:
         h_loc_energy=[
             float(np.real(s.overlap(s.h_int + s.h0_loc))) for s in impurity_solvers
         ],
-        beta=kintegrator.beta,
-        mu=kintegrator.mu,
+        beta=band_integrator.beta,
+        mu=band_integrator.mu,
         projectors=S.projectors,
     )
     entropy = helpers.get_entropy(
-        energies=S.energies_qp,
-        beta=kintegrator.beta,
-        mu=kintegrator.mu,
+        eigenvalues=S.eigenvalues_qp,
+        beta=band_integrator.beta,
+        mu=band_integrator.mu,
         impurity_entropy=[s.entropy for s in impurity_solvers],
     )
     assert energy == pytest.approx(
-        lagrangian + kintegrator.mu * n_target + entropy / kintegrator.beta, abs=1e-8
+        lagrangian + band_integrator.mu * n_target + entropy / band_integrator.beta,
+        abs=1e-8,
     )
 
 
@@ -759,18 +767,18 @@ def test_green_functions_do_not_depend_on_the_quasiparticle_basis() -> None:
     )
     gf_struct = [(bl, 2) for bl in ["up", "dn"]]
     h0_k = build_two_orbital_complex_h0_k(nkx=6)
-    kintegrator = BandKIntegrator(WeightedKPointIntegrator(), beta=40, n_target=2)
+    band_integrator = BandKIntegrator(WeightedKPointIntegrator(), beta=40, n_target=2)
     S = LatticeSolver(
         h0_k=h0_k,
         gf_struct=gf_struct,
         impurity_solvers=FockitImpuritySolver(h_int, gf_struct),
-        kintegrator=kintegrator,
+        band_integrator=band_integrator,
     )
     for bl, _ in gf_struct:
         S.Lambda[0][bl] = 1.5 * np.eye(2)
     S.solve(tol=1e-10)
-    assert kintegrator.mu is not None
-    mu = kintegrator.mu
+    assert band_integrator.mu is not None
+    mu = band_integrator.mu
     # Matsubara frequencies
     iw = 1j * (2 * np.arange(32) + 1) * np.pi / 40
 
@@ -911,9 +919,9 @@ def test_quadratic_embedding_is_the_exact_thermal_state_over_all_particle_number
     for mode in f + b:
         H -= mu * nc(*mode)
     basis = build_basis({FermionSpace(): f + b})
-    energies, vectors = np.linalg.eigh(to_matrix(H, basis).toarray())
-    weights = np.exp(-beta * (energies - energies[0]))
-    rho = (vectors * (weights / np.sum(weights))) @ vectors.conj().T
+    eigenvalues, eigenvectors = np.linalg.eigh(to_matrix(H, basis).toarray())
+    weights = np.exp(-beta * (eigenvalues - eigenvalues[0]))
+    rho = (eigenvectors * (weights / np.sum(weights))) @ eigenvectors.conj().T
 
     def average(op: OpSum) -> complex:
         return complex(np.trace(rho @ to_matrix(op, basis).toarray()))
@@ -932,7 +940,7 @@ def test_quadratic_embedding_is_the_exact_thermal_state_over_all_particle_number
             assert rho_f[i, j] == pytest.approx(
                 average(c(*b[j]) * cdag(*b[i])), abs=1e-12
             )
-    omega = energies[0] - np.log(np.sum(weights)) / beta
+    omega = eigenvalues[0] - np.log(np.sum(weights)) / beta
     assert helpers.get_h0_emb_grand_potential(
         R, Lambda, D, Lambda_c, beta, mu
     ) == pytest.approx(omega, abs=1e-12)
@@ -947,26 +955,26 @@ def test_quadratic_embedding_at_low_temperature_purifies_a_solution() -> None:
     gf_struct = [("up", 1), ("dn", 1)]
     bath_size = {bl: B for bl, _ in gf_struct}
     h_int = U * nc("up", 0) * nc("dn", 0) - U / 2 * (nc("up", 0) + nc("dn", 0))
-    kintegrator = BandKIntegrator(WeightedKPointIntegrator(), beta=200, n_target=B)
+    band_integrator = BandKIntegrator(WeightedKPointIntegrator(), beta=200, n_target=B)
     S = LatticeSolver(
         h0_k={bl: bethe_h0_k(200) for bl, _ in gf_struct},
         gf_struct=gf_struct,
         impurity_solvers=FockitImpuritySolver(h_int, gf_struct, bath_size=bath_size),
-        kintegrator=kintegrator,
+        band_integrator=band_integrator,
         symmetrizers=[symmetrize_blocks],
         force_real=True,
         bath_size=[bath_size],
     )
     S.solve(tol=1e-12)
-    assert kintegrator.mu is not None
+    assert band_integrator.mu is not None
     for bl, _ in gf_struct:
         R = S.R[0][bl]
         Delta = S.rho_qp[0][bl]
         rho_qp, rho_qpf, rho_f = helpers.get_h0_emb_densities(
-            R, S.Lambda[0][bl], S.D[0][bl], S.Lambda_c[0][bl], 1e6, kintegrator.mu
+            R, S.Lambda[0][bl], S.D[0][bl], S.Lambda_c[0][bl], 1e6, band_integrator.mu
         )
-        eigenvalues, vectors = np.linalg.eigh(Delta @ (np.eye(B) - Delta))
-        sqrt_k = (vectors * np.sqrt(eigenvalues)) @ vectors.conj().T
+        eigenvalues, eigenvectors = np.linalg.eigh(Delta @ (np.eye(B) - Delta))
+        sqrt_k = (eigenvectors * np.sqrt(eigenvalues)) @ eigenvectors.conj().T
         assert rho_qp == pytest.approx(Delta, abs=1e-10)
         assert rho_qpf == pytest.approx(sqrt_k, abs=1e-10)
         assert rho_f == pytest.approx(Delta, abs=1e-10)

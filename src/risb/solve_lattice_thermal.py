@@ -84,10 +84,10 @@ class ThermalLatticeSolver(BaseLatticeSolver):
         Number of electrons per unit cell. The chemical potential :attr:`mu`
         is then solved for with :attr:`Lambda` and :attr:`R`, and the root
         functions include ``n_electrons - n_target``. Default is a fixed `mu`.
-    kintegrator : risb.kintegration.BandKIntegration, optional
+    band_integrator : risb.kintegration.BandKIntegration, optional
         Band integration method. If omitted, use Fermi smearing on the
-        supplied equally weighted mesh. Each cycle passes the physical beta
-        and the current outer-loop mu to this kintegrator.
+        supplied equally weighted mesh. Each cycle evaluates the band
+        integrals at the physical beta and the current chemical potential.
     density_matching_jacobian : {"2-point", "analytic"}, optional
         Use finite differences (``"2-point"``) or analytic
         derivatives (``"analytic"``) for both density-matching steps.
@@ -131,7 +131,7 @@ class ThermalLatticeSolver(BaseLatticeSolver):
         *,
         bath_size: Sequence[Mapping[str, int]] | None = None,
         n_target: float | None = None,
-        kintegrator: BandKIntegration | None = None,
+        band_integrator: BandKIntegration | None = None,
         h0_k_evaluator: Callable[[KPoints], BlockMatrixLike] | None = None,
         projectors_evaluator: Callable[[KPoints], Sequence[BlockMatrixLike]]
         | None = None,
@@ -157,9 +157,9 @@ class ThermalLatticeSolver(BaseLatticeSolver):
             check_projectors=check_projectors,
             double_counting=double_counting,
             bath_size=bath_size,
-            kintegrator=BandKIntegrator(WeightedKPointIntegrator())
-            if kintegrator is None
-            else kintegrator,
+            band_integrator=BandKIntegrator(WeightedKPointIntegrator())
+            if band_integrator is None
+            else band_integrator,
             h0_k_evaluator=h0_k_evaluator,
             projectors_evaluator=projectors_evaluator,
             gauge_fix=gauge_fix,
@@ -210,7 +210,7 @@ class ThermalLatticeSolver(BaseLatticeSolver):
             )
             self.R_full, self.Lambda_full = R_full, Lambda_full
             hamiltonian, _ = self._get_band_integrands()
-            self.mu = self.kintegrator.integrate(
+            self.mu = self.band_integrator.integrate(
                 hamiltonian, beta=beta, n_target=n_target + self.n_ghost_electrons
             ).mu
         else:
@@ -233,7 +233,7 @@ class ThermalLatticeSolver(BaseLatticeSolver):
         self, hamiltonian: Hamiltonian, observables: BandObservables
     ) -> BandKIntegrationResult:
         """Integrate at the physical beta and the current outer-loop mu."""
-        return self.kintegrator.integrate(
+        return self.band_integrator.integrate(
             hamiltonian, observables=observables, beta=self.beta, mu=self.mu
         )
 
@@ -290,11 +290,11 @@ class ThermalLatticeSolver(BaseLatticeSolver):
 
     @override
     def update_residuals(self) -> None:
-        assert self.kintegration_result is not None
+        assert self.band_integration_result is not None
         # The electrons of the bands of the orbitals in no cluster are those of
         # all bands minus those of the clusters
         self.n_electrons = float(
-            self.kintegration_result.n_electrons
+            self.band_integration_result.n_electrons
             + sum(
                 np.trace(self.rho_c[i][bl]).real - np.trace(self.rho_qp[i][bl]).real
                 for i in range(self.n_clusters)

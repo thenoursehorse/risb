@@ -330,12 +330,14 @@ def test_two_orbital_kanamori_lattice_has_the_exact_quasiparticle_weight() -> No
             cutoff=CUTOFF,
         ),
     ):
-        kintegrator = BandKIntegrator(WeightedKPointIntegrator(), beta=40, n_target=2)
+        band_integrator = BandKIntegrator(
+            WeightedKPointIntegrator(), beta=40, n_target=2
+        )
         S = LatticeSolver(
             h0_k=h0_k,
             gf_struct=gf_struct,
             impurity_solvers=solver,
-            kintegrator=kintegrator,
+            band_integrator=band_integrator,
             symmetrizers=[symmetrize_blocks],
         )
         assert S.solve(tol=1e-8).converged

@@ -201,7 +201,7 @@ class AutoBZIntegrator:
                         offset += count
                     result = KIntegrationResult(
                         integrated,
-                        error=message["error"],
+                        quadrature_error=message["error"],
                         converged=message["converged"],
                         n_evaluations=evaluations,
                     )
@@ -210,7 +210,7 @@ class AutoBZIntegrator:
                             "autobz.result",
                             method=self.settings["method"],
                             n_evaluations=evaluations,
-                            quadrature_error=result.error,
+                            quadrature_error=result.quadrature_error,
                             converged=result.converged,
                         )
                     return result

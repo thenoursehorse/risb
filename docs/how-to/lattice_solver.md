@@ -25,12 +25,14 @@ the interactions `h_int` by hand if you want. It makes no difference to
 the solver.
 :::
 
-Choose a k-space kintegrator:
+Choose a band integrator:
 
 ```python
 from risb.kintegration import BandKIntegrator, WeightedKPointIntegrator
 
-kintegrator = BandKIntegrator(WeightedKPointIntegrator(), beta=beta, n_target=n_target)
+band_integrator = BandKIntegrator(
+    WeightedKPointIntegrator(), beta=beta, n_target=n_target
+)
 ```
 
 Next define the local block matrix structure of the correlated subspace
@@ -70,7 +72,7 @@ S = LatticeSolver(
     h0_k=h0_k,
     gf_struct=gf_struct,
     impurity_solvers=impurity_solver,
-    kintegrator=kintegrator,
+    band_integrator=band_integrator,
 )
 S.solve(tol=...)
 ```
@@ -182,12 +184,14 @@ S = LatticeSolver(...
 The impurity problem is half filled, so the ghosts hold $(B - 1) / 2$
 electrons per orbital. The quasiparticle bands then hold
 `S.n_ghost_electrons` more electrons than the physical ones, and the filling
-`n_target` of the $k$-space integration weights must include them
+Set the band integrator's `n_target` to include them:
 
 ```python
-kintegrator = BandKIntegrator(WeightedKPointIntegrator(), beta=..., n_target=n_target)
-S = LatticeSolver(..., kintegrator=kintegrator, bath_size=...)
-kintegrator.n_target = n_target + S.n_ghost_electrons
+band_integrator = BandKIntegrator(
+    WeightedKPointIntegrator(), beta=..., n_target=n_target
+)
+S = LatticeSolver(..., band_integrator=band_integrator, bath_size=...)
+band_integrator.n_target = n_target + S.n_ghost_electrons
 ```
 
 Half filling needs an even number of ghosts in a cluster, and for a paramagnet
@@ -223,9 +227,9 @@ quasiparticle weight and the self-energy of block `bl` of cluster `i` are
 ```python
 from risb import helpers
 
-Z = helpers.get_z(S.R[i][bl], S.Lambda[i][bl], kintegrator.mu)
+Z = helpers.get_z(S.R[i][bl], S.Lambda[i][bl], band_integrator.mu)
 Sigma = helpers.get_sigma_w(
-    omega, S.R[i][bl], S.Lambda[i][bl], kintegrator.mu, S.h0_loc_matrix[i][bl]
+    omega, S.R[i][bl], S.Lambda[i][bl], band_integrator.mu, S.h0_loc_matrix[i][bl]
 )
 ```
 
@@ -451,7 +455,7 @@ The grand potential and the entropy per unit cell are
 from risb import helpers
 
 omega = helpers.get_thermal_grand_potential(
-    energies=S.energies_qp,
+    eigenvalues=S.eigenvalues_qp,
     R=S.R,
     Lambda=S.Lambda,
     D=S.D,

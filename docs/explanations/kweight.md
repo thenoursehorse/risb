@@ -4,51 +4,42 @@
 [Using `BandKIntegrator`](../how-to/kintegration.md).
 :::
 
-{{RISB}} requires integrating many mean-field matrices as a function of $k$.
-The way to do this that generalizes to
-many kinds of $k$-space integration methods is to
-find the weight of the integral at each $k$-point. This is, e.g., how
-linear tetrahedron works and smearing methods work.
-
-The reference energy for the integration weights in {{RISB}} are the
-eigenenergies of the single-particle Hamiltonian $\hat{H}^{\mathrm{qp}}$,
-which change at every iteration of the self-consistent process.
-The quasiparticle Hamiltonian is given by
-
-All of the integrals are in the thermodynamic limit and take the form
+Let $U_k$ diagonalize the quasiparticle Hamiltonian, with eigenvalues
+$\epsilon^{\mathrm{qp}}_{kn}$. At inverse temperature $\beta$, the occupations are
 
 $$
-I = \lim_{\mathcal{N} \rightarrow \infty}
-\frac{1}{\mathcal{N}} \sum_k \mathbf{A}_k f(\mathbf{H}^{\mathrm{qp}}_k),
+f_{kn} = \frac{1}{e^{\beta(\epsilon^{\mathrm{qp}}_{kn}-\mu)} + 1}.
 $$
 
-where $\mathcal{N}$ is the number of unit cells, $\mathbf{A}_k$ is a matrix
-of a generic function of $k$, and $f(\mathbf{H}^{\mathrm{qp}})$ is the
-Fermi-Dirac distribution. The meaning of $f(\mathbf{H}^{\mathrm{qp}}_k)$ is
-specifically the operation
+The quasiparticle density matrix at each k-point is
 
 $$
-\mathbf{U}^{}_k \mathbf{U}^{\dagger}_k f(\mathbf{H}^{\mathrm{qp}}_k)
-\mathbf{U}^{}_k \mathbf{U}^{\dagger}_k
-= \mathbf{U}^{}_k f(\xi^{\mathrm{qp}}_{kn}) \mathbf{U}^{\dagger}_k,
+n^{\mathrm{qp}}_k = U_k\,\operatorname{diag}(f_{kn})\,U_k^\dagger.
 $$
 
-where $\mathbf{U}_k$ is the matrix representation of the unitary that
-diagonalizes $\hat{H}^{\mathrm{qp}}_k$, $\xi^{\mathrm{qp}}_{kn}$ are
-the eigenenergies (bands) of $\hat{H}^{\mathrm{qp}}$, and
-$f(\mathbf{\xi}^{\mathrm{qp}}_{kn})$ is a diagonal matrix of the Fermi-Dirac
-distribution for each quasiparticle band $n$.
-
-The integral can be converted to a series of finite $k$-points, with an
-appropriate integration weight such that the integral now takes the form
+On a finite mesh, Brillouin-zone averages take the form
 
 $$
-I = \sum_k A_k w(\xi^{\mathrm{qp}}_{kn}).
+I = \sum_k w_k A_k n^{\mathrm{qp}}_k,
+\qquad \sum_k w_k = 1.
 $$
 
-Most $k$-space integration methods can be reduced to different approximations
-to choose the weighting function $w(\xi^{\mathrm{qp}}_{kn})$.
+The k-point weights $w_k$ are $1/N_k$ on a uniform full-zone mesh. On an
+irreducible mesh they include the symmetry multiplicities. They contain no
+occupation factors. The combined weights $W_{kn} = w_k f_{kn}$ depend on both
+k-point and band.
 
-All of our `Solver` classes
-require a function that takes the quasiparticle eigenenergies
-$\xi_{kn}^{\mathrm{qp}}$ and returns the weights $w(\xi_{kn})$.
+`BandKIntegrationResult.occupations` stores $f_{kn}$, and `weights` stores $w_k$.
+`LatticeSolver.weighted_occupations_qp` stores their product $W_{kn}$.
+Gaussian and Methfessel-Paxton smearing replace the Fermi-Dirac function with
+the corresponding occupation function.
+
+`BandKIntegrator` diagonalizes the Hamiltonian, calculates occupations and,
+at fixed filling, solves for the chemical potential. Its `kpoint_integrator`
+performs the Brillouin-zone average: `WeightedKPointIntegrator` uses a supplied
+mesh, while `AutoBZIntegrator` chooses integration points.
+
+`TemperatureExtrapolatedBandKIntegrator` extrapolates the finite-temperature
+integrals. On a supplied mesh, the returned occupations and density matrices
+use the same extrapolation coefficients. They cannot in general be recovered
+by evaluating a Fermi function at the extrapolated chemical potential.

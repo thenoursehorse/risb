@@ -75,8 +75,8 @@ def one_band() -> Model:
     h0_k = build_cubic_h0_k(gf_struct=gf_struct, nkx=nkx, spatial_dim=spatial_dim)
     h_int = U * nc("up", 0) * nc("dn", 0)
     impurity_solver = FockitImpuritySolver(h_int, gf_struct)
-    # kintegrator = BandKIntegrator(beta=beta, mu=mu)
-    kintegrator = BandKIntegrator(
+    # band_integrator = BandKIntegrator(beta=beta, mu=mu)
+    band_integrator = BandKIntegrator(
         WeightedKPointIntegrator(), beta=beta, n_target=n_target
     )
     Lambda_expected = np.array([[2.0]])
@@ -85,7 +85,7 @@ def one_band() -> Model:
         gf_struct,
         h0_k,
         impurity_solver,
-        kintegrator,
+        band_integrator,
         mu,
         Lambda_expected,
         Z_expected,
@@ -112,8 +112,8 @@ def bilayer() -> Model:
     for o in range(n_orb):
         h_int += U * nc("up", o) * nc("dn", o)
     impurity_solver = FockitImpuritySolver(h_int, gf_struct)
-    # kintegrator = BandKIntegrator(beta=beta, mu=mu)
-    kintegrator = BandKIntegrator(
+    # band_integrator = BandKIntegrator(beta=beta, mu=mu)
+    band_integrator = BandKIntegrator(
         WeightedKPointIntegrator(), beta=beta, n_target=n_target
     )
     Lambda_expected = np.array([[2.0, 0.114569681915], [0.114569681915, 2.0]])
@@ -122,7 +122,7 @@ def bilayer() -> Model:
         gf_struct,
         h0_k,
         impurity_solver,
-        kintegrator,
+        band_integrator,
         mu,
         Lambda_expected,
         Z_expected,
@@ -153,8 +153,8 @@ def kanamori() -> Model:
         J_hund=J,
     )
     impurity_solver = FockitImpuritySolver(h_int, gf_struct)
-    kintegrator = BandKIntegrator(WeightedKPointIntegrator(), beta=beta, mu=mu)
-    kintegrator = BandKIntegrator(
+    band_integrator = BandKIntegrator(WeightedKPointIntegrator(), beta=beta, mu=mu)
+    band_integrator = BandKIntegrator(
         WeightedKPointIntegrator(), beta=beta, n_target=n_target
     )
     Lambda_expected = np.array([[3.0, 0.0], [0.0, 3.0]])
@@ -163,7 +163,7 @@ def kanamori() -> Model:
         gf_struct,
         h0_k,
         impurity_solver,
-        kintegrator,
+        band_integrator,
         mu,
         Lambda_expected,
         Z_expected,
@@ -178,7 +178,7 @@ def test_diis_symmetrize(
         gf_struct,
         h0_k,
         impurity_solver,
-        kintegrator,
+        band_integrator,
         mu_expected,
         Lambda_expected,
         Z_expected,
@@ -187,14 +187,14 @@ def test_diis_symmetrize(
         h0_k=h0_k,
         gf_struct=[gf_struct],
         impurity_solvers=[impurity_solver],
-        kintegrator=kintegrator,
+        band_integrator=band_integrator,
         symmetrizers=[symmetrize_blocks],
     )
     for i in range(S.n_clusters):
         for bl, _ in S.gf_struct[i]:
             np.fill_diagonal(S.Lambda[i][bl], mu_expected)
     S.solve()
-    mu_calculated = kintegrator.mu
+    mu_calculated = band_integrator.mu
     do_assert(
         subtests, mu_calculated, S.Lambda, S.Z, mu_expected, Lambda_expected, Z_expected
     )
@@ -208,7 +208,7 @@ def test_diis_nosymmetrize(
         gf_struct,
         h0_k,
         impurity_solver,
-        kintegrator,
+        band_integrator,
         mu_expected,
         Lambda_expected,
         Z_expected,
@@ -217,13 +217,13 @@ def test_diis_nosymmetrize(
         h0_k=h0_k,
         gf_struct=[gf_struct],
         impurity_solvers=[impurity_solver],
-        kintegrator=kintegrator,
+        band_integrator=band_integrator,
     )
     for i in range(S.n_clusters):
         for bl, _ in S.gf_struct[i]:
             np.fill_diagonal(S.Lambda[i][bl], mu_expected)
     S.solve()
-    mu_calculated = kintegrator.mu
+    mu_calculated = band_integrator.mu
     do_assert(
         subtests, mu_calculated, S.Lambda, S.Z, mu_expected, Lambda_expected, Z_expected
     )
@@ -236,7 +236,7 @@ def test_one_cycle_per_solve_from_x_next_reaches_the_solution(
         gf_struct,
         h0_k,
         impurity_solver,
-        kintegrator,
+        band_integrator,
         mu_expected,
         Lambda_expected,
         Z_expected,
@@ -245,7 +245,7 @@ def test_one_cycle_per_solve_from_x_next_reaches_the_solution(
         h0_k=h0_k,
         gf_struct=[gf_struct],
         impurity_solvers=[impurity_solver],
-        kintegrator=kintegrator,
+        band_integrator=band_integrator,
         symmetrizers=[symmetrize_blocks],
     )
     for i in range(S.n_clusters):
@@ -263,7 +263,7 @@ def test_one_cycle_per_solve_from_x_next_reaches_the_solution(
     assert result.error < 1e-12
     do_assert(
         subtests,
-        kintegrator.mu,
+        band_integrator.mu,
         S.Lambda,
         S.Z,
         mu_expected,
@@ -290,7 +290,7 @@ def test_scipy_root(
         gf_struct,
         h0_k,
         impurity_solver,
-        kintegrator,
+        band_integrator,
         mu_expected,
         Lambda_expected,
         Z_expected,
@@ -300,7 +300,7 @@ def test_scipy_root(
         h0_k=h0_k,
         gf_struct=[gf_struct],
         impurity_solvers=[impurity_solver],
-        kintegrator=kintegrator,
+        band_integrator=band_integrator,
         symmetrizers=[symmetrize_blocks],
     )
     for i in range(S.n_clusters):
@@ -312,7 +312,7 @@ def test_scipy_root(
         )
     )
     assert result.converged
-    mu_calculated = kintegrator.mu
+    mu_calculated = band_integrator.mu
     do_assert(
         subtests, mu_calculated, S.Lambda, S.Z, mu_expected, Lambda_expected, Z_expected
     )
@@ -339,7 +339,7 @@ def test_three_orbital_kanamori_is_a_paramagnetic_mott_insulator() -> None:
         h0_k=build_cubic_h0_k(gf_struct=gf_struct, nkx=10, spatial_dim=3),
         gf_struct=gf_struct,
         impurity_solvers=FockitImpuritySolver(h_int, gf_struct),
-        kintegrator=BandKIntegrator(
+        band_integrator=BandKIntegrator(
             WeightedKPointIntegrator(), beta=40, n_target=n_orb
         ),
         symmetrizers=[symmetrize_blocks],
@@ -354,14 +354,14 @@ def test_three_orbital_kanamori_is_a_paramagnetic_mott_insulator() -> None:
 
 def two_orbital_complex_lattice(h_int: OpSum) -> tuple[LatticeSolver, BandKIntegrator]:
     gf_struct = [(bl, 2) for bl in ["up", "dn"]]
-    kintegrator = BandKIntegrator(WeightedKPointIntegrator(), beta=40, n_target=2)
+    band_integrator = BandKIntegrator(WeightedKPointIntegrator(), beta=40, n_target=2)
     S = LatticeSolver(
         h0_k=build_two_orbital_complex_h0_k(),
         gf_struct=gf_struct,
         impurity_solvers=FockitImpuritySolver(h_int, gf_struct),
-        kintegrator=kintegrator,
+        band_integrator=band_integrator,
     )
-    return S, kintegrator
+    return S, band_integrator
 
 
 def test_quasiparticle_basis_of_the_starting_guess_does_not_change_the_physics() -> (
@@ -378,12 +378,12 @@ def test_quasiparticle_basis_of_the_starting_guess_does_not_change_the_physics()
     )
     results = []
     for u in [np.eye(2), random_unitary(2, seed=1), random_unitary(2, seed=2)]:
-        S, kintegrator = two_orbital_complex_lattice(h_int)
+        S, band_integrator = two_orbital_complex_lattice(h_int)
         for bl in ["up", "dn"]:
             S.Lambda[0][bl] = 1.5 * np.eye(2)
             S.R[0][bl] = u.conj().T
         assert S.solve(tol=1e-10).converged
-        results.append((kintegrator.mu, S.Z[0]["up"]))
+        results.append((band_integrator.mu, S.Z[0]["up"]))
     for mu, weight in results[1:]:
         assert mu == pytest.approx(results[0][0], abs=1e-8)
         assert weight == pytest.approx(results[0][1], abs=1e-8)
@@ -414,7 +414,9 @@ def test_real_rotation_of_the_non_interacting_solution_is_converged(
         h0_k=build_cubic_h0_k(gf_struct=gf_struct),
         gf_struct=gf_struct,
         impurity_solvers=FockitImpuritySolver(zero(), gf_struct),
-        kintegrator=BandKIntegrator(WeightedKPointIntegrator(), beta=40, n_target=2),
+        band_integrator=BandKIntegrator(
+            WeightedKPointIntegrator(), beta=40, n_target=2
+        ),
         force_real=force_real,
     )
     for bl, _ in gf_struct:
@@ -426,12 +428,12 @@ def test_real_rotation_of_the_non_interacting_solution_is_converged(
 
 
 def test_force_real_warns_when_discarding_imaginary_parts(one_band: Model) -> None:
-    gf_struct, h0_k, impurity_solver, kintegrator, *_ = one_band
+    gf_struct, h0_k, impurity_solver, band_integrator, *_ = one_band
     S = LatticeSolver(
         h0_k,
         gf_struct,
         impurity_solver,
-        kintegrator,
+        band_integrator,
         force_real=True,
     )
     S.R[0]["up"] = np.array([[1 + 1e-6j]])
@@ -460,7 +462,9 @@ def test_full_orbital_pinning_prevents_the_wrong_impurity_filling(
         h0_k=h0_k,
         gf_struct=gf_struct,
         impurity_solvers=FockitImpuritySolver(h_int, gf_struct),
-        kintegrator=BandKIntegrator(WeightedKPointIntegrator(), beta=40, n_target=3),
+        band_integrator=BandKIntegrator(
+            WeightedKPointIntegrator(), beta=40, n_target=3
+        ),
         symmetrizers=[symmetrize_blocks],
         pin_full_empty=pin_full_empty,
     )
@@ -484,7 +488,9 @@ def test_full_orbital_pinning_prevents_the_wrong_impurity_filling(
         impurity_solvers=FockitImpuritySolver(
             2 * nc("up", 0) * nc("dn", 0), gf_struct_one
         ),
-        kintegrator=BandKIntegrator(WeightedKPointIntegrator(), beta=40, n_target=1),
+        band_integrator=BandKIntegrator(
+            WeightedKPointIntegrator(), beta=40, n_target=1
+        ),
     )
     for bl, _ in gf_struct_one:
         one_band.Lambda[0][bl] = np.array([[1.0]])
@@ -532,18 +538,20 @@ def test_ghost_risb_from_a_perturbed_start_reaches_the_solution_of_the_default_s
         impurity_solver = FockitImpuritySolver(
             h_int, gf_struct, diagonal_symmetries={Sz: 0}, bath_size=bath_size
         )
-        kintegrator = BandKIntegrator(WeightedKPointIntegrator(), beta=2000, n_target=1)
+        band_integrator = BandKIntegrator(
+            WeightedKPointIntegrator(), beta=2000, n_target=1
+        )
         S = LatticeSolver(
             h0_k={bl: bethe_h0_k(2000) * np.eye(n_orb) for bl in spin_names},
             gf_struct=gf_struct,
             impurity_solvers=impurity_solver,
-            kintegrator=kintegrator,
+            band_integrator=band_integrator,
             symmetrizers=[symmetrize_blocks],
             force_real=True,
             bath_size=[bath_size],
             gauge_fix=gauge_fix,
         )
-        kintegrator.n_target = 1 + S.n_ghost_electrons
+        band_integrator.n_target = 1 + S.n_ghost_electrons
         x0 = S.get_x()
         if seed is not None:
             x0 = x0 + 0.05 * np.random.default_rng(seed).standard_normal(x0.shape)
@@ -578,7 +586,7 @@ def test_two_site_cell_with_a_cluster_per_site_gives_the_one_site_solution(
                 FockitImpuritySolver(U * nc(gf[0][0], 0) * nc(gf[1][0], 0), gf)
                 for gf in gf_struct
             ],
-            kintegrator=BandKIntegrator(
+            band_integrator=BandKIntegrator(
                 WeightedKPointIntegrator(), beta=40, n_target=len(gf_struct)
             ),
             projectors=projectors,
@@ -640,7 +648,7 @@ def test_check_projectors_rejects_only_projectors_that_break_the_assumptions(
             impurity_solvers=[
                 FockitImpuritySolver(nc("up", 0) * nc("dn", 0), gf) for gf in gf_struct
             ],
-            kintegrator=BandKIntegrator(
+            band_integrator=BandKIntegrator(
                 WeightedKPointIntegrator(), beta=40, n_target=2
             ),
             projectors=[dict.fromkeys(spin_names, P) for P in projectors],
@@ -686,7 +694,7 @@ def test_orbital_in_no_cluster_keeps_its_band() -> None:
             impurity_solvers=[
                 FockitImpuritySolver(h_ints[i], gf) for i, gf in enumerate(gf_struct)
             ],
-            kintegrator=BandKIntegrator(
+            band_integrator=BandKIntegrator(
                 WeightedKPointIntegrator(), beta=40, n_target=2
             ),
             projectors=projectors,
@@ -724,7 +732,7 @@ def test_projectors_that_depend_on_k_give_the_same_solution() -> None:
                 FockitImpuritySolver(4 * nc("up", 0) * nc("dn", 0), gf)
                 for gf in gf_struct
             ],
-            kintegrator=BandKIntegrator(
+            band_integrator=BandKIntegrator(
                 WeightedKPointIntegrator(), beta=40, n_target=2
             ),
             projectors=[dict.fromkeys(spin_names, P) for P in projectors],
@@ -772,7 +780,7 @@ def test_constant_double_counting_is_a_shift_of_the_local_energies() -> None:
             h0_k=h0_k,
             gf_struct=gf_struct,
             impurity_solvers=FockitImpuritySolver(h_int, gf_struct),
-            kintegrator=BandKIntegrator(
+            band_integrator=BandKIntegrator(
                 WeightedKPointIntegrator(), beta=40, n_target=2
             ),
             double_counting=double_counting if with_hook else None,
@@ -811,7 +819,7 @@ def test_ghost_risb_with_double_counting_restarts_on_its_solution() -> None:
             impurity_solvers=FockitImpuritySolver(
                 h_int, gf_struct, bath_size=bath_size[0]
             ),
-            kintegrator=BandKIntegrator(
+            band_integrator=BandKIntegrator(
                 WeightedKPointIntegrator(), beta=200, n_target=0.8 + (B - 1)
             ),
             symmetrizers=[symmetrize_blocks],
@@ -834,23 +842,23 @@ def test_ghost_risb_without_interactions_is_the_non_interacting_solution() -> No
     bath_size = [{bl: B for bl, _ in gf_struct}]
     h0_k = {bl: bethe_h0_k(200) for bl, _ in gf_struct}
     impurity_solver = FockitImpuritySolver(zero(), gf_struct, bath_size=bath_size[0])
-    kintegrator = BandKIntegrator(
+    band_integrator = BandKIntegrator(
         WeightedKPointIntegrator(), beta=200, n_target=1 + (B - 1)
     )
     S = LatticeSolver(
         h0_k=h0_k,
         gf_struct=gf_struct,
         impurity_solvers=impurity_solver,
-        kintegrator=kintegrator,
+        band_integrator=band_integrator,
         symmetrizers=[symmetrize_blocks],
         force_real=True,
         bath_size=bath_size,
     )
     S.solve(tol=1e-10)
     assert S.self_consistency_error < 1e-8
-    assert kintegrator.mu is not None
+    assert band_integrator.mu is not None
     quasiparticle_weight = helpers.get_z(
-        S.R[0]["up"], S.Lambda[0]["up"], kintegrator.mu
+        S.R[0]["up"], S.Lambda[0]["up"], band_integrator.mu
     )
     assert quasiparticle_weight == pytest.approx(np.eye(1), abs=1e-8)
     assert impurity_solver.overlap(nc("up", 0) * nc("dn", 0)) == pytest.approx(
@@ -858,9 +866,11 @@ def test_ghost_risb_without_interactions_is_the_non_interacting_solution() -> No
     )
     # Kinetic energy sum_k eps_k R^dag f(H_qp) R of both spins, -4 / (3 pi) for
     # the half-filled semicircular density of states
-    amplitude = np.einsum("a,kan->kn", S.R_full["up"][:, 0], S.bloch_vector_qp["up"])
+    amplitude = np.einsum("a,kan->kn", S.R_full["up"][:, 0], S.eigenvectors_qp["up"])
     kinetic = 2 * np.sum(
-        S.kweights["up"] * np.abs(amplitude) ** 2 * h0_k["up"][:, 0, 0, None]
+        S.weighted_occupations_qp["up"]
+        * np.abs(amplitude) ** 2
+        * h0_k["up"][:, 0, 0, None]
     )
     assert kinetic == pytest.approx(-4 / (3 * np.pi), abs=1e-4)
 
@@ -887,14 +897,14 @@ def test_ghost_risb_gives_the_published_energy_of_the_hubbard_model(
     impurity_solver = FockitImpuritySolver(
         h_int, gf_struct, diagonal_symmetries={Sz: 0}, beta=200, bath_size=bath_size[0]
     )
-    kintegrator = BandKIntegrator(
+    band_integrator = BandKIntegrator(
         WeightedKPointIntegrator(), beta=200, n_target=1 + (B - 1)
     )
     S = LatticeSolver(
         h0_k=h0_k,
         gf_struct=gf_struct,
         impurity_solvers=impurity_solver,
-        kintegrator=kintegrator,
+        band_integrator=band_integrator,
         symmetrizers=[symmetrize_blocks],
         force_real=True,
         bath_size=bath_size,
@@ -904,16 +914,18 @@ def test_ghost_risb_gives_the_published_energy_of_the_hubbard_model(
     assert S.self_consistency_error < 1e-8
     assert S.rho_c[0]["up"] == pytest.approx(np.array([[0.5]]), abs=1e-8)
     # Kinetic energy sum_k eps_k R^dag f(H_qp) R of both spins
-    amplitude = np.einsum("a,kan->kn", S.R_full["up"][:, 0], S.bloch_vector_qp["up"])
+    amplitude = np.einsum("a,kan->kn", S.R_full["up"][:, 0], S.eigenvectors_qp["up"])
     kinetic = 2 * np.sum(
-        S.kweights["up"] * np.abs(amplitude) ** 2 * h0_k["up"][:, 0, 0, None]
+        S.weighted_occupations_qp["up"]
+        * np.abs(amplitude) ** 2
+        * h0_k["up"][:, 0, 0, None]
     )
     docc = impurity_solver.overlap(nc("up", 0) * nc("dn", 0))
     assert docc == pytest.approx(double_occupancy, abs=1e-3)
     assert kinetic + U * docc == pytest.approx(energy, abs=1e-3)
-    assert kintegrator.mu is not None
+    assert band_integrator.mu is not None
     quasiparticle_weight = helpers.get_z(
-        S.R[0]["up"], S.Lambda[0]["up"], kintegrator.mu
+        S.R[0]["up"], S.Lambda[0]["up"], band_integrator.mu
     )
     assert quasiparticle_weight == pytest.approx(np.array([[Z]]), abs=1e-2)
 
@@ -946,25 +958,27 @@ def test_orbitals_with_different_numbers_of_ghosts_give_their_own_solutions() ->
                 )
             return A
 
-        kintegrator = BandKIntegrator(
+        band_integrator = BandKIntegrator(
             WeightedKPointIntegrator(), beta=200, n_target=len(bath_sizes)
         )
         S = LatticeSolver(
             h0_k={bl: bethe_h0_k(200) for bl, _ in gf_struct},
             gf_struct=gf_struct,
             impurity_solvers=impurity_solver,
-            kintegrator=kintegrator,
+            band_integrator=band_integrator,
             symmetrizers=[paramagnetic],
             force_real=True,
             bath_size=[bath_size],
         )
-        kintegrator.n_target = len(bath_sizes) + S.n_ghost_electrons
+        band_integrator.n_target = len(bath_sizes) + S.n_ghost_electrons
         S.solve(tol=1e-10)
         assert S.self_consistency_error < 1e-8
-        assert kintegrator.mu is not None
+        assert band_integrator.mu is not None
         solution = {}
         for o in bath_sizes:
-            Z = helpers.get_z(S.R[0]["up" + o], S.Lambda[0]["up" + o], kintegrator.mu)
+            Z = helpers.get_z(
+                S.R[0]["up" + o], S.Lambda[0]["up" + o], band_integrator.mu
+            )
             docc = impurity_solver.overlap(nc("up" + o, 0) * nc("dn" + o, 0))
             solution[o] = (float(Z[0, 0].real), float(np.real(docc)))
         return solution
@@ -985,7 +999,7 @@ def test_a_cluster_with_an_odd_number_of_ghosts_is_rejected() -> None:
             h0_k={bl: bethe_h0_k(10) for bl, _ in gf_struct},
             gf_struct=gf_struct,
             impurity_solvers=FockitImpuritySolver(zero(), gf_struct),
-            kintegrator=BandKIntegrator(
+            band_integrator=BandKIntegrator(
                 WeightedKPointIntegrator(), beta=10, n_target=1
             ),
             bath_size=[bath_size],

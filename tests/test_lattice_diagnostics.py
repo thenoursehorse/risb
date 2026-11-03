@@ -38,7 +38,9 @@ def lattice(thermal: bool, diagnostics: DiagnosticObserver) -> BaseLatticeSolver
         h0_k,
         ONE_BAND,
         FockitImpuritySolver(h_int, ONE_BAND),
-        kintegrator=BandKIntegrator(WeightedKPointIntegrator(), beta=40, n_target=1),
+        band_integrator=BandKIntegrator(
+            WeightedKPointIntegrator(), beta=40, n_target=1
+        ),
         symmetrizers=[symmetrize_blocks],
         diagnostics=diagnostics,
     )
