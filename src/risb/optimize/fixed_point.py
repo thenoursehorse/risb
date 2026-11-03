@@ -41,6 +41,11 @@ class SolveResult:
     #: None when using :class:`ScipyRoot`.
     x_next: NDArray[np.float64] | None = None
 
+    #: list of str : Residual definition used for each history value.
+    history_error_funs: list[Literal["root", "recursion"]] = field(
+        default_factory=list, kw_only=True
+    )
+
 
 class ScipyRoot:
     """
@@ -138,15 +143,53 @@ class FixedPointLoop:
 
         #: list of float : Error norms at accepted points.
         self.history: list[float] = []
+        self.history_error_funs: list[Literal["root", "recursion"]] = []
 
         #: bool : Whether the error of the last cycle is below the tolerance.
         self.converged = False
 
-        #: numpy.ndarray : The input of the cycle with the smallest error so
-        #: far.
-        self.best_x = self.x
-
+        self._errors: dict[Literal["root", "recursion"], float] = {
+            "root": np.inf,
+            "recursion": np.inf,
+        }
+        self._best_errors = self._errors.copy()
+        self._best_x = {"root": self.x.copy(), "recursion": self.x.copy()}
         self._stopped = False
+
+    def get_error(self, error_fun: Literal["root", "recursion"] | None = None) -> float:
+        """Return the current residual norm; None follows the active optimizer."""
+        return self._errors[
+            self.optimizer.error_fun if error_fun is None else error_fun
+        ]
+
+    def get_best_error(
+        self, error_fun: Literal["root", "recursion"] | None = None
+    ) -> float:
+        """Return the smallest selected residual norm seen so far."""
+        return self._best_errors[
+            self.optimizer.error_fun if error_fun is None else error_fun
+        ]
+
+    def get_best_x(
+        self, error_fun: Literal["root", "recursion"] | None = None
+    ) -> NDArray[np.float64]:
+        """Return the iterate with the smallest selected residual norm."""
+        return self._best_x[
+            self.optimizer.error_fun if error_fun is None else error_fun
+        ]
+
+    @property
+    def best_x(self) -> NDArray[np.float64]:
+        """Best iterate for the active optimizer's residual."""
+        return self.get_best_x()
+
+    def clear_best_points(self) -> None:
+        """Discard saved errors and best iterates after changing the fixed-point map."""
+        self._errors = {"root": np.inf, "recursion": np.inf}
+        self._best_errors = self._errors.copy()
+        self._best_x = {"root": self.x.copy(), "recursion": self.x.copy()}
+        self.error = np.inf
+        self.converged = False
 
     def stop(self) -> None:
         """End the loop after the current cycle."""
@@ -180,7 +223,13 @@ class FixedPointLoop:
             ):
                 if self.optimizer.x:
                     self.x = self.optimizer.x[0].copy()
-                    self.error = float(np.linalg.norm(self.optimizer.error[0]))
+                    self._errors["root"] = float(
+                        np.linalg.norm(self.optimizer.residual[0])
+                    )
+                    self._errors["recursion"] = float(
+                        np.linalg.norm(self.optimizer.g_x[0] - self.x)
+                    )
+                    self.error = self.get_error()
                     self.converged = self.error < self.tol
                 break
             x_new, residual = self.problem.cycle(self.x_next)
@@ -188,23 +237,22 @@ class FixedPointLoop:
                 self.x_next, x_new, residual, self.problem.cycle, checkpoint=saved
             )
             self.cycle += 1 + extra
-            self.error = float(
-                np.linalg.norm(self.optimizer.error_of(self.x, x_new, residual))
-            )
-            if self.error < min(self.history, default=np.inf):
-                self.best_x = self.x
+            self._errors["root"] = float(np.linalg.norm(residual))
+            self._errors["recursion"] = float(np.linalg.norm(x_new - self.x))
+            for error_fun, norm in self._errors.items():
+                if norm < self._best_errors[error_fun]:
+                    self._best_errors[error_fun] = norm
+                    self._best_x[error_fun] = self.x.copy()
+            self.error = self.get_error()
             self.history.append(self.error)
-            error_fun = self.optimizer.error_fun
+            self.history_error_funs.append(self.optimizer.error_fun)
             logger.info(f"cycle: {self.cycle}, error: {self.error}")
             self.converged = self.error < self.tol
+            self.optimizer.report_step(self, error=self.error, converged=self.converged)
             for callback in self.callbacks:
                 callback(self, self.problem)
-            self.emit(
-                "optimizer.cycle",
-                error=self.error,
-                error_fun=error_fun,
-                converged=self.converged,
-            )
+                self.error = self.get_error()
+                self.converged = self.error < self.tol
             if self.converged or self._stopped:
                 break
         self.emit(
@@ -222,6 +270,7 @@ class FixedPointLoop:
             self.error,
             self.history,
             self.x_next,
+            history_error_funs=self.history_error_funs,
         )
 
 
@@ -319,5 +368,10 @@ def _solve_fixed_point_scipy(
             evaluations=int(result.nfev),
         )
     return SolveResult(
-        np.asarray(result.x), bool(result.success), len(history), history[-1], history
+        np.asarray(result.x),
+        bool(result.success),
+        len(history),
+        history[-1],
+        history,
+        history_error_funs=[optimizer.error_fun] * len(history),
     )

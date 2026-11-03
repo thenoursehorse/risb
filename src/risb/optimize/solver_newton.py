@@ -20,14 +20,25 @@
 import logging
 from abc import ABC, abstractmethod
 from collections.abc import Callable
+from dataclasses import dataclass, field
 from typing import Concatenate, Literal
 
 import numpy as np
 from numpy.typing import NDArray
 
+from risb.diagnostics import DiagnosticObserver
 from risb.types import Checkpoint, FixedPointFunction
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass
+class OptimizerHistory:
+    """Accepted x, g(x) and root residuals, newest first."""
+
+    x: list[NDArray[np.float64]] = field(default_factory=list)
+    g_x: list[NDArray[np.float64]] = field(default_factory=list)
+    residual: list[NDArray[np.float64]] = field(default_factory=list)
 
 
 class NewtonSolver(ABC):
@@ -78,6 +89,9 @@ class NewtonSolver(ABC):
 
         #: list of numpy.ndarray : History of error vector of ``x``.
         self.error: list[NDArray[np.float64]] = []
+
+        #: list of numpy.ndarray : History of supplied root residuals.
+        self.residual: list[NDArray[np.float64]] = []
 
         #: int : Iteration counter for solver.
         self.n: int = 0
@@ -145,7 +159,7 @@ class NewtonSolver(ABC):
         Calculate the next guess from the stored history.
 
         Parameters of the method, such as a mixing step, are set when the
-        solver is constructed.
+        solver is constructed. The counter n includes the current accepted point.
 
         Returns
         -------
@@ -154,14 +168,70 @@ class NewtonSolver(ABC):
 
         """
 
-    def reset(self) -> None:
-        """Clear the history, so that the next :meth:`step` starts afresh."""
+    def clear_history(self) -> None:
+        """Clear the iteration history without resetting n."""
         self.x = []
         self.g_x = []
         self.error = []
+        self.residual = []
+
+    def reset(self) -> None:
+        """Clear the history, so that the next :meth:`step` starts afresh."""
+        self.clear_history()
         self.n = 0
         self.success = False
         self.norm = np.inf
+
+    def reset_active_optimizer(self, *, clear_norm_history: bool = False) -> None:  # noqa: ARG002
+        """Reset the optimizer without changing the surrounding schedule."""
+        self.reset()
+
+    def report_step(
+        self,
+        observer: DiagnosticObserver,
+        *,
+        error: float,
+        converged: bool,
+    ) -> None:
+        """Report the accepted step."""
+        observer.emit(
+            "optimizer.cycle",
+            optimizer=type(self).__name__,
+            error=error,
+            error_fun=self.error_fun,
+            converged=converged,
+        )
+
+    def get_history(self) -> OptimizerHistory:
+        """Copy the accepted iterates, newest first."""
+        return OptimizerHistory(
+            x=[x.copy() for x in self.x],
+            g_x=[g_x.copy() for g_x in self.g_x],
+            residual=[residual.copy() for residual in self.residual],
+        )
+
+    def set_history(self, history: OptimizerHistory) -> None:
+        """
+        Load accepted iterates and start from the newest one.
+
+        Keep up to history_size entries and recompute errors using error_fun.
+        The newest iterate counts as the first step. Empty history resets the
+        optimizer.
+        """
+        samples = list(zip(history.x, history.g_x, history.residual, strict=True))[
+            : self.history_size
+        ]
+        self.reset()
+        self.x = [x.copy() for x, _, _ in samples]
+        self.g_x = [g_x.copy() for _, g_x, _ in samples]
+        self.residual = [residual.copy() for _, _, residual in samples]
+        self.error = [
+            self.error_of(x, g_x, residual).copy()
+            for x, g_x, residual in zip(self.x, self.g_x, self.residual, strict=True)
+        ]
+        if self.x:
+            self.n = 1
+            self.norm = float(np.linalg.norm(self.error[0]))
 
     def error_of(
         self,
@@ -233,8 +303,9 @@ class NewtonSolver(ABC):
         self._insert_vector(self.x, x.copy(), self.history_size)
         self._insert_vector(self.g_x, g_x.copy(), self.history_size)
         self._insert_vector(self.error, error.copy(), self.history_size)
-        x_next = self.update_x()
+        self._insert_vector(self.residual, residual.copy(), self.history_size)
         self.n += 1
+        x_next = self.update_x()
         return x, g_x, residual, x_next, 0
 
     def solve(

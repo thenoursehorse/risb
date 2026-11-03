@@ -19,7 +19,7 @@
 
 from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Literal, override
+from typing import Literal, Protocol, override
 
 import numpy as np
 import scipy
@@ -27,7 +27,46 @@ from numpy.typing import NDArray
 
 from risb.types import Checkpoint, FixedPointFunction
 
-from .solver_newton import NewtonSolver
+from .solver_newton import NewtonSolver, OptimizerHistory
+
+
+class DIISPolicy(Protocol):
+    """DIIS mixing, acceptance and history rules."""
+
+    error_fun: Literal["root", "recursion"]
+    can_reject: bool
+    max_candidate_evaluations: int
+
+    def update_x(
+        self,
+        x: Sequence[NDArray[np.float64]],
+        g_x: Sequence[NDArray[np.float64]],
+        error: Sequence[NDArray[np.float64]],
+        iteration: int,
+        /,
+    ) -> NDArray[np.float64]:
+        """Calculate the next iterate from accepted history."""
+        ...
+
+    def step(
+        self,
+        optimizer: NewtonSolver,
+        x: NDArray[np.float64],
+        g_x: NDArray[np.float64],
+        residual: NDArray[np.float64],
+        cycle: FixedPointFunction,
+        *,
+        initial_norm: float,
+        checkpoint: Checkpoint | None = None,
+    ) -> tuple[
+        NDArray[np.float64],
+        NDArray[np.float64],
+        NDArray[np.float64],
+        NDArray[np.float64],
+        int,
+    ]:
+        """Accept a trial or evaluate a replacement, then calculate the next iterate."""
+        ...
 
 
 @dataclass
@@ -68,7 +107,32 @@ class Pulay:
         """Mix the latest point or extrapolate from the subspace."""
         if self.mixing_period is not None and (iteration + 1) % self.mixing_period == 0:
             return x[0] + self.alpha * (g_x[0] - x[0])
-        return DIIS.extrapolate(x, g_x, error, self.alpha)
+        return extrapolate(x, g_x, error, self.alpha)
+
+    def step(
+        self,
+        optimizer: NewtonSolver,
+        x: NDArray[np.float64],
+        g_x: NDArray[np.float64],
+        residual: NDArray[np.float64],
+        cycle: FixedPointFunction,
+        *,
+        initial_norm: float,  # noqa: ARG002
+        checkpoint: Checkpoint | None = None,
+    ) -> tuple[
+        NDArray[np.float64],
+        NDArray[np.float64],
+        NDArray[np.float64],
+        NDArray[np.float64],
+        int,
+    ]:
+        """Accept the trial and apply the periodic history reset."""
+        result = NewtonSolver.step(
+            optimizer, x, g_x, residual, cycle, checkpoint=checkpoint
+        )
+        if self.restart_period is not None and optimizer.n % self.restart_period == 0:
+            optimizer.clear_history()
+        return result
 
 
 @dataclass
@@ -112,6 +176,17 @@ class BianLi:
     can_reject = True
     max_candidate_evaluations = 2
 
+    @property
+    def error_fun(self) -> Literal["root", "recursion"]:
+        """Residual required by Bian-Li acceptance."""
+        return "recursion"
+
+    @error_fun.setter
+    def error_fun(self, value: Literal["root", "recursion"]) -> None:
+        if value != "recursion":
+            msg = "BianLi uses the recursion residual."
+            raise ValueError(msg)
+
     def __post_init__(self) -> None:
         """Check the schedule and mixing fraction."""
         if self.schedule not in {"iteration", "residual", "constant", "combined"}:
@@ -149,7 +224,48 @@ class BianLi:
         _iteration: int,
     ) -> NDArray[np.float64]:
         """Calculate the next guess with Anderson acceleration."""
-        return DIIS.extrapolate(x, g_x, error)
+        return extrapolate(x, g_x, error)
+
+    def step(
+        self,
+        optimizer: NewtonSolver,
+        x: NDArray[np.float64],
+        g_x: NDArray[np.float64],
+        residual: NDArray[np.float64],
+        cycle: FixedPointFunction,
+        *,
+        initial_norm: float,
+        checkpoint: Checkpoint | None = None,
+    ) -> tuple[
+        NDArray[np.float64],
+        NDArray[np.float64],
+        NDArray[np.float64],
+        NDArray[np.float64],
+        int,
+    ]:
+        """Accept the trial or restore the last accepted state and take a damped step."""
+        extra_cycles = 0
+        if optimizer.x:
+            window = max(float(np.linalg.norm(e)) for e in optimizer.error)
+            gamma = (
+                self.acceptance_factor(optimizer.n - 1, window, initial_norm)
+                if window > 0
+                else 0.5
+            )
+            if not np.linalg.norm(g_x - x) <= gamma * window:
+                x = optimizer.x[0] + self.fallback_mixing * (
+                    optimizer.g_x[0] - optimizer.x[0]
+                )
+                if checkpoint is not None:
+                    checkpoint.restore()
+                    extra_cycles += checkpoint.evaluations
+                g_x, residual = cycle(x)
+                extra_cycles += 1
+                optimizer.clear_history()
+        x, g_x, residual, x_next, _ = NewtonSolver.step(
+            optimizer, x, g_x, residual, cycle, checkpoint=checkpoint
+        )
+        return x, g_x, residual, x_next, extra_cycles
 
 
 class DIIS(NewtonSolver):
@@ -161,7 +277,7 @@ class DIIS(NewtonSolver):
     history_size : int, optional
         Maximum number of accepted guesses kept in the history.
         For BianLi, this equals the paper's memory parameter m plus one.
-    policy : Pulay or BianLi, optional
+    policy : DIISPolicy, optional
         Rules for mixing guesses, rejecting steps and clearing history.
         None selects Pulay.
 
@@ -173,9 +289,9 @@ class DIIS(NewtonSolver):
     """
 
     def __init__(
-        self, history_size: int = 6, *, policy: Pulay | BianLi | None = None
+        self, history_size: int = 6, *, policy: DIISPolicy | None = None
     ) -> None:
-        self.policy = Pulay() if policy is None else policy
+        self.policy: DIISPolicy = Pulay() if policy is None else policy
         super().__init__(history_size=history_size, error_fun=self.error_fun)
         self._initial_norm = 0.0
 
@@ -183,7 +299,7 @@ class DIIS(NewtonSolver):
     @override
     def error_fun(self) -> Literal["root", "recursion"]:
         """Residual chosen by the policy."""
-        return self.policy.error_fun if isinstance(self.policy, Pulay) else "recursion"
+        return self.policy.error_fun
 
     @error_fun.setter
     @override
@@ -191,11 +307,7 @@ class DIIS(NewtonSolver):
         if value not in {"root", "recursion"}:
             msg = f"Unknown error_fun: {value}"
             raise ValueError(msg)
-        if isinstance(self.policy, Pulay):
-            self.policy.error_fun = value
-        elif value != "recursion":
-            msg = "BianLi uses the recursion residual."
-            raise ValueError(msg)
+        self.policy.error_fun = value
 
     @override
     @property
@@ -217,27 +329,18 @@ class DIIS(NewtonSolver):
         alpha: float = 1.0,
     ) -> NDArray[np.float64]:
         """Return the DIIS guess using coefficients that minimize the residual."""
-        m = len(error)
-        B = np.array([[np.dot(a, b) for b in error] for a in error])
-        if np.max(np.abs(B)) > 0:
-            B = B / np.max(np.abs(B))
-        B = np.column_stack((B, -np.ones(m)))
-        B = np.vstack((B, -np.ones(m + 1)))
-        B[m, m] = 0.0
-        rhs = np.zeros(m + 1)
-        rhs[-1] = -1.0
-        c = scipy.linalg.pinv(B) @ rhs
-        x_bar = np.zeros(x[0].shape)
-        g_bar = np.zeros(x[0].shape)
-        for i in range(m):
-            x_bar += c[i] * x[i]
-            g_bar += c[i] * g_x[i]
-        return x_bar + alpha * (g_bar - x_bar)
+        return extrapolate(x, g_x, error, alpha)
+
+    @override
+    def set_history(self, history: OptimizerHistory) -> None:
+        """Load history, using the newest iterate as the initial reference."""
+        super().set_history(history)
+        self._initial_norm = self.norm if self.x else 0.0
 
     @override
     def update_x(self) -> NDArray[np.float64]:
         """Return the next guess using the policy."""
-        return self.policy.update_x(self.x, self.g_x, self.error, self.n)
+        return self.policy.update_x(self.x, self.g_x, self.error, self.n - 1)
 
     @override
     def step(
@@ -255,39 +358,40 @@ class DIIS(NewtonSolver):
         NDArray[np.float64],
         int,
     ]:
-        """Accept the guess or restore the last accepted state and try a damped step."""
-        extra_cycles = 0
-        if isinstance(self.policy, BianLi):
-            if self.n == 0:
-                self._initial_norm = float(np.linalg.norm(g_x - x))
-            if self.x:
-                window = max(float(np.linalg.norm(e)) for e in self.error)
-                gamma = (
-                    self.policy.acceptance_factor(
-                        self.n - 1, window, self._initial_norm
-                    )
-                    if window > 0
-                    else 0.5
-                )
-                if not np.linalg.norm(g_x - x) <= gamma * window:
-                    x = self.x[0] + self.policy.fallback_mixing * (
-                        self.g_x[0] - self.x[0]
-                    )
-                    if checkpoint is not None:
-                        checkpoint.restore()
-                        extra_cycles += checkpoint.evaluations
-                    g_x, residual = cycle(x)
-                    extra_cycles += 1
-                    self.x = []
-                    self.g_x = []
-                    self.error = []
-        x, g_x, residual, x_next, _ = super().step(x, g_x, residual, cycle)
-        if (
-            isinstance(self.policy, Pulay)
-            and self.policy.restart_period is not None
-            and self.n % self.policy.restart_period == 0
-        ):
-            self.x = []
-            self.g_x = []
-            self.error = []
-        return x, g_x, residual, x_next, extra_cycles
+        """Apply the policy's acceptance and history rules."""
+        if self.n == 0:
+            self._initial_norm = float(np.linalg.norm(self.error_of(x, g_x, residual)))
+        return self.policy.step(
+            self,
+            x,
+            g_x,
+            residual,
+            cycle,
+            initial_norm=self._initial_norm,
+            checkpoint=checkpoint,
+        )
+
+
+def extrapolate(
+    x: Sequence[NDArray[np.float64]],
+    g_x: Sequence[NDArray[np.float64]],
+    error: Sequence[NDArray[np.float64]],
+    alpha: float = 1.0,
+) -> NDArray[np.float64]:
+    """Extrapolate an iterate by minimizing the norm of the combined residual."""
+    m = len(error)
+    B = np.array([[np.dot(a, b) for b in error] for a in error])
+    if np.max(np.abs(B)) > 0:
+        B = B / np.max(np.abs(B))
+    B = np.column_stack((B, -np.ones(m)))
+    B = np.vstack((B, -np.ones(m + 1)))
+    B[m, m] = 0.0
+    rhs = np.zeros(m + 1)
+    rhs[-1] = -1.0
+    c = scipy.linalg.pinv(B) @ rhs
+    x_bar = np.zeros(x[0].shape)
+    g_bar = np.zeros(x[0].shape)
+    for i in range(m):
+        x_bar += c[i] * x[i]
+        g_bar += c[i] * g_x[i]
+    return x_bar + alpha * (g_bar - x_bar)

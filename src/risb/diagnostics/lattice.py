@@ -72,6 +72,7 @@ class LatticeDiagnostics:
                 "optimizer.evaluation",
                 "optimizer.finished",
                 "optimizer.restarted",
+                "optimizer.switched",
             }
             else logging.DEBUG
         )
@@ -151,6 +152,7 @@ class ThermalLatticeDiagnostics:
                 "optimizer.evaluation",
                 "optimizer.finished",
                 "optimizer.restarted",
+                "optimizer.switched",
                 "thermal.filling",
                 "optimizer.anchored",
                 "anchor.set",

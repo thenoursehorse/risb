@@ -16,11 +16,18 @@ from risb.diagnostics import (
 )
 from risb.impurity_solvers import FockitImpuritySolver, FockitThermalImpuritySolver
 from risb.kintegration import BandKIntegrator, WeightedKPointIntegrator
-from risb.optimize import FixedPointLoop
+from risb.optimize import (
+    DIIS,
+    FixedPointLoop,
+    OptimizerSchedule,
+    Pulay,
+    SchedulerPhase,
+    after_steps,
+)
 from risb.types import FixedPointProblem
 
 
-def lattice(thermal: bool, diagnostics: DiagnosticObserver) -> BaseLatticeSolver:
+def lattice(thermal: bool, diagnostics: DiagnosticObserver | None) -> BaseLatticeSolver:
     h_int = hubbard(2.0)
     h0_k = {bl: bethe_h0_k(100) for bl, _ in ONE_BAND}
     if thermal:
@@ -112,3 +119,64 @@ def test_lattice_diagnostics_report_failure_and_leave_application_streams_alone(
     assert capsys.readouterr().out == "application output\n"
     assert sys.stdout is stdout
     assert sys.stderr is stderr
+
+
+@pytest.mark.parametrize("thermal", [False, True])
+@pytest.mark.parametrize("budget", [6, 1])
+def test_scheduler_transitions_are_reported_at_info_without_changing_the_solution(
+    thermal: bool,
+    budget: int,
+) -> None:
+    def schedule() -> OptimizerSchedule:
+        return OptimizerSchedule(
+            [
+                SchedulerPhase(
+                    DIIS(policy=Pulay(alpha=0.3, mixing_period=1)),
+                    until=after_steps(2),
+                    next_phase=lambda state: 0 if state.n_steps < 4 else 1,
+                ),
+                SchedulerPhase(DIIS(policy=Pulay(error_fun="recursion"))),
+            ]
+        )
+
+    output = StringIO()
+    reporter = ThermalLatticeDiagnostics if thermal else LatticeDiagnostics
+    with reporter(output=output) as diagnostics:
+        solver = lattice(thermal, diagnostics)
+        optimizer = schedule()
+        x_next = solver.get_x()
+        reported_history: list[float] = []
+        reported = None
+        for _ in range(6 // budget):
+            reported = solver.solve(
+                optimizer,
+                callbacks=[],
+                tol=0,
+                maxiter=budget,
+                x0=x_next,
+                self_consistency_tol=np.inf,
+            )
+            reported_history.extend(reported.history)
+            assert reported.x_next is not None
+            x_next = reported.x_next
+    assert reported is not None
+    silent = lattice(thermal, None)
+    unreported = silent.solve(
+        schedule(), callbacks=[], tol=0, maxiter=6, self_consistency_tol=np.inf
+    )
+    assert reported.x == pytest.approx(unreported.x, abs=1e-12)
+    assert reported.x_next == pytest.approx(unreported.x_next, abs=1e-12)
+    assert reported_history == pytest.approx(unreported.history, abs=1e-12)
+    transitions = [
+        line for line in output.getvalue().splitlines() if "optimizer.switched" in line
+    ]
+    assert len(transitions) == 2
+    assert f"cycle={2 if budget == 6 else 1}" in transitions[0]
+    assert f"solve={1 if budget == 6 else 2}" in transitions[0]
+    assert "from_scheduler_phase=0 to_scheduler_phase=0" in transitions[0]
+    assert f"cycle={4 if budget == 6 else 1}" in transitions[1]
+    assert f"solve={1 if budget == 6 else 4}" in transitions[1]
+    assert "from_scheduler_phase=0 to_scheduler_phase=1" in transitions[1]
+    assert "history=carry" in transitions[1]
+    assert "scheduler_phase_index=1" in output.getvalue()
+    assert "error_fun=recursion" in output.getvalue()

@@ -92,8 +92,36 @@ physical residuals, not only iteration count. Keep prototypes outside the reposi
    derivatives. One of six continuations matches, the same count as unchanged
    restarts, on a different input. No consistent benefit; keep in scratch.
 33. [x] Compare the same B=5 failures with ThermalLatticeSolver at T=1e-4.
-   Thermal matches 1/3; LatticeSolver with identical band beta=10000 matches
-   3/3. No general thermal recovery advantage on this sample.
+   Unanchored thermal control matches 1/3; LatticeSolver with identical band
+   beta=10000 matches 3/3. This is not the default thermal solve; see item 34.
+
+34. [x] Investigate cold thermal B=5 convergence with both derivative methods.
+   Corrected baseline uses .solve() defaults, including OnPlateau.
+   Finite differences match 3/3 inputs; analytic matches 2/3.
+   Fixing the basis inside both fits gives 3/3 with either derivative.
+   Default FD takes 29/83/621 cycles; the prototype takes 20/49/30.
+   Exact fit rotations and unchecked inaccurate fit outputs are identified.
+35. [ ] Reassess the fixed-basis thermal-fit feature before implementing.
+   Scratch multiorbital weak-ghost comparisons show regressions with both
+   derivative methods. Complex phases remain unfixed; active anchoring can
+   increase the matching error. Paramagnetism is preserved in the controls;
+   other onsite/permutation symmetries remain unvalidated.
+   Keep fit-accuracy handling separate from the coordinate choice.
+
+36. [x] Inner lattice Lambda solve (always, plateau-triggered, with history
+   reset). Rejected as a general fix; see the plateau-trigger section.
+37. [x] Decoupled-ghost plateau: decompose the residual and recent DIIS steps
+   by component (decoupled ghost Lambda/R row vs coupled R/Lambda) on the
+   stuck model cases (U=3 d=1.0/1.25, U=4 d=1.6/1.8, fresh, no mixing).
+38. [x] Same cases with ScipyRoot (lm, krylov): is the plateau DIIS-specific?
+39. [x] Decoupled-ghost Lambda pin (prototype, model): see section below.
+   Next: hysteresis on detection; berlingreen (multi-cluster, projectors).
+40. [ ] Direct minimization (arXiv:2607.27156) for decoupled-ghost cases;
+   see item 17. Last resort.
+41. [ ] Optimizer schedules: spec in agent-docs/optimizer-schedule.md.
+   R floor considered and not pursued: not a fixed point (residual ~eps),
+   induces eps^2 exchange that can change the spin state, and band width
+   eps^2 W stays far below T.
 
 ## Results
 
@@ -1659,3 +1687,310 @@ agree in energy and physical observables.
 The colder-band comparison changes the beta=200 equations; it does not
 certify continuous-BZ accuracy. B=1 atomic-limit work is no longer a priority.
 Existing affected tests: 40 pass. Ruff, Ruff LSP and strict mypy pass.
+
+## Thermal fits: derivative comparison and basis freedom
+
+Report: /tmp/risb-smoother-map/thermal-fit-diagnosis/report.md.
+Scratch only; no production code, defaults, benchmarks or permanent tests changed.
+
+The original comparison below disabled OnPlateau and anchoring and used a
+200-solve budget. It is a controlled unanchored experiment, not the library
+default. The corrected .solve() comparison follows it.
+
+At beta=10000 on the same three B=5 failure inputs, the unanchored analytic and
+finite-difference methods each match 1/3. The successful FD solve takes 25
+impurity solves versus 72 analytic. Analytic uses fewer fit evaluations,
+but is not an outer convergence improvement by itself.
+
+Both fits have ten exact rotation freedoms in the real one-band B=5 case.
+The analytic Jacobian resolves them correctly; forward differences introduce
+spurious response. The two methods can fit identical observables in different
+bases, which DIIS then mixes. A frozen exact fit fails at residual 1.17e-3
+with either derivative method despite reporting optimizer success.
+
+Removing those rotations inside the fit reduces 20 variables to ten while
+retaining all physical variables and matching equations. At the original
+2000-evaluation fit limit, analytic converges in 15/181/51 impurity solves;
+finite differences in 15/42/27. All six match the same lower-energy branch
+and pass fresh-solver checks. Post-fit alignment and a bad-bath-fit retry were
+also tested; these help some inputs but can select higher-energy branches.
+
+Keep both derivative options. Explicit fit gauge choice and checks of actual
+matching error are the promising changes, not a blanket analytic default.
+Complex/multiorbital/degenerate cases remain unvalidated. Existing affected
+tests: 39 pass. Ruff, Ruff LSP and strict mypy pass.
+
+## Thermal fits: corrected default-workflow comparison
+
+Scratch: /tmp/risb-smoother-map/thermal-fit-diagnosis/default_workflow.py.
+Same three inputs and beta=10000; call solver.solve(x0=x) without overriding
+optimizer, callbacks, tolerance or iteration limit. Finite differences are
+the library default; analytic is a separate option. Both retain OnPlateau,
+conditional uniform anchoring, tol=1e-12 and maxiter=1000.
+
+Cycles before one additional validation cycle per run:
+
+| Method | Input | Default | Existing outer lambda gauge | Fit-basis prototype |
+| --- | --- | ---: | ---: | ---: |
+| FD | Pulay seed 1 | 29 | 18 | 20 |
+| FD | BianLi seed 1 | 83 | fails at 1000 | 49 |
+| FD | Pulay seed 2 | 621 | 33 | 30 |
+| Analytic | Pulay seed 1 | 75 | 23 | 20 |
+| Analytic | BianLi seed 1 | fails at 1000 | 35 | 182 |
+| Analytic | Pulay seed 2 | 311 | 41 | 51 |
+
+Success requires f1/f2/bath max errors below 1e-8 and filling within 1e-7,
+both at termination and on another cycle. Every successful default or fit-basis
+run reaches E=-1.2623464126. The outer-gauge analytic BianLi input instead
+reaches E=-1.2551201043. Its FD counterpart stalls with bath error 4.18e-8.
+
+The default callback activates anchoring in analytic inputs 1 and 3, at
+cycles 54 and 292. Neither the default FD runs nor the fit-basis runs activate
+it; they still use the default callback. Thus this sample does not compare
+both active penalties inside the prototype, or show that anchoring is
+insufficient. Default FD already succeeds on all three. The prototype's
+observed benefit is fewer cycles, especially 621 to 30 on input 3.
+
+Existing lambda_eigenbasis rotates the completed outer R/Lambda proposal.
+The prototype instead removes rotations from both inner fit searches and
+returns matrices in their input coordinates. No DIIS algorithm changes.
+Returning coordinates does not enforce onsite or permutation symmetries:
+those must constrain the fit itself. The prototype covers only the real
+one-band case. Do not treat it as a general symmetry-compatible feature.
+
+The previous unanchored 1/3 result must not be used as the default-library
+baseline. All 18 corrected runs and their callback actions, fits and matrices
+are saved in default-comparison.jsonl and per-run JSON/NPZ files.
+
+## Does the inner Lambda solve hurt solutions without a decoupled ghost? (2026-11-03)
+
+Scratch: diis/near_bench.py, diis/level_solve.py. Both variants continue from
+the first state with max |f1|,|f2| < 1e-3 under Pulay(mixing_period=None).
+
+Crystal-field model, cycles to 1e-9 (default / inner):
+- one decoupled ghost: U=4 d=0.3 23/7, U=4 d=0.9 24/10, U=3 d=0.0 25/37,
+  U=3 d=0.5 neither (7e-3 / 2e-2, inner drifts to a higher-E state);
+- all ghosts coupled: U=3 d=1.5 20/26, d=1.75 22/22;
+- integer ghost occupations: U=3 d=2.0 9/157; four others 3-5 both.
+Same E and S^2 wherever both converge.
+
+Berlingreen LS, beta=800, from fresh-bianli-lambda entry 22 (all ghosts
+coupled), 10 cycles each: default 2.6e-4 -> 1.7e-7, inner 2.6e-4 -> 7.2e-8
+with a jump to 4.3e-4 at cycle 2. Both E = -101.0056 eV.
+
+The inner solve is not neutral: mixed on decoupled cases, and one
+non-decoupled case is 17x slower. Not suitable as an always-on default.
+
+## Plateau-triggered inner solve (2026-11-03)
+
+Scratch: diis/plateau_trigger.py. get_lambda until no 10x error drop for 8
+cycles AND a ghost with |n-1/2| < 0.05 and coupling < 1e-2; then inner for
+the rest. DIIS history kept across the switch. Pulay(mixing_period=None).
+
+Never fired without a decoupled ghost: those runs are identical to default.
+Where it fired it mostly did damage:
+- near-solution grid: 8/11 (default 10/11). U=4 d=0.9 diverged, U=4 d=0.3
+  raised (h_imp symmetry), U=3 d=0 fine (switched at 21, same 25 cycles).
+- fresh grid: 9/15 (default 11/15, always-inner 8/15). Fired at cycles
+  20-69; U=3 d=0.5, U=4 d=0.3/0.9 went from converged to diverged. The
+  default's stuck cases (U=3 d=1.0/1.25, U=4 d=1.6, sc 1e-6..1e-8) diverged
+  after the switch; U=4 d=1.8 converged, but to LS E=2.20 (default HS 1.846).
+Unchecked: whether the switch with stale DIIS history, rather than the inner
+solve itself, causes the damage.
+
+Same trigger with TRIGGER_NEAR=1e-4 (best error so far) and TRIGGER_RESET=1
+(clear DIIS history, restart from best_x at the switch):
+- near grid: 10/11, same as default; U=4 d=0.9 now fine (25 vs 24), U=3 d=0
+  23 vs 25. Stale history was part of the earlier damage.
+- fresh grid: 12/15 converged but only 10 at the lowest-energy state
+  (default 11). On the default's four stuck HS cases (sc 1e-6..1e-8): U=3
+  d=1.0 diverged, U=4 d=1.6 raised (h_imp symmetry), U=3 d=1.25 -> E=1.500
+  S^2=2.000 (HS 1.427), U=4 d=1.8 -> LS E=2.200 (HS 1.846). U=3 d=0.5,
+  converged by default, raised.
+The inner solve never took a stuck model case to the HS solution; the
+berlingreen HS break-through (I3) has no model counterpart.
+
+## Decoupled-ghost plateau: diagnosis and ScipyRoot (2026-11-03)
+
+Scratch: diis/plateau_diag.py, diis/scipy_bench.py. Stuck model cases U=3
+d=1.0/1.25, U=4 d=1.6/1.8, fresh, Pulay(mixing_period=None), root error.
+
+At the plateau each spin block has two decoupled ghosts (one per orbital):
+n=0.5000, |R row| ~1e-8, level-mu ~1e-9, exactly degenerate. The other four
+are coupled (|R|=0.70, n~0/1). DIIS error swings 1e-7..1e-2, not a stall.
+Residual is ~all f2 inside the decoupled 2x2 block (10-1000x the rest),
+i.e. rho_qp != 1/2 from level-mu offsets times flat-band stiffness. Steps
+spread over all of Lambda and R at 1e-3..1e-2, 10-100x the residual:
+get_lambda sets that block from ~1e-8 R/D rows, and the noise moves everything.
+
+ScipyRoot (root error), max|f1|,|f2|:
+- default start: lm, hybr, krylov all fail on all four (DIIS gets to ~1e-7).
+- from DIIS best_x: lm and hybr stay HS, stop at 2e-8..1e-7 (likely the FD
+  Jacobian step). krylov reaches HS at 1e-14 (U=3 d=1.25, 1388 evals) and
+  1e-11 (U=4 d=1.6, 372 evals); the other two drift (5.7e-5 HS; U=4 d=1.8 to
+  an S^2=0 state at 8e-4).
+An exact HS root exists and is reachable; the plateau is the near-singular
+decoupled block, not a missing solution. Supports item 39.
+
+## Decoupled-ghost Lambda pin (2026-11-03)
+
+Scratch: diis/decoupled_pin.py. Each cycle, detect ghosts with |n-1/2| < 0.05
+and R row < 1e-3 (rho_f eigenbasis, input R); P their projector, Q = 1-P.
+Input and output Lambda -> Q Lambda Q + mu P; bands living on P hold
+occupation 1/2 during the mu search. R, x, residual and DIIS unchanged, so a
+growing R row releases the pin at the next detection.
+
+Crystal-field model, converged to 1e-9 (default / pin):
+- fresh, Pulay(mixing_period=None): 11/15 -> 15/15.
+- fresh, Pulay(mixing_period=3): 8/15 -> 14/15 (U=4 d=2.1 fails in both).
+- near-solution grid: 10/11 -> 11/11; decoupled cases 23-25 -> 5-9 cycles.
+- from the four DIIS plateau states: 4/4 in 4-6 cycles.
+Every converged run ends at the lowest-energy state; no-decoupled runs are
+unchanged. Path effects: U=3 d=2.5 and U=4 d=2.6 (mix 3) held for one cycle
+then released and still reached LS. U=4 d=0.3 (no mix) toggled on/off 33 of
+228 cycles: 228 vs 38 cycles. Detection without hysteresis chatters.
+
+ScipyRoot cost for reference: lm/hybr build FD Jacobians (n+1 evals each).
+Berlingreen x has 180 entries; at ~6 min per HS cycle that is ~18 h per
+Jacobian. On the model, lm used 494-2031 and hybr ~145 evals from the
+plateau without reaching 1e-9; all failed from the default start.
+
+Berlingreen HS beta=800, from A entry 9 (err 1.6e-4), Pulay no mixing, 10
+cycles with the pin: err 1.6e-4 -> 1-9e-3, E -105.034 -> -105.033. Held
+count chatters 16/10/16/4/10. Near-1/2 ghost couplings per cycle:
+Fe1 eg (up_0,3) stay 4e-8; Fe1 t2g grow 7e-6 -> 2e-3 (x1.8 per cycle;
+unpinned A2 stays 6e-6..2e-5); Fe2 t2g jump 5e-5 -> 5e-3 at the first step
+(fresh history, so a plain mixing step: the known repelling direction) and
+hover around the 1e-3 threshold. Input levels pinned at the previous mu sit
+~0.01 meV off. Filling error -4..-8e-4, as unpinned A2 (-5e-4); I3 1e-7.
+The model result does not carry over: weakly coupled, not decoupled, ghosts
+cross the threshold, and the Fe1 t2g R rows are repelled under the pin.
+
+## Thermal fit basis: multiorbital weak-ghost validation
+
+Scratch: /tmp/risb-smoother-map/thermal-basis-validation/report.md.
+No implementation or permanent tests added by this investigation.
+
+The B=5 621-cycle slowdown is not a decoupled-ghost example: the half-filled
+pole coupling starts at 0.339 and ends at 0.373; no saved cycle has a
+half-filled pole coupled below 1e-2. The prototype removes redundant fit
+rotations there, but that does not establish a weak-ghost convergence fix.
+
+Selected two-orbital U=4, J=0.7, crystal field 0.3, B=3. Its T=0 plateau
+has two half-filled weak modes per block, coupled at 1.8e-6 and 2.6e-8;
+other modes couple at 0.70. Thermal beta=10000 comparisons retain .solve
+defaults and stop after a 600-second safety limit. In a common 60-cycle
+prefix, best max f1/f2/bath is:
+- unrestricted FD 8.6e-6; fixed FD 1.6e-6;
+- unrestricted analytic 4.0e-9; fixed analytic 1.2e-6.
+Unrestricted analytic first physically matches at cycle 50 and later uses
+the default anchor. Fresh checks pass with and without its anchor, but
+the 1e-12 optimizer stopping target is not reached. These runs leave the
+initially decoupled regime.
+
+A cleaner local control first converges the four-active-mode thermal root,
+adds two exactly free modes per spin, then perturbs their couplings by 1e-6.
+With the same 60-cycle budget and a 300-second safety limit:
+- unrestricted FD/analytic physically match by cycle 4 and remain matched
+  in the common first 13 cycles;
+- fixed FD never matches in 60 cycles;
+- fixed analytic first matches at 25, then loses the match by 28.
+Completed cycles / actual impurity calls: full FD 13/14, full analytic
+22/23, fixed FD 60 plus validation/61, fixed analytic 28/29.
+None reaches the optimizer stopping target. Timed-out runs are not
+completed default solves.
+
+A frozen update confirms the intended mechanism: fixed coordinates reduce
+the same quasiparticle step from 1.65e-5 to 1.09e-7 at matching error 3.8e-12.
+It still does not improve the full map in the weak-ghost control.
+
+The complex fit retains six independent row phases. Frozen repeated-level
+controls fit accurately, but active uniform/response-weighted anchors can
+increase complex qp matching error from about 3e-9 to 1.4e-8 when the
+eigenbasis is fixed. Do not assume the penalized objective is gauge invariant.
+
+At saved six-mode points, Fockit retains 32 thermal states near weak ghosts,
+versus two at the coupled root; one-probe impurity times are 13.0 versus
+1.44 seconds. Fit work is about 0.049 seconds in either probe. Near weak
+ghosts, unnecessary outer cycles are especially costly.
+
+Do not implement the current prototype yet. Separate redundant rotations,
+additional insensitive ghost parameters, and the stopping criterion.
+Existing affected tests: 39 pass. Scratch Ruff, Ruff LSP and strict mypy pass.
+
+Same start, PIN_COUPLING_TOL=1e-6 (Fe1 eg only, 4 held; 10 at cycle 9 when
+Fe1 t2g rows dipped below 1e-6): err 1.6e-4 -> 3.5e-4 (empty-history mixing
+step) -> 1.2e-4 (cycle 8) -> 2.0e-4. Same as unpinned A2 (1.9e-4 -> 1.6e-4).
+Harmless but no gain: the berlingreen plateau is not in the truly decoupled
+Fe1 eg ghosts. Next: decompose the berlingreen residual by block/ghost as
+plateau_diag did for the model.
+
+### Berlingreen plateau breakdown (diis/berlin_diag.py, saved history only)
+
+A2 plateau (err 1.6-2.4e-4): residual spread evenly, ~4e-5 per decoupled
+ghost on all 16 (Fe1 eg, Fe1 t2g, Fe2 t2g); steps on them 1e-8..1e-6.
+All decoupled levels share one offset, level - mu = -0.2 ueV, so each flat
+band holds n_qp = 0.50004 against n_f = 0.500000 (beta/4 x 2e-7 eV = 4e-5).
+Summed over the 16: +6-7e-4 electrons in the flat bands, matching the stuck
+filling error (-5e-4) of the physical density. get_lambda gives no update to
+that common offset, and the coupled sector's count error is buffered by the
+flat bands rather than corrected. I3 (inner solve) cut the filling error to
+1e-7, consistent with it fixing this offset jointly with mu.
+P2 (Fe1 eg held at 1/2): the other 12 still carry +4-7e-4; same plateau.
+
+### Common-offset Newton step (diis/offset_pin.py)
+
+One offset delta = level - mu for all decoupled ghosts, set each cycle by a
+Newton step on the flat-band count with mu re-solved: g_eff = g_flat g_rest /
+(g_flat + g_rest). Output Lambda only.
+- Model: fresh no-mix 10/15, near 8/11 (pin 15/15, 11/11). Failures are mu
+  search errors: gapped rest (g_rest/g_flat ~1e-7) makes delta slaved to mu.
+- Berlingreen (density interaction, from A entry 9): g_flat 3200/eV, g_rest
+  82/eV. Step 0.3: err 1.6e-4 -> 1e-3 by cycle 2 -> 4e-2 at cycle 10; step 1:
+  -> 1.1e-1. Fe2 t2g leave the decoupled set at cycle 2 (held 16 -> 10) and
+  return/leave again; flat-band excess swings +6e-4 .. -1.6e-2. DIIS
+  extrapolation overrides the output offset (input -0.32 ueV after +0.29).
+Rejected. Note: spincrossover ee8bb01 made Slater the berlingreen default;
+pass INTERACTION=density to compare with earlier runs.
+
+Summary for berlingreen HS beta=800 from A entry 9: only the inner Lambda
+solve (I3) went below the 1.6e-4 plateau. Every flat-band/charge lever
+(hold 1/2, offset step) kicks the Fe2 t2g ghosts, which are weakly coupled
+(|vR| 1e-5..1e-2), not decoupled, and sit on the known repelling direction.
+
+## Thermal multiorbital comparison at beta=100 (2026-11-04)
+
+Scratch: /tmp/risb-smoother-map/thermal-basis-validation/beta-100/report.md.
+Same weak-ghost U=4, J=0.7, crystal-field 0.3, B=3 starting state.
+Both lattice and impurity beta=100. Use committed snapshot f36e53f to exclude
+concurrent optimizer/callback edits. Retain .solve() defaults and a
+600-second safety limit for each variant.
+
+No variant returns a converged solve or passes all physical checks.
+Completed cycles / impurity calls:
+- unrestricted FD 368/369: max matching 4.88e-8, filling error 2.25e-7;
+- unrestricted analytic 81/82: matching 6.28e-4, filling error 4.49e-5;
+- fixed FD 88/89: matching 2.03e-4, filling error 7.39e-5;
+- fixed analytic 178/179: ends fully filled (4, target 2), despite vanishing
+  matrix residuals. Not a valid solution.
+A fresh default .solve() restart from the FD plateau also fails to recover
+within 180 seconds/100 impurity calls; it reanchors after 22 cycles.
+
+The initial ghost dispersion scale is roughly R_ghost^2 W ~1e-12 or less.
+Both temperatures are large on that scale. In a frozen response check,
+warming reduces the remaining weak responses by about 100 while the leading
+response stays near 0.11. Warmer does not mean better-determined ghost fits.
+
+First cold near-root divergence: the bath fit matches to 1e-12 in either
+basis, but its weak bath-hole occupations differ (0.477/0.622 unrestricted;
+0.920/0.998 fixed, FD). This is a bath eigenvalue choice, not simply a basis
+rotation. Fixed eigenvectors do not remove this ambiguity.
+
+Next candidate, untested: retain full matrix fits and use the existing
+response-weighted penalty from the first fit, referenced to the parameters
+entering that fit. Freeze references/weights inside the local fit; update
+references on the next fit. This differs from the current persistent anchor
+and need not impose its bias at a true fixed point. Verify original
+f1/f2/bath/filling and branch energy under reduced regularization.
+No implementation changes made. Matching committed tests: 39 pass.
+Warm scratch scripts: Ruff, Ruff LSP and strict mypy pass.

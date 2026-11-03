@@ -16,8 +16,16 @@ from risb import LatticeSolver, ThermalLatticeSolver, helpers
 from risb.helpers_fockit import h_int_kanamori
 from risb.impurity_solvers import FockitImpuritySolver, FockitThermalImpuritySolver
 from risb.kintegration import BandKIntegrator, WeightedKPointIntegrator
-from risb.optimize import DIIS, Pulay
-from risb.types import BlockMatrix, BlockMatrixLike, GfStruct
+from risb.optimize import (
+    DIIS,
+    FixedPointLoop,
+    OnPlateau,
+    OptimizerSchedule,
+    Pulay,
+    SchedulerPhase,
+    after_steps,
+)
+from risb.types import BlockMatrix, BlockMatrixLike, FixedPointProblem, GfStruct
 
 ONE_BAND: GfStruct = [("up", 1), ("dn", 1)]
 
@@ -341,6 +349,67 @@ def test_default_solve_converges_at_high_temperature(model: str, T: float) -> No
     if (model, T) == ("one_band_ghosts", 1.0):
         docc = impurity_solver.overlap(nc("up", 0) * nc("dn", 0))
         assert docc == pytest.approx(0.141837, abs=1e-6)
+
+
+def test_anchoring_preserves_the_schedule_and_discards_progress_from_the_old_map() -> (
+    None
+):
+    S, impurity_solver = bethe_lattice(hubbard(2.0), 3, 1.0)
+    schedule = OptimizerSchedule(
+        [
+            SchedulerPhase(
+                DIIS(policy=Pulay(alpha=0.3, mixing_period=1)),
+                until=after_steps(2),
+            ),
+            SchedulerPhase(DIIS()),
+        ]
+    )
+    monitor = OnPlateau()
+    anchor_steps: list[int] = []
+
+    def record(loop: FixedPointLoop, _problem: FixedPointProblem) -> None:
+        if monitor.anchored and not anchor_steps:
+            state = schedule.get_state()
+            anchor_steps.append(state.n_steps)
+            assert state.scheduler_phase_index == 1
+            assert state.n_phase_steps == state.n_steps - 2
+            assert state.root_norms == ()
+            assert state.recursion_norms == ()
+            assert np.isinf(loop.get_best_error("root"))
+            assert np.isinf(loop.get_best_error("recursion"))
+            assert not loop.converged
+
+    result = S.solve(schedule, callbacks=[monitor, record], tol=1e-10)
+    assert result.converged
+    assert len(anchor_steps) == 1
+    state = schedule.get_state()
+    assert state.scheduler_phase_index == 1
+    assert state.n_steps == result.cycles
+    assert state.n_phase_steps == state.n_steps - 2
+    assert len(state.root_norms) == state.n_steps - anchor_steps[0]
+    assert result.history_error_funs[: anchor_steps[0]] == ["root"] * anchor_steps[0]
+    assert result.history_error_funs[anchor_steps[0] :] == ["recursion"] * (
+        state.n_steps - anchor_steps[0]
+    )
+    assert S.self_consistency_error < 1e-7
+    assert S.bath_fit_error < 1e-6
+    assert impurity_solver.overlap(nc("up", 0) * nc("dn", 0)) == pytest.approx(
+        0.141837, abs=1e-6
+    )
+
+    standalone, standalone_impurity = bethe_lattice(hubbard(2.0), 3, 1.0)
+    standalone_result = standalone.solve(tol=1e-10)
+    assert standalone_result.converged
+    assert standalone.self_consistency_error < 1e-7
+    assert standalone.bath_fit_error < 1e-6
+    docc = nc("up", 0) * nc("dn", 0)
+    assert impurity_solver.overlap(docc) == pytest.approx(
+        standalone_impurity.overlap(docc), abs=1e-8
+    )
+    assert S.n_electrons == pytest.approx(standalone.n_electrons, abs=1e-8)
+    assert grand_potential(S, impurity_solver) == pytest.approx(
+        grand_potential(standalone, standalone_impurity), abs=1e-7
+    )
 
 
 def test_thermal_risb_with_double_counting_restarts_on_its_solution() -> None:

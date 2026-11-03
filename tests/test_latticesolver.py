@@ -1,5 +1,6 @@
 # ruff: noqa: D100, D103
 
+from typing import Literal
 
 import numpy as np
 import pytest
@@ -19,9 +20,35 @@ from risb.gauge import lambda_eigenbasis
 from risb.helpers_fockit import h_int_kanamori
 from risb.impurity_solvers import FockitImpuritySolver
 from risb.kintegration import BandKIntegrator, WeightedKPointIntegrator
-from risb.optimize import DIIS, Pulay, ScipyRoot, SolveResult
+from risb.optimize import (
+    DIIS,
+    BianLi,
+    FixedPointLoop,
+    NewtonSolver,
+    OnPlateau,
+    OptimizerSchedule,
+    Pulay,
+    ScheduleCondition,
+    SchedulerPhase,
+    SchedulerState,
+    ScipyRoot,
+    SolveResult,
+    after_steps,
+    all_of,
+    any_of,
+    plateau,
+    reduced_by,
+    residual_below,
+)
 from risb.pinning import FullEmptyPinning
-from risb.types import BlockMatrix, GaugeFix, GfStruct, ImpuritySolver, PinFullEmpty
+from risb.types import (
+    BlockMatrix,
+    FixedPointProblem,
+    GaugeFix,
+    GfStruct,
+    ImpuritySolver,
+    PinFullEmpty,
+)
 
 type Model = tuple[
     GfStruct,
@@ -227,6 +254,512 @@ def test_diis_nosymmetrize(
     do_assert(
         subtests, mu_calculated, S.Lambda, S.Z, mu_expected, Lambda_expected, Z_expected
     )
+
+
+@pytest.mark.parametrize(
+    ("source_error", "policy"),
+    [
+        ("recursion", Pulay(error_fun="root", mixing_period=None)),
+        ("root", Pulay(error_fun="recursion", mixing_period=2, restart_period=4)),
+        ("root", BianLi()),
+        ("root", BianLi(schedule="residual")),
+        ("root", BianLi(schedule="combined")),
+    ],
+)
+def test_optimizer_history_can_be_transferred_between_residuals(
+    subtests: pytest.Subtests,
+    one_band: Model,
+    source_error: Literal["root", "recursion"],
+    policy: Pulay | BianLi,
+) -> None:
+    (
+        gf_struct,
+        h0_k,
+        impurity_solver,
+        band_integrator,
+        mu_expected,
+        Lambda_expected,
+        Z_expected,
+    ) = one_band
+    S = LatticeSolver(
+        h0_k=h0_k,
+        gf_struct=[gf_struct],
+        impurity_solvers=[impurity_solver],
+        band_integrator=band_integrator,
+        symmetrizers=[symmetrize_blocks],
+    )
+    for i in range(S.n_clusters):
+        for bl, _ in S.gf_struct[i]:
+            np.fill_diagonal(S.Lambda[i][bl], mu_expected)
+    warmup_policy = Pulay(alpha=0.1, mixing_period=1, error_fun=source_error)
+    warmup = DIIS(policy=warmup_policy)
+    boundary = S.solve(warmup, tol=0, maxiter=4, self_consistency_tol=np.inf)
+    history = warmup.get_history()
+    optimizer = DIIS(history_size=2, policy=policy)
+    iteration = S.iteration
+    optimizer.set_history(history)
+    x_next = optimizer.update_x()
+    assert S.iteration == iteration
+
+    # Changing exported samples leaves both optimizers usable.
+    for vectors in (history.x, history.g_x, history.residual):
+        for vector in vectors:
+            vector.fill(np.nan)
+    warmup_policy.alpha = 1.0
+    warmup_policy.mixing_period = None
+    for solver, x0 in ((warmup, boundary.x_next), (optimizer, x_next)):
+        result = S.solve(solver, x0=x0)
+        assert result.converged
+        do_assert(
+            subtests,
+            band_integrator.mu,
+            S.Lambda,
+            S.Z,
+            mu_expected,
+            Lambda_expected,
+            Z_expected,
+        )
+
+
+@pytest.mark.parametrize("model", ["one_band", "bilayer", "kanamori"])
+def test_scheduled_and_standalone_optimizers_reach_the_same_solution(
+    subtests: pytest.Subtests,
+    request: pytest.FixtureRequest,
+    model: str,
+) -> None:
+    (
+        gf_struct,
+        h0_k,
+        impurity_solver,
+        band_integrator,
+        mu_expected,
+        Lambda_expected,
+        Z_expected,
+    ) = request.getfixturevalue(model)
+    optimizers: dict[str, NewtonSolver] = {
+        "Pulay": DIIS(),
+        "BianLi": DIIS(policy=BianLi()),
+    }
+    for history in ("carry", "clear"):
+        optimizers[f"scheduled_{history}"] = OptimizerSchedule(
+            [
+                SchedulerPhase(
+                    DIIS(policy=Pulay(alpha=0.1, mixing_period=1)),
+                    until=after_steps(4),
+                ),
+                SchedulerPhase(DIIS(policy=BianLi()), history=history),
+            ]
+        )
+    reference_Z: list[BlockMatrix] | None = None
+    for name, optimizer in optimizers.items():
+        S = LatticeSolver(
+            h0_k=h0_k,
+            gf_struct=[gf_struct],
+            impurity_solvers=[impurity_solver],
+            band_integrator=band_integrator,
+            symmetrizers=[symmetrize_blocks],
+        )
+        for i in range(S.n_clusters):
+            for bl, _ in S.gf_struct[i]:
+                np.fill_diagonal(S.Lambda[i][bl], mu_expected)
+        result = S.solve(optimizer, callbacks=[])
+        request.node.user_properties.append((f"evaluations_{name}", result.cycles))
+        assert result.converged, name
+        assert S.self_consistency_error < 1e-10, name
+        do_assert(
+            subtests,
+            band_integrator.mu,
+            S.Lambda,
+            S.Z,
+            mu_expected,
+            Lambda_expected,
+            Z_expected,
+        )
+        if reference_Z is None:
+            reference_Z = [
+                {block: matrix.copy() for block, matrix in cluster.items()}
+                for cluster in S.Z
+            ]
+        else:
+            for cluster, reference in zip(S.Z, reference_Z, strict=True):
+                for block, matrix in cluster.items():
+                    assert np.linalg.eigvalsh(matrix) == pytest.approx(
+                        np.linalg.eigvalsh(reference[block]), abs=1e-10
+                    )
+
+
+@pytest.mark.parametrize(
+    ("history", "condition", "boundary_steps"),
+    [
+        ("carry", after_steps(3), 3),
+        ("clear", after_steps(3), 3),
+        ("carry", after_steps(4), 4),
+        ("carry", residual_below(1.0, error_fun="recursion"), 1),
+        ("carry", reduced_by(1.1, error_fun="recursion"), None),
+        ("carry", plateau(2, factor=1e6), 3),
+        (
+            "carry",
+            any_of(
+                after_steps(4),
+                all_of(after_steps(2), residual_below(1.0, error_fun="recursion")),
+            ),
+            2,
+        ),
+    ],
+)
+def test_scheduled_optimizers_reach_the_physical_solution(
+    subtests: pytest.Subtests,
+    one_band: Model,
+    history: Literal["carry", "clear"],
+    condition: ScheduleCondition,
+    boundary_steps: int | None,
+) -> None:
+    (
+        gf_struct,
+        h0_k,
+        impurity_solver,
+        band_integrator,
+        mu_expected,
+        Lambda_expected,
+        Z_expected,
+    ) = one_band
+    S = LatticeSolver(
+        h0_k=h0_k,
+        gf_struct=[gf_struct],
+        impurity_solvers=[impurity_solver],
+        band_integrator=band_integrator,
+        symmetrizers=[symmetrize_blocks],
+    )
+    for i in range(S.n_clusters):
+        for bl, _ in S.gf_struct[i]:
+            np.fill_diagonal(S.Lambda[i][bl], mu_expected)
+    schedule = OptimizerSchedule(
+        [
+            SchedulerPhase(
+                DIIS(policy=Pulay(alpha=0.1, mixing_period=1, restart_period=4)),
+                until=condition,
+            ),
+            SchedulerPhase(
+                DIIS(history_size=2, policy=BianLi(schedule="residual")),
+                history=history,
+            ),
+        ]
+    )
+    seen: list[SchedulerState] = []
+    accepted: list[tuple[NDArray[np.float64], float, float]] = []
+
+    def record(loop: FixedPointLoop, _problem: FixedPointProblem) -> None:
+        state = schedule.get_state()
+        seen.append(state)
+        accepted.append(
+            (loop.x.copy(), state.root_norms[-1], state.recursion_norms[-1])
+        )
+        for error_fun in ("root", "recursion"):
+            if error_fun == "root":
+                best = min(accepted, key=lambda sample: sample[1])
+                best_error = best[1]
+            else:
+                best = min(accepted, key=lambda sample: sample[2])
+                best_error = best[2]
+            assert loop.get_best_error(error_fun) == pytest.approx(best_error)
+            assert loop.get_best_x(error_fun) == pytest.approx(best[0])
+        assert loop.best_x == pytest.approx(loop.get_best_x())
+        assert loop.error == pytest.approx(loop.get_error())
+
+    result = S.solve(schedule, callbacks=[record])
+    assert result.history_error_funs == [state.error_fun for state in seen]
+    assert result.history == pytest.approx(
+        [
+            state.root_norms[-1]
+            if state.error_fun == "root"
+            else state.recursion_norms[-1]
+            for state in seen
+        ]
+    )
+    assert result.converged
+    state = schedule.get_state()
+    assert state.scheduler_phase_index == 1
+    assert state.n_steps == len(seen)
+    assert state.n_evaluations == result.cycles
+    boundary = next(state for state in seen if state.scheduler_phase_index == 1)
+    assert boundary.n_phase_steps == 0
+    assert boundary.n_phase_evaluations == 0
+    if boundary_steps is not None:
+        assert boundary.n_steps == boundary_steps
+    do_assert(
+        subtests,
+        band_integrator.mu,
+        S.Lambda,
+        S.Z,
+        mu_expected,
+        Lambda_expected,
+        Z_expected,
+    )
+
+
+@pytest.mark.parametrize(
+    ("reset_on_entry", "monitored_error", "incoming_error", "expected_restart_steps"),
+    [
+        (False, "root", "root", (5,)),
+        (True, "root", "root", ()),
+        (False, None, "recursion", (6,)),
+        (True, None, "recursion", ()),
+        (False, "root", "recursion", (5,)),
+    ],
+)
+def test_plateau_recovery_respects_scheduler_phase_entries(
+    subtests: pytest.Subtests,
+    one_band: Model,
+    reset_on_entry: bool,
+    monitored_error: Literal["root", "recursion"] | None,
+    incoming_error: Literal["root", "recursion"],
+    expected_restart_steps: tuple[int, ...],
+) -> None:
+    (
+        gf_struct,
+        h0_k,
+        impurity_solver,
+        band_integrator,
+        mu_expected,
+        Lambda_expected,
+        Z_expected,
+    ) = one_band
+    S = LatticeSolver(
+        h0_k=h0_k,
+        gf_struct=[gf_struct],
+        impurity_solvers=[impurity_solver],
+        band_integrator=band_integrator,
+        symmetrizers=[symmetrize_blocks],
+    )
+    for i in range(S.n_clusters):
+        for bl, _ in S.gf_struct[i]:
+            np.fill_diagonal(S.Lambda[i][bl], mu_expected)
+    schedule = OptimizerSchedule(
+        [
+            SchedulerPhase(
+                DIIS(policy=Pulay(alpha=0.1, mixing_period=1, error_fun="root")),
+                until=after_steps(2),
+            ),
+            SchedulerPhase(
+                DIIS(
+                    policy=Pulay(alpha=0.1, mixing_period=1, error_fun=incoming_error)
+                ),
+                until=after_steps(3),
+                next_phase=1,
+            ),
+        ]
+    )
+    monitor = OnPlateau(
+        patience=3,
+        near=0,
+        factor=1e100,
+        error_fun=monitored_error,
+        reset_on_scheduler_phase_entry=reset_on_entry,
+    )
+    restart_steps: list[int] = []
+
+    def record(loop: FixedPointLoop, _problem: FixedPointProblem) -> None:
+        if monitor.restarts > len(restart_steps):
+            restart_steps.append(loop.cycle)
+
+    result = S.solve(
+        schedule,
+        callbacks=[monitor, record],
+        tol=0,
+        maxiter=9,
+        self_consistency_tol=np.inf,
+    )
+    assert tuple(restart_steps) == expected_restart_steps
+    state = schedule.get_state()
+    assert state.n_steps == 9
+    assert state.scheduler_phase_index == 1
+    assert state.n_phase_steps == 1
+    continued = S.solve(DIIS(), x0=result.x_next)
+    assert continued.converged
+    do_assert(
+        subtests,
+        band_integrator.mu,
+        S.Lambda,
+        S.Z,
+        mu_expected,
+        Lambda_expected,
+        Z_expected,
+    )
+
+
+def test_a_callback_residual_change_rechecks_convergence(
+    subtests: pytest.Subtests, one_band: Model
+) -> None:
+    (
+        gf_struct,
+        h0_k,
+        impurity_solver,
+        band_integrator,
+        mu_expected,
+        Lambda_expected,
+        Z_expected,
+    ) = one_band
+    S = LatticeSolver(
+        h0_k=h0_k,
+        gf_struct=[gf_struct],
+        impurity_solvers=[impurity_solver],
+        band_integrator=band_integrator,
+        symmetrizers=[symmetrize_blocks],
+    )
+    for i in range(S.n_clusters):
+        for bl, _ in S.gf_struct[i]:
+            np.fill_diagonal(S.Lambda[i][bl], mu_expected)
+
+    def switch(loop: FixedPointLoop, _problem: FixedPointProblem) -> None:
+        if loop.cycle == 1:
+            assert loop.converged
+            assert loop.get_error("root") < loop.tol < loop.get_error("recursion")
+            loop.optimizer = DIIS(policy=Pulay(error_fun="recursion"))
+
+    result = S.solve(
+        DIIS(policy=Pulay(error_fun="root")),
+        callbacks=[switch],
+        tol=0.2,
+        self_consistency_tol=np.inf,
+    )
+    assert result.cycles > 1
+    assert result.history_error_funs[0] == "root"
+    assert result.history_error_funs[1:] == ["recursion"] * (len(result.history) - 1)
+    converged = S.solve(DIIS(), x0=result.x_next)
+    assert converged.converged
+    do_assert(
+        subtests,
+        band_integrator.mu,
+        S.Lambda,
+        S.Z,
+        mu_expected,
+        Lambda_expected,
+        Z_expected,
+    )
+
+
+def test_a_branching_schedule_continues_across_evaluation_budgets(
+    subtests: pytest.Subtests, one_band: Model
+) -> None:
+    (
+        gf_struct,
+        h0_k,
+        impurity_solver,
+        band_integrator,
+        mu_expected,
+        Lambda_expected,
+        Z_expected,
+    ) = one_band
+    S = LatticeSolver(
+        h0_k=h0_k,
+        gf_struct=[gf_struct],
+        impurity_solvers=[impurity_solver],
+        band_integrator=band_integrator,
+        symmetrizers=[symmetrize_blocks],
+    )
+    for i in range(S.n_clusters):
+        for bl, _ in S.gf_struct[i]:
+            np.fill_diagonal(S.Lambda[i][bl], mu_expected)
+    initial_x = S.get_x().copy()
+
+    def make_schedule() -> OptimizerSchedule:
+        return OptimizerSchedule(
+            [
+                SchedulerPhase(
+                    DIIS(policy=Pulay(alpha=0.1, mixing_period=1)),
+                    until=after_steps(2),
+                    next_phase=lambda state: 2 if state.n_steps >= 6 else 1,
+                ),
+                SchedulerPhase(
+                    DIIS(
+                        policy=Pulay(alpha=0.3, mixing_period=1, error_fun="recursion")
+                    ),
+                    until=after_steps(3, scope="solve"),
+                    next_phase=0,
+                    history="clear",
+                ),
+                SchedulerPhase(
+                    DIIS(history_size=2, policy=BianLi(schedule="constant", gamma=0.01))
+                ),
+            ]
+        )
+
+    runs: list[
+        tuple[list[NDArray[np.float64]], list[Literal["root", "recursion"]], int]
+    ] = []
+    for budget in (1000, 3):
+        schedule = make_schedule()
+        seen: list[SchedulerState] = []
+        accepted_guesses: list[NDArray[np.float64]] = []
+        error_funs: list[Literal["root", "recursion"]] = []
+
+        def record(
+            loop: FixedPointLoop,
+            _problem: FixedPointProblem,
+            *,
+            observations: list[SchedulerState] = seen,
+            optimizer: OptimizerSchedule = schedule,
+            guesses: list[NDArray[np.float64]] = accepted_guesses,
+        ) -> None:
+            observations.append(optimizer.get_state())
+            guesses.append(loop.x.copy())
+
+        x_next = initial_x
+        cycles = 0
+        for _ in range(200):
+            result = S.solve(
+                schedule,
+                callbacks=[record],
+                maxiter=budget,
+                x0=x_next,
+                self_consistency_tol=np.inf,
+            )
+            cycles += result.cycles
+            error_funs.extend(result.history_error_funs)
+            assert result.cycles <= budget
+            if result.converged:
+                break
+            assert result.x_next is not None
+            x_next = result.x_next
+        else:
+            pytest.fail("The scheduled solve did not converge.")
+        runs.append((accepted_guesses, error_funs, cycles))
+        state = schedule.get_state()
+        assert state.n_steps == len(seen)
+        assert state.n_evaluations == cycles
+        assert state.n_evaluations > state.n_steps
+        visited: list[int] = []
+        for observation in seen:
+            index = observation.scheduler_phase_index
+            if not visited or index != visited[-1]:
+                visited.append(index)
+        assert visited == [0, 1, 0, 1, 0, 2]
+        do_assert(
+            subtests,
+            band_integrator.mu,
+            S.Lambda,
+            S.Z,
+            mu_expected,
+            Lambda_expected,
+            Z_expected,
+        )
+        schedule.reset_active_optimizer()
+        assert schedule.get_state() == state
+        continued = S.solve(schedule, callbacks=[], maxiter=3, x0=result.x)
+        assert continued.converged
+        assert schedule.get_state().scheduler_phase_index == 2
+        schedule.reset()
+        reset = schedule.get_state()
+        assert reset.scheduler_phase_index == 0
+        assert reset.n_steps == 0
+        assert reset.n_evaluations == 0
+
+    uninterrupted_run, continued_run = runs
+    assert continued_run[1:] == uninterrupted_run[1:]
+    for uninterrupted_x, continued_x in zip(
+        uninterrupted_run[0], continued_run[0], strict=True
+    ):
+        assert continued_x == pytest.approx(uninterrupted_x, abs=1e-12, rel=0)
 
 
 def test_one_cycle_per_solve_from_x_next_reaches_the_solution(
