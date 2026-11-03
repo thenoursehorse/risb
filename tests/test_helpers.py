@@ -499,6 +499,101 @@ def test_density_matrix_k_has_the_local_density_of_each_impurity(model: str) -> 
         assert local == pytest.approx(S.rho_c[0][bl].T, abs=1e-10)
 
 
+def test_charge_projection_preserves_converged_risb_density() -> None:
+    S, _, _, n_target = solved_lattice("complex")
+    assert S.kintegration_result is not None
+    density = helpers.get_density_matrix_k(
+        R_full=S.R_full,
+        qp_density_k=S.qp_density_k,
+        weights=S.kintegration_result.weights,
+        rho_c=S.rho_c,
+        projectors=S.projectors,
+    )
+    projected = helpers.project_charge_neutral_density_matrix_k(
+        density_k=density, n_target=n_target, weights=S.kintegration_result.weights
+    )
+    for bl, rho in density.items():
+        assert projected[bl] == pytest.approx(rho, abs=1e-10)
+
+
+def test_charge_projection_neutralizes_an_unconverged_risb_density() -> None:
+    S, _, _, n_target = solved_lattice("a site in no cluster")
+    for cluster in S.Lambda:
+        for bl, value in cluster.items():
+            cluster[bl] = value + 0.4 * np.eye(value.shape[0])
+    S.one_cycle()
+    assert S.kintegration_result is not None
+    weights = S.kintegration_result.weights
+    density = helpers.get_density_matrix_k(
+        R_full=S.R_full,
+        qp_density_k=S.qp_density_k,
+        weights=weights,
+        rho_c=S.rho_c,
+        projectors=S.projectors,
+    )
+    original = {bl: rho.copy() for bl, rho in density.items()}
+    charge = sum(
+        np.average(np.trace(rho, axis1=-2, axis2=-1).real, weights=weights)
+        for rho in density.values()
+    )
+    assert charge != pytest.approx(n_target, abs=1e-3)
+    projected = helpers.project_charge_neutral_density_matrix_k(
+        density_k=density, n_target=n_target, weights=weights
+    )
+    assert sum(
+        np.average(np.trace(rho, axis1=-2, axis2=-1).real, weights=weights)
+        for rho in projected.values()
+    ) == pytest.approx(n_target, abs=1e-12)
+    for bl, rho in projected.items():
+        assert rho == pytest.approx(np.swapaxes(rho.conj(), -1, -2), abs=1e-12)
+        occupations = np.linalg.eigvalsh(rho)
+        assert occupations.min() >= -1e-12
+        assert occupations.max() <= 1 + 1e-12
+        assert density[bl] == pytest.approx(original[bl], abs=0)
+
+
+def test_charge_projection_returns_the_nearest_density() -> None:
+    weights = np.array([1.0, 3.0])
+    # Two mixed orbitals and one spectator, with excess and negative occupations.
+    rotations = np.stack([random_unitary(2, seed) for seed in (12, 13)])
+    density = {
+        "up": (rotations * np.array([[-0.2, 0.3], [0.4, 1.2]])[:, None, :])
+        @ np.swapaxes(rotations.conj(), -1, -2),
+        "dn": np.array([[[0.5]], [[0.9]]]),
+    }
+    expected = {
+        "up": (rotations * np.array([[0.0, 0.2], [0.3, 1.0]])[:, None, :])
+        @ np.swapaxes(rotations.conj(), -1, -2),
+        "dn": np.array([[[0.4]], [[0.8]]]),
+    }
+    target = 1.725
+    projected = helpers.project_charge_neutral_density_matrix_k(
+        density_k=density, n_target=target, weights=weights
+    )
+    for bl, rho in expected.items():
+        assert projected[bl] == pytest.approx(rho, abs=1e-12)
+
+
+def test_charge_projection_handles_an_empty_window() -> None:
+    density = {"up": np.array([[[0.7, 0.2j], [-0.2j, 1.1]]])}
+    projected = helpers.project_charge_neutral_density_matrix_k(
+        density_k=density, n_target=0
+    )
+    assert projected["up"] == pytest.approx(np.zeros((1, 2, 2)), abs=1e-12)
+
+
+def test_charge_projection_handles_a_full_window() -> None:
+    rng = np.random.default_rng(9)
+    rho = rng.normal(size=(3, 4, 4)) + 1j * rng.normal(size=(3, 4, 4))
+    rho = 0.5 * (rho + np.swapaxes(rho.conj(), -1, -2))
+    projected = helpers.project_charge_neutral_density_matrix_k(
+        density_k={"up": rho}, n_target=4, weights=rng.random(3)
+    )
+    assert projected["up"] == pytest.approx(
+        np.broadcast_to(np.eye(4), rho.shape), abs=1e-12
+    )
+
+
 @pytest.mark.parametrize("model", ["complex", "a site in no cluster", "ghosts"])
 def test_band_and_interaction_energy_is_the_energy_of_risb(model: str) -> None:
     S, impurity_solvers, kintegrator, n_target = solved_lattice(model)

@@ -29,7 +29,7 @@ import numpy as np
 from numpy.linalg import inv
 from numpy.typing import NDArray
 from scipy.linalg import sqrtm
-from scipy.optimize import least_squares
+from scipy.optimize import brentq, least_squares
 from scipy.special import expit
 
 from risb.types import (
@@ -1454,6 +1454,111 @@ def get_density_matrix_k(
                 density[bl_full] + _dagger(P) @ (np.transpose(rho) - coherent) @ P
             )
     return density
+
+
+def project_charge_neutral_density_matrix_k(
+    *,
+    density_k: BlockMatrixLike,
+    n_target: float,
+    weights: NDArray[np.float64] | None = None,
+) -> BlockMatrix:
+    """
+    Return the nearest bounded density with the target total charge.
+
+    Parameters
+    ----------
+    density_k : risb.types.BlockMatrixLike
+        Hermitian physical density matrices, indexed as k, orbital, orbital,
+        in the convention of :func:`get_density_matrix_k`.
+    n_target : float
+        Physical electrons per cell in the supplied band window, summed
+        over blocks. Exclude ghost electrons. Matching the weighted DFT
+        window occupations makes the exported charge correction neutral.
+    weights : numpy.ndarray, optional
+        Relative, nonnegative k-point weights, including IBZ multiplicities.
+        They contain no occupations. Omitting them gives equal weights.
+
+    Returns
+    -------
+    risb.types.BlockMatrix
+        New density matrices with eigenvalues in [0, 1] and the requested
+        weighted trace. The input is unchanged.
+
+    Notes
+    -----
+    Minimize the weighted sum of squared Frobenius distances to density_k,
+    subject to the occupation bounds and one global electron count. The
+    eigenvectors are retained; each eigenvalue n becomes clip(n + shift, 0, 1),
+    with one shift shared by all k-points and blocks. No smearing is used.
+    This changes only the exported density, not the RISB state or residuals.
+
+    """
+    if not density_k:
+        msg = "Supply density matrices on the CSC k-point mesh."
+        raise ValueError(msg)
+    n_k = next(iter(density_k.values())).shape[0]
+    eigenvalues: BlockRealArray = {}
+    eigenvectors: BlockMatrix = {}
+    for bl, rho in density_k.items():
+        if (
+            rho.ndim != 3
+            or rho.shape[0] != n_k
+            or n_k == 0
+            or rho.shape[1] == 0
+            or rho.shape[1] != rho.shape[2]
+        ):
+            msg = "Density blocks must be square matrices on the same nonempty k-point mesh."
+            raise ValueError(msg)
+        if not np.all(np.isfinite(rho)) or not np.allclose(
+            rho, _dagger(rho), rtol=1e-10, atol=1e-12
+        ):
+            msg = "Density matrices must be finite and Hermitian."
+            raise ValueError(msg)
+        values, vectors = np.linalg.eigh(0.5 * (rho + _dagger(rho)))
+        eigenvalues[bl] = np.asarray(values, dtype=float)
+        eigenvectors[bl] = vectors
+
+    mesh_weights = np.ones(n_k) if weights is None else np.asarray(weights, dtype=float)
+    if (
+        mesh_weights.shape != (n_k,)
+        or not np.all(np.isfinite(mesh_weights))
+        or np.any(mesh_weights < 0)
+        or not np.isfinite(mesh_weights.sum())
+        or mesh_weights.sum() <= 0
+    ):
+        msg = "Supply finite, nonnegative k-point weights with a positive sum."
+        raise ValueError(msg)
+    mesh_weights = mesh_weights / mesh_weights.sum()
+    capacity = sum(values.shape[1] for values in eigenvalues.values())
+    if not np.isfinite(n_target) or not 0 <= n_target <= capacity:
+        msg = "n_target must lie between zero and the physical band-window capacity."
+        raise ValueError(msg)
+
+    if n_target == 0:
+        return {bl: np.zeros_like(rho) for bl, rho in density_k.items()}
+    if n_target == capacity:
+        return {
+            bl: np.broadcast_to(np.eye(rho.shape[1], dtype=rho.dtype), rho.shape).copy()
+            for bl, rho in density_k.items()
+        }
+
+    def charge_error(shift: float) -> float:
+        return float(
+            sum(
+                mesh_weights @ np.clip(values + shift, 0, 1).sum(axis=1)
+                for values in eigenvalues.values()
+            )
+            - n_target
+        )
+
+    lower = -max(float(values.max()) for values in eigenvalues.values())
+    upper = 1 - min(float(values.min()) for values in eigenvalues.values())
+    shift = brentq(charge_error, lower, upper, xtol=1e-14)
+    return {
+        bl: (vectors * np.clip(eigenvalues[bl] + shift, 0, 1)[:, None, :])
+        @ _dagger(vectors)
+        for bl, vectors in eigenvectors.items()
+    }
 
 
 def get_band_energy(

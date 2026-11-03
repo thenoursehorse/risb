@@ -219,6 +219,32 @@ as
 delta_n = {bl: density_k[bl] - density_dft_k[bl] for bl in density_k}
 ```
 
+For unconverged RISB steps, optionally project the physical density before
+exporting it:
+
+```python
+density_export_k = helpers.project_charge_neutral_density_matrix_k(
+    density_k=density_k,
+    n_target=n_target,
+    weights=S.kintegration_result.weights,
+)
+delta_n = {bl: density_export_k[bl] - density_dft_k[bl] for bl in density_export_k}
+```
+
+The helper finds the nearest density in weighted Frobenius norm with
+occupations in $[0, 1]$ and the requested total charge. It shifts and clips
+the density eigenvalues using one scalar shared across all k-points and
+blocks. `weights` contains only k-point sampling weights, including IBZ
+multiplicities; it contains no Fermi occupations. No new band integration
+or impurity solve is needed.
+
+Use the physical electron count in the exported band window, excluding
+ghost electrons. Matching the weighted trace of `density_dft_k` makes
+`delta_n` neutral. The projection preserves feasible converged densities,
+but can also repair invalid occupations in an already-neutral density.
+It returns new arrays: keep `density_k` for RISB observables and energies,
+and still converge the original RISB residuals.
+
 Pass the full matrix, including off-diagonal entries, to your DFT interface.
 That interface must use the Bloch basis functions of this DFT calculation
 to convert it into a real-space charge correction and update the Kohn-Sham

@@ -55,8 +55,10 @@ physical residuals, not only iteration count. Keep prototypes outside the reposi
    Migrate the lattice solvers and remove SmearingKWeight.
 23. [ ] Check adaptive detection of small pockets and sampling guides more
    broadly before changing any integration default.
-24. [x] Strengthen Richardson error checks on the tested hard T=0 inputs:
-   require colder confirmation, separate mu's error, and check cold filling.
+24. [ ] Validate T=0 extrapolation when quasiparticle energy scales shrink.
+   Colder confirmation and count checks are implemented, but warm samples
+   can still falsely pass. Require evidence that the sampled temperatures
+   resolve the relevant energy scales.
 25. [x] Implement midpoint-first mu search in BandKIntegrator with
    use_midgap and electron_count_atol; retain Brent fallback and report
    midpoint availability. Require colder confirmation for extrapolation.
@@ -72,10 +74,17 @@ physical residuals, not only iteration count. Keep prototypes outside the reposi
    the final count check remains required.
 29. [ ] Address weak level response near the atomic branch: the tested
    density residual scales as R^2 but the level update scales as R^4.
-   Compare physical-residual stopping and response scaling.
+   Compare physical-residual stopping and response scaling. The common-level
+   charge-response prototype helps recursion DIIS but is not a consistent
+   improvement; the first abrupt failure also exposes item 24.
 30. [ ] Treat atomic ground-state and band degeneracies consistently.
    Validate the lower-energy, nearly singular-R root using physical spectra
    and matching equations rather than requiring R^dag R=0.
+
+31. [x] Prototype direct T=0 filling on supplied weighted k-meshes.
+   All tested square/Bethe B=5 starts match, including doped square cases.
+   Cubic Mott remains sensitive to numerical degeneracy handling; keep
+   items 13 and 30 open. This does not address adaptive AutoBZ integration.
 
 ## Results
 
@@ -1512,3 +1521,81 @@ atomic-density issues, rather than failed finite-beta count checks.
 
 Verification: 221 tests and 111 subtests pass. Ruff, Ruff LSP, strict mypy
 and the warning-free Sphinx build pass. No benchmark changes.
+
+## Berlingreen HS beta=800: optimizer, extrapolation and smearing (2026-11-03)
+
+All from the joint-pin root run's cycle-5 input (root residual 3.6e-3, Fe1 HS),
+no pin, 10 evaluations. Scratch driver berlingreen_ramp.py with risb_compat.py.
+
+- One-cycle scan of Fe2's middle t2g ghost coupling c = |vR|, others fixed:
+  smooth, near-linear map, slope ~4-6 through c* ~ 0.028 (a repelling fixed
+  point of that slice). A plain mixing step multiplies the error ~x3.
+- Pulay root, mixing_period=None: 3.6e-3 -> 2.8e-5 (cycle 10), filling -4e-4,
+  E -105.034 eV. Jointly the ghost decouples (c -> 0, level -> mu, n = 1/2).
+  Continued: plateau 3-5e-5, all in Fe2 t2g. Not DMRG: Fe2 at bond dim 1000,
+  cutoff 1e-12 (discarded weight 2e-11 vs 1.9e-9) changes rho_f by 4e-7 and
+  rho_cf by 2e-7 for the same input; the plateau is the iteration.
+- Default mixing_period=3 bounced 4e-3 to 0.1 from the same kind of state.
+- Bian-Li (recursion): 6.8e-2. Bian-Li with root acceptance: 8.6e-2; halving
+  the rejected step instead of mixing is identical, as each rejection clears
+  the history and the next guess is again g(x).
+- T=0 extrapolation (betas 200..12800, unconfirmed results forced through):
+  temperature errors 6e-3 to 0.6, unconfirmed with both the 1/beta fit
+  (957a5c7) and the old beta**-2 fit; root residual 1e-2 -> 8e-2.
+- Gaussian smearing, beta=800, Pulay mixing_period=None: 7.7e-3 -> 5.8e-4 in
+  10 cycles, still decreasing (slower than Fermi from a Fermi-converged start).
+
+## Common-level response prototype and warm extrapolation
+
+Report: /tmp/risb-smoother-map/level-response/report.md.
+No production code, tests, benchmarks or defaults changed.
+
+A common-Lambda Newton correction based on the impurity charge response
+agrees with finite differences. It preserves the original matching equations.
+On three starts with direct T=0 sums, original physical-residual DIIS matches
+3/3 and recursion DIIS 0/3. Bounded response corrections give 2/3 for each.
+Uncapped corrections give the same robust counts; an apparent third atomic
+success fails independent reevaluation. Some matched roots have slightly
+higher energy. Keep item 29 open.
+
+The first density jump is caused by an accepted but inaccurate kinetic
+integral: estimated error 1.5e-13, actual same-mesh error 6.7e-6.
+Correcting that integral changes max f2 from 0.235 to 5.4e-11 at the same
+input. A separate analytic kinetic reference confirms the direct sum.
+
+Even the coldest four supplied beta values falsely pass a narrower-band
+control: estimated error 1.8e-9, actual error 6.7e-7. All those temperatures
+are still warm compared with the band scale. Reopen item 24; another fixed
+number of colder samples does not resolve the validity problem.
+
+All regular matched outputs pass independent original-map checks. One
+atomic output is excluded. Existing affected tests: 35 pass. Ruff, Ruff LSP
+and strict mypy pass.
+
+## Direct T=0 weighted filling prototype
+
+Report: /tmp/risb-smoother-map/direct-t0/report.md.
+No production code, permanent tests, benchmarks or defaults changed.
+
+Fill weighted levels directly, sharing a partly occupied degenerate group.
+Densities retain the supplied k-point order. Forty-five comparisons use the
+same three starts and physical-residual Pulay DIIS for each method.
+
+Direct T=0 and extrapolation match all square B=3/B=5, doped square B=5 and
+Bethe B=5 starts. Square B=5 takes 15/29/29 direct cycles versus 33/29/33 at
+beta=800; doped B=5 takes 62/65/50 versus 50/62/67. No consistent outer-cycle
+advantage. Direct filling avoids the repeated temperature samples.
+
+Both T=0 methods match two of three cubic Mott starts at E=3.5191354.
+The default direct run exhausts 300 cycles; extrapolation fails at cycle 43.
+Beta=800 reaches different roots at E=3.6 and E=3.5195291.
+
+Changing the numerical degeneracy window from 8 to 64 eps lets the default
+direct Mott run reach the lower-energy root in 100 cycles. The checked
+matched final densities do not change, but the trajectory does. The earlier
+3/3 Mott result is not robust; keep degeneracy handling and branch dependence open.
+
+The narrow-band kinetic reference agrees within 8.5e-21. Weighted complex
+and fractional-level controls pass. Existing affected tests: 35 pass.
+Ruff, Ruff LSP and strict mypy pass. Direct mesh filling does not make
+metallic level crossings smooth or certify an adaptive T=0 integral.
