@@ -17,7 +17,7 @@ from risb.helpers_fockit import h_int_kanamori
 from risb.impurity_solvers import FockitImpuritySolver, FockitThermalImpuritySolver
 from risb.kintegration import BandKIntegrator, WeightedKPointIntegrator
 from risb.optimize import DIIS, Pulay
-from risb.types import BlockMatrixLike, GfStruct
+from risb.types import BlockMatrix, BlockMatrixLike, GfStruct
 
 ONE_BAND: GfStruct = [("up", 1), ("dn", 1)]
 
@@ -341,6 +341,37 @@ def test_default_solve_converges_at_high_temperature(model: str, T: float) -> No
     if (model, T) == ("one_band_ghosts", 1.0):
         docc = impurity_solver.overlap(nc("up", 0) * nc("dn", 0))
         assert docc == pytest.approx(0.141837, abs=1e-6)
+
+
+def test_thermal_risb_with_double_counting_restarts_on_its_solution() -> None:
+    U, beta = 2.0, 1.0
+
+    def double_counting(_i: int, rho_c: BlockMatrix) -> BlockMatrix:
+        return {"up": U * rho_c["dn"], "dn": U * rho_c["up"]}
+
+    def lattice_solver() -> ThermalLatticeSolver:
+        return ThermalLatticeSolver(
+            h0_k={bl: bethe_h0_k(200) for bl, _ in ONE_BAND},
+            gf_struct=ONE_BAND,
+            impurity_solvers=FockitThermalImpuritySolver(
+                hubbard(U), ONE_BAND, beta, **EXACT_THERMAL
+            ),
+            beta=beta,
+            n_target=0.8,
+            symmetrizers=[symmetrize_blocks],
+            force_real=True,
+            double_counting=double_counting,
+        )
+
+    S = lattice_solver()
+    result = S.solve(tol=1e-10)
+    assert result.converged
+    restarted = lattice_solver()
+    restarted.solve(x0=result.x_next, rho_c0=S.rho_c, maxiter=1)
+    assert restarted.n_electrons == pytest.approx(S.n_electrons, abs=1e-8)
+    for bl, _ in ONE_BAND:
+        assert restarted.rho_c[0][bl] == pytest.approx(S.rho_c[0][bl], abs=1e-8)
+        assert restarted.Z[0][bl] == pytest.approx(S.Z[0][bl], abs=1e-8)
 
 
 def test_a_cycle_leaves_the_solver_at_its_input() -> None:

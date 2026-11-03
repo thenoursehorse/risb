@@ -320,11 +320,21 @@ for iteration in range(max_charge_iterations):
 constructs the fixed-charge problem above from the current DFT output.
 `charge_and_energy` uses the density and energy examples above.
 
-The inner solve need not converge at every charge update. With a small
-`maxiter`, continue from `result.x_next` as `x0` of the next solve; if
-rebuilding the solver, also restore `rho_c`. This assumes the same local
-basis and parameter layout. Assess charge, energy and RISB self-consistency
-together at convergence.
+The inner solve need not converge at every charge update. For one RISB
+cycle per DFT update, pass the next iterate and the previous impurity
+density to the new solver:
+
+```python
+new_result = S_new.solve(
+    x0=result.x_next,
+    rho_c0=S.rho_c,
+    maxiter=1,
+)
+```
+
+`rho_c0` is copied into the solver before the first cycle. This also
+applies to `ThermalLatticeSolver`. Assess charge, energy and RISB
+self-consistency together at convergence.
 
 Regenerate `h0_k` and the projectors from each updated DFT calculation.
 Constructing a new `LatticeSolver` also rebuilds the local and kinetic terms

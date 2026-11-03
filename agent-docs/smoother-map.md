@@ -5,6 +5,8 @@ physical residuals, not only iteration count. Keep prototypes outside the reposi
 
 ## Scope
 
+- Further convergence work targets B>1. Set aside B=1 atomic-limit degeneracy.
+
 - Analytic thermal-fit Jacobians and directional penalties apply to
   ThermalLatticeSolver only. LatticeSolver has no thermal fits.
 - T = 0 spectral cutoffs and full/empty pinning are prototyped below.
@@ -46,8 +48,8 @@ physical residuals, not only iteration count. Keep prototypes outside the reposi
 19. [ ] Investigate thermal stopping with BianLi when matching residuals
    are small but g(x)-x remains large; distinguish parameter drift from
    failure to satisfy the matching equations.
-20. [ ] Investigate smearing options: methods, beta and k-point convergence;
-   check the three-orbital Mott case before changing defaults.
+20. [ ] Investigate smearing options: methods, beta and k-point convergence
+   for B>1 failures. The B=1 atomic limit is not a convergence target.
 21. [x] Prototype AutoBZCore integration of density and kinetic matrices on
    general lattices; check filling, derivatives and T=0 self-consistency.
 22. [x] Add general k-integration interfaces, weighted NumPy sums, an optional
@@ -85,6 +87,13 @@ physical residuals, not only iteration count. Keep prototypes outside the reposi
    All tested square/Bethe B=5 starts match, including doped square cases.
    Cubic Mott remains sensitive to numerical degeneracy handling; keep
    items 13 and 30 open. This does not address adaptive AutoBZ integration.
+
+32. [x] Prototype a coupled weak-ghost R/Lambda correction with fresh local
+   derivatives. One of six continuations matches, the same count as unchanged
+   restarts, on a different input. No consistent benefit; keep in scratch.
+33. [x] Compare the same B=5 failures with ThermalLatticeSolver at T=1e-4.
+   Thermal matches 1/3; LatticeSolver with identical band beta=10000 matches
+   3/3. No general thermal recovery advantage on this sample.
 
 ## Results
 
@@ -1599,3 +1608,54 @@ The narrow-band kinetic reference agrees within 8.5e-21. Weighted complex
 and fractional-level controls pass. Existing affected tests: 35 pass.
 Ruff, Ruff LSP and strict mypy pass. Direct mesh filling does not make
 metallic level crossings smooth or certify an adaptive T=0 integral.
+
+## Plateau, B=2, model grid and fresh starts (2026-11-03, later)
+
+Berlingreen HS beta=800 from the mixing_period=None Pulay plateau (3e-5):
+history 12, restart every 4 (keeping the newest entry; risb's restart_period
+empties the history, which spincrossover's record cannot handle) and Fe2 at
+bond dim 1000 all stay at 3.4e-5. The lattice-side inner Lambda solve
+(scratch level_solve.py, analytic band-response Jacobian, 3-4 band
+integrations per cycle) goes 3.8e-5 -> 4.1e-4 -> 5.3e-6 in 8 cycles, filling
+1e-7, E -105.0316 eV.
+
+The HS state has one decoupled ghost (|vR| = |Dv| = 0, level = mu, n = 1/2)
+in every Fe1 block and Fe2 t2g block. With Slater + SU(2) block2, Fe1's
+embedding sectors S = 0..5 are degenerate to 5e-6 eV: S = 5/2 plus five free
+ghost spins. B=2 with Sz=1/2 (N odd), started from HS with the ghost removed,
+converges to LS (E -100.51 eV), not HS.
+
+Crystal-field model, 15 cases, default start: get_lambda with mixing_period
+3/None converges 8/11 of 15 (None: the other four within 3e-6..5e-8, on the
+HS branch); inner solve 7/8, LS only.
+
+Berlingreen default start, beta=800, mixing_period=None: inner solve diverges
+by cycle 4 (sc 0.6), get_lambda by cycle 10 (sc 0.33, mu +1.2 eV). The
+mixing step is needed far from the solution and harmful near it.
+
+## Coupled ghost correction and very cold thermal solver
+
+Report: /tmp/risb-smoother-map/coupled-ghost/report.md.
+No production code, defaults, benchmarks or permanent tests changed.
+
+Three B=5 failure inputs, two restart policies, 200 impurity solves per
+comparison. The local correction varies two weak modes' R components and
+Lambda levels together, retaining every original matching residual.
+Fresh finite-difference responses and rejected evaluations count toward its
+60-solve allowance, which is deducted from the continuation budget.
+
+The correction reduces the local norm but does not reach a root. After
+checking the derivative step near the avoided crossing, the refined method
+matches 1/6 continuations, versus 1/6 unchanged restarts. It rescues a
+different input and loses the baseline success. Keep it out of production.
+
+At beta=10000, physical-residual Pulay with ThermalLatticeSolver matches
+one of three inputs in 72 impurity solves; two runs exhaust 200.
+LatticeSolver with identical band smearing matches all three in 15/40/25
+solves. Thermal uses analytic inner derivatives, no anchor, and all particle
+numbers and spin sectors. Matched outputs pass fresh-solver checks and
+agree in energy and physical observables.
+
+The colder-band comparison changes the beta=200 equations; it does not
+certify continuous-BZ accuracy. B=1 atomic-limit work is no longer a priority.
+Existing affected tests: 40 pass. Ruff, Ruff LSP and strict mypy pass.

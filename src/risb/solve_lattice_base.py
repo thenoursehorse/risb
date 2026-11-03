@@ -120,8 +120,8 @@ class BaseLatticeSolver(ABC):
         coherent density matrix ``R^T rho_qp R^*`` from :attr:`R` and
         :attr:`rho_qp`. It returns a matrix for each block of the cluster,
         which is subtracted from the local terms of cluster ``i`` in its
-        impurity problem. To restart from a solution, set :attr:`rho_c`
-        together with :attr:`R` and :attr:`Lambda`.
+        impurity problem. To restart from a solution, pass :attr:`rho_c`
+        as ``rho_c0`` of :meth:`solve`, together with ``x0``.
     bath_size : sequence of mapping, optional
         Ghost RISB (`10.1103/PhysRevB.96.195126
         <https://doi.org/10.1103/PhysRevB.96.195126>`__,
@@ -906,6 +906,7 @@ class BaseLatticeSolver(ABC):
         maxiter: int = 1000,
         self_consistency_tol: float = 1e-6,
         x0: NDArray[np.float64] | None = None,
+        rho_c0: Sequence[BlockMatrixLike] | None = None,
     ) -> SolveResult:
         """
         Solve for the renormalization matrix :attr:`R` and correlation potential matrix :attr:`Lambda`.
@@ -945,6 +946,10 @@ class BaseLatticeSolver(ABC):
         x0 : numpy.ndarray, optional
             Where to start, as from :meth:`get_x`. Default is the current
             :attr:`Lambda` and :attr:`R`.
+        rho_c0 : sequence of risb.types.BlockMatrixLike, optional
+            Initial impurity density of each cluster. Copied before the
+            first cycle for density-dependent double counting. Default
+            keeps the current :attr:`rho_c`.
 
         Returns
         -------
@@ -953,6 +958,11 @@ class BaseLatticeSolver(ABC):
         """
         with self._stage("solve", solver=type(self).__name__):
             self._warned_imaginary.clear()
+            if rho_c0 is not None:
+                self.rho_c = [
+                    {bl: rho.copy() for bl, rho in cluster.items()}
+                    for cluster in rho_c0
+                ]
             if optimizer is None:
                 optimizer = self.default_optimizer()
             if callbacks is None:

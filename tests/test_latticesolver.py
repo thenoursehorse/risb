@@ -829,10 +829,14 @@ def test_ghost_risb_with_double_counting_restarts_on_its_solution() -> None:
         )
 
     S = lattice_solver()
-    S.solve(tol=1e-10)
+    result = S.solve(tol=1e-10)
     assert S.self_consistency_error < 1e-8
     restarted = lattice_solver()
-    restarted.R, restarted.Lambda, restarted.rho_c = S.R, S.Lambda, S.rho_c
+    assert restarted.solve(x0=result.x_next, rho_c0=S.rho_c, maxiter=1).error < 1e-8
+    # Changing the old solver must not change the restarted one.
+    for cluster in S.rho_c:
+        for rho in cluster.values():
+            rho.fill(0)
     assert restarted.solve(maxiter=1).error < 1e-8
 
 
