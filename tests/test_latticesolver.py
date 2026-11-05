@@ -220,7 +220,7 @@ def test_diis_symmetrize(
     for i in range(S.n_clusters):
         for bl, _ in S.gf_struct[i]:
             np.fill_diagonal(S.Lambda[i][bl], mu_expected)
-    S.solve()
+    S.solve(tol=1e-12)
     mu_calculated = band_integrator.mu
     do_assert(
         subtests, mu_calculated, S.Lambda, S.Z, mu_expected, Lambda_expected, Z_expected
@@ -249,7 +249,7 @@ def test_diis_nosymmetrize(
     for i in range(S.n_clusters):
         for bl, _ in S.gf_struct[i]:
             np.fill_diagonal(S.Lambda[i][bl], mu_expected)
-    S.solve()
+    S.solve(tol=1e-12)
     mu_calculated = band_integrator.mu
     do_assert(
         subtests, mu_calculated, S.Lambda, S.Z, mu_expected, Lambda_expected, Z_expected
@@ -308,7 +308,7 @@ def test_optimizer_history_can_be_transferred_between_residuals(
     warmup_policy.alpha = 1.0
     warmup_policy.mixing_period = None
     for solver, x0 in ((warmup, boundary.x_next), (optimizer, x_next)):
-        result = S.solve(solver, x0=x0)
+        result = S.solve(solver, x0=x0, tol=1e-12)
         assert result.converged
         do_assert(
             subtests,
@@ -362,7 +362,7 @@ def test_scheduled_and_standalone_optimizers_reach_the_same_solution(
         for i in range(S.n_clusters):
             for bl, _ in S.gf_struct[i]:
                 np.fill_diagonal(S.Lambda[i][bl], mu_expected)
-        result = S.solve(optimizer, callbacks=[])
+        result = S.solve(optimizer, callbacks=[], tol=1e-12)
         request.node.user_properties.append((f"evaluations_{name}", result.cycles))
         assert result.converged, name
         assert S.self_consistency_error < 1e-10, name
@@ -466,7 +466,7 @@ def test_scheduled_optimizers_reach_the_physical_solution(
         assert loop.best_x == pytest.approx(loop.get_best_x())
         assert loop.error == pytest.approx(loop.get_error())
 
-    result = S.solve(schedule, callbacks=[record])
+    result = S.solve(schedule, callbacks=[record], tol=1e-12)
     assert result.history_error_funs == [state.error_fun for state in seen]
     assert result.history == pytest.approx(
         [
@@ -574,7 +574,7 @@ def test_plateau_recovery_respects_scheduler_phase_entries(
     assert state.n_steps == 9
     assert state.scheduler_phase_index == 1
     assert state.n_phase_steps == 1
-    continued = S.solve(DIIS(), x0=result.x_next)
+    continued = S.solve(DIIS(), x0=result.x_next, tol=1e-12)
     assert continued.converged
     do_assert(
         subtests,
@@ -625,7 +625,7 @@ def test_a_callback_residual_change_rechecks_convergence(
     assert result.cycles > 1
     assert result.history_error_funs[0] == "root"
     assert result.history_error_funs[1:] == ["recursion"] * (len(result.history) - 1)
-    converged = S.solve(DIIS(), x0=result.x_next)
+    converged = S.solve(DIIS(), x0=result.x_next, tol=1e-12)
     assert converged.converged
     do_assert(
         subtests,
@@ -712,6 +712,7 @@ def test_a_branching_schedule_continues_across_evaluation_budgets(
                 callbacks=[record],
                 maxiter=budget,
                 x0=x_next,
+                tol=1e-12,
                 self_consistency_tol=np.inf,
             )
             cycles += result.cycles
@@ -745,7 +746,7 @@ def test_a_branching_schedule_continues_across_evaluation_budgets(
         )
         schedule.reset_active_optimizer()
         assert schedule.get_state() == state
-        continued = S.solve(schedule, callbacks=[], maxiter=3, x0=result.x)
+        continued = S.solve(schedule, callbacks=[], maxiter=3, x0=result.x, tol=1e-12)
         assert continued.converged
         assert schedule.get_state().scheduler_phase_index == 2
         schedule.reset()

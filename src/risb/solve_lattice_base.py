@@ -902,7 +902,7 @@ class BaseLatticeSolver(ABC):
         self,
         optimizer: NewtonSolver | ScipyRoot | None = None,
         callbacks: Sequence[Callback] | None = None,
-        tol: float = 1e-12,
+        tol: float = 1e-8,
         maxiter: int = 1000,
         self_consistency_tol: float = 1e-6,
         x0: NDArray[np.float64] | None = None,
@@ -929,7 +929,7 @@ class BaseLatticeSolver(ABC):
             :meth:`default_callbacks`, and ``[]`` is none.
         tol : float, optional
             Stop when the 2-norm of the error (see ``error_fun`` of the
-            optimizer) is below this. Default is ``1e-12``.
+            optimizer) is below this. Default is ``1e-8``.
         maxiter : int, optional
             Maximum number of evaluations, including rejected steps and
             checkpoint reconstruction.

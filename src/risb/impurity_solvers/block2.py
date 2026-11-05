@@ -106,7 +106,7 @@ type _ThermalResult = tuple[
 @dataclass(frozen=True, kw_only=True)
 class Block2Settings:
     """
-    Convergence settings of the sweeps of the block2 impurity solvers.
+    Settings of block2.
 
     Parameters
     ----------
@@ -119,6 +119,13 @@ class Block2Settings:
         sweeps, noise)`` of each stage: random hoppings of ``strength`` times
         the largest one-body coupling, for ``sweeps`` sweeps at the full bond
         dimension with ``noise``. ``()`` turns them off.
+    noise_schedule : tuple of float, optional
+        Noise of each sweep of DMRG after the symmetry-mixing sweeps, and of
+        the refinement of each state of state-averaged DMRG. The last noise
+        is kept for the remaining sweeps, and DMRG stops at ``tol`` only from
+        the first sweep with it. Without symmetry-mixing sweeps DMRG instead
+        grows the bond dimension to ``bond_dim`` with its own noise. Default
+        is ``(1e-6, 1e-6, 0.0)``.
     mix_davidson_tol : float, optional
         Convergence threshold (squared residual) of the Davidson eigensolver
         in the first sweep of each stage of the symmetry-mixing sweeps. The
@@ -139,6 +146,15 @@ class Block2Settings:
     sub_sweeps : int, optional
         Sweeps of each imaginary time step of ``"purification"``. Default
         is 4.
+    stack_mem : int, optional
+        Bytes of working memory of block2. Default is ``1 << 30`` (1 GiB),
+        block2's default.
+    n_threads : int, optional
+        Threads of block2. Default is None, block2's default of all OpenMP
+        threads.
+    scratch_dir : str, optional
+        Directory in which each solve makes a temporary directory for the
+        files of block2. Default is None, the default of :mod:`tempfile`.
 
     """
 
@@ -149,12 +165,16 @@ class Block2Settings:
         (0.001, 6, 1e-5),
         (1e-4, 6, 1e-5),
     )
+    noise_schedule: tuple[float, ...] = (1e-6, 1e-6, 0.0)
     mix_davidson_tol: float = 1e-12
     tol: float = 1e-9
     roots_tol: float = 1e-8
     max_sweeps: int = 40
     refine_sweeps: int = 20
     sub_sweeps: int = 4
+    stack_mem: int = 1 << 30
+    n_threads: int | None = None
+    scratch_dir: str | None = None
 
 
 class _Block2Base(ImpuritySolver):
@@ -186,7 +206,7 @@ class _Block2Base(ImpuritySolver):
         #: Optional observer of solver events and native output.
         self.diagnostics = diagnostics
 
-        #: Block2Settings : Convergence settings of the sweeps.
+        #: Block2Settings : Settings of block2.
         self.settings = settings
 
         #: bool : Whether :meth:`solve` calculates the energy variance of the
@@ -377,6 +397,14 @@ class _Block2Base(ImpuritySolver):
             self.rho_cf[bl] = G[np.ix_(cs, fs)]
             self.rho_c[bl] = G[np.ix_(cs, cs)]
 
+    def _new_driver(self, scratch: str, symm_type: SymmetryTypes) -> DMRGDriver:
+        return DMRGDriver(
+            stack_mem=self.settings.stack_mem,
+            scratch=scratch,
+            n_threads=self.settings.n_threads,
+            symm_type=symm_type,
+        )
+
     def _driver(
         self, scratch: str, sector: _Sector, n_elec: int
     ) -> tuple[DMRGDriver, SymmetryTypes]:
@@ -389,7 +417,7 @@ class _Block2Base(ImpuritySolver):
             symm_type, n_sites, spin = SymmetryTypes.SZ, L, twosz
         else:
             symm_type, n_sites, spin = SymmetryTypes.SGF, 2 * L, 0
-        driver = DMRGDriver(scratch=scratch, symm_type=symm_type)
+        driver = self._new_driver(scratch, symm_type)
         driver.initialize_system(n_sites=n_sites, n_elec=n_elec, spin=spin)
         return driver, symm_type
 
@@ -401,7 +429,7 @@ class _Block2Base(ImpuritySolver):
         # creating a driver replaces block2's working memory, which has to
         # outlive the states and operators in it
         self._emit("sector.started", sector=sector, particles=n_elec, roots=nroots)
-        scratch = tempfile.TemporaryDirectory()
+        scratch = tempfile.TemporaryDirectory(dir=self.settings.scratch_dir)
         energies, tags, discarded_weight = self._solve_states(
             scratch.name, sector, n_elec, nroots
         )
@@ -502,7 +530,7 @@ class _Block2Base(ImpuritySolver):
                 ket,
                 n_sweeps=self.settings.refine_sweeps,
                 bond_dims=[self.bond_dim],
-                noises=[1e-6] * 2 + [0.0],
+                noises=list(self.settings.noise_schedule),
                 thrds=[_FIRST_DAVIDSON_TOL],
                 tol=self.settings.tol,
                 cutoff=self.settings.cutoff,
@@ -560,7 +588,7 @@ class _Block2Base(ImpuritySolver):
                 )
             schedule: dict[str, Any] = {
                 "bond_dims": [M],
-                "noises": [1e-6] * 2 + [0.0],
+                "noises": list(settings.noise_schedule),
             }
         else:
             schedule = {
@@ -805,7 +833,7 @@ class Block2ImpuritySolver(_Block2Base):
     bond_dim : int, optional
         Largest bond dimension of the matrix product state.
     settings : Block2Settings, optional
-        Convergence settings of the sweeps, by default ``Block2Settings()``.
+        Settings of block2, by default ``Block2Settings()``.
     symmetries : mapping, optional
         Conserved quantities besides the particle number, ``"sz"`` (total
         spin projection) and ``"s"`` (total spin), and the sector of each. A
@@ -1140,7 +1168,7 @@ class Block2ThermalImpuritySolver(_Block2Base):
         Largest difference of the particle number from half filling of a
         sector in ``"lowest"``. Default is 2.
     settings : Block2Settings, optional
-        Convergence settings of the sweeps, by default ``Block2Settings()``.
+        Settings of block2, by default ``Block2Settings()``.
         The symmetry-mixing sweeps start each solve of ``"lowest"`` and
         ``"lowest-scan"``.
     calculate_variance : bool, optional
@@ -1373,10 +1401,10 @@ class Block2ThermalImpuritySolver(_Block2Base):
     def _purified_state(self) -> _ThermalResult:
         # The thermal state by purification
         L = len(self._sites)
-        scratch = tempfile.TemporaryDirectory()
+        scratch = tempfile.TemporaryDirectory(dir=self.settings.scratch_dir)
         symm_type = SymmetryTypes.SU2 if "s" in self.symmetries else SymmetryTypes.SZ
         if self.symmetries:
-            driver = DMRGDriver(scratch=scratch.name, symm_type=symm_type)
+            driver = self._new_driver(scratch.name, symm_type)
             driver.initialize_system(n_sites=L, n_elec=L, spin=0)
             mpo = self._mpo(
                 driver, symm_type, self._const, self._h1, self._V, ancilla=True
@@ -1390,7 +1418,7 @@ class Block2ThermalImpuritySolver(_Block2Base):
             # first step exp(-t0 H) by a Taylor series of MPO applications
             # gives weight to every particle number
             n = 2 * L
-            driver = DMRGDriver(scratch=scratch.name, symm_type=SymmetryTypes.SGF)
+            driver = self._new_driver(scratch.name, SymmetryTypes.SGF)
             driver.initialize_system(n_sites=n, n_elec=n, spin=0)
             driver.get_ancilla_mps("KET0", target=driver.bw.SX(n, 0, 0))
             driver.initialize_system(n_sites=2 * n, n_elec=n, spin=0)
@@ -1483,11 +1511,11 @@ class Block2ThermalImpuritySolver(_Block2Base):
         # state tag
         L = len(self._sites)
         if self.symmetries:
-            driver = DMRGDriver(scratch=scratch, symm_type=SymmetryTypes.SZ)
+            driver = self._new_driver(scratch, SymmetryTypes.SZ)
             driver.initialize_system(n_sites=L, n_elec=L, spin=0)
             mpo = self._mpo(driver, SymmetryTypes.SZ, const, h1, V, ancilla=True)
         else:
-            driver = DMRGDriver(scratch=scratch, symm_type=SymmetryTypes.SGF)
+            driver = self._new_driver(scratch, SymmetryTypes.SGF)
             driver.initialize_system(n_sites=4 * L, n_elec=2 * L, spin=0)
             mpo = self._doubled_mpo(driver, const, h1, V)
         ket = driver.load_mps(tag)

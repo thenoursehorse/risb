@@ -345,8 +345,8 @@ impurity_solver = Block2ImpuritySolver(h_int, gf_struct, bond_dim=500)
 larger it is, the closer the state is to the exact ground state, and the longer
 a solve takes. A bond keeps only the states whose eigenvalue of its reduced
 density matrix is above `settings.cutoff`, `1e-10` by default. `settings`
-is a {py:class}`~risb.impurity_solvers.Block2Settings` with the convergence
-settings of the sweeps.
+is a {py:class}`~risb.impurity_solvers.Block2Settings` with the other settings
+of block2, such as its tolerances, memory and threads.
 
 The spin-up and spin-down block of each pair of blocks with the same orbitals
 is given as
