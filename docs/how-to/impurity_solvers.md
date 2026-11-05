@@ -344,7 +344,9 @@ impurity_solver = Block2ImpuritySolver(h_int, gf_struct, bond_dim=500)
 `bond_dim` is the largest bond dimension of the matrix product state. The
 larger it is, the closer the state is to the exact ground state, and the longer
 a solve takes. A bond keeps only the states whose eigenvalue of its reduced
-density matrix is above `cutoff`, `1e-10` by default.
+density matrix is above `settings.cutoff`, `1e-10` by default. `settings`
+is a {py:class}`~risb.impurity_solvers.Block2Settings` with the convergence
+settings of the sweeps.
 
 The spin-up and spin-down block of each pair of blocks with the same orbitals
 is given as
@@ -390,11 +392,15 @@ of `h_imp` differ.
 Each solve starts with sweeps that add random hoppings between the orbitals,
 as in Appendix A1 of Wolf, et al.[^Wolf2015], so that DMRG does not stay in
 the sector of a quantity the solver does not conserve. They are set by
-`mix_schedule`, the strength, sweeps, and noise of each stage, and turned off
-with
+`settings.mix_schedule`, the strength, sweeps, and noise of each stage, and
+turned off with
 
 ```python
-impurity_solver = Block2ImpuritySolver(h_int, gf_struct, mix_schedule=())
+from risb.impurity_solvers import Block2Settings
+
+impurity_solver = Block2ImpuritySolver(
+    h_int, gf_struct, settings=Block2Settings(mix_schedule=())
+)
 ```
 
 ### Setting `h_imp` and solving

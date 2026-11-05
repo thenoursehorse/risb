@@ -22,6 +22,7 @@ import math
 import tempfile
 import warnings
 from collections.abc import Collection, Mapping, Sequence
+from dataclasses import dataclass
 from itertools import combinations, product
 from pathlib import Path
 from typing import Any, override
@@ -55,26 +56,14 @@ _SECTOR_TOL = 1e-8
 # spin-rotation invariant impurity Hamiltonian
 _SU2_TOL = 1e-6
 
-# Smallest eigenvalue of the reduced density matrix of a bond that the matrix
-# product states keep, by default
-_CUTOFF = 1e-10
-
-# (strength, sweeps, noise) of each stage of the symmetry-mixing sweeps that
-# start each solve, by default
-_MIX_SCHEDULE = ((0.1, 6, 1e-5), (0.01, 6, 1e-5), (0.001, 6, 1e-5), (1e-4, 6, 1e-5))
-
-# Sweeps of each imaginary time step. block2's default of two leaves the
-# targeted states of a step unconverged
-_SUB_SWEEPS = 4
-
-# Energy tolerance of state-averaged DMRG, which converges slowly in its
-# highest states, and the most sweeps of the refinement of each of its states
-_ROOTS_TOL = 1e-8
-_REFINE_SWEEPS = 20
-
 # Largest weight of the found states outside the window of the lowest states
 # without a warning. It changes the density matrices by up to twice as much
 _EXCLUDED_WEIGHT_TOL = 1e-4
+
+# Davidson threshold of the first sweep of DMRG after the symmetry-mixing sweeps
+# and of the refinement of each state. block2's own, a tenth of the noise, can
+# fail in BLAS in state-averaged DMRG of a small impurity
+_FIRST_DAVIDSON_TOL = 1e-15
 
 # Imaginary time and order of the Taylor series of the first step without a
 # conserved spin
@@ -114,6 +103,60 @@ type _ThermalResult = tuple[
 ]
 
 
+@dataclass(frozen=True, kw_only=True)
+class Block2Settings:
+    """
+    Convergence settings of the sweeps of the block2 impurity solvers.
+
+    Parameters
+    ----------
+    cutoff : float, optional
+        Smallest eigenvalue of the reduced density matrix of a bond that is
+        kept, so that a bond keeps fewer than ``bond_dim`` states where they
+        suffice. Default is ``1e-10``.
+    mix_schedule : tuple of tuple, optional
+        The symmetry-mixing sweeps that start each solve, as ``(strength,
+        sweeps, noise)`` of each stage: random hoppings of ``strength`` times
+        the largest one-body coupling, for ``sweeps`` sweeps at the full bond
+        dimension with ``noise``. ``()`` turns them off.
+    mix_davidson_tol : float, optional
+        Convergence threshold (squared residual) of the Davidson eigensolver
+        in the first sweep of each stage of the symmetry-mixing sweeps. The
+        other sweeps of a stage use a tenth of its noise. Default is
+        ``1e-12``.
+    tol : float, optional
+        Change of the energy between sweeps at which DMRG of one state stops.
+        The Davidson eigensolver of each sweep without noise converges to a
+        tenth of it. Default is ``1e-9``.
+    roots_tol : float, optional
+        As ``tol``, for state-averaged DMRG of several states, which converges
+        slowly in its highest states. Default is ``1e-8``.
+    max_sweeps : int, optional
+        Most sweeps of DMRG after the symmetry-mixing sweeps. Default is 40.
+    refine_sweeps : int, optional
+        Most sweeps of the refinement of each state of state-averaged DMRG.
+        Default is 20.
+    sub_sweeps : int, optional
+        Sweeps of each imaginary time step of ``"purification"``. Default
+        is 4.
+
+    """
+
+    cutoff: float = 1e-10
+    mix_schedule: tuple[tuple[float, int, float], ...] = (
+        (0.1, 6, 1e-5),
+        (0.01, 6, 1e-5),
+        (0.001, 6, 1e-5),
+        (1e-4, 6, 1e-5),
+    )
+    mix_davidson_tol: float = 1e-12
+    tol: float = 1e-9
+    roots_tol: float = 1e-8
+    max_sweeps: int = 40
+    refine_sweeps: int = 20
+    sub_sweeps: int = 4
+
+
 class _Block2Base(ImpuritySolver):
     # The chain of spatial orbitals, the impurity Hamiltonian as tensors, and
     # the density matrices, shared by the solvers
@@ -125,11 +168,10 @@ class _Block2Base(ImpuritySolver):
         self,
         gf_struct: GfStruct,
         bond_dim: int,
-        cutoff: float,
+        settings: Block2Settings,
         spin_blocks: Sequence[tuple[str, str]],
         bath_size: Mapping[str, int] | None,
         comm: Comm | None,
-        mix_schedule: Sequence[tuple[float, int, float]],
         calculate_variance: bool,
         diagnostics: Block2Observer | None,
     ) -> None:
@@ -144,9 +186,8 @@ class _Block2Base(ImpuritySolver):
         #: Optional observer of solver events and native output.
         self.diagnostics = diagnostics
 
-        #: list of tuple : ``(strength, sweeps, noise)`` of each stage of the
-        #: symmetry-mixing sweeps that start each solve.
-        self.mix_schedule = list(mix_schedule)
+        #: Block2Settings : Convergence settings of the sweeps.
+        self.settings = settings
 
         #: bool : Whether :meth:`solve` calculates the energy variance of the
         #: states.
@@ -154,10 +195,6 @@ class _Block2Base(ImpuritySolver):
 
         #: int : Largest bond dimension of the matrix product states.
         self.bond_dim = bond_dim
-
-        #: float : Smallest eigenvalue of the reduced density matrix of a bond
-        #: that is kept.
-        self.cutoff = cutoff
 
         sizes = dict(gf_struct)
         bath_sizes = {bl: (bath_size or {}).get(bl, n) for bl, n in gf_struct}
@@ -394,7 +431,7 @@ class _Block2Base(ImpuritySolver):
         # Davidson) and a refinement of each for more than one, and the
         # largest weight discarded in the last sweeps
         driver, symm_type = self._driver(scratch, sector, n_elec)
-        tol = 1e-12 if nroots == 1 else _ROOTS_TOL
+        tol = self.settings.tol if nroots == 1 else self.settings.roots_tol
         ket, mpo = self._optimize(driver, symm_type, nroots, self.bond_dim, tol)
         bond_dims, discarded_weights, sweep_energies = driver.get_dmrg_results()
         discarded_weight = float(discarded_weights[-1])
@@ -463,12 +500,12 @@ class _Block2Base(ImpuritySolver):
             driver.dmrg(
                 mpo,
                 ket,
-                n_sweeps=_REFINE_SWEEPS,
+                n_sweeps=self.settings.refine_sweeps,
                 bond_dims=[self.bond_dim],
                 noises=[1e-6] * 2 + [0.0],
-                thrds=[1e-15],
-                tol=1e-12,
-                cutoff=self.cutoff,
+                thrds=[_FIRST_DAVIDSON_TOL],
+                tol=self.settings.tol,
+                cutoff=self.settings.cutoff,
                 iprint=self._iprint,
                 proj_mpss=refined,
                 proj_weights=[weight] * len(refined),
@@ -493,12 +530,13 @@ class _Block2Base(ImpuritySolver):
         # The lowest nroots states of the sector of driver at bond dimension
         # M, converged to tol, and the MPO of the impurity Hamiltonian
         m1, m2 = max(M // 4, min(M, 25)), max(M // 2, min(M, 50))
+        settings = self.settings
         ket = driver.get_random_mps(
-            tag="KET", bond_dim=M if self.mix_schedule else m1, nroots=nroots
+            tag="KET", bond_dim=M if settings.mix_schedule else m1, nroots=nroots
         )
-        if self.mix_schedule:
+        if settings.mix_schedule:
             mixing = self._mixing(symm_type)
-            for strength, sweeps, noise in self.mix_schedule:
+            for strength, sweeps, noise in settings.mix_schedule:
                 self._emit(
                     "mixing.started", strength=strength, sweeps=sweeps, noise=noise
                 )
@@ -515,9 +553,9 @@ class _Block2Base(ImpuritySolver):
                     n_sweeps=sweeps,
                     bond_dims=[M],
                     noises=[noise],
-                    thrds=[1e-12],
+                    thrds=[settings.mix_davidson_tol],
                     tol=0.0,
-                    cutoff=self.cutoff,
+                    cutoff=settings.cutoff,
                     iprint=self._iprint,
                 )
             schedule: dict[str, Any] = {
@@ -531,15 +569,19 @@ class _Block2Base(ImpuritySolver):
             }
         mpo = self._mpo(driver, symm_type, self._const, self._h1, self._V)
         self._emit(
-            "optimization.started", roots=nroots, bond_dim=M, tol=tol, max_sweeps=40
+            "optimization.started",
+            roots=nroots,
+            bond_dim=M,
+            tol=tol,
+            max_sweeps=settings.max_sweeps,
         )
         driver.dmrg(
             mpo,
             ket,
-            n_sweeps=40,
-            thrds=[1e-15],
+            n_sweeps=settings.max_sweeps,
+            thrds=[_FIRST_DAVIDSON_TOL],
             tol=tol,
-            cutoff=self.cutoff,
+            cutoff=settings.cutoff,
             iprint=self._iprint,
             **schedule,
         )
@@ -741,7 +783,7 @@ class Block2ImpuritySolver(_Block2Base):
     solve starts with the sweeps of Appendix A1 of F. A. Wolf, A. Go, I. P.
     McCulloch, A. J. Millis, and U. Schollwoeck, Phys. Rev. X 5, 041032 (2015)
     (`arXiv:1507.08650 <https://arxiv.org/abs/1507.08650>`__), with extra
-    random hoppings that fall in the stages of ``mix_schedule``, at the full
+    random hoppings that fall in the stages of ``settings.mix_schedule``, at the full
     bond dimension. DMRG otherwise does not leave the sectors of quantities
     that the Hamiltonian conserves and the solver does not, e.g. the total
     spin and the parity of each orbital with its bath orbitals in a Kanamori
@@ -762,10 +804,8 @@ class Block2ImpuritySolver(_Block2Base):
         For example: ``[ ('up', 3), ('dn', 3) ]``.
     bond_dim : int, optional
         Largest bond dimension of the matrix product state.
-    cutoff : float, optional
-        Smallest eigenvalue of the reduced density matrix of a bond that is
-        kept, so that a bond keeps fewer than ``bond_dim`` states where they
-        suffice. Default is ``1e-10``.
+    settings : Block2Settings, optional
+        Convergence settings of the sweeps, by default ``Block2Settings()``.
     symmetries : mapping, optional
         Conserved quantities besides the particle number, ``"sz"`` (total
         spin projection) and ``"s"`` (total spin), and the sector of each. A
@@ -781,13 +821,6 @@ class Block2ImpuritySolver(_Block2Base):
         The names of the spin-up and spin-down block of each pair of blocks
         in ``gf_struct`` with the same orbitals. Default is
         ``[("up", "dn")]``.
-    mix_schedule : sequence of tuple, optional
-        The symmetry-mixing sweeps that start each solve, as ``(strength,
-        sweeps, noise)`` of each stage: random hoppings of ``strength`` times
-        the largest one-body coupling, for ``sweeps`` sweeps at the full bond
-        dimension with ``noise``. Default is ``((0.1, 6, 1e-5), (0.01, 6,
-        1e-5), (0.001, 6, 1e-5), (1e-4, 6, 1e-5))``, and ``()`` turns them
-        off.
     calculate_variance : bool, optional
         Whether :meth:`solve` calculates the energy variance ``<H^2> -
         <H>^2`` of the ground state, which is zero for an eigenstate. It
@@ -822,11 +855,10 @@ class Block2ImpuritySolver(_Block2Base):
         h_int: OpSum,
         gf_struct: GfStruct,
         bond_dim: int = 500,
-        cutoff: float = _CUTOFF,
         symmetries: Mapping[str, float | None] | None = None,
         spin_blocks: Sequence[tuple[str, str]] = (("up", "dn"),),
-        mix_schedule: Sequence[tuple[float, int, float]] = _MIX_SCHEDULE,
         *,
+        settings: Block2Settings | None = None,
         calculate_variance: bool = False,
         bath_size: Mapping[str, int] | None = None,
         comm: Comm | None = None,
@@ -835,11 +867,10 @@ class Block2ImpuritySolver(_Block2Base):
         super().__init__(
             gf_struct,
             bond_dim,
-            cutoff,
+            Block2Settings() if settings is None else settings,
             spin_blocks,
             bath_size,
             comm,
-            mix_schedule,
             calculate_variance,
             diagnostics,
         )
@@ -933,7 +964,7 @@ class Block2ImpuritySolver(_Block2Base):
             "configuration",
             sites=L,
             bond_dim=self.bond_dim,
-            cutoff=self.cutoff,
+            settings=self.settings,
             symmetries=self.symmetries,
             sectors=len(self._sectors),
             calculate_variance=self.calculate_variance,
@@ -1089,10 +1120,6 @@ class Block2ThermalImpuritySolver(_Block2Base):
         Inverse temperature of the impurity problem.
     bond_dim : int, optional
         Largest bond dimension of the matrix product states.
-    cutoff : float, optional
-        Smallest eigenvalue of the reduced density matrix of a bond that is
-        kept, so that a bond keeps fewer than ``bond_dim`` states where they
-        suffice. Default is ``1e-10``.
     time_step : float, optional
         Largest step in imaginary time of ``"purification"``. The state
         evolves to ``beta / 2`` in equal steps.
@@ -1112,9 +1139,10 @@ class Block2ThermalImpuritySolver(_Block2Base):
     delta : int, optional
         Largest difference of the particle number from half filling of a
         sector in ``"lowest"``. Default is 2.
-    mix_schedule : sequence of tuple, optional
-        The symmetry-mixing sweeps that start each solve of ``"lowest"`` and
-        ``"lowest-scan"``, as in :class:`Block2ImpuritySolver`.
+    settings : Block2Settings, optional
+        Convergence settings of the sweeps, by default ``Block2Settings()``.
+        The symmetry-mixing sweeps start each solve of ``"lowest"`` and
+        ``"lowest-scan"``.
     calculate_variance : bool, optional
         Whether :meth:`solve` calculates the energy variance ``<H^2> -
         <H>^2`` of each state in the thermal average of ``"lowest"`` and
@@ -1152,15 +1180,14 @@ class Block2ThermalImpuritySolver(_Block2Base):
         gf_struct: GfStruct,
         beta: float,
         bond_dim: int = 500,
-        cutoff: float = _CUTOFF,
         time_step: float = 0.1,
         symmetries: Sequence[str] = ("sz",),
         spin_blocks: Sequence[tuple[str, str]] = (("up", "dn"),),
         method: str = "lowest",
         eta: float = 8.0,
         delta: int = 2,
-        mix_schedule: Sequence[tuple[float, int, float]] = _MIX_SCHEDULE,
         *,
+        settings: Block2Settings | None = None,
         calculate_variance: bool = False,
         bath_size: Mapping[str, int] | None = None,
         comm: Comm | None = None,
@@ -1169,11 +1196,10 @@ class Block2ThermalImpuritySolver(_Block2Base):
         super().__init__(
             gf_struct,
             bond_dim,
-            cutoff,
+            Block2Settings() if settings is None else settings,
             spin_blocks,
             bath_size,
             comm,
-            mix_schedule,
             calculate_variance,
             diagnostics,
         )
@@ -1263,7 +1289,7 @@ class Block2ThermalImpuritySolver(_Block2Base):
             method=self.method,
             beta=self.beta,
             bond_dim=self.bond_dim,
-            cutoff=self.cutoff,
+            settings=self.settings,
             symmetries=self.symmetries,
             eta=self.eta,
             delta=self.delta,
@@ -1386,7 +1412,7 @@ class Block2ThermalImpuritySolver(_Block2Base):
                     bra_bond_dims=[self.bond_dim],
                     n_sweeps=20,
                     tol=1e-12,
-                    cutoff=self.cutoff,
+                    cutoff=self.settings.cutoff,
                     iprint=self._iprint,
                 )
                 ket = bra
@@ -1400,7 +1426,7 @@ class Block2ThermalImpuritySolver(_Block2Base):
             "purification.started",
             target_time=self.beta / 2,
             steps=max(1, math.ceil((self.beta / 2 - t0) / self.time_step)),
-            sub_sweeps=_SUB_SWEEPS,
+            sub_sweeps=self.settings.sub_sweeps,
         )
         ket = driver.td_dmrg(
             mpo,
@@ -1409,11 +1435,11 @@ class Block2ThermalImpuritySolver(_Block2Base):
             n_steps=max(1, math.ceil((self.beta / 2 - t0) / self.time_step)),
             bond_dims=[self.bond_dim],
             te_type="rk4",
-            n_sub_sweeps=_SUB_SWEEPS,
+            n_sub_sweeps=self.settings.sub_sweeps,
             normalize_mps=True,
             hermitian=True,
             final_mps_tag="KET",
-            cutoff=self.cutoff,
+            cutoff=self.settings.cutoff,
             iprint=self._iprint,
         )
         # Z is 4^L times the product of the squared norms before each

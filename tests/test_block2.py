@@ -26,11 +26,13 @@ from risb.kintegration import BandKIntegrator, WeightedKPointIntegrator
 pytest.importorskip("pyblock2")
 from risb.impurity_solvers import (
     Block2ImpuritySolver,
+    Block2Settings,
     Block2ThermalImpuritySolver,
 )
 
-# The comparisons with exact results keep every state of a bond
-CUTOFF = 1e-20
+# The comparisons with exact results keep every state of a bond and converge
+# each sweep tightly
+EXACT = Block2Settings(cutoff=1e-20, tol=1e-12)
 
 type Problem = tuple[
     OpSum,
@@ -105,13 +107,36 @@ def test_ground_state_of_a_ghost_impurity_is_the_exact_one(
             bond_dim=200,
             symmetries=symmetries,
             bath_size=bath_size,
-            cutoff=CUTOFF,
+            settings=EXACT,
         ),
         problem,
     )
     assert_same_state(solver, expected)
     for Op in (N_op(["up", "dn"], 2), S2_op(["up", "dn"], 2)):
         assert solver.overlap(Op) == pytest.approx(expected.overlap(Op), abs=1e-6)
+
+
+@pytest.mark.parametrize("settings", [Block2Settings(), Block2Settings(tol=1e-8)])
+def test_looser_convergence_settings_keep_the_exact_density_matrices(
+    settings: Block2Settings,
+) -> None:
+    problem = ghost_problem(2, 3)
+    h_int, gf_struct, bath_size = problem[:3]
+    expected = solved(
+        FockitImpuritySolver(h_int, gf_struct, bath_size=bath_size), problem
+    )
+    solver = solved(
+        Block2ImpuritySolver(
+            h_int,
+            gf_struct,
+            bond_dim=200,
+            symmetries={"sz": 0},
+            bath_size=bath_size,
+            settings=settings,
+        ),
+        problem,
+    )
+    assert_same_rho(solver, expected)
 
 
 @pytest.mark.parametrize("symmetries", [{}, {"sz": 0}, {"s": 0}])
@@ -129,7 +154,7 @@ def test_energy_variance_vanishes_for_the_ground_state_and_not_for_a_truncated_o
                 symmetries=symmetries,
                 calculate_variance=True,
                 bath_size=bath_size,
-                cutoff=CUTOFF,
+                settings=EXACT,
             ),
             problem,
         ).variance
@@ -251,7 +276,7 @@ def test_state_of_a_spin_multiplet_is_the_lowest_with_its_spin_projection() -> N
             bond_dim=200,
             symmetries={"s": None, "sz": 1},
             bath_size=bath_size,
-            cutoff=CUTOFF,
+            settings=EXACT,
         ),
         problem,
     )
@@ -285,7 +310,7 @@ def test_total_spin_of_a_triplet_is_that_of_the_multiplet_or_of_its_state(
             bond_dim=200,
             symmetries=symmetries,
             bath_size=bath_size,
-            cutoff=CUTOFF,
+            settings=EXACT,
         ),
         problem,
     )
@@ -327,7 +352,7 @@ def test_two_orbital_kanamori_lattice_has_the_exact_quasiparticle_weight() -> No
             gf_struct,
             bond_dim=100,
             symmetries={"sz": 0},
-            cutoff=CUTOFF,
+            settings=EXACT,
         ),
     ):
         band_integrator = BandKIntegrator(
@@ -372,7 +397,7 @@ def test_thermal_state_of_a_ghost_impurity_is_the_exact_one(
             symmetries=symmetries,
             method="purification",
             bath_size=bath_size,
-            cutoff=CUTOFF,
+            settings=EXACT,
         ),
         problem,
     )
@@ -410,7 +435,7 @@ def test_lowest_states_of_every_sector_give_the_exact_thermal_state(
             eta=40,
             delta=2,
             bath_size=bath_size,
-            cutoff=CUTOFF,
+            settings=EXACT,
         ),
         problem,
     )
@@ -460,7 +485,7 @@ def test_energy_variance_of_the_lowest_states_vanishes() -> None:
             eta=40,
             calculate_variance=True,
             bath_size=bath_size,
-            cutoff=CUTOFF,
+            settings=EXACT,
         ),
         problem,
     )
@@ -505,7 +530,7 @@ def test_two_orbital_kanamori_lattice_at_finite_temperature_is_the_exact_one() -
             time_step=0.1,
             symmetries=["s"],
             method="purification",
-            cutoff=CUTOFF,
+            settings=EXACT,
         ),
     ):
         S = ThermalLatticeSolver(

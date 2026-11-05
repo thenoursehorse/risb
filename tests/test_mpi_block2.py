@@ -7,7 +7,7 @@ from typing import Any
 
 import pytest
 from test_block2 import (
-    CUTOFF,
+    EXACT,
     assert_same_rho,
     assert_same_state,
     ghost_problem,
@@ -53,7 +53,7 @@ def test_ground_state_with_sectors_split_over_ranks_is_the_exact_one(
                 symmetries={"s": None},
                 bath_size=bath_size,
                 comm=MPI.COMM_WORLD,
-                cutoff=CUTOFF,
+                settings=EXACT,
                 diagnostics=diagnostics,
             ),
             problem,
@@ -100,7 +100,7 @@ def test_thermal_state_with_sectors_split_over_ranks_is_the_exact_one(
                 bath_size=bath_size,
                 comm=MPI.COMM_WORLD,
                 **kwargs,
-                cutoff=CUTOFF,
+                settings=EXACT,
                 diagnostics=diagnostics,
             ),
             problem,
