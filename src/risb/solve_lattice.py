@@ -69,9 +69,9 @@ class LatticeSolver(BaseLatticeSolver):
         ``None`` does no pinning.
     density_feedback : risb.types.DensityFeedback or None, optional
         Shifts the quasiparticle levels against the density mismatch, before
-        pinning. Default is
-        :class:`risb.stabilization.LinearWeightedDensityFeedback` with its
-        default parameters. ``None`` does no feedback.
+        pinning, e.g.,
+        :class:`risb.stabilization.LinearWeightedDensityFeedback`. Default is
+        no feedback.
     diagnostics : risb.diagnostics.DiagnosticObserver, optional
         Use :class:`~risb.diagnostics.LatticeDiagnostics` for progress reports.
 
@@ -100,7 +100,7 @@ class LatticeSolver(BaseLatticeSolver):
         projectors_evaluator: Callable[[KPoints], Sequence[BlockMatrixLike]]
         | None = None,
         pin_full_empty: PinFullEmpty | None = _DEFAULT_PINNING,
-        density_feedback: DensityFeedback | None = _DEFAULT_FEEDBACK,
+        density_feedback: DensityFeedback | None = None,
         gauge_fix: GaugeFix | None = None,
         force_real_atol: float = 1e-12,
         force_real_rtol: float = 1e-10,
@@ -267,10 +267,15 @@ class PhysicalMuLatticeSolver(LatticeSolver):
         Number of electrons per unit cell. The chemical potential :attr:`mu`
         is then solved for with :attr:`Lambda` and :attr:`R`, and the root
         functions include ``n_electrons - n_target``. Default is a fixed `mu`.
+    density_feedback : risb.types.DensityFeedback or None, optional
+        Shifts the quasiparticle levels against the density mismatch, before
+        pinning. Default is
+        :class:`risb.stabilization.LinearWeightedDensityFeedback` with its
+        default parameters. ``None`` does no feedback.
 
     Other Parameters
     ----------------
-    h0_k, gf_struct, impurity_solvers, projectors, gf_struct_mapping, symmetrizers, force_real, check_projectors, double_counting, bath_size, h0_k_evaluator, projectors_evaluator, pin_full_empty, density_feedback, gauge_fix, force_real_atol, force_real_rtol, diagnostics
+    h0_k, gf_struct, impurity_solvers, projectors, gf_struct_mapping, symmetrizers, force_real, check_projectors, double_counting, bath_size, h0_k_evaluator, projectors_evaluator, pin_full_empty, gauge_fix, force_real_atol, force_real_rtol, diagnostics
         As in :class:`.LatticeSolver`.
 
     """

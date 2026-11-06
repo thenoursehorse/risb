@@ -4,7 +4,7 @@ from copy import deepcopy
 import numpy as np
 import pytest
 from fockit.algebra import nc, zero
-from test_common import bethe_h0_k, symmetrize_blocks
+from test_common import bethe_h0_k, build_cubic_h0_k, symmetrize_blocks
 
 from risb import LatticeSolver, PhysicalMuLatticeSolver
 from risb.helpers_fockit import h_int_kanamori
@@ -170,6 +170,34 @@ def test_physical_mu_finds_the_neel_antiferromagnet() -> None:
     m = [np.trace(S.rho_c[i]["up"] - S.rho_c[i]["dn"]).real for i in range(2)]
     assert m[0] > 0.9
     assert m[1] == pytest.approx(-m[0], abs=1e-6)
+
+
+def test_three_orbital_kanamori_is_a_paramagnetic_mott_insulator() -> None:
+    n_orb = 3
+    U = 3
+    J = 0.2 * U
+    Up = U - 2 * J
+    gf_struct = [(bl, n_orb) for bl in SPINS]
+    off_diag = 1 - np.eye(n_orb)
+    h_int = h_int_kanamori(
+        SPINS,
+        n_orb,
+        U=(Up - J) * off_diag,
+        Uprime=U * np.eye(n_orb) + Up * off_diag,
+        J_hund=J,
+    )
+    S = PhysicalMuLatticeSolver(
+        h0_k=build_cubic_h0_k(gf_struct=gf_struct, nkx=10, spatial_dim=3),
+        gf_struct=gf_struct,
+        impurity_solvers=FockitImpuritySolver(h_int, gf_struct),
+        band_integrator=BandKIntegrator(WeightedKPointIntegrator(), beta=40),
+        symmetrizers=[symmetrize_blocks],
+        n_target=n_orb,
+    )
+    assert S.solve(tol=1e-8).converged
+    for bl in S.Z[0]:
+        assert S.Z[0][bl] == pytest.approx(np.zeros((n_orb, n_orb)), abs=1e-6)
+    assert S.rho_c[0]["up"] == pytest.approx(S.rho_c[0]["dn"], abs=1e-10)
 
 
 def test_decoupled_ghosts_of_a_metal_on_ligands_converge() -> None:

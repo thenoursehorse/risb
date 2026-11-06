@@ -18,7 +18,6 @@ from test_common import (
 from risb import (
     DiscardedImaginaryWarning,
     LatticeSolver,
-    PhysicalMuLatticeSolver,
     helpers,
 )
 from risb.gauge import lambda_eigenbasis
@@ -1042,51 +1041,6 @@ def test_full_orbital_pinning_prevents_the_wrong_impurity_filling(
         assert np.linalg.eigvalsh(S.Z[0][bl]) == pytest.approx(
             [0, one_band.Z[0][bl][0, 0].real], abs=1e-6
         )
-
-
-def test_decoupled_ghosts_of_a_metal_on_ligands_converge() -> None:
-    # Two metal orbitals with three quasiparticles each, hybridized with two
-    # uncorrelated ligand orbitals. Two ghosts per spin decouple with
-    # occupation 1/2, and the update does not change their levels
-    spin_names = ["up", "dn"]
-    U, J = 3.0, 0.5
-    e = bethe_h0_k(2000)
-    eye = np.eye(2)
-    metal = np.diag([0.5, -0.5]) + 0.5 * e * eye
-    ligand = ((3 * U - 5 * J) / 2 - 1.5) * eye + e * eye
-    hybridization = np.broadcast_to(0.5 * eye, metal.shape)
-    h0_k = np.block([[metal, hybridization], [hybridization, ligand]])
-    gf_struct = [(bl, 2) for bl in spin_names]
-    bath_size = dict.fromkeys(spin_names, 6)
-    h_int = h_int_kanamori(
-        spin_names,
-        2,
-        U=(U - 3 * J) * (1 - eye),
-        Uprime=U * eye + (U - 2 * J) * (1 - eye),
-        J_hund=0,
-    )
-    sz = sum((nc("up", a) - nc("dn", a) for a in range(2)), zero())
-    sz += sum((nc("bath_up", a) - nc("bath_dn", a) for a in range(6)), zero())
-    S = PhysicalMuLatticeSolver(
-        h0_k=dict.fromkeys(spin_names, h0_k),
-        gf_struct=gf_struct,
-        impurity_solvers=FockitImpuritySolver(
-            h_int, gf_struct, diagonal_symmetries={sz: 0}, bath_size=bath_size
-        ),
-        band_integrator=BandKIntegrator(WeightedKPointIntegrator(), beta=100),
-        projectors=[dict.fromkeys(spin_names, np.eye(4)[:2])],
-        symmetrizers=[symmetrize_blocks],
-        force_real=True,
-        bath_size=[bath_size],
-        n_target=6,
-    )
-    result = S.solve(tol=1e-9, maxiter=60)
-
-    assert result.converged
-    assert S.self_consistency_error < 1e-8
-    for bl, _ in gf_struct:
-        rho_f = np.linalg.eigvalsh(S.rho_f[0][bl])
-        assert rho_f[2:4] == pytest.approx([0.5, 0.5], abs=1e-8)
 
 
 @pytest.mark.parametrize(
