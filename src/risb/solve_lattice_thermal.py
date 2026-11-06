@@ -20,7 +20,7 @@
 from collections.abc import Callable, Mapping, Sequence
 from copy import deepcopy
 from functools import partial
-from typing import Any, override
+from typing import override
 
 import numpy as np
 from numpy.typing import NDArray
@@ -36,7 +36,7 @@ from risb.kintegration import (
     KPoints,
     WeightedKPointIntegrator,
 )
-from risb.optimize import DIIS, NewtonSolver, OnPlateau, SolveResult
+from risb.optimize import DIIS, NewtonSolver, OnPlateau, ScipyRoot, SolveResult
 from risb.optimize.fixed_point import Callback
 from risb.solve_lattice_base import BaseLatticeSolver
 from risb.types import (
@@ -78,7 +78,8 @@ class ThermalLatticeSolver(BaseLatticeSolver):
     mu : float, optional
         Chemical potential, or with `n_target` the starting guess for it.
         Default (only with `n_target`) is the chemical potential at which the
-        starting quasiparticle bands have filling `n_target` plus
+        quasiparticle bands of :attr:`Lambda` and :attr:`R` at the first
+        :meth:`solve` without ``x0`` have filling `n_target` plus
         :attr:`n_ghost_electrons`.
     n_target : float, optional
         Number of electrons per unit cell. The chemical potential :attr:`mu`
@@ -186,6 +187,7 @@ class ThermalLatticeSolver(BaseLatticeSolver):
             tuple[str, int, str], tuple[NDArray[np.inexact], NDArray[np.inexact]]
         ] = {}
 
+        self._mu_from_bands = mu is None
         self.mu: float
         if mu is not None:
             self.mu = mu
@@ -196,18 +198,7 @@ class ThermalLatticeSolver(BaseLatticeSolver):
                         self.Lambda[i][bl].shape[0]
                     )
         elif n_target is not None:
-            R_full, Lambda_full = helpers.upfold_r_lambda(
-                self.R,
-                self.Lambda,
-                self.h0_kin_k,
-                self._projectors_qp,
-                self.gf_struct_mapping,
-            )
-            self.R_full, self.Lambda_full = R_full, Lambda_full
-            hamiltonian, _ = self._get_band_integrands()
-            self.mu = self.band_integrator.integrate(
-                hamiltonian, beta=beta, n_target=n_target + self.n_ghost_electrons
-            ).mu
+            self.mu = self._band_mu(n_target)
         else:
             msg = "Need mu, or n_target to solve for it !"
             raise ValueError(msg)
@@ -460,9 +451,27 @@ class ThermalLatticeSolver(BaseLatticeSolver):
         return [OnPlateau()]
 
     @override
-    def solve(self, *args: Any, **kwargs: Any) -> SolveResult:
+    def solve(
+        self,
+        optimizer: NewtonSolver | ScipyRoot | None = None,
+        callbacks: Sequence[Callback] | None = None,
+        tol: float = 1e-8,
+        maxiter: int = 1000,
+        self_consistency_tol: float = 1e-6,
+        x0: NDArray[np.float64] | None = None,
+        rho_c0: Sequence[BlockMatrixLike] | None = None,
+    ) -> SolveResult:
         """
         Solve as :meth:`.BaseLatticeSolver.solve`, after :meth:`release`.
+
+        On the first solve without `x0`, a chemical potential that was not
+        given is set from the quasiparticle bands of the current
+        :attr:`Lambda` and :attr:`R`.
+
+        Parameters
+        ----------
+        optimizer, callbacks, tol, maxiter, self_consistency_tol, x0, rho_c0
+            As in :meth:`.BaseLatticeSolver.solve`.
 
         Returns
         -------
@@ -470,7 +479,34 @@ class ThermalLatticeSolver(BaseLatticeSolver):
 
         """
         self.release()
-        return super().solve(*args, **kwargs)
+        if self._mu_from_bands and x0 is None:
+            assert self.n_target is not None
+            self.mu = self._band_mu(self.n_target)
+        self._mu_from_bands = False
+        return super().solve(
+            optimizer=optimizer,
+            callbacks=callbacks,
+            tol=tol,
+            maxiter=maxiter,
+            self_consistency_tol=self_consistency_tol,
+            x0=x0,
+            rho_c0=rho_c0,
+        )
+
+    def _band_mu(self, n_target: float) -> float:
+        # The chemical potential at which the quasiparticle bands have the
+        # filling n_target plus that of the ghosts
+        self.R_full, self.Lambda_full = helpers.upfold_r_lambda(
+            self.R,
+            self.Lambda,
+            self.h0_kin_k,
+            self._projectors_qp,
+            self.gf_struct_mapping,
+        )
+        hamiltonian, _ = self._get_band_integrands()
+        return self.band_integrator.integrate(
+            hamiltonian, beta=self.beta, n_target=n_target + self.n_ghost_electrons
+        ).mu
 
     def anchor(self, alpha: float = 1e-8) -> None:
         """
