@@ -70,6 +70,17 @@ def test_half_filled_hubbard_model_has_mu_at_half_the_interaction(B: int) -> Non
         )
 
 
+@pytest.mark.parametrize("B", [1, 3])
+def test_a_mu_far_above_the_bands_returns_to_the_half_filled_solution(B: int) -> None:
+    U = 2.0
+    S = hubbard(U, B, n_target=1.0)
+    x0 = S.get_x()
+    x0[-1] += 5.0
+    assert S.solve(tol=1e-9, x0=x0).converged
+    assert S.mu == pytest.approx(U / 2, abs=1e-6)
+    assert S.n_electrons == pytest.approx(1.0, abs=1e-8)
+
+
 def test_fixed_mu_gives_the_filling_of_the_solution_at_that_mu() -> None:
     U = 2.0
     S = hubbard(U, 1, n_target=0.8)

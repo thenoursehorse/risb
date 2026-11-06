@@ -1930,7 +1930,7 @@ plateau_diag did for the model.
 A2 plateau (err 1.6-2.4e-4): residual spread evenly, ~4e-5 per decoupled
 ghost on all 16 (Fe1 eg, Fe1 t2g, Fe2 t2g); steps on them 1e-8..1e-6.
 All decoupled levels share one offset, level - mu = -0.2 ueV, so each flat
-band holds n_qp = 0.50004 against n_f = 0.500000 (beta/4 x 2e-7 eV = 4e-5).
+band has filling n_qp = 0.50004 against n_f = 0.500000 (beta/4 x 2e-7 eV = 4e-5).
 Summed over the 16: +6-7e-4 electrons in the flat bands, matching the stuck
 filling error (-5e-4) of the physical density. get_lambda gives no update to
 that common offset, and the coupled sector's count error is buffered by the
@@ -2371,7 +2371,7 @@ Method: gem's final R, Λ, μ go into risb with the same scheme (qp μ = 0, μ o
 | hard eps_L 1.5 δ1 | 3e-11 | 1.5e-2 | −6e-5 |
 
 f2 is ~1e-11 on every coupled ghost. All of the 1–2e-2 is on the decoupled ghosts (n=½, |vR| ≤ 2e-11):
-- gem leaves their levels at +5e-4..8e-4 above the qp chemical potential, so the flat bands hold 0.48 instead of ½;
+- gem leaves their levels at +5e-4..8e-4 above the qp chemical potential, so the flat bands have filling 0.48 instead of ½;
 - gem's step measure does not see this, because Λ for a decoupled ghost stops changing and its R row is 0;
 - the filling error ≤ 1e-4 is gem's ntol.
 
@@ -2563,3 +2563,32 @@ Full grid, same stop (full f1/f2 < 1e-9 and exact filling). "root" is risb's def
 - For PhysicalMuLatticeSolver the error makes no difference.
 - Root uses fewer solves per case: 24–189 against 28–266.
 - For qp-count μ, only the canonical error reaches the hard cases.
+
+## PhysicalMuLatticeSolver on the test suite, and a window on the quasiparticle count (2026-11-06)
+
+swap_plugin.py runs every test that solves a LatticeSolver (93) with PhysicalMuLatticeSolver (n_target = band target − ghost electrons) and/or other optimizers. Passes /93: LatticeSolver 93; PhysicalMu 81; PhysicalMu, no mixing period 75; PhysicalMu, BianLi 73; LatticeSolver + lin→DIIS 84; PhysicalMu + lin→DIIS 77. Some failures come from the harness: x has μ appended, a test expects band-μ log lines, optimizer-history tests.
+
+Causes of the PhysicalMu failures:
+- kagome and the trimer basis: DIIS extrapolates μ past the bands, every band fills, FullEmptyPinning moves the levels to ±147 / −29.5, dn/dμ = 0, and μ random-walks.
+- Site basis: the same overfilling. The degenerate ρ_qp gives pinning eigenvectors that break C3, and the h_imp symmetry check raises.
+- Néel: feedback with Pulay mixing_period=3. It passes without feedback (77) or without the mixing period (68).
+- Hubbard example at U = 4.75: μ = Λ = U/2 throughout and Z wanders 0.1–0.3. Cause unknown; BianLi converges it.
+- Thermal-impurity Mott case with LatticeSolver + lin→DIIS: R = 0 makes the update the identity, linear mixing stalls at f1/f2 = 2.4e-3, and the switch at 1e-4 never comes.
+
+window_mu.WindowedMuLatticeSolver: if the quasiparticle filling at μ is more than 0.5 from n_target + ghost electrons, μ is moved to where it is 0.5 off (one extra band solve). Tests: 84/93. It fixes kagome (17), trimer (17), site basis (17) and Néel (37). The Mott test converges to an orbitally split solution (Λ 4.40/4.50/4.60, Z 0.08) instead of Z = 0. Rounds on common passes 0.98× LatticeSolver. Ligand benchmark (root error): lin→DIIS 5(4)/3(3)/2 against 5(4)/3(3)/3 without the window; DIIS only 3(3)/0/2 against 3(3)/1(0)/2.
+
+Window δ sweep: 93 tests passed / impurity rounds on the 80 passing everywhere / wall time on those.
+
+| δ | tests passed | rounds | time | ligand lin→DIIS | ligand DIIS only |
+|---|---|---|---|---|---|
+| none | 81 | 2534 | 15 s | 5(4)/3(3)/3 | 3(3)/1(0)/2 |
+| 0.25 | 85 | 2479 | 50 s | 5(3)/2(2)/2 | 3(3)/0/2 |
+| 0.5 | 84 | 2575 | 20 s | 5(4)/3(3)/2 | 3(3)/0/2 |
+| 0.75 | 85 | 2583 | 18 s | 5(4)/3(3)/2 | 4(4)/0/2 |
+
+- δ = 0.5 sends the Mott test to an orbitally split metal (Z 0.1–0.4, f1/f2 ~1e-11). δ = 0.25 and 0.75 give the Mott state.
+- The LatticeSolver Mott test is not converged: it stops at tol 1e-8 with max f1/f2 = 0.36. The recursion error vanishes at R = 0 because the update is the identity there. At tol 1e-12 it converges after 310 cycles to Λ = −32/5/42 (one orbital full, one empty), and δ = 0.75 gets there in 19.
+- ThermalLatticeSolver, examples at β = 40 as a real temperature, impurity symmetries dropped:
+  - trimer: μ runs away to −6000 with every band empty, the same failure;
+  - kagome: μ is stable but R blows up (Z = 12) and f1/f2 stays at 1.
+- Implemented max_qp_filling_deviation = 0.75 in PhysicalMuLatticeSolver. This also fixes test_physical_mu_finds_the_neel_antiferromagnet. 272 tests pass.

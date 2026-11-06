@@ -252,6 +252,11 @@ class PhysicalMuLatticeSolver(LatticeSolver):
     change the occupations of the quasiparticles. A solution is a solution of
     :class:`LatticeSolver` with the same :attr:`Lambda` and :attr:`R`.
 
+    At a solution the filling of the quasiparticle bands is `n_target` plus
+    :attr:`n_ghost_electrons`. While solving, :attr:`mu` is kept where the
+    filling is within `max_qp_filling_deviation` of this, so that a step of
+    :attr:`mu` cannot fill or empty every band.
+
     Parameters
     ----------
     band_integrator : risb.kintegration.BandKIntegration
@@ -267,6 +272,9 @@ class PhysicalMuLatticeSolver(LatticeSolver):
         Number of electrons per unit cell. The chemical potential :attr:`mu`
         is then solved for with :attr:`Lambda` and :attr:`R`, and the root
         functions include ``n_electrons - n_target``. Default is a fixed `mu`.
+    max_qp_filling_deviation : float, optional
+        Largest deviation of the quasiparticle filling from its value at a
+        solution, in electrons per unit cell.
     density_feedback : risb.types.DensityFeedback or None, optional
         Shifts the quasiparticle levels against the density mismatch, before
         pinning. Default is
@@ -295,6 +303,7 @@ class PhysicalMuLatticeSolver(LatticeSolver):
         *,
         mu: float | None = None,
         n_target: float | None = None,
+        max_qp_filling_deviation: float = 0.75,
         bath_size: Sequence[Mapping[str, int]] | None = None,
         h0_k_evaluator: Callable[[KPoints], BlockMatrixLike] | None = None,
         projectors_evaluator: Callable[[KPoints], Sequence[BlockMatrixLike]]
@@ -330,6 +339,7 @@ class PhysicalMuLatticeSolver(LatticeSolver):
 
         #: float or None : Number of electrons per unit cell to solve for.
         self.n_target = n_target
+        self.max_qp_filling_deviation = max_qp_filling_deviation
 
         self._mu_from_bands = mu is None
         self.mu: float
@@ -357,10 +367,23 @@ class PhysicalMuLatticeSolver(LatticeSolver):
     def integrate_bands(
         self, hamiltonian: Hamiltonian, observables: BandObservables
     ) -> BandKIntegrationResult:
-        """Integrate the quasiparticle bands at the chemical potential :attr:`mu`."""
-        return self.band_integrator.integrate(
+        """Integrate the quasiparticle bands at :attr:`mu`, with the filling kept within `max_qp_filling_deviation` of its value at a solution."""
+        result = self.band_integrator.integrate(
             hamiltonian, observables=observables, mu=self.mu
         )
+        if self.n_target is None:
+            return result
+        filling = self.n_target + self.n_ghost_electrons
+        excess = result.n_electrons - filling
+        if abs(excess) <= self.max_qp_filling_deviation:
+            return result
+        result = self.band_integrator.integrate(
+            hamiltonian,
+            observables=observables,
+            n_target=filling + np.copysign(self.max_qp_filling_deviation, excess),
+        )
+        self.mu = float(result.mu)
+        return result
 
     @override
     def update_residuals(self) -> None:
