@@ -15,7 +15,12 @@ from test_common import (
     symmetrize_blocks,
 )
 
-from risb import DiscardedImaginaryWarning, LatticeSolver, helpers
+from risb import (
+    DiscardedImaginaryWarning,
+    LatticeSolver,
+    PhysicalMuLatticeSolver,
+    helpers,
+)
 from risb.gauge import lambda_eigenbasis
 from risb.helpers_fockit import h_int_kanamori
 from risb.impurity_solvers import FockitImpuritySolver
@@ -1039,14 +1044,7 @@ def test_full_orbital_pinning_prevents_the_wrong_impurity_filling(
         )
 
 
-@pytest.mark.parametrize(
-    "density_feedback",
-    [LinearWeightedDensityFeedback(), None],
-    ids=["feedback", "no feedback"],
-)
-def test_decoupled_ghosts_of_a_metal_on_ligands_converge_with_density_feedback(
-    density_feedback: DensityFeedback | None,
-) -> None:
+def test_decoupled_ghosts_of_a_metal_on_ligands_converge() -> None:
     # Two metal orbitals with three quasiparticles each, hybridized with two
     # uncorrelated ligand orbitals. Two ghosts per spin decouple with
     # occupation 1/2, and the update does not change their levels
@@ -1069,27 +1067,21 @@ def test_decoupled_ghosts_of_a_metal_on_ligands_converge_with_density_feedback(
     )
     sz = sum((nc("up", a) - nc("dn", a) for a in range(2)), zero())
     sz += sum((nc("bath_up", a) - nc("bath_dn", a) for a in range(6)), zero())
-    band_integrator = BandKIntegrator(WeightedKPointIntegrator(), beta=100)
-    S = LatticeSolver(
+    S = PhysicalMuLatticeSolver(
         h0_k=dict.fromkeys(spin_names, h0_k),
         gf_struct=gf_struct,
         impurity_solvers=FockitImpuritySolver(
             h_int, gf_struct, diagonal_symmetries={sz: 0}, bath_size=bath_size
         ),
-        band_integrator=band_integrator,
+        band_integrator=BandKIntegrator(WeightedKPointIntegrator(), beta=100),
         projectors=[dict.fromkeys(spin_names, np.eye(4)[:2])],
         symmetrizers=[symmetrize_blocks],
         force_real=True,
         bath_size=[bath_size],
-        density_feedback=density_feedback,
+        n_target=6,
     )
-    band_integrator.n_target = 6 + S.n_ghost_electrons
     result = S.solve(tol=1e-9, maxiter=60)
 
-    if density_feedback is None:
-        assert not result.converged
-        assert S.self_consistency_error > 1e-6
-        return
     assert result.converged
     assert S.self_consistency_error < 1e-8
     for bl, _ in gf_struct:
