@@ -112,7 +112,6 @@ def test_uncorrelated_ligand_shares_the_mu_of_the_metal() -> None:
 
     S = PhysicalMuLatticeSolver(
         band_integrator=BandKIntegrator(WeightedKPointIntegrator(), beta=100),
-        mu=U / 2,
         n_target=n_target,
         **common(),  # type: ignore[arg-type]
     )
@@ -139,8 +138,7 @@ def test_uncorrelated_ligand_shares_the_mu_of_the_metal() -> None:
 
 def test_physical_mu_finds_the_neel_antiferromagnet() -> None:
     # Half filling of a bipartite lattice with a cluster on each sublattice,
-    # from the Hartree levels with opposite spin splittings on the two
-    # sublattices. The starting mu is that of these quasiparticle bands
+    # from a start with opposite spin splittings on the two sublattices
     U, B = 4.0, 3
     e = bethe_h0_k(400)
     h0_k = np.block([[0 * e, e], [e, 0 * e]])
@@ -166,7 +164,7 @@ def test_physical_mu_finds_the_neel_antiferromagnet() -> None:
     )
     for i, sign in [(0, 1), (1, -1)]:
         for bl, split in [("up", -0.1), ("dn", 0.1)]:
-            S.Lambda[i][bl] = S.Lambda[i][bl] + (U / 2 + sign * split) * np.eye(B)
+            S.Lambda[i][bl] = S.Lambda[i][bl] + sign * split * np.eye(B)
     assert S.solve(tol=1e-9).converged
     assert S.n_electrons == pytest.approx(2.0, abs=1e-8)
     m = [np.trace(S.rho_c[i]["up"] - S.rho_c[i]["dn"]).real for i in range(2)]
