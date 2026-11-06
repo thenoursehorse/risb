@@ -26,7 +26,7 @@ api/risb.impurity_solvers
 api/risb.diagnostics
 api/risb.kintegration
 api/risb.optimize
-api/risb.pinning
+api/risb.stabilization
 api/risb.gauge
 api/risb.helpers
 api/risb.helpers_fockit

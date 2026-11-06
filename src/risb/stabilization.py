@@ -1,11 +1,11 @@
-"""Levels of the auxiliary orbitals that are full or empty, for :class:`risb.LatticeSolver`."""
+"""Stabilization of the level updates of :class:`risb.LatticeSolver`."""
 
 from typing import Literal, override
 
 import numpy as np
 from numpy.typing import NDArray
 
-from risb.types import PinFullEmpty
+from risb.types import DensityFeedback, PinFullEmpty
 
 
 class FullEmptyPinning(PinFullEmpty):
@@ -175,4 +175,51 @@ class FullEmptyPinning(PinFullEmpty):
         squared_norm = float(np.vdot(step, step).real)
         factor = limit / np.sqrt(limit**2 + squared_norm) if limit else 0.0
         result: NDArray[np.inexact] = Lambda - (1 - factor) * step
+        return result
+
+
+class LinearWeightedDensityFeedback(DensityFeedback):
+    r"""
+    Shift the quasiparticle levels against the density mismatch.
+
+    Adds :math:`-c M f_2^T M` to :math:`\Lambda`, with
+    :math:`f_2 = \rho_f - \rho_{qp}` and :math:`M = (1 - R R^\dagger)^{1/2}`.
+    It vanishes at a solution, so the solutions are unchanged.
+
+    A ghost orbital with zero rows of :math:`R` and :math:`D` has a flat band
+    at the chemical potential. The update does not change its level, so its
+    :math:`\rho_{qp}` never relaxes to :math:`\rho_f`. :math:`M` removes the
+    term from quasiparticle orbitals that :math:`R` couples to the physical
+    orbitals, whose levels the update already sets.
+
+    The optimal :math:`c` is the inverse of the maximum slope of the occupation
+    function: :math:`4 / \beta` for :func:`~risb.kintegration.fermi_function`
+    and :math:`\sqrt{\pi} / \beta` for
+    :func:`~risb.kintegration.gaussian_function`. A decoupled ghost then
+    reaches :math:`\rho_f` in one step. A smaller :math:`c` converges more
+    slowly; a larger one overshoots.
+
+    Parameters
+    ----------
+    strength : float, optional
+        :math:`c`, in the energy units of the Hamiltonian. The default is
+        :math:`4 / \beta` at :math:`\beta = 100`.
+
+    """
+
+    def __init__(self, strength: float = 0.04) -> None:
+        self.strength = strength
+
+    @override
+    def qp_levels(
+        self,
+        Lambda: NDArray[np.inexact],
+        R: NDArray[np.inexact],
+        f2: NDArray[np.inexact],
+    ) -> NDArray[np.inexact]:
+        """Return the shifted quasiparticle levels."""
+        eigenvalues, vectors = np.linalg.eigh(R @ R.conj().T)
+        M = (vectors * np.sqrt(np.clip(1 - eigenvalues, 0, 1))) @ vectors.conj().T
+        # rho_qp is the transpose of n_F(Lambda - mu)
+        result: NDArray[np.inexact] = Lambda - self.strength * M @ f2.T @ M
         return result

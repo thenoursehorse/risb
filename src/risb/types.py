@@ -151,6 +151,18 @@ class PinFullEmpty(Protocol):
         """Return the new quasiparticle levels ``Lambda`` of one block, set where the orbitals of ``rho_f`` are full or empty, from the levels ``Lambda_in`` of the cycle."""
 
 
+class DensityFeedback(Protocol):
+    """Shift of the quasiparticle levels by the density mismatch, for :class:`risb.LatticeSolver`."""
+
+    def qp_levels(
+        self,
+        Lambda: NDArray[np.inexact],
+        R: NDArray[np.inexact],
+        f2: NDArray[np.inexact],
+    ) -> NDArray[np.inexact]:
+        """Return the quasiparticle levels ``Lambda`` of one block, shifted using ``f2 = rho_f - rho_qp`` and the renormalization matrix ``R``."""
+
+
 class FixedPointProblem(Protocol):
     """
     A problem for :func:`risb.optimize.solve_fixed_point`, e.g., :class:`risb.LatticeSolver`.

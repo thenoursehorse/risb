@@ -40,9 +40,10 @@ from risb.optimize import (
     reduced_by,
     residual_below,
 )
-from risb.pinning import FullEmptyPinning
+from risb.stabilization import FullEmptyPinning, LinearWeightedDensityFeedback
 from risb.types import (
     BlockMatrix,
+    DensityFeedback,
     FixedPointProblem,
     GaugeFix,
     GfStruct,
@@ -1039,6 +1040,170 @@ def test_full_orbital_pinning_prevents_the_wrong_impurity_filling(
 
 
 @pytest.mark.parametrize(
+    "density_feedback",
+    [LinearWeightedDensityFeedback(), None],
+    ids=["feedback", "no feedback"],
+)
+def test_decoupled_ghosts_of_a_metal_on_ligands_converge_with_density_feedback(
+    density_feedback: DensityFeedback | None,
+) -> None:
+    # Two metal orbitals with three quasiparticles each, hybridized with two
+    # uncorrelated ligand orbitals. Two ghosts per spin decouple with
+    # occupation 1/2, and the update does not change their levels
+    spin_names = ["up", "dn"]
+    U, J = 3.0, 0.5
+    e = bethe_h0_k(2000)
+    eye = np.eye(2)
+    metal = np.diag([0.5, -0.5]) + 0.5 * e * eye
+    ligand = ((3 * U - 5 * J) / 2 - 1.5) * eye + e * eye
+    hybridization = np.broadcast_to(0.5 * eye, metal.shape)
+    h0_k = np.block([[metal, hybridization], [hybridization, ligand]])
+    gf_struct = [(bl, 2) for bl in spin_names]
+    bath_size = dict.fromkeys(spin_names, 6)
+    h_int = h_int_kanamori(
+        spin_names,
+        2,
+        U=(U - 3 * J) * (1 - eye),
+        Uprime=U * eye + (U - 2 * J) * (1 - eye),
+        J_hund=0,
+    )
+    sz = sum((nc("up", a) - nc("dn", a) for a in range(2)), zero())
+    sz += sum((nc("bath_up", a) - nc("bath_dn", a) for a in range(6)), zero())
+    band_integrator = BandKIntegrator(WeightedKPointIntegrator(), beta=100)
+    S = LatticeSolver(
+        h0_k=dict.fromkeys(spin_names, h0_k),
+        gf_struct=gf_struct,
+        impurity_solvers=FockitImpuritySolver(
+            h_int, gf_struct, diagonal_symmetries={sz: 0}, bath_size=bath_size
+        ),
+        band_integrator=band_integrator,
+        projectors=[dict.fromkeys(spin_names, np.eye(4)[:2])],
+        symmetrizers=[symmetrize_blocks],
+        force_real=True,
+        bath_size=[bath_size],
+        density_feedback=density_feedback,
+    )
+    band_integrator.n_target = 6 + S.n_ghost_electrons
+    result = S.solve(tol=1e-9, maxiter=60)
+
+    if density_feedback is None:
+        assert not result.converged
+        assert S.self_consistency_error > 1e-6
+        return
+    assert result.converged
+    assert S.self_consistency_error < 1e-8
+    for bl, _ in gf_struct:
+        rho_f = np.linalg.eigvalsh(S.rho_f[0][bl])
+        assert rho_f[2:4] == pytest.approx([0.5, 0.5], abs=1e-8)
+
+
+@pytest.mark.parametrize(
+    "density_feedback",
+    [LinearWeightedDensityFeedback(), None],
+    ids=["feedback", "no feedback"],
+)
+def test_density_feedback_does_not_change_the_solution(
+    one_band: Model, density_feedback: DensityFeedback | None
+) -> None:
+    gf_struct, h0_k, impurity_solver, band_integrator, _, _, Z_expected = one_band
+    S = LatticeSolver(
+        h0_k,
+        gf_struct,
+        impurity_solver,
+        band_integrator,
+        density_feedback=density_feedback,
+    )
+    S.solve(tol=1e-10)
+    for bl, _ in gf_struct:
+        assert S.Z[0][bl] == pytest.approx(Z_expected, abs=1e-8)
+
+
+def test_ghost_risb_finds_the_saturated_ferromagnet() -> None:
+    # Low filling of a band with its density of states peaked at the bottom.
+    # The fully polarized state has no double occupation, so its energy is
+    # that of free spinless electrons, below the paramagnet
+    spin_names = ["up", "dn"]
+    n, U, B = 0.4, 10.0, 3
+    n_k = 400
+    x = (np.arange(n_k) + 0.5) / n_k
+    h0_k = (-1 + 2 * x**2)[:, None, None]
+    gf_struct = [(bl, 1) for bl in spin_names]
+    bath_size = dict.fromkeys(spin_names, B)
+
+    def solve(paramagnetic: bool) -> LatticeSolver:
+        band_integrator = BandKIntegrator(WeightedKPointIntegrator(), beta=100)
+        S = LatticeSolver(
+            h0_k=dict.fromkeys(spin_names, h0_k),
+            gf_struct=gf_struct,
+            impurity_solvers=FockitImpuritySolver(
+                U * nc("up", 0) * nc("dn", 0), gf_struct, bath_size=bath_size
+            ),
+            band_integrator=band_integrator,
+            symmetrizers=[symmetrize_blocks] if paramagnetic else (),
+            force_real=True,
+            bath_size=[bath_size],
+        )
+        band_integrator.n_target = n + S.n_ghost_electrons
+        for bl, split in [("up", -0.2), ("dn", 0.2)]:
+            S.Lambda[0][bl] = S.Lambda[0][bl] + split * np.eye(B)
+        S.solve(tol=1e-9)
+        assert S.self_consistency_error < 1e-8
+        return S
+
+    S = solve(paramagnetic=False)
+    magnetization = np.trace(S.rho_c[0]["up"] - S.rho_c[0]["dn"]).real
+    assert magnetization == pytest.approx(n, abs=1e-6)
+    spinless_energy = np.sort(h0_k[:, 0, 0])[: round(n * n_k)].sum() / n_k
+    assert _energy(S) == pytest.approx(spinless_energy, abs=1e-3)
+    assert _energy(S) < _energy(solve(paramagnetic=True)) - 1e-3
+
+
+def test_ghost_risb_finds_the_neel_antiferromagnet() -> None:
+    # Half filling of a bipartite lattice with a cluster on each sublattice,
+    # from a start with opposite spin splittings on the two sublattices
+    spin_names = ["up", "dn"]
+    U, B = 4.0, 3
+    e = bethe_h0_k(400)
+    h0_k = np.block([[0 * e, e], [e, 0 * e]])
+    gf_struct = [(bl, 1) for bl in spin_names]
+    bath_size = dict.fromkeys(spin_names, B)
+
+    def solve(paramagnetic: bool) -> LatticeSolver:
+        band_integrator = BandKIntegrator(WeightedKPointIntegrator(), beta=100)
+        S = LatticeSolver(
+            h0_k=dict.fromkeys(spin_names, h0_k),
+            gf_struct=[gf_struct] * 2,
+            impurity_solvers=[
+                FockitImpuritySolver(
+                    U * nc("up", 0) * nc("dn", 0), gf_struct, bath_size=bath_size
+                )
+                for _ in range(2)
+            ],
+            band_integrator=band_integrator,
+            projectors=[
+                dict.fromkeys(spin_names, np.eye(2)[:1]),
+                dict.fromkeys(spin_names, np.eye(2)[1:]),
+            ],
+            symmetrizers=[symmetrize_blocks] if paramagnetic else (),
+            force_real=True,
+            bath_size=[bath_size] * 2,
+        )
+        band_integrator.n_target = 2 + S.n_ghost_electrons
+        for i, sign in [(0, 1), (1, -1)]:
+            for bl, split in [("up", -0.1), ("dn", 0.1)]:
+                S.Lambda[i][bl] = S.Lambda[i][bl] + sign * split * np.eye(B)
+        S.solve(tol=1e-9)
+        assert S.self_consistency_error < 1e-8
+        return S
+
+    S = solve(paramagnetic=False)
+    m = [np.trace(S.rho_c[i]["up"] - S.rho_c[i]["dn"]).real for i in range(2)]
+    assert m[0] > 0.9
+    assert m[1] == pytest.approx(-m[0], abs=1e-6)
+    assert _energy(S) < _energy(solve(paramagnetic=True)) - 1e-3
+
+
+@pytest.mark.parametrize(
     "gauge_fix", [None, lambda_eigenbasis], ids=["free gauge", "lambda eigenbasis"]
 )
 def test_ghost_risb_from_a_perturbed_start_reaches_the_solution_of_the_default_start(
@@ -1542,3 +1707,22 @@ def test_a_cluster_with_an_odd_number_of_ghosts_is_rejected() -> None:
             ),
             bath_size=[bath_size],
         )
+
+
+def _energy(S: LatticeSolver) -> float:
+    # Band energy of the quasiparticles plus the local energy of each impurity
+    result = S.band_integration_result
+    assert result is not None
+    density_k = helpers.get_density_matrix_k(
+        R_full=S.R_full,
+        density_qp_k=S.density_qp_k,
+        rho_c=S.rho_c,
+        projectors=S.projectors,
+        weights=result.weights,
+    )
+    band = helpers.get_band_energy(S.h0_kin_k, density_k, weights=result.weights)
+    local = 0.0
+    for solver in S.impurity_solvers:
+        assert isinstance(solver, FockitImpuritySolver)
+        local += float(np.real(solver.overlap(solver.h0_loc + solver.h_int)))
+    return float(band) + local

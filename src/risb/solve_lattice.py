@@ -25,11 +25,12 @@ import numpy as np
 from risb import helpers
 from risb.diagnostics import DiagnosticObserver
 from risb.kintegration import BandKIntegration, KPoints
-from risb.pinning import FullEmptyPinning
 from risb.solve_lattice_base import BaseLatticeSolver
+from risb.stabilization import FullEmptyPinning, LinearWeightedDensityFeedback
 from risb.types import (
     BlockMatrix,
     BlockMatrixLike,
+    DensityFeedback,
     GaugeFix,
     GfStruct,
     ImpuritySolver,
@@ -38,6 +39,7 @@ from risb.types import (
 )
 
 _DEFAULT_PINNING = FullEmptyPinning()
+_DEFAULT_FEEDBACK = LinearWeightedDensityFeedback()
 
 
 class LatticeSolver(BaseLatticeSolver):
@@ -53,8 +55,13 @@ class LatticeSolver(BaseLatticeSolver):
         Set beta and the band filling on this integrator.
     pin_full_empty : risb.types.PinFullEmpty or None, optional
         Sets the levels of full or empty auxiliary orbitals. Default is
-        :class:`risb.pinning.FullEmptyPinning` with its default parameters.
+        :class:`risb.stabilization.FullEmptyPinning` with its default parameters.
         ``None`` does no pinning.
+    density_feedback : risb.types.DensityFeedback or None, optional
+        Shifts the quasiparticle levels against the density mismatch, before
+        pinning. Default is
+        :class:`risb.stabilization.LinearWeightedDensityFeedback` with its
+        default parameters. ``None`` does no feedback.
     diagnostics : risb.diagnostics.DiagnosticObserver, optional
         Use :class:`~risb.diagnostics.LatticeDiagnostics` for progress reports.
 
@@ -83,6 +90,7 @@ class LatticeSolver(BaseLatticeSolver):
         projectors_evaluator: Callable[[KPoints], Sequence[BlockMatrixLike]]
         | None = None,
         pin_full_empty: PinFullEmpty | None = _DEFAULT_PINNING,
+        density_feedback: DensityFeedback | None = _DEFAULT_FEEDBACK,
         gauge_fix: GaugeFix | None = None,
         force_real_atol: float = 1e-12,
         force_real_rtol: float = 1e-10,
@@ -108,6 +116,7 @@ class LatticeSolver(BaseLatticeSolver):
             gauge_fix=gauge_fix,
         )
         self.pin_full_empty = pin_full_empty
+        self.density_feedback = density_feedback
 
     @override
     def update_bath(self) -> None:
@@ -177,6 +186,13 @@ class LatticeSolver(BaseLatticeSolver):
         for symmetrize in self.symmetrizers:
             Lambda = symmetrize(Lambda)
             R = symmetrize(R)
+
+        if self.density_feedback is not None:
+            for i in range(self.n_clusters):
+                for bl in Lambda[i]:
+                    Lambda[i][bl] = self.density_feedback.qp_levels(
+                        Lambda[i][bl], self.R[i][bl], self.f2[i][bl]
+                    )
 
         if self.pin_full_empty is not None:
             energy_scale = self._energy_scale()
