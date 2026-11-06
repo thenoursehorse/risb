@@ -8,7 +8,12 @@ import pytest
 from test_common import EXACT_THERMAL, bethe_h0_k, symmetrize_blocks
 from test_thermal_latticesolver import ONE_BAND, hubbard
 
-from risb import BaseLatticeSolver, LatticeSolver, ThermalLatticeSolver
+from risb import (
+    BaseLatticeSolver,
+    LatticeSolver,
+    PhysicalMuLatticeSolver,
+    ThermalLatticeSolver,
+)
 from risb.diagnostics import (
     DiagnosticObserver,
     LatticeDiagnostics,
@@ -53,6 +58,24 @@ def lattice(thermal: bool, diagnostics: DiagnosticObserver | None) -> BaseLattic
     )
 
 
+def test_physical_mu_lattice_diagnostics_report_the_filling(tmp_path: Path) -> None:
+    output = tmp_path / "lattice.out"
+    with LatticeDiagnostics(level="info", output=output) as diagnostics:
+        S = PhysicalMuLatticeSolver(
+            {bl: bethe_h0_k(100) for bl, _ in ONE_BAND},
+            ONE_BAND,
+            FockitImpuritySolver(hubbard(2.0), ONE_BAND),
+            BandKIntegrator(WeightedKPointIntegrator(), beta=40),
+            symmetrizers=[symmetrize_blocks],
+            n_target=1.0,
+            diagnostics=diagnostics,
+        )
+        S.one_cycle()
+    report = output.read_text()
+    assert " filling " in report
+    assert "target=1.0" in report
+
+
 @pytest.mark.parametrize("thermal", [False, True])
 def test_lattice_diagnostics_report_progress_without_controlling_the_solve(
     thermal: bool,
@@ -86,7 +109,7 @@ def test_lattice_diagnostics_report_progress_without_controlling_the_solve(
             assert "fit.result" in report
             assert "max_residual=" in report
             assert "total_cost=" in report
-            assert "thermal.filling" in report
+            assert " filling " in report
             solver.anchor()
             solver.one_cycle()
             solver.release()

@@ -930,11 +930,11 @@ def matrix_to_vector(
     A: NDArray[np.inexact], is_hermitian: bool, is_real: bool = False
 ) -> list[float]:
     """
-    Return the real numbers that hold a matrix.
+    Return a matrix as a vector of real numbers.
 
-    Hermitian and complex square matrices are held by their coefficients in
+    Hermitian and complex square matrices are given by their coefficients in
     :func:`get_hermitian_basis`. Real non-Hermitian matrices and rectangular
-    matrices are held by their entries. The vector contains the real parts
+    matrices are given by their entries. The vector contains the real parts
     and, unless ``is_hermitian`` or ``is_real``, the imaginary parts.
 
     Parameters
@@ -1124,8 +1124,8 @@ def get_lagrangian(
 
     With ghosts, each block of ``R`` has a row for each of its :math:`M`
     quasiparticles and a column for each of its :math:`n` orbitals. The
-    quasiparticle bands then hold :math:`n_g = \sum (M - n) / 2` more
-    electrons than the physical ones, summed over the blocks of the clusters,
+    filling of the quasiparticle bands is then :math:`n_g = \sum (M - n) / 2`
+    more than the physical filling, summed over the blocks of the clusters,
     so :math:`\mu n_g` is added for the value to be the grand potential.
 
     .. _PRL126401: https://doi.org/10.1103/PhysRevLett.118.126401

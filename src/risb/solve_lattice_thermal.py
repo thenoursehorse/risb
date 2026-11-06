@@ -78,8 +78,8 @@ class ThermalLatticeSolver(BaseLatticeSolver):
     mu : float, optional
         Chemical potential, or with `n_target` the starting guess for it.
         Default (only with `n_target`) is the chemical potential at which the
-        starting quasiparticle bands hold `n_target` plus
-        :attr:`n_ghost_electrons` electrons.
+        starting quasiparticle bands have filling `n_target` plus
+        :attr:`n_ghost_electrons`.
     n_target : float, optional
         Number of electrons per unit cell. The chemical potential :attr:`mu`
         is then solved for with :attr:`Lambda` and :attr:`R`, and the root
@@ -175,11 +175,6 @@ class ThermalLatticeSolver(BaseLatticeSolver):
 
         #: float or None : Number of electrons per unit cell to solve for.
         self.n_target = n_target
-
-        #: float : Number of electrons per unit cell, those of the impurity
-        #: problems (:attr:`rho_c`) and of the quasiparticle bands of the
-        #: orbitals in no cluster, set each cycle.
-        self.n_electrons: float
 
         #: float : Largest absolute entry of the bath density and kinetic
         #: matching residuals of the current cycle, excluding the anchor penalty.
@@ -290,17 +285,6 @@ class ThermalLatticeSolver(BaseLatticeSolver):
 
     @override
     def update_residuals(self) -> None:
-        assert self.band_integration_result is not None
-        # The electrons of the bands of the orbitals in no cluster are those of
-        # all bands minus those of the clusters
-        self.n_electrons = float(
-            self.band_integration_result.n_electrons
-            + sum(
-                np.trace(self.rho_c[i][bl]).real - np.trace(self.rho_qp[i][bl]).real
-                for i in range(self.n_clusters)
-                for bl in self.rho_c[i]
-            )
-        )
         self.bath_fit_error = 0.0
         for i in range(self.n_clusters):
             for bl, _ in self.gf_struct[i]:
@@ -335,7 +319,7 @@ class ThermalLatticeSolver(BaseLatticeSolver):
             self.f2 = symmetrize(self.f2)
 
         self._emit(
-            "thermal.filling",
+            "filling",
             iteration=self.iteration + 1,
             mu=self.mu,
             filling=self.n_electrons,

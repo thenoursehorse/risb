@@ -2,7 +2,7 @@
 
 from importlib.metadata import PackageNotFoundError, version
 
-from .solve_lattice import LatticeSolver
+from .solve_lattice import LatticeSolver, PhysicalMuLatticeSolver
 from .solve_lattice_base import BaseLatticeSolver, DiscardedImaginaryWarning
 from .solve_lattice_thermal import ThermalLatticeSolver
 
@@ -10,6 +10,7 @@ __all__ = [
     "BaseLatticeSolver",
     "DiscardedImaginaryWarning",
     "LatticeSolver",
+    "PhysicalMuLatticeSolver",
     "ThermalLatticeSolver",
 ]
 

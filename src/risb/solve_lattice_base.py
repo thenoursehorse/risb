@@ -132,9 +132,8 @@ class BaseLatticeSolver(ABC):
         ``[{"up": 3, "dn": 3}]`` for ``B = 3`` and one orbital per spin. It is
         also the number of bath orbitals of the impurity problem. The number
         of ghosts of a cluster, ``bath_size`` minus the size summed over its
-        blocks, must be even. The quasiparticle bands then hold
-        :attr:`n_ghost_electrons` more electrons than the physical ones, which
-        must be included in the band filling. Default is the size
+        blocks, must be even. The filling of the quasiparticle bands is then
+        :attr:`n_ghost_electrons` more than the physical filling. Default is the size
         of each block (``B = 1``), i.e., RISB without ghosts.
     band_integrator : risb.kintegration.BandKIntegration
         Integrates band observables and supplies the numerical k-integration
@@ -248,6 +247,10 @@ class BaseLatticeSolver(ABC):
         #: float or None : Chemical potential of the impurity problems.
         self.mu = mu
 
+        #: bool : Whether :meth:`solve_impurities` puts :attr:`mu` on the
+        #: physical orbitals of the impurity problems only.
+        self.mu_on_c_only = False
+
         self.symmetrizers = symmetrizers
         self.gauge_fix = gauge_fix
         self.force_real = force_real
@@ -286,9 +289,9 @@ class BaseLatticeSolver(ABC):
                 msg = f"Cluster {i} has {n} ghosts, but its impurity problem is half filled only for an even number !"
                 raise ValueError(msg)
 
-        #: int : Number of electrons per unit cell that the quasiparticle
-        #: bands hold beyond the physical ones, half the number of ghosts
-        #: (``bath_size`` minus the size of each block) of all clusters.
+        #: int : Filling of the quasiparticle bands minus the physical
+        #: filling, half the number of ghosts (``bath_size`` minus the size
+        #: of each block) of all clusters.
         self.n_ghost_electrons = sum(n_ghosts) // 2
 
         # Projectors onto the quasiparticles of each cluster, the same as the
@@ -476,7 +479,7 @@ class BaseLatticeSolver(ABC):
     def _project(
         self, A: list[BlockMatrix], is_hermitian: bool, name: str
     ) -> list[BlockMatrix]:
-        # Onto the matrices that x can hold, e.g., Hermitian or real
+        # Onto the matrices that x represents, e.g., Hermitian or real
         A_projected, _ = self._unflatten_matrix(
             self._flatten_matrix(A, is_hermitian, name), is_hermitian, like=A
         )
@@ -740,14 +743,13 @@ class BaseLatticeSolver(ABC):
                     h0_loc_matrix = {
                         bl: h0_loc_matrix[bl] - potential[bl] for bl in h0_loc_matrix
                     }
-                if self.mu is None:
-                    self.impurity_solvers[i].set_h_imp(
-                        self.Lambda_c[i], self.D[i], h0_loc_matrix
-                    )
-                else:
-                    self.impurity_solvers[i].set_h_imp(
-                        self.Lambda_c[i], self.D[i], h0_loc_matrix, mu=self.mu
-                    )
+                self.impurity_solvers[i].set_h_imp(
+                    self.Lambda_c[i],
+                    self.D[i],
+                    h0_loc_matrix,
+                    mu=self.mu,
+                    mu_on_c_only=self.mu_on_c_only,
+                )
                 self.impurity_solvers[i].solve()
                 for bl, _ in self.gf_struct[i]:
                     self.rho_f[i][bl] = self.impurity_solvers[i].get_rho_f(bl)
@@ -1008,6 +1010,24 @@ class BaseLatticeSolver(ABC):
                 self_consistency_error=self.self_consistency_error,
             )
             return result
+
+    @property
+    def n_electrons(self) -> float:
+        """
+        Number of electrons per unit cell.
+
+        These are the electrons of the impurity problems (:attr:`rho_c`) plus
+        those of the bands of the orbitals in no cluster.
+        """
+        assert self.band_integration_result is not None
+        return float(
+            self.band_integration_result.n_electrons
+            + sum(
+                np.trace(self.rho_c[i][bl]).real - np.trace(self.rho_qp[i][bl]).real
+                for i in range(self.n_clusters)
+                for bl in self.rho_c[i]
+            )
+        )
 
     @property
     def Z(self) -> list[BlockMatrix]:

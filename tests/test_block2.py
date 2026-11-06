@@ -116,6 +116,20 @@ def test_ground_state_of_a_ghost_impurity_is_the_exact_one(
         assert solver.overlap(Op) == pytest.approx(expected.overlap(Op), abs=1e-6)
 
 
+def test_chemical_potential_on_the_physical_orbitals_lowers_their_levels() -> None:
+    mu = 0.7
+    h_int, gf_struct, bath_size, Lambda_c, D, h0_loc = ghost_problem(1, 3)
+    expected = FockitImpuritySolver(h_int, gf_struct, bath_size=bath_size)
+    expected.set_h_imp(Lambda_c, D, {bl: h - mu for bl, h in h0_loc.items()})
+    expected.solve()
+    solver = Block2ImpuritySolver(
+        h_int, gf_struct, bond_dim=200, bath_size=bath_size, settings=EXACT
+    )
+    solver.set_h_imp(Lambda_c, D, h0_loc, mu=mu, mu_on_c_only=True)
+    solver.solve()
+    assert_same_rho(solver, expected)
+
+
 @pytest.mark.parametrize("settings", [Block2Settings(), Block2Settings(tol=1e-8)])
 def test_looser_convergence_settings_keep_the_exact_density_matrices(
     settings: Block2Settings,

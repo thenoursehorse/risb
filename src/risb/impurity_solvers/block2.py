@@ -306,6 +306,7 @@ class _Block2Base(ImpuritySolver):
         D: BlockMatrixLike,
         h0_loc_matrix: BlockMatrixLike | None = None,
         mu: float | None = None,
+        mu_on_c_only: bool = False,
     ) -> None:
         """
         Set the terms of the impurity Hamiltonian.
@@ -325,6 +326,8 @@ class _Block2Base(ImpuritySolver):
         mu : float, optional
             Chemical potential, subtracted as ``mu * n`` on the physical and
             bath orbitals.
+        mu_on_c_only : bool, optional
+            Subtract `mu` on the physical orbitals only.
 
         Raises
         ------
@@ -343,12 +346,14 @@ class _Block2Base(ImpuritySolver):
             Lambda_c_bl = np.asarray(Lambda_c[bl])
             D_bl = np.asarray(D[bl])
             h1[np.ix_(cs, cs)] += np.asarray(self._h0_loc[bl])
+            if mu is not None and mu_on_c_only:
+                h1[cs, cs] -= mu
             # sum Lambda_c[a, b] f_a f_b^dag = tr Lambda_c - sum Lambda_c[a, b] f_b^dag f_a
             h1[np.ix_(fs, fs)] -= Lambda_c_bl.T
             const += np.trace(Lambda_c_bl)
             h1[np.ix_(cs, fs)] += D_bl.T
             h1[np.ix_(fs, cs)] += D_bl.conj()
-        if mu is not None:
+        if mu is not None and not mu_on_c_only:
             h1 -= mu * np.eye(len(h1))
         self._const, self._h1 = _real(np.array(const)).item(), _real(h1)
 

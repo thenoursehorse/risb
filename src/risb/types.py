@@ -113,8 +113,9 @@ class ImpuritySolver(Protocol):
         D: BlockMatrixLike,
         h0_loc_matrix: BlockMatrixLike | None = None,
         mu: float | None = None,
+        mu_on_c_only: bool = False,
     ) -> None:
-        """Set the impurity Hamiltonian, with the chemical potential `mu` if it is given."""
+        """Set the impurity Hamiltonian, with the chemical potential `mu` if it is given, on the physical and bath orbitals, or with `mu_on_c_only` on the physical orbitals only."""
 
     def solve(self) -> None:
         """Solve the impurity problem and set :attr:`rho_f`, :attr:`rho_cf`, and :attr:`rho_c` for every block."""

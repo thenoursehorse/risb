@@ -181,9 +181,9 @@ S = LatticeSolver(...
 )
 ```
 
-The impurity problem is half filled, so the ghosts hold $(B - 1) / 2$
-electrons per orbital. The quasiparticle bands then hold
-`S.n_ghost_electrons` more electrons than the physical ones, and the filling
+The impurity problem is half filled, so the ghosts have filling $(B - 1) / 2$
+per orbital. The filling of the quasiparticle bands is then
+`S.n_ghost_electrons` more than the physical filling.
 Set the band integrator's `n_target` to include them:
 
 ```python
@@ -388,6 +388,39 @@ from risb.optimize import OnPlateau
 
 S.solve(callbacks=[OnPlateau(patience=20)])
 ```
+
+## Fixing the physical chemical potential
+
+To fix the physical chemical potential `mu` instead of the filling of the
+quasiparticle bands, use {py:class}`~risb.PhysicalMuLatticeSolver`
+
+```python
+from risb import PhysicalMuLatticeSolver
+
+S = PhysicalMuLatticeSolver(
+    h0_k=h0_k,
+    gf_struct=gf_struct,
+    impurity_solvers=impurity_solver,
+    band_integrator=BandKIntegrator(WeightedKPointIntegrator(), beta=beta),
+    mu=mu,
+    bath_size=[bath_size],
+)
+S.solve(tol=...)
+```
+
+If you want a fixed number of electrons per unit cell instead, also pass
+`n_target`, and `mu` is the starting guess
+
+```python
+S = PhysicalMuLatticeSolver(...,
+                            mu=U / 2,
+                            n_target=n_target,
+                            ...
+)
+```
+
+and the chemical potential is `S.mu` after solving. `n_target` does not
+include `S.n_ghost_electrons`.
 
 ## Finite temperature
 
