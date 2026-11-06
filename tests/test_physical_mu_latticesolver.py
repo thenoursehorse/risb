@@ -84,8 +84,8 @@ def test_fixed_mu_gives_the_filling_of_the_solution_at_that_mu() -> None:
 
 def test_uncorrelated_ligand_shares_the_mu_of_the_metal() -> None:
     # One metal orbital with three quasiparticles, hybridized with an
-    # uncorrelated ligand orbital. The solution is also one at fixed filling of
-    # the quasiparticle bands, so the ligand and the metal share the same mu
+    # uncorrelated ligand orbital. The solution is that of LatticeSolver at the
+    # same filling, with the chemical potential of its quasiparticle bands
     U, n_target = 6.0, 3.0
     e = bethe_h0_k(2000)
     h0_k = np.block([[0.5 * e, 0.5 + 0 * e], [0.5 + 0 * e, (U / 2 - 0.5) + e]])
@@ -122,14 +122,12 @@ def test_uncorrelated_ligand_shares_the_mu_of_the_metal() -> None:
     band_integrator = BandKIntegrator(WeightedKPointIntegrator(), beta=100)
     expected = LatticeSolver(band_integrator=band_integrator, **common())  # type: ignore[arg-type]
     band_integrator.n_target = n_target + expected.n_ghost_electrons
-    # The same state, with the chemical potential in Lambda
     expected.R = deepcopy(S.R)
-    expected.Lambda = [
-        {bl: L + S.mu * np.eye(L.shape[0]) for bl, L in L_i.items()} for L_i in S.Lambda
-    ]
+    expected.Lambda = deepcopy(S.Lambda)
     result = expected.solve(tol=1e-9)
     assert result.converged
     assert result.cycles <= 2
+    assert band_integrator.mu == pytest.approx(S.mu, abs=1e-8)
     for bl in SPINS:
         assert np.trace(S.rho_c[0][bl]).real == pytest.approx(
             np.trace(expected.rho_c[0][bl]).real, abs=1e-6

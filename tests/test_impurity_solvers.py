@@ -741,45 +741,6 @@ def test_a_second_solve_with_new_terms_matches_a_new_solver(thermal: bool) -> No
             )
 
 
-@pytest.mark.parametrize("thermal", [False, True])
-def test_chemical_potential_on_the_physical_orbitals_lowers_their_levels(
-    thermal: bool,
-) -> None:
-    mu = 0.7
-    gf_struct = [("up", 1), ("dn", 1)]
-    bath_size = {"up": 3, "dn": 3}
-    h_int = 2 * nc("up", 0) * nc("dn", 0)
-    Lambda_c = {bl: np.diag([-0.8, 0.1, 0.9]) for bl, _ in gf_struct}
-    D = {bl: np.array([[0.3], [0.2], [0.4]]) for bl, _ in gf_struct}
-    h0_loc = {bl: np.array([[0.1]]) for bl, _ in gf_struct}
-
-    def solved(
-        h0_loc: BlockMatrix, mu: float | None = None
-    ) -> FockitImpuritySolver | FockitThermalImpuritySolver:
-        solver = (
-            FockitThermalImpuritySolver(
-                h_int, gf_struct, beta=3.0, bath_size=bath_size, **EXACT_THERMAL
-            )
-            if thermal
-            else FockitImpuritySolver(h_int, gf_struct, bath_size=bath_size)
-        )
-        solver.set_h_imp(Lambda_c, D, h0_loc, mu=mu, mu_on_c_only=True)
-        solver.solve()
-        return solver
-
-    on_c = solved(h0_loc, mu=mu)
-    lowered = solved({bl: h - mu for bl, h in h0_loc.items()})
-    for bl, _ in gf_struct:
-        for rho in ["rho_f", "rho_cf", "rho_c"]:
-            assert getattr(on_c, rho)[bl] == pytest.approx(
-                getattr(lowered, rho)[bl], abs=1e-10
-            )
-        assert (
-            np.trace(on_c.rho_c[bl]).real
-            > np.trace(solved(h0_loc).rho_c[bl]).real + 0.01
-        )
-
-
 @pytest.mark.parametrize("symmetry", ["layer swap", "onsite phases"])
 def test_grand_canonical_impurity_keeps_every_eigenvalue_of_a_symmetry(
     symmetry: str,

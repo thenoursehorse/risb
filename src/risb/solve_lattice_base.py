@@ -247,10 +247,6 @@ class BaseLatticeSolver(ABC):
         #: float or None : Chemical potential of the impurity problems.
         self.mu = mu
 
-        #: bool : Whether :meth:`solve_impurities` puts :attr:`mu` on the
-        #: physical orbitals of the impurity problems only.
-        self.mu_on_c_only = False
-
         self.symmetrizers = symmetrizers
         self.gauge_fix = gauge_fix
         self.force_real = force_real
@@ -748,7 +744,6 @@ class BaseLatticeSolver(ABC):
                     self.D[i],
                     h0_loc_matrix,
                     mu=self.mu,
-                    mu_on_c_only=self.mu_on_c_only,
                 )
                 self.impurity_solvers[i].solve()
                 for bl, _ in self.gf_struct[i]:

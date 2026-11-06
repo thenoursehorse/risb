@@ -132,14 +132,9 @@ class _FockitBase(ImpuritySolver):
         N = zero()
         for mode in modes:
             N += nc(*mode)
-        N_c = zero()
-        for bl, bl_size in self.gf_struct:
-            for i in range(bl_size):
-                N_c += nc(bl, i)
         self._modes = modes
         self._index = {mode: j for j, mode in enumerate(modes)}
         self._N = N
-        self._N_c = N_c
         self._permutation = list(permutation_symmetries)
         self._onsite = list(onsite_symmetries)
 
@@ -282,7 +277,6 @@ class _FockitBase(ImpuritySolver):
         D: BlockMatrixLike,
         h0_loc_matrix: BlockMatrixLike | None = None,
         mu: float | None = None,
-        mu_on_c_only: bool = False,
     ) -> None:
         """
         Set the terms of the impurity Hamiltonian.
@@ -301,8 +295,6 @@ class _FockitBase(ImpuritySolver):
         mu : float, optional
             Chemical potential, subtracted as ``mu * n`` on the physical and
             bath orbitals.
-        mu_on_c_only : bool, optional
-            Subtract `mu` on the physical orbitals only.
 
         """
         if h0_loc_matrix is not None:
@@ -311,7 +303,7 @@ class _FockitBase(ImpuritySolver):
         self.set_h_hybr(D)
         self.h_imp = self.h0_loc + self.h_int + self.h_bath + self.h_hybr
         if mu is not None:
-            self.h_imp -= mu * (self._N_c if mu_on_c_only else self._N)
+            self.h_imp -= mu * self._N
 
     def _emit(self, event: str, **fields: object) -> None:
         if self.diagnostics is not None:

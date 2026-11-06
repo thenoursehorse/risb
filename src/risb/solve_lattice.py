@@ -233,10 +233,12 @@ class PhysicalMuLatticeSolver(LatticeSolver):
     """
     Zero-temperature RISB lattice solver at a fixed physical chemical potential or filling.
 
-    The chemical potential :attr:`mu` is subtracted on the physical orbitals
-    of the impurity problems and on the bands of the orbitals in no cluster.
-    The chemical potential of the quasiparticle bands is fixed at zero, so
-    the bands of the ghosts do not depend on :attr:`mu` directly.
+    The quasiparticle bands are filled at the chemical potential :attr:`mu`.
+    With `n_target`, :attr:`mu` is solved for with :attr:`Lambda` and
+    :attr:`R` so that :attr:`n_electrons` is `n_target`. Each step of
+    :attr:`mu` also shifts :attr:`Lambda` by the same amount, so it does not
+    change the occupations of the quasiparticles. A solution is a solution of
+    :class:`LatticeSolver` with the same :attr:`Lambda` and :attr:`R`.
 
     Parameters
     ----------
@@ -244,8 +246,8 @@ class PhysicalMuLatticeSolver(LatticeSolver):
         Integrates the quasiparticle densities and kinetic matrices. Set beta
         on this integrator. Its mu and filling are not used.
     mu : float, optional
-        Chemical potential, or with `n_target` the starting guess for it.
-        Default (only with `n_target`) is the chemical potential at which the
+        Chemical potential, or with `n_target` the starting guess for it. The
+        starting :attr:`Lambda` is shifted by `mu`. Default (only with `n_target`) is the chemical potential at which the
         starting quasiparticle bands have filling `n_target` plus
         :attr:`n_ghost_electrons`.
     n_target : float, optional
@@ -307,7 +309,6 @@ class PhysicalMuLatticeSolver(LatticeSolver):
             force_real_rtol=force_real_rtol,
             diagnostics=diagnostics,
         )
-        self.mu_on_c_only = True
 
         #: float or None : Number of electrons per unit cell to solve for.
         self.n_target = n_target
@@ -315,8 +316,12 @@ class PhysicalMuLatticeSolver(LatticeSolver):
         self.mu: float
         if mu is not None:
             self.mu = mu
+            for i in range(self.n_clusters):
+                for bl in self.Lambda[i]:
+                    self.Lambda[i][bl] = self.Lambda[i][bl] + mu * np.eye(
+                        self.Lambda[i][bl].shape[0]
+                    )
         elif n_target is not None:
-            self.mu = 0.0
             self.R_full, self.Lambda_full = helpers.upfold_r_lambda(
                 self.R,
                 self.Lambda,
@@ -328,12 +333,6 @@ class PhysicalMuLatticeSolver(LatticeSolver):
             self.mu = self.band_integrator.integrate(
                 hamiltonian, n_target=n_target + self.n_ghost_electrons
             ).mu
-            # Shift Lambda so that the starting bands have this filling at zero
-            for i in range(self.n_clusters):
-                for bl in self.Lambda[i]:
-                    self.Lambda[i][bl] = self.Lambda[i][bl] - self.mu * np.eye(
-                        self.Lambda[i][bl].shape[0]
-                    )
         else:
             msg = "Need mu, or n_target to solve for it !"
             raise ValueError(msg)
@@ -346,44 +345,12 @@ class PhysicalMuLatticeSolver(LatticeSolver):
         }
 
     @override
-    def _get_band_integrands(self) -> tuple[Hamiltonian, BandObservables]:
-        hamiltonian, observables = super()._get_band_integrands()
-        if not callable(hamiltonian):
-            uncorrelated = self._uncorrelated_qp(None)
-            return {
-                bl: h - self.mu * uncorrelated[bl] for bl, h in hamiltonian.items()
-            }, observables
-
-        def get_hamiltonian(kpoints: KPoints) -> BlockMatrix:
-            uncorrelated = self._uncorrelated_qp(kpoints)
-            return {
-                bl: h - self.mu * uncorrelated[bl]
-                for bl, h in hamiltonian(kpoints).items()
-            }
-
-        return get_hamiltonian, observables
-
-    def _uncorrelated_qp(self, kpoints: KPoints | None) -> BlockMatrix:
-        # The projector onto the quasiparticles of the orbitals in no cluster
-        if kpoints is None:
-            h0, projectors = self.h0_k, self._projectors_qp
-        else:
-            h0 = self._get_h0_at(kpoints)
-            projectors = self._get_projectors_at(kpoints)
-            if self.n_ghost_electrons:
-                projectors = helpers.get_ghost_projectors(
-                    h0, self.bath_size, projectors, self.gf_struct_mapping
-                )
-        zero = [{bl: np.zeros_like(L) for bl, L in L_i.items()} for L_i in self.Lambda]
-        return helpers.upfold(zero, h0, projectors, self.gf_struct_mapping, outside=1)
-
-    @override
     def integrate_bands(
         self, hamiltonian: Hamiltonian, observables: BandObservables
     ) -> BandKIntegrationResult:
-        """Integrate the quasiparticle bands at a chemical potential of zero."""
+        """Integrate the quasiparticle bands at the chemical potential :attr:`mu`."""
         return self.band_integrator.integrate(
-            hamiltonian, observables=observables, mu=0.0
+            hamiltonian, observables=observables, mu=self.mu
         )
 
     @override
@@ -438,7 +405,10 @@ class PhysicalMuLatticeSolver(LatticeSolver):
             return super().cycle(x)
         self.mu = float(x[-1])
         x_new, residual = super().cycle(x[:-1])
-        return (
-            np.append(x_new, self.mu + self.n_target - self.n_electrons),
-            np.append(residual, self.n_electrons - self.n_target),
-        )
+        step = self.n_target - self.n_electrons
+        identity: list[BlockMatrix] = [
+            {bl: np.eye(L.shape[0]) for bl, L in L_i.items()} for L_i in self.Lambda
+        ]
+        shift = self._flatten_matrix(identity, is_hermitian=True, name="Lambda")
+        x_new[: len(shift)] += step * np.asarray(shift)
+        return np.append(x_new, self.mu + step), np.append(residual, -step)

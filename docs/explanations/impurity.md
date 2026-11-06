@@ -121,8 +121,7 @@ verify your implementation. It needs
   orbitals and $\alpha$ a physical orbital.
   `h0_loc_matrix` defines the non-interacting quadratic terms in $\hat{H}^{\mathrm{loc}}$.
   It also takes a chemical potential `mu`, subtracted as $\mu \hat{N}$ on
-  the physical and bath orbitals, or with `mu_on_c_only=True` on the
-  physical orbitals only.
+  the physical and bath orbitals.
 - A method `solve()` that finds the ground state in the half-filled particle
   sector and stores the single-particle density matrices for every block:
   `rho_f[bl][a, b]` $= \langle \hat{f}^{}_{ib} \hat{f}^{\dagger}_{ia} \rangle$,
