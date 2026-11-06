@@ -44,7 +44,11 @@ from risb.optimize import (
     reduced_by,
     residual_below,
 )
-from risb.stabilization import FullEmptyPinning, LinearWeightedDensityFeedback
+from risb.stabilization import (
+    FullEmptyPinning,
+    LinearWeightedDensityFeedback,
+    clip_singular_values,
+)
 from risb.types import (
     BlockMatrix,
     DensityFeedback,
@@ -1062,6 +1066,26 @@ def test_density_feedback_does_not_change_the_solution(
     S.solve(tol=1e-10)
     for bl, _ in gf_struct:
         assert S.Z[0][bl] == pytest.approx(Z_expected, abs=1e-8)
+
+
+@pytest.mark.parametrize("clip_r", [True, False])
+def test_clipping_r_does_not_change_the_solution(one_band: Model, clip_r: bool) -> None:
+    gf_struct, h0_k, impurity_solver, band_integrator, _, _, Z_expected = one_band
+    S = LatticeSolver(h0_k, gf_struct, impurity_solver, band_integrator, clip_r=clip_r)
+    S.solve(tol=1e-10)
+    for bl, _ in gf_struct:
+        assert S.Z[0][bl] == pytest.approx(Z_expected, abs=1e-8)
+
+
+def test_clip_singular_values_bounds_them_by_one() -> None:
+    rng = np.random.default_rng(0)
+    A = rng.normal(size=(6, 2))
+    clipped = clip_singular_values(A)
+    assert np.linalg.svd(clipped, compute_uv=False) == pytest.approx(
+        np.minimum(np.linalg.svd(A, compute_uv=False), 1)
+    )
+    small = A / (2 * np.linalg.norm(A, 2))
+    assert clip_singular_values(small) == pytest.approx(small)
 
 
 def test_ghost_risb_finds_the_saturated_ferromagnet() -> None:

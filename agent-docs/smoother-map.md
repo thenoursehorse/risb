@@ -2603,3 +2603,20 @@ ThermalLatticeSolver + the same window (thermal_window.py), on the examples:
 - kagome: μ → +2600 with physical filling error +3, so the impurities are full.
 - trimer: μ is stuck at 14.18 with filling error +4, f1/f2 8e-10.
 - The thermal solver does not shift Λ with each μ step. Λ follows μ, so the window on the quasiparticle filling does not stop the impurity filling from saturating. In the trimer each μ step down puts the band filling outside the window and the window moves μ back.
+
+ThermalLatticeSolver with the Λ shift on each μ step (and Λc the other way), thermal_window.py:
+- The 19 tests in test_thermal_latticesolver.py pass with the shift, with and without the 0.75 window, in about the same time.
+- The examples still fail, and R blows up in every run:
+  - kagome without window: μ stable, Z → 3454;
+  - kagome with window: μ → 457, filling error +3, Z → 79;
+  - trimer without window: f1/f2 6.8e-6 at cycle 2, then a jump to Z 13 and runaway;
+  - trimer with window: Z up to 1e14.
+- The thermal failure on these models is the quasiparticle fit (R unbounded), not only μ.
+
+Clip of R's singular values to ≤ 1 (clip_r.py; on R entering a cycle and on R from the update):
+- Full suite: 272 pass.
+- The 93 LatticeSolver tests: 93 pass, impurity rounds 0.995×. Clipped 127 times on input, 19 on output.
+- Same tests with PhysicalMu (window 0.75): 85 pass either way, rounds 1.004×.
+- Thermal examples with the clip (no shift, no window): R stays bounded (max eigenvalue of R†R ≤ 1), but neither converges.
+  - kagome: μ 4.97, filling exact, f1/f2 stuck at 1.0.
+  - trimer: f1/f2 8.5e-3 at cycle 8, then μ → −1.2e5 with all bands empty.

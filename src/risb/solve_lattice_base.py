@@ -40,6 +40,7 @@ from risb.kintegration import (
 )
 from risb.optimize import DIIS, NewtonSolver, ScipyRoot, SolveResult, solve_fixed_point
 from risb.optimize.fixed_point import Callback
+from risb.stabilization import clip_singular_values
 from risb.types import (
     BlockMatrix,
     BlockMatrixLike,
@@ -158,6 +159,10 @@ class BaseLatticeSolver(ABC):
         them, such as the permutation and onsite symmetries of
         :class:`.FockitImpuritySolver`. Default is None, which leaves the
         basis free.
+    clip_r : bool, optional
+        Set the singular values of :attr:`R` above one to one, for the
+        :attr:`R` that a cycle starts from and for the next :attr:`R`, see
+        :func:`risb.stabilization.clip_singular_values`. Default is True.
     diagnostics : risb.diagnostics.DiagnosticObserver, optional
         Passive reporter of lattice events. None disables reporting.
 
@@ -182,6 +187,7 @@ class BaseLatticeSolver(ABC):
         | None = None,
         mu: float | None = None,
         gauge_fix: GaugeFix | None = None,
+        clip_r: bool = True,
         force_real_atol: float = 1e-12,
         force_real_rtol: float = 1e-10,
         diagnostics: DiagnosticObserver | None = None,
@@ -249,6 +255,7 @@ class BaseLatticeSolver(ABC):
 
         self.symmetrizers = symmetrizers
         self.gauge_fix = gauge_fix
+        self.clip_r = clip_r
         self.force_real = force_real
         self.force_real_atol = force_real_atol
         self.force_real_rtol = force_real_rtol
@@ -471,6 +478,10 @@ class BaseLatticeSolver(ABC):
         self.R, _ = self._unflatten_matrix(
             x, is_hermitian=False, like=self.R, offset=offset
         )
+        if self.clip_r:
+            self.R = [
+                {bl: clip_singular_values(R) for bl, R in R_i.items()} for R_i in self.R
+            ]
 
     def _project(
         self, A: list[BlockMatrix], is_hermitian: bool, name: str
@@ -656,6 +667,11 @@ class BaseLatticeSolver(ABC):
 
         self._set_lambda_r(x)
         Lambda, R, self.f1, self.f2 = self.one_cycle()
+        if self.clip_r:
+            R = [
+                {bl: clip_singular_values(R_bl) for bl, R_bl in R_i.items()}
+                for R_i in R
+            ]
         if self.gauge_fix is not None:
             for i in range(self.n_clusters):
                 for bl in Lambda[i]:

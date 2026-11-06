@@ -8,6 +8,33 @@ from numpy.typing import NDArray
 from risb.types import DensityFeedback, PinFullEmpty
 
 
+def clip_singular_values(A: NDArray[np.inexact]) -> NDArray[np.inexact]:
+    r"""
+    Return the matrix with its singular values above one set to one.
+
+    :math:`R^\dagger R` is the spectral weight of the quasiparticles in the
+    physical orbitals. It is at most one, and reaches one only as the number of
+    ghosts goes to infinity, so the singular values of :math:`R` are at most
+    one.
+
+    Parameters
+    ----------
+    A : numpy.ndarray
+        A matrix, e.g., :math:`R` of a block.
+
+    Returns
+    -------
+    numpy.ndarray
+        `A` itself if its singular values are at most one.
+
+    """
+    U, s, Vh = np.linalg.svd(A, full_matrices=False)
+    if s.size == 0 or s.max() <= 1:
+        return A
+    result: NDArray[np.inexact] = (U * np.minimum(s, 1)) @ Vh
+    return result
+
+
 class FullEmptyPinning(PinFullEmpty):
     """
     Move the levels of full or empty auxiliary orbitals far from the active levels.

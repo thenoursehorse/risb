@@ -77,7 +77,7 @@ class LatticeSolver(BaseLatticeSolver):
 
     Other Parameters
     ----------------
-    h0_k, gf_struct, impurity_solvers, projectors, gf_struct_mapping, symmetrizers, force_real, force_real_atol, force_real_rtol, check_projectors, double_counting, bath_size, h0_k_evaluator, projectors_evaluator, gauge_fix
+    h0_k, gf_struct, impurity_solvers, projectors, gf_struct_mapping, symmetrizers, force_real, force_real_atol, force_real_rtol, check_projectors, double_counting, bath_size, h0_k_evaluator, projectors_evaluator, gauge_fix, clip_r
         As in :class:`.BaseLatticeSolver`.
 
     """
@@ -102,6 +102,7 @@ class LatticeSolver(BaseLatticeSolver):
         pin_full_empty: PinFullEmpty | None = _DEFAULT_PINNING,
         density_feedback: DensityFeedback | None = None,
         gauge_fix: GaugeFix | None = None,
+        clip_r: bool = True,
         force_real_atol: float = 1e-12,
         force_real_rtol: float = 1e-10,
         diagnostics: DiagnosticObserver | None = None,
@@ -124,6 +125,7 @@ class LatticeSolver(BaseLatticeSolver):
             h0_k_evaluator=h0_k_evaluator,
             projectors_evaluator=projectors_evaluator,
             gauge_fix=gauge_fix,
+            clip_r=clip_r,
         )
         self.pin_full_empty = pin_full_empty
         self.density_feedback = density_feedback
@@ -283,7 +285,7 @@ class PhysicalMuLatticeSolver(LatticeSolver):
 
     Other Parameters
     ----------------
-    h0_k, gf_struct, impurity_solvers, projectors, gf_struct_mapping, symmetrizers, force_real, check_projectors, double_counting, bath_size, h0_k_evaluator, projectors_evaluator, pin_full_empty, gauge_fix, force_real_atol, force_real_rtol, diagnostics
+    h0_k, gf_struct, impurity_solvers, projectors, gf_struct_mapping, symmetrizers, force_real, check_projectors, double_counting, bath_size, h0_k_evaluator, projectors_evaluator, pin_full_empty, gauge_fix, clip_r, force_real_atol, force_real_rtol, diagnostics
         As in :class:`.LatticeSolver`.
 
     """
@@ -311,6 +313,7 @@ class PhysicalMuLatticeSolver(LatticeSolver):
         pin_full_empty: PinFullEmpty | None = _DEFAULT_PINNING,
         density_feedback: DensityFeedback | None = _DEFAULT_FEEDBACK,
         gauge_fix: GaugeFix | None = None,
+        clip_r: bool = True,
         force_real_atol: float = 1e-12,
         force_real_rtol: float = 1e-10,
         diagnostics: DiagnosticObserver | None = None,
@@ -332,6 +335,7 @@ class PhysicalMuLatticeSolver(LatticeSolver):
             pin_full_empty=pin_full_empty,
             density_feedback=density_feedback,
             gauge_fix=gauge_fix,
+            clip_r=clip_r,
             force_real_atol=force_real_atol,
             force_real_rtol=force_real_rtol,
             diagnostics=diagnostics,

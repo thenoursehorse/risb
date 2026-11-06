@@ -111,7 +111,7 @@ class ThermalLatticeSolver(BaseLatticeSolver):
 
     Other Parameters
     ----------------
-    h0_k, gf_struct, projectors, gf_struct_mapping, symmetrizers, force_real, force_real_atol, force_real_rtol, check_projectors, double_counting, bath_size, h0_k_evaluator, projectors_evaluator, gauge_fix
+    h0_k, gf_struct, projectors, gf_struct_mapping, symmetrizers, force_real, force_real_atol, force_real_rtol, check_projectors, double_counting, bath_size, h0_k_evaluator, projectors_evaluator, gauge_fix, clip_r
         As in :class:`.BaseLatticeSolver`.
 
     """
@@ -140,6 +140,7 @@ class ThermalLatticeSolver(BaseLatticeSolver):
         density_matching_regularization: DensityMatchingRegularization = "uniform",
         density_matching_regularization_scale: float = 1e-3,
         gauge_fix: GaugeFix | None = None,
+        clip_r: bool = True,
         force_real_atol: float = 1e-12,
         force_real_rtol: float = 1e-10,
         diagnostics: DiagnosticObserver | None = None,
@@ -164,6 +165,7 @@ class ThermalLatticeSolver(BaseLatticeSolver):
             h0_k_evaluator=h0_k_evaluator,
             projectors_evaluator=projectors_evaluator,
             gauge_fix=gauge_fix,
+            clip_r=clip_r,
             mu=mu,
         )
         #: float : Inverse temperature.
