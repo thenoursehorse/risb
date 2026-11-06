@@ -2592,3 +2592,14 @@ Window δ sweep: 93 tests passed / impurity rounds on the 80 passing everywhere 
   - trimer: μ runs away to −6000 with every band empty, the same failure;
   - kagome: μ is stable but R blows up (Z = 12) and f1/f2 stays at 1.
 - Implemented max_qp_filling_deviation = 0.75 in PhysicalMuLatticeSolver. This also fixes test_physical_mu_finds_the_neel_antiferromagnet. 272 tests pass.
+
+δ sweep with the implemented window (swap_plugin WINDOW_DELTA; inf = no window). Tests passed /93, impurity rounds on the 80 passing everywhere, ligand lin→DIIS and DIIS only (root error):
+- inf: 81, 2297; 5(4)/3(3)/3, 3(3)/1(0)/2.
+- 0.75: 85, 2346; 5(4)/3(3)/2, 4(4)/0/2.
+- 0.9: 83 (Mott → other solution, Néel fails), 2336; 5(4)/3(3)/2, 4(4)/0/1.
+- 0.99: 84 (Néel fails), 2336; 5(4)/3(3)/2, 2(2)/0/1.
+
+ThermalLatticeSolver + the same window (thermal_window.py), on the examples:
+- kagome: μ → +2600 with physical filling error +3, so the impurities are full.
+- trimer: μ is stuck at 14.18 with filling error +4, f1/f2 8e-10.
+- The thermal solver does not shift Λ with each μ step. Λ follows μ, so the window on the quasiparticle filling does not stop the impurity filling from saturating. In the trimer each μ step down puts the band filling outside the window and the window moves μ back.

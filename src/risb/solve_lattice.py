@@ -272,9 +272,9 @@ class PhysicalMuLatticeSolver(LatticeSolver):
         Number of electrons per unit cell. The chemical potential :attr:`mu`
         is then solved for with :attr:`Lambda` and :attr:`R`, and the root
         functions include ``n_electrons - n_target``. Default is a fixed `mu`.
-    max_qp_filling_deviation : float, optional
+    max_qp_filling_deviation : float or None, optional
         Largest deviation of the quasiparticle filling from its value at a
-        solution, in electrons per unit cell.
+        solution, in electrons per unit cell. ``None`` does not limit it.
     density_feedback : risb.types.DensityFeedback or None, optional
         Shifts the quasiparticle levels against the density mismatch, before
         pinning. Default is
@@ -303,7 +303,7 @@ class PhysicalMuLatticeSolver(LatticeSolver):
         *,
         mu: float | None = None,
         n_target: float | None = None,
-        max_qp_filling_deviation: float = 0.75,
+        max_qp_filling_deviation: float | None = 0.75,
         bath_size: Sequence[Mapping[str, int]] | None = None,
         h0_k_evaluator: Callable[[KPoints], BlockMatrixLike] | None = None,
         projectors_evaluator: Callable[[KPoints], Sequence[BlockMatrixLike]]
@@ -371,7 +371,7 @@ class PhysicalMuLatticeSolver(LatticeSolver):
         result = self.band_integrator.integrate(
             hamiltonian, observables=observables, mu=self.mu
         )
-        if self.n_target is None:
+        if self.n_target is None or self.max_qp_filling_deviation is None:
             return result
         filling = self.n_target + self.n_ghost_electrons
         excess = result.n_electrons - filling
