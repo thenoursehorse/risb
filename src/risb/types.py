@@ -159,8 +159,14 @@ class DensityFeedback(Protocol):
         Lambda: NDArray[np.inexact],
         R: NDArray[np.inexact],
         f2: NDArray[np.inexact],
+        occupation_slope: float,
     ) -> NDArray[np.inexact]:
-        """Return the quasiparticle levels ``Lambda`` of one block, shifted using ``f2 = rho_f - rho_qp`` and the renormalization matrix ``R``."""
+        """
+        Return the quasiparticle levels ``Lambda`` of one block, shifted using ``f2 = rho_f - rho_qp`` and the renormalization matrix ``R``.
+
+        ``occupation_slope`` is the largest slope of the occupation function
+        of the quasiparticle bands, infinite for a step function.
+        """
 
 
 class FixedPointProblem(Protocol):

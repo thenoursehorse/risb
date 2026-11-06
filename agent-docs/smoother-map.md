@@ -1994,3 +1994,572 @@ and need not impose its bias at a true fixed point. Verify original
 f1/f2/bath/filling and branch energy under reduced regularization.
 No implementation changes made. Matching committed tests: 39 pass.
 Warm scratch scripts: Ruff, Ruff LSP and strict mypy pass.
+
+## Weak-ghost model scan (diis/weak_scan.py, 2026-11-04)
+
+The script is diis/weak_scan.py. Setup:
+- the crystal-field model with doping, B=3;
+- U/J = 3/0.5 or 4/0.7;
+- doping 0.3, 0.6 or 1.0;
+- δ from 0 to 2;
+- fresh Pulay(mixing_period=None), maxiter 300.
+
+Findings:
+- **Weakly coupled ghost (n=½, |vR| 2–4e-3, coupled ghosts fractional).** Seen at U=4 dop=1.0 δ=0.5/1.0/1.5 and U=4 dop=0.6 δ=0.5. None of these converge in 300 cycles (sc 4e-2..2e-1). The ghost always sits in the orbital at n=0.5, not in a doped one (berlingreen Fe2 t2g is at 0.664). U=3 dop=1.0 δ=1.5 has a weak ghost at 2e-6 with sc 4e-3.
+- **Doped charge-sink state.** At U=3 δ=0.5/1.0 and U=4 dop=0.3, n_c = [0.5, 0.5] for every doping. There are 2 exactly decoupled ghosts, the same E=1.427 (U=3) at every doping, and sc 5e-2..2e-1. The doping charge sits in the flat decoupled-ghost bands. This is the berlingreen flat-band excess mechanism, but at full size.
+- **Converged cases.** Undoped-like converged cases with decoupled ghosts (U=4 dop=0.6 δ=1.0/1.5) take 196–282 cycles.
+
+Candidate test bed: U=4 J=0.7 dop=1.0 δ=1.0 (weak ghost 4e-3, coupled ghosts 0.18/0.68).
+
+### Weak-ghost and charge-sink cases: default vs pin vs inner (diis/weak_bench.py)
+
+Setup: fresh Pulay(mixing_period=None), maxiter 300. `fill` from observe is relative to the undoped count, so the correct value is fill = doping.
+
+Charge-sink cases:
+- U=3 dop 0.6 δ 0.5/1.0;
+- U=4 dop 0.3 δ 0.
+
+Weak-ghost cases:
+- U=4 dop 1.0 δ 0.5/1.0/1.5;
+- U=4 dop 0.6 δ 0.5.
+
+| case | default | pin | inner |
+|---|---|---|---|
+| sink U3 d.6 δ.5 | frozen 8e-2, fill 0 | 5e-3 (best 1e-3), fill .6 | 7e-2, fill .4 |
+| sink U3 d.6 δ1 | frozen 1e-1, fill 0 | 1e-2, fill .6 | 3e-1, fill 2 (wrong) |
+| sink U4 d.3 δ0 | frozen 6e-2, fill 0 | 1e-1, fill .2 | conv 231, fill .3 |
+| weak U4 d.6 δ.5 | 4e-2 (best 4e-3) | 2e-2 | 3e-1, fill 2 (wrong) |
+| weak U4 d1 δ.5 | 8e-2 | conv 239, n_c=[1,.5], ghost→dec | 7e-1, fill -2 (wrong) |
+| weak U4 d1 δ1 | 2e-1 | 1e-1 | 3e-1, fill 2 (wrong) |
+| weak U4 d1 δ1.5 | 2e-1 | 8e-2 | 2e-1, fill 0 (wrong) |
+
+Findings:
+- **Charge sink.** Default DIIS sits exactly frozen there: sc is constant and the doping charge stays in the decoupled flat bands. The pin always releases the charge but converges in none of the 3 sink cases.
+- **Weak-ghost cases.** Under default DIIS these wander between 1e-2 and 5e-1. They are chaotic, not a smooth plateau like berlingreen (1.6e-4). The pin converges 1 of 4.
+- **Inner solve.** It ends at the wrong filling (|fill−doping| up to 3) in 5 of 7 cases, and converges 1 of 7. Rejected for doped systems.
+- **Pin overall.** Best of the three (1/7 converged, 6/7 with the charge released), but not robust.
+- **Open question.** Whether a fixed point with a weak (not decoupled) ghost exists in these cases is unknown. The one pin convergence ends with the ghost fully decoupled.
+
+### Do these cases have fixed points? (diis/root_check.py)
+
+Method: ScipyRoot hybr (plain get_lambda, maxfev 3000), started from the best DIIS x (default or pin start, 300 cycles).
+
+Results:
+- Root found in 2/14 runs (sc ≤ 1e-10), both from pin starts:
+  - U3 dop.6 δ.5: n_c=[.8,.5], E=4.132;
+  - U4 dop1 δ.5: n_c=[1,.5], E=8.218 (already converged by the pin).
+  Both are orbital-selective: orbital 2 at exactly ½, its ghost decoupled (|vR| ~1e-11), the other ghosts 0/1.
+- The remaining 12 runs stop at 1e-3..8e-2 after 150–900 evals. Most sit in the same orbital-2 = ½ state with a weak ghost (2e-4..7e-3) whose coupling shrinks along the way. So "weak ghost" here looks like a transient towards a decoupled fixed point, where the Jacobian is singular. It is not a separate weak-ghost solution, and so it is unlike berlingreen Fe2 t2g (0.664).
+
+Pin detection bug (U3 dop.6 δ.5):
+- The pin held 0 ghosts for all of the last 80 cycles, yet hybr found a root there with 2 decoupled ghosts.
+- Cause: the two near-½ ghosts are degenerate in rho_f, so eigh returns an arbitrary mix of the coupled (2e-2) and decoupled (1e-5) directions, and both exceed COUPLING_TOL.
+- Fix: within the near-½ eigenspace, take the SVD of the R rows and hold the directions with singular value < COUPLING_TOL.
+
+Pin chatter: detection still flips 0↔2 every few cycles (U4 dop.6 δ.5, U4 dop1 δ1/δ1.5). It needs hysteresis.
+
+### Pin: SVD detection and hysteresis (diis/decoupled_pin.py v2; v1 kept as decoupled_pin_v1.py)
+
+Changes:
+- Detection is now the SVD of the R rows within the rho_f eigenspace near ½.
+- Hysteresis: a block keeps up to its previous held count while the singular values stay below PIN_RELEASE_TOL (default 10×COUPLING_TOL; set it to 1e-3 to turn hysteresis off).
+
+| | v1 eig | v2 SVD+hyst | v2 SVD only |
+|---|---|---|---|
+| undoped no-mix (15) | 15/15 | 14/15 (U4 δ2.1 fails) | 14/15 (U4 δ2.1 fails) |
+| doped (7) converged | 1 | 0 | 0 |
+| doped best sc | 3e-10,1e-3,8e-3,... | 2e-4,3e-3,1e-6,4e-3,1e-2,2e-2,4e-2 | 1e-3,5e-7,3e-6,2e-2,5e-5,1e-2,4e-2 |
+
+Findings:
+- No clear win. Per-case outcomes change a lot from one variant to the next, so the 7+15 sample is dominated by chaos.
+- Doped pin runs reach the hybr roots (U3 dop.6 δ.5: E=4.1318, matching hybr), down to 5e-7..5e-5. Then they bounce back up and do not finish in 300 cycles.
+- The held set still flips 2→0 occasionally even near the root (U4 dop1 δ1 at 2e-6, coupling 6e-12). That suggests a DIIS extrapolation jump transiently raises the coupling. It is not detection noise.
+- Hysteresis keeps the U4 dop.3 sink held (4 ghosts), which preserves the sink.
+- Remaining failure mode: DIIS fails to finish near a decoupled solution, because each change of the held set changes the map and the history mixes both maps.
+
+### Pin + history reset on held-set change (decoupled_pin.reset_on_change, PIN_RESET=1, SVD, no hysteresis)
+
+Mechanism: when the per-block held counts change, the callback takes a plain step to the last output and clears the DIIS history.
+
+Undoped no-mix:
+- 15/15 converged, but 5 end on a higher-energy state than v1. For example, U3 δ.5 gives E=2.000 vs 1.427; also U3 δ1/δ1.75 and U4 δ.3/δ1.8.
+
+Doped:
+- 2/7 converged:
+  - U4 d1 δ1: E=7.9682, decoupled ghost, 91 cycles;
+  - U3 d.6 δ1: E=3.9836, a coupled-ghost solution, 118 cycles.
+- The others reset 10–42 times. Most of them reach 2e-7..8e-6 and are then kicked into fill = 2 or [½,½] states.
+
+Rejected: the plain steps after each reset jump branches and lose the lowest-energy solution. Overall: pin v1 (eig detection, no reset) is still the best on the undoped model, and nothing tested is robust on the doped model.
+
+## Ligand model (diis/ligand_model.py, ligand_scan.py, 2026-11-04)
+
+Model:
+- the crystal-field model plus a ligand orbital per spin, with dispersion e_k+eps_L, hybridized by V with both correlated orbitals;
+- n_target=3, U/J = 4/0.7, B=3;
+- fresh Pulay(mixing_period=None), maxiter 300;
+- scan: eps_L 0.5..2, V 0.3/0.6, δ 0..2.
+
+Findings:
+- **Berlingreen-like plateaus.** 9 of the 40 runs end unconverged at sc 2e-7..6e-4 with a weak ghost (|vR| 1e-7..1e-3, or "dec" at 1e-7), in an orbital at n=0.50–0.51 (not exactly ½), with the other orbital fractional (0.02–0.25). Examples:
+  - eps_L=2 V=.3 δ=1: 5e-4, |vR| 2e-5;
+  - eps_L=2 V=.3 δ=1.5: 5e-4, |vR| 9e-6;
+  - eps_L=1.5 V=.3 δ=1: 6e-4, |vR| 1e-5.
+- **Other failures.** A few runs end at 1e-2..3e-1 with a coupled ghost near ½ (|vR| ~0.1–0.5).
+- **Converged runs.** The ones that converge have a ghost at exactly ½ with |vR| 1e-11 ("dec"), a coupled ghost at ½ (~0.5), or no ghost near ½.
+- **Comparison with the doped model.** Unlike the doped model, the stuck runs here sit close to a solution, as berlingreen does. The weak-ghost orbital is still near ½, though.
+
+### Ligand plateaus: default vs pin v1 vs hybr (diis/ligand_bench.py)
+
+Measured at the final state: excess = Σ_flat w(f−½), offset = mean decoupled level − μ.
+
+**Easy class: 7 cases** (eps_L 0.5/1.0)
+- Default stalls at 9e-8..1e-5, and its excess/offset = −50 = −2·β/4 in every case. This is exactly the berlingreen signature: a common offset charging the flat bands.
+- The pin converges 7/7 in 50–178 cycles, to the same energy (ΔE ≤ 7e-5), with the ghost decoupled (1e-10..1e-13).
+- Hybr stalls at 1e-9..1e-5 after ~145 evals, because the Jacobian is singular.
+
+**Hard class: 5 cases** (eps_L 1.5/2.0, V 0.3; the coupled orbital at 0.10–0.32)
+- Default reaches 5e-4..3e-2, with the weak ghost at |vR| 1e-5..9e-4 and an excess of 5e-4..4e-2.
+- The pin reaches 1e-3..1e-1 (best 2e-4..9e-4).
+- Hybr reaches 1e-4..8e-4.
+- Nothing converges. This matches berlingreen: plateau 1.6e-4, excess 6–7e-4, and the all-16 pin failed there too.
+
+**Controls**
+- Default and hybr converge all 3.
+- The v1 pin fails eps_L=2 δ=0 (6e-5), which has 2 degenerate decoupled ghosts. It holds only one of them (2e-3 / 1e-5), which is the eigh-mixing detection bug that the v2 SVD detection addresses.
+
+### Ligand hard class: temperature and SVD pin (diis/hard_ligand.py, ligand_bench.py pin2)
+
+**Temperature** (default DIIS, fresh, then hybr from its best x)
+
+| β | default converged | hybr from best |
+|---|---|---|
+| 100 | 0/5 (best 1e-4..2e-3) | stalls at the same point (145 evals, no progress) |
+| 200 | 4/5 | 1e-14 |
+| 400 | 5/5 | 1e-14 |
+
+- The converged solutions have the ghost decoupled (|vR| ≤ 1e-10), except eps_L 1.5 δ1.5, where it is coupled (0.3).
+- The solutions found at β=200/400 have energies close to the β=100 stuck points. For example, eps_L 1.5 δ1: 2.21983 (β 200) vs 2.22069 (β 100 stuck).
+- At β=100 excess/offset = −50 = −2β/4 again. The residual is split comparably between the near-½ ghosts and the rest (e.g. 5e-4 / 8e-4), so it is not only a decoupled-ghost problem.
+- Reading: at β=100 hybr makes no progress from a non-root point, and the residual has a nonzero minimum. That looks like a fold (saddle-node) where the decoupled-ghost branch stops existing as T rises. Untested.
+
+**SVD pin** (with hysteresis / without)
+- Easy class 7/7 both ways, with the same energies.
+- Hard class 0/5 both ways.
+- Control eps_L 2 δ0 fails both ways (3e-4 / 2e-5), although default converges it.
+- The held ghosts there have coupling 1e-3 and 4e-4, i.e. not yet decoupled. Pinning a ghost whose R row is ~1e-3 changes the map away from its fixed point, so COUPLING_TOL=1e-3 is too loose for this case.
+
+### β continuation of the hard class (diis/beta_cont.py) and pin threshold 1e-5
+
+**Continuation:** default DIIS at β=400, then hybr at each lower β from the previous x.
+
+The 4 decoupled-ghost cases:
+- Follow the solution to β=115 with sc ≤ 5e-8 (mostly 1e-13), coupling ≤ 3e-7, and E smooth.
+- At β=100 all 4 fail together: sc 1e-4..6e-4, and the coupling grows to 4e-5..1.2e-3.
+- That the parameters differ yet the β at which they fail is shared suggests a common mechanism. A candidate is a pitchfork, where the decoupled ghost starts to couple: a weakly coupled branch R ~ sqrt(β_c−β) with a near-singular Jacobian. That would be like berlingreen Fe2 t2g. Untested.
+- No temperature threshold was found in the k-integration code.
+
+The fifth case, eps_L 1.5 δ1.5 (coupled ghost, 0.3), fails from β=200 down (sc 1.5e-3..8e-3).
+
+**Pin with COUPLING_TOL 1e-5**
+
+| | easy 7 | controls 3 | hard 5 |
+|---|---|---|---|
+| with hysteresis | 6/7 | 1/3 | 0/5 |
+| no hysteresis | 7/7 | 2/3 (eps_L 2 δ0 at 6e-7) | 0/5 |
+
+- No hysteresis at 1e-5 is the best pin setting so far, but it is slower than 1e-3 (62–232 vs 50–178 cycles).
+
+### Fine and warm β (beta_cont.py FINE=1; hard_ligand.py at β 80/60/40)
+
+**Continuation** (3 cases): the 1-decoupled-ghost branch converges to 1e-14 down to β≈104–110 (case dependent; hybr is erratic near the edge). Warmer, every case fails, and the stuck residual grows steadily with T: 1e-4 at 100, then 1e-3..6e-3 at 40. The coupling at the stuck point stays 1e-5..1e-3, with no sqrt growth.
+
+**Fresh DIIS + hybr**
+- eps_L 2 δ0.5 and δ1 converge at β 80/60 (δ0.5 also at 40) to solutions with **2** decoupled ghosts.
+- eps_L 2 δ1 at β 40: 2 decoupled ghosts plus 1 coupled ghost near ½.
+- Fillings are close to the cold branch (e.g. [0.502, 0.24] vs [0.501, 0.249]).
+- eps_L 1.5 δ1/δ1.5 and eps_L 2 δ1.5: no solution at β ≤ 80 (hybr best 8e-4..4e-3).
+
+**Reading**
+- Not a pitchfork to a weakly coupled solution.
+- The 1-decoupled-ghost representation stops being a solution near β≈105 (fold-like: the minimal residual grows from 0 as T rises).
+- Warmer, the same physical state needs a different number of decoupled ghosts. Neither DIIS nor hybr moves between those representations.
+- Not yet tested: whether decoupling one more ghost from the stuck β=100 state gives the solution.
+
+### Decouple-one-more-ghost move (diis/decouple_test.py, eps_L 2 δ1)
+
+Ghosts in the stuck state vs the converged solution (up block; n/|vR|):
+
+| | ghost occupations (coupling) |
+|---|---|
+| stuck β80 | .011(.65) .026(.57) .30(.63) .5(8e-4) .92(.34) .99(.67) |
+| solution β80 | .012(.65) .107(.72) .5(1e-11) .5(9e-12) .64(.47) .99(.66) |
+
+So the second decoupled ghost does not come from one ghost moving to ½. The .03/.30/.92 ghosts reorganize into .11/.5/.64.
+
+Move: decouple ghost g of the stuck state (R row → 0, Λ → QΛQ + μP), then hybr. Tried on every ghost not near ½ (5 per β):
+- **β80:** only ghost 1 works (n=.026, coupling .57, i.e. strongly coupled). It reaches 2e-14 at the reference solution (E=3.03990, identical). The other 4 end at 7e-3..2e-1.
+- **β60:** none of the 5 works (4e-3..1e-1).
+
+Not a general fix: 1 of 10 tries worked, and the right ghost is neither the weakest coupled nor the one nearest ½.
+
+### Hard class with B=2 (hard_ligand.py, env B=2)
+
+- Default DIIS converges 14/15 (β 100/80/60 × 5 cases). The exception, β80 eps_L 2 δ1.5, is at 3e-3, and hybr finishes it at 5e-13.
+- Every solution has 1 decoupled ghost, and excess/offset = −β/2 at the DIIS end, as before.
+- B=2 energies are higher than B=3 by ~0.015:
+  - eps_L 2 δ1 β80: 3.05491 vs the B=3 2-ghost solution 3.03990;
+  - eps_L 1.5 δ1 β100: 2.23476 vs B=3 2.22053 at β115.
+- Fillings differ by ~0.015 too (second orbital 0.128 vs 0.143).
+- So the hard class comes from B=3 ghost redundancy. B=2 is robust here but less accurate.
+- B=2 is not available for berlingreen: 5 orbitals per spin block give 5 ghosts per spin (odd), so there is no Sz=0 half-filled state.
+
+### Check: B=3 started from a B=1/B=2 solution (diis/embed_test.py)
+
+This is a diagnostic only. It is not a general fix, because B=2 is not a valid metal (g-GA paper) and B=1 is plain RISB.
+
+Setup: the extra ghosts get level μ and R rows seeded at 1e-2. Then default DIIS runs, followed by hybr if DIIS does not converge.
+
+**From B=2:** 12/15 converge with DIIS, including 4/5 at β=100, where fresh B=3 fails.
+- All have ≥1 decoupled ghost.
+- At β80 eps_L 2 δ1 this reaches the known 2-ghost solution, E=3.03990.
+- β=100 solutions, e.g. eps_L 2 δ1 3.03847 and eps_L 1.5 δ1.5 2.02854, lie above the fresh-B=3 stuck near-misses (3.02766 at eps_L 2 δ1), which are not solutions.
+
+**From B=1:** 12/15 converge, but mostly to another B=3 solution.
+- That solution has a coupled ghost near ½ (|vR| 0.4–0.6) and an energy 0.02–0.04 higher. For example, eps_L 2 δ1 β80 gives 3.07569 vs 3.03990.
+- 3/15 reach the low branch.
+
+**Reading:** B=3 has several self-consistent solutions, which differ in ghost arrangement, and the start picks the branch. A B=1 start, the only small-B start possible for berlingreen, tends to pick a higher-energy branch.
+
+### Exact impurity chemical potential loop (diis/imp_mu.py, imp_mu_bench.py)
+
+Scheme:
+- qp bands are filled at a fixed chemical potential 0;
+- the physical μ acts only on physical orbitals: −μ on the impurity physical orbitals (h0_loc_matrix) and −μ on the ligand in the lattice;
+- each cycle, Brent solves μ so that Σ impurity Tr ρ_c + ligand density = 3. Every trial is a full set of impurity solves.
+
+Why it is equivalent: at fixed embedding particle number, −μ n_c is the same as Λc → Λc − μ. So this is the standard scheme with μ absorbed into Λ, and it has the same fixed points (confirmed: identical energies where both converge).
+
+**μ placement**
+- In zero-T LatticeSolver, mu=None by default, so the embedding gets no μ, which is standard.
+- If mu is passed, −μ N_total in the fixed half-filled sector is a constant and has no effect.
+- ThermalLatticeSolver puts μ in H_qp and also −μ N_total on the impurity, whose ensemble spans N±1.., where it is not a constant. By the argument above, the standard scheme has no μ in the embedding, so this looks suspicious. Unverified against the thermal derivation.
+
+**Results** (Pulay, mixing_period=None, 300 cycles)
+
+| | default | pin v1 | imp μ |
+|---|---|---|---|
+| β100 easy (7) | 0/7 (9e-8..1e-5) | 7/7 | 5/7 (others 4e-4, 3e-6) |
+| β100 hard (5) | 0/5 | 0/5 | 0/5 (1e-3..1e-2) |
+| β100 controls (3) | 3/3 | 2/3 | 2/3 (eps_L 2 δ0 at 2e-2) |
+| β80 hard (5) | 2/5 | — | 2/5 (same solutions; eps_L 2 δ1.5 at 8e-5) |
+
+- Cost: ~8–10 impurity solves per cycle (bracket plus Brent), against 1 for default.
+- Reading: taking the decoupled flat bands out of the filling fixes most easy plateaus, but less well than the pin and at ~9× the cost. It does not touch the hard class, as expected if there is no solution on that branch, and it breaks one control.
+
+### Impurity μ as an optimizer unknown (diis/imp_mu_diis.py)
+
+Same scheme as the exact loop, but μ is appended to x, as ThermalLatticeSolver does: the update is μ − (n − n_target)/SLOPE, with residual n − n_target. One impurity solve per cycle, plus ~13 for an exact starting μ.
+
+| β100 | default | pin v1 | imp μ exact | μ in x, slope 1 | μ in x, slope 0.3 |
+|---|---|---|---|---|---|
+| easy (7) | 0/7 | 7/7 | 5/7 | 3/7 (+2e-8, 6e-7, 6e-6) | 5/7 (one at 3e-10 counted) |
+| hard (5) | 0/5 | 0/5 | 0/5 | 0/5 | 0/5 |
+| controls (3) | 3/3 | 2/3 | 2/3 | 2/3 | 2/3 |
+| solves/cycle | 1 | 1 | ~9 | 1 | 1 |
+
+- Failures:
+  - eps_L 1 δ1.5 (easy) ends in a coupled-ghost state at 4e-2..5e-2;
+  - control eps_L .5 δ.5 ends at 3e-3/1e-2 (default converges it).
+- β80 hard, slope 1: 2/5, the same solutions as default; eps_L 2 δ1.5 at 4e-7.
+- Reading: as good as the exact loop at 1/9 of the cost, with two regressions. Still no effect on the hard class. The pin remains better on the easy class.
+
+### Where μ goes (checked against the code and arXiv:2603.20559 Eq. 27)
+
+- The quadratic embedding H0_emb (get_h0_emb) has −μ on both the quasiparticles f and the bath b. The paper's λ and λ^c include μ; the code pulls it out.
+- The impurity bath must equal H0_emb's bath, so it also gets −μ n_b. The physical c replace f and get −μ n_c. So −μ N_total on the thermal impurity is correct.
+- Zero T: the fixed half-filled sector makes −μ N_total a constant, so LatticeSolver drops it and μ acts only via f(E−μ). This is the same physics.
+- "μ on physical orbitals only" is right only in the gauge where μ is absorbed into Λ (qp chemical potential fixed), as in imp_mu*.py.
+- Thermal tests pass: low-T equals zero-T, fixed filling equals fixed μ, and N = −∂Ω/∂μ.
+
+### Hard class near T=0 (hard_ligand.py at β 2000, 1e5)
+
+- Default DIIS converges all 5 hard cases (sc ≤ 2e-10; hybr then reaches 1e-14).
+- Mostly they reach a different solution: the ghost near ½ is coupled (|vR| 0.18–0.33) and no ghost is decoupled. The energy is below the β=400 decoupled solutions (eps_L 1.5 δ1: 2.21737 vs 2.21966).
+- The exception, eps_L 2 δ1 at β2000, still has a decoupled ghost.
+- So the hard class exists only near β≈100 (the fold). At T=0, where the benchmarks/ energy formulation is valid, there is nothing hard here to test it on.
+
+### Correction: β in the ligand and berlingreen sections is band smearing
+
+- Every ligand-model run and berlingreen use LatticeSolver: the impurity ground state in the half-filled sector, with β only Fermi-smearing the qp bands.
+- "Temperature", "warmer" and "colder" above mean smearing width. The fold near β≈105 means the decoupled-ghost solution of the smeared equations disappears as the smearing grows.
+- The thermal saddle in benchmarks/adiis_hard.md belongs to ThermalLatticeSolver (thermal impurity) and does not apply here.
+- The zero-T energy formulation applies with smearing if the band energy becomes the Mermin form E_band − T S_smear.
+
+### Energy objective on the ligand model (diis/energy_ligand.py, energy_gradcheck.py)
+
+Port of benchmarks/adiis.py:
+- y = (D, upper Λc) of the up block, 33 coordinates, no gauge fixing;
+- impurity ground state, then R = get_r, then an inner Λ fit (hybr, 21 unknowns) to ρ_qp = ρ_f in the smeared, fixed-N bands;
+- F = Σ f E − Tr Λρ_qp − S/β + ⟨h_int + h0_loc⟩ (Mermin form);
+- mapped fields from get_d/get_lambda_c, and the adjoint gradient as in adiis.py (MINRES on the 4900-state Sz=0 sector).
+
+No optimizer comparison was possible:
+1. **Default start:** the inner fit is not representable (the "representable target" of the note). The impurity gives n_c = 0.40 per spin, so the fixed total N needs a ligand charge of 1.1 per spin; the fit floor is 0.024. This needs the note's canonical μ extension, which is not implemented.
+2. **Decoupled-ghost solution** (control eps_L .5 δ.5): the inner fit fails (8e-2) even at the converged solution.
+3. **Hard stall point** (eps_L 2 δ1, DIIS best): the inner fit is unique for a fixed y, but F jumps by 0.06–0.1 for |δy| = 1e-5. Finite differences grow like 1/h, and the adjoint does not match.
+   - Cause: the impurity ground state is degenerate. In the half-filled Sz=0 sector the two lowest levels differ by < 5e-7, the next by 0.067.
+   - At a regular coupled-ghost solution (eps_L 1.5 V.6 δ1) the gap is 0.069, and the adjoint and finite differences agree to the noise (~5e-8, at a stationary point).
+4. **Reading:** a ghost at ½ with R row ~0 makes the embedding ground state (quasi-)degenerate, with gap ~ coupling². A single ground state then gives ρ_f for that ghost anywhere in the degenerate pair, so the map and the energy are discontinuous there. This affects the root DIIS map too, and may be why the stalls are plateaus.
+   - An exactly decoupled ghost with ρ_f = ½ needs an equal-weight ensemble of the pair, which the zero-T solver does not form.
+   - Next check: FockitImpuritySolver(beta=...) weights states within the half-filled sector. It would average the pair.
+
+### gem on the ligand cases (diis/gem_ligand.py; gem cloned to scratchpad/gem-src, pure Python + numba)
+
+How gem's zero-T loop (example E3) works:
+- bands are Fermi-smeared (Tsmearing = 1/β) at a fixed chemical potential;
+- μ sits on the impurity physical orbitals, refitted (mode 'imp', regula falsi) when |n − n_target| > 1e-4;
+- impurity: ground state in the half-filled Sz=0 sector;
+- linear mixing of Λ and R with 0.2 old weight (no DIIS);
+- convergence measure: the change in the Λ eigenvalues and in |U R| (U = Λ eigenvectors) between input and output, i.e. a gauge-invariant step, with tol 1e-4.
+
+Model setup: the ligand is a U=0, B=1 fragment, and the interaction is density-density Kanamori, built by hand. On the control eps_L 1.5 V.6 δ1 it reproduces risb (μ 2.31550 vs 2.31551, the same n_c).
+
+Results at β=100, 300 iterations, run to a step of 1e-10:
+- easy 7/7 (30–95 iterations, ghost |vR| ~1e-15);
+- hard 4/5 (82–202 iterations; 2 decoupled ghosts, e.g. eps_L 2 δ1 n_c [0.5016, 0.2432]); eps_L 1.5 δ1.5 at 2e-2;
+- controls 2/3 (eps_L .5 δ.5 at 3e-4, which risb default converges);
+- 78–444 impurity solves.
+
+So the hard-case solutions exist at β=100 and gem reaches them. Candidate reasons, untested:
+1. linear mixing instead of DIIS;
+2. impurity μ (alone with DIIS it gave 0/5 hard);
+3. gem's start (tanh levels, R = D = 1/√B);
+4. the ligand as a fragment.
+
+### ThermalLatticeSolver on the ligand cases (diis/thermal_ligand.py, stopped early)
+
+Setup: FockitThermalImpuritySolver (lowest, delta 2, eta 8), production default solve, β=100. About 6–30 s per cycle with 14 parallel jobs. Stopped after 3 of 15 finished.
+
+All 3 converged:
+- eps_L .5 δ.5: 63 cycles, n_c [0.488, 0.053], no ghost near ½;
+- eps_L 1.5 V.6 δ1: 55 cycles, matches zero-T n_c [0.497, 0.181];
+- hard case eps_L 2 δ1.5: 30 cycles, n_c [0.511, 0.185], no ghost near ½ (others 0.14/0.65).
+
+So the thermal formulation does not need decoupled ghosts here, and its one finished hard case converged quickly.
+
+### Impurity in-sector Boltzmann smearing (FockitImpuritySolver beta; IMP_BETA in ligand_model.py)
+
+| ligand cases, band β100 | default GS | default imp β1000 | pin GS | pin imp β1000 | default imp β100 (14/15 run) | pin imp β100 (7/15 run) |
+|---|---|---|---|---|---|---|
+| easy (7) | 0/7 | 2/7 | 7/7 | 5/7 | 3/7 | 6/7 (7th at 4e-5) |
+| hard (5) | 0/5 | 1/5 (eps_L 2 δ.5, 2 dec. ghosts) | 0/5 | 0/5 | 0/5 | — |
+| controls (3) | 3/3 | 2/3 | 2/3 | 1/3 | 1/2 | — |
+
+- Not a fix: some easy cases end in coupled-ghost states, and the pin gets worse.
+- β=100 impurity smearing is slow, because Lanczos needs every state up to 32/β. The runs were stopped early.
+
+### Are gem's converged states risb fixed points? (diis/check_gem_fixed_point.py)
+
+Method: gem's final R, Λ, μ go into risb with the same scheme (qp μ = 0, μ on the impurity physical orbitals and the ligand), then one cycle.
+
+| case | max|f1| | max|f2| | filling error |
+|---|---|---|---|
+| control eps_L 1.5 V.6 δ1 (no decoupled ghost) | 1e-11 | 8e-12 | −1e-5 |
+| easy eps_L .5 δ1 | 2e-12 | 1.5e-2 | 4e-5 |
+| hard eps_L 2 δ1 | 5e-12 | 1.8e-2 | −2e-5 |
+| hard eps_L 1.5 δ1 | 3e-11 | 1.5e-2 | −6e-5 |
+
+f2 is ~1e-11 on every coupled ghost. All of the 1–2e-2 is on the decoupled ghosts (n=½, |vR| ≤ 2e-11):
+- gem leaves their levels at +5e-4..8e-4 above the qp chemical potential, so the flat bands hold 0.48 instead of ½;
+- gem's step measure does not see this, because Λ for a decoupled ghost stops changing and its R row is 0;
+- the filling error ≤ 1e-4 is gem's ntol.
+
+So gem "converges" by not requiring f2 = 0 on decoupled ghosts. Those ghosts carry no physical weight, and the physical results agree with risb's pin (easy: n_c [0.5041, 0.0198] vs [0.504, 0.020]).
+
+In risb the qp count fixes μ and includes these flat bands, so exact ½ is enforced. Near β≈100 that may be what has no solution (the fold). This is untested: a risb residual that excludes decoupled-ghost directions, or the impurity μ plus such a residual.
+
+### Berlingreen history: gem's step measure and observables (diis/berlin_gem_measure.py)
+
+Method: Λ_out and R_out are recomputed per entry from the stored D, Λc, ρ_f, ρ_cf; gem measure = max over up blocks of the change in eig Λ and in |UᵀR|.
+
+| run | root error | gem measure (all / without n≈½, \|vR\|<1e-3 ghosts) | E (eV) | Fe2 n | Fe2 S² |
+|---|---|---|---|---|---|
+| A entry 9 | 1.6e-4 | 1.6e-2 / 1.6e-2 | −105.03380 | 5.44599 | 2.2668 |
+| A2 plateau (7 entries) | 1.3–2.4e-4 | 2.9e-3..1.5e-2 / same | −105.0339..−105.0344 | 5.44593–6 | 2.2669–70 |
+| I3 end | 2.8e-5 | 5.0e-4 / 5.0e-4 | −105.03165 | 5.44610 | 2.2665 |
+
+- gem would **not** call berlingreen converged: its step stays ≥ 5e-4, above gem's 1e-4, even where the root error is 2.8e-5.
+- The step is not on the decoupled ghosts. Excluding them leaves it unchanged, so it comes from the Λ of coupled or weakly coupled ghosts, which get_lambda determines poorly.
+- Physical spread between the 1.6e-4 plateau and I3 (2.8e-5): Fe occupations 1.5e-4, Fe2 S² 4e-4, total energy 2.4 meV; the energy also varies by 0.5 meV within the plateau.
+- So the berlingreen plateau is not the gem-type "f2 only on decoupled ghosts" state. Its leftover residual moves the energy at the meV level.
+
+### risb with gem's choices, gem-like stop (diis/compare_gem.py, STOP=coupled)
+
+Stop rule: the residual with decoupled ghosts excluded (n within .05 of ½, |vR| < 1e-6; their f2 rows/columns and f1 columns dropped) < 1e-9. β=100, 300 cycles.
+
+| variant | easy 7 | hard 5 | controls 3 | cycles (converged) | solves/cycle | s/solve |
+|---|---|---|---|---|---|---|
+| risb DIIS (baseline) | 4 | 0 | 3 | 59–179 | 1 | 0.08–0.12 |
+| DIIS + imp μ (exact loop) | 5 | 0 | 2 | 19–264 | ~9 | 0.05–0.09 |
+| DIIS + imp μ + gem start + warm eigsh | 4 (+1 error) | 0 | 1 | 29–285 | ~9 | 0.05–0.08 |
+| recursion error + lambda_eigenbasis | 0 (spurious) | 0 (spurious) | 1 | — | 1 | 0.1 |
+| lin 0.2 + imp μ + gem start + warm (all gem) | 0 (coupled 2e-7..1e-3) | 4 | 2 | 35–132 | ~8 | 0.05–0.07 |
+| gem itself | 7 | 4 | 2 | 30–202 iterations | 2–3 | 0.17–0.25 |
+
+Notes:
+- **All-gem risb, hard cases:** it reaches gem's solutions (E 3.14398, 3.03883; also eps_L 2 δ1.5 2.89326, and eps_L 1.5 δ1.5 2.02854, which gem itself fails). It misses eps_L 1.5 δ1, which gem gets.
+- **All-gem risb, easy cases:** it does not finish in 300 cycles, though gem does in 30–95. Unexplained. Candidates: the ligand as a fragment in gem; gem refits μ only when it is off by > 1e-4; symmetrization.
+- **Recursion + lambda_eigenbasis** (μ from the qp count): with decoupled-ghost f2 free, charge moves into the flat ghost bands. It "converges" to wrong states, e.g. eps_L 2 δ1 at E 4.54 vs 3.04, with full residual 0.1–0.2. So ignoring decoupled-ghost f2 is only safe when μ acts on the impurity, as in gem.
+- **What the hard cases need:** linear mixing + impurity μ + the gem-like stop. DIIS + impurity μ does not get there, and linear mixing with qp-count μ is unstable.
+- **Speed:** risb per solve is ~2× faster than gem. The exact Brent μ loop costs ~8 solves per cycle against gem's 2–3.
+- **Energies:** gem's hard-case solutions lie above risb's stalled near-misses. E.g. eps_L 2 δ1: 3.03883 vs 3.02646 stalled, the stall not being a solution.
+
+### Lazy μ refit and ligand as a fragment (compare_gem.py lazy / LIGAND_FRAGMENT=1, all on top of lin 0.2 + gem start + warm eigsh, STOP=coupled)
+
+| variant | easy 7 | hard 5 | controls 3 | solves/cycle |
+|---|---|---|---|---|
+| exact μ, ligand uncorrelated (previous) | 0 | 4 | 2 | ~8 |
+| lazy μ (refit when off > 1e-4) | 2 (+3 at 1e-9..3e-8) | 4 | 2 | ~3–4 |
+| exact μ, ligand as U=0 B=1 impurity | 0 (+1 Brent bracket error) | 3 | 2 | ~8 |
+| lazy μ + ligand impurity | 1 | 3 | 2 | ~3–4 |
+| gem | 7 | 4 | 2 | 2–3 |
+
+- Neither change explains gem's easy-case success (30–95 iterations in gem). risb's gem-like runs leave the residual without decoupled ghosts at 1e-9..1e-3 after 300 cycles.
+- Lazy μ cuts the cost to ~3–4 solves per cycle and keeps hard 4/5. It leaves up to 1e-4 filling error: on the control, the energy is 1.78901 vs 1.78890.
+- The Λ formulas match: gem calc_Lambda and risb get_lambda are both −Λcᵀ − ∂Tr[√(ρ(1−ρ)) D Rᵀ]/∂ρ. For a decoupled ghost (D and R rows 0) the map is the identity on its level, so the level never moves and f2 stays nonzero. This happens in both codes.
+
+### risb's gem-like iteration started at gem's converged state (diis/from_gem.py)
+
+Setup: lin 0.8, warm eigsh, impurity μ, ligand uncorrelated, starting from gem's R, Λ, μ; 50 cycles.
+
+| start | μ policy | residual without decoupled ghosts | μ | drift of R / Λ |
+|---|---|---|---|---|
+| easy eps_L .5 δ1 | lazy (1e-4) | 1e-11..1e-12 throughout | frozen 1.662987 (fill error 3.6e-5) | 2e-8 / 5e-8 |
+| hard eps_L 2 δ1 | lazy | → 1e-15 | frozen (fill error −1.8e-5) | 5e-11 / 4e-10 |
+| easy eps_L .5 δ1 | exact every cycle | 4e-5 at cycle 1, then ~1%/cycle decay (1e-5 at 50) | drifts 1.6630 → 1.6498 | 4e-3 / 1.6e-2 |
+
+Findings:
+- gem's state is a stable fixed point of risb's map when μ is lazy.
+- Requiring exact filling moves μ and drags the solution along a very slow mode of linear mixing (contraction ~0.99 per cycle).
+- So gem's fast easy-case convergence rests on two tolerances:
+  1. f2 on decoupled ghosts is ignored;
+  2. a filling error up to 1e-4 is accepted, which freezes μ and removes that slow mode.
+- The fresh-start lazy risb runs (easy 2/7) differ in the path: each refit above 1e-4 kicks the slow mode.
+- DIIS can handle the slow mode: DIIS + exact impurity μ gave easy 5/7, but hard 0/5.
+
+### Summary table: ligand cases, β=100 band smearing, 300 cycles (2026-11-05)
+
+Conventions:
+- "conv" = residual without decoupled ghosts (f1/f2) < 1e-9, so false stops by recursion/canonical criteria are excluded.
+- "best E" = converged at the lowest energy any method found for that case, within ~3e-4 (allowing for ≤1e-4 filling errors).
+
+Lowest known energies:
+- easy: .35553, .11156, −.13516, .03653, −.42204, .94124, .73049;
+- hard: 2.22757, 2.02854, 3.14398, 3.03883, ~2.888;
+- controls: .59440, 1.78890, 3.19304.
+
+| method | easy conv (best E) /7 | hard conv (best E) /5 | ctrl conv /3 | filling at end | solves/case | basis safe |
+|---|---|---|---|---|---|---|
+| gem (lin 0.2, imp μ lazy, ligand fragment) | 7 (7) | 4 (2) | 2 | ≤1e-4 | 78–444 | yes |
+| risb DIIS (qp-count μ), coupled stop | 4 (4) | 0 | 3 | exact | 59–179 | yes |
+| risb DIIS + pin v1 (full f1/f2) | 7 (7) | 0 | 2 | exact | 50–178 | yes |
+| DIIS + exact imp μ, coupled stop | 5 (5) | 0 | 2 | exact | ~9/cycle | yes |
+| lin + lazy imp μ (risb "gem"), canonical stop | 1 (1) | 4 (3) | 2 | ≤1e-4 | 140–1060 | yes |
+| lin→DIIS, root error, coupled stop | 2 (1) | 4 (3) | 1 | exact | 180–2600 | yes |
+| lin→DIIS, recursion + lambda_eigenbasis | 5 (3) | 5 (4) | 2 (+1 false stop) | exact | 200–1100 | no (rotates iterates) |
+| lin→DIIS, canonical error | 5 (1) | 5 (3) | 2 | exact | 220–1350 | yes |
+| DIIS→lin, root error, coupled stop | 2 (2) | 4 (3) | 2 | ≤1e-4 | 200–890 | yes |
+| DIIS→lin, recursion + lambda_eigenbasis | 3 (2) | 5 (4) | 2 (+1 false stop) | ≤1e-4 | 190–1100 | no |
+| DIIS→lin, canonical error | 4 (2) | 5 (3) | 2 | ≤1e-4 | 200–1100 | yes |
+| DIIS only, canonical error | 0 | 0 | 2 | exact | — | yes |
+
+Findings:
+- **Several solutions per case.** The hard case eps_L 1.5 δ1 has at least 3 solutions (2.22757, 2.23249, 2.23353–2.23366), and eps_L 2 δ1.5 has 2 (≈2.888, 2.89326). Easy-case "conv" runs on another branch sit 4e-4..9e-4 higher. Each method picks its own branch.
+- **Easy kind:** solved best, at the lowest energies, by DIIS with qp-count μ plus the pin (7/7) and by gem (7/7, with ≤1e-4 filling error).
+- **Hard kind:** needs impurity μ plus linear mixing at the start. Both lin→DIIS variants converge all 5 at exact filling.
+- **Crashes:**
+  - Brent bracket failure in the impurity-μ loop;
+  - "h_imp does not conserve a diagonal symmetry" in two lin→DIIS 1e-6 runs.
+
+## Berlingreen lin→DIIS schedule (imp_schedule.py)
+
+Start: A-pulay-nomix entry 9. Stage 1 runs linear mixing with α 0.8 and the lazy impurity μ (1e-4, secant refit). The switch to canonical DIIS is set at a canonical error below 1e-4, with a 40-cycle cap.
+- Never switched: the lowest canonical error was 4.5e-4 (cycle 36), and it ended at 1.9e-3. The coupled residual ended at 4.2e-5. The run used 144 solves in 4.35 h (~3.6 solves per cycle).
+- Cycles 5–11 went off course: canonical up to 0.40 and coupled up to 5.6e-2. After that it settled into a 4e-4..3e-3 oscillation.
+- It ended on another branch: Fe2 has Sz 0.000 and S² 2.233, against Sz 0.52 and S² 2.267 for A2 and I3. Fe1 is HS (S² 7.650).
+- Filling error 3e-9. μ = μ0 + δμ = −0.40820.
+- Energy: spincrossover 8528e4d changed E_dc, so the absolute values shift by ~12 eV. With the old E_dc (76.5) the energy is −105.0461, against −105.0341 for A2 and −105.0316 for I3. That is 12 meV lower, but the run is not converged.
+
+Continuation (S3-imp-diis): start from S-imp-lin2diis entry 35, with switch threshold 2e-3.
+- **Restart needs the old μ0 and δμ.** The stored x is Λ' = Λ − δμ. Restarting with a fresh qp μ fit (S2) gave a canonical error of 1.3e-2 and diverged. With SCHED_MU0 = −0.407549 and SCHED_DMU = −6.08e-4 it reproduced 4.7e-4.
+- **Canonical-error DIIS from cycle 2 met the stop at cycle 22.** Canonical 8.8e-7, coupled 2.8e-8, filling −5.4e-7 (lazy 1e-6). 35 solves in 1.4 h.
+- **What's left is on decoupled ghosts only.** run_risb's full f1/f2 is 8.7e-5 and its root error 3.1e-4.
+- **Solution:** Fe1 HS (S² 7.650, n 5.263); Fe2 Sz 0, S² 2.233, n 5.447.
+- **Energy:** E (old E_dc) = −105.0452 eV, 11 meV below A2 (−105.0341) and 14 meV below I3 (−105.0316). Those runs were Fe2 Sz 0.52 and unconverged. The energy uses Tr[H_KS ρ_lattice], so δμ does not enter.
+
+Fresh DIIS only (T-fresh-diis): default start, canonical-error DIIS (Pulay α 0.6, no mixing period), lazy impurity μ (1e-6), 40 cycles.
+- **Spin state:** Fe1 Sz 0 from cycle 1 (S² 1.43). Run A, also from the default start, had Fe1 HS (Sz 2.29) at cycle 1. The cause is unknown; the log headers are identical.
+- **End:** Fe1 S² 1.608, n 5.398; Fe2 S² 2.143; μ −0.2259 (δμ −0.189). E (old E_dc) = −101.006 eV, 4.04 eV above S3.
+- **Convergence:**
+  - coupled 2.5e-7, root error 1.3e-6, full f1/f2 2.4e-7;
+  - canonical error stuck at 2–4e-4 from cycle 25 on, so the stop never fired;
+  - the canonical floor is likely an artifact of near-degenerate Λ levels against the grouping tolerance 1e-3 (unchecked).
+- **Cost:** 259 solves, 4.4 h. Refits took up to 20 solves while δμ moved by 0.19.
+
+Why run A started HS, and a fresh HS start (2026-11-06):
+- **A's start:** A was not fresh. berlingreen_ramp.py set R and Λ from the joint-pin run's cycle 5. run_risb still logs "Starting from the default R and Lambda" because the script sets them itself. The true default start gives Fe1 LS at cycle 1.
+- **Seeds:**
+  - A spin-split seed does nothing: run_risb's equivalence symmetrizer averages up and dn, and Fe1 HS is paramagnetic here (equal up and dn densities, S² 7.65).
+  - An orbital seed works. SEED=1 sets the cold-start Λ shift (run_risb's initial_potential) to −1 on eg (blocks 0, 3) and +2/3 on t2g. Cycle 1 then gives Fe1 S² 7.69.
+- **T2 (seeded, DIIS only, canonical error, α 0.6, lazy impurity μ):** lost HS at cycle 2 (S² 1.59) and never settled. Over 36 cycles canonical stayed at 2–37 and coupled at 0.01–0.9, δμ swung between −2.7 and +0.2, and Fe1 S² ranged 0.8–7.6. 489 solves in 10 h; stopped by hand.
+- **Canonical floor in T:** it is not degeneracy, since the levels are well separated and canonical equals raw. It is Fe1's nearly full ghost (n 0.999996, level −9.43): its level moves 3–8e-4 per cycle because f1/f2 hardly depend on it. The 3.93 level (n 1.6e-4) moves ~1e-5. A canonical stop needs to drop or down-weight nearly full and empty ghosts.
+
+## Density feedback (ac7bd0a) and PhysicalMuLatticeSolver (bb17a49..7f4d3f2) on the ligand cases (2026-11-06)
+
+feedback_bench.py, c = 4/β = 0.04, DIIS Pulay(mixing_period=None), default start, 300 cycles. Stop at risb's full convergence (tol and self-consistency 1e-9, decoupled ghosts included).
+- fb: LatticeSolver with qp-count μ.
+- fblazy: imp_mu_gauge with lazy refit 1e-4.
+- phys: PhysicalMuLatticeSolver(n_target=3).
+
+| variant | easy full conv (best E) /7 | hard /5 | ctrl /3 | solves/case (conv) | filling at end |
+|---|---|---|---|---|---|
+| fb | 1 (1), +1 coupled only | 0 | 1 | 55–270 | ≤1e-3 unconverged |
+| fblazy | 6 (6) | 0 | 3 | 54–788 | ≤5e-5 |
+| phys | 1 (1) | 0 | 2 | 31–85 | exact when converged |
+
+- With the feedback, the decoupled ghosts converge too: fblazy runs end at full f1/f2 ≤ 3e-10.
+- Neither hard cases nor (1.0, 0.6, 1.5) converge with any of the three. In fblazy, (1.0, 0.6, 1.5) and (1.5, 0.3, 1.5) blow up to a residual of 0.3–0.7.
+- spincrossover passes no density_feedback, so berlingreen gets the default c = 0.04, which is 8× 4/β at β = 800.
+
+### Linear mixing → DIIS with the feedback, and a secant μ step for PhysicalMuLatticeSolver (sched_bench.py, secant_mu.py)
+
+- **Common settings:** c = 4/β; gem start; warm eigsh; linear mixing 0.8 until the canonical error (+ μ entry) is below 1e-4, then DIIS on it.
+- **Stop:** full f1/f2 < 1e-9 (decoupled ghosts included) and |filling error| < 1e-8; 300 cycles. "best E" is within 3e-4 of the lowest known.
+- **Measured dn/dμ** at fixed Λ′ and R ranges 0.06–1.9 across cases, so the unit step contracts slowly at 0.06 and is close to unstable at 1.9.
+- **physsec** steps by (N − n)/κ, with κ the secant of successive cycles clipped to [0.02, 5].
+
+| run | easy /7 (best E) | hard /5 (best E) | ctrl /3 | solves/case |
+|---|---|---|---|---|
+| fb lin→DIIS | 3 (0) | 3 (3), incl. 2.22757 | 2 | 94–280 |
+| fblazy lin→DIIS | 6 (4) | 2 (2) | 2 | 64–699 |
+| phys lin→DIIS | 5 (4) | 3 (3) | 2 | 28–266 |
+| physsec lin→DIIS | 6 (5) | 3 (3) | 2 | 32–254 |
+| physsec DIIS only | 1 (1) | 0 | 2 | 28–249 |
+
+- The secant μ step does nothing for DIIS only. With the schedule it adds one easy case.
+- Unsolved by every schedule run: (0.5, 0.3, 1.5) except via fblazy, (1.5, 0.3, 1.0) except via fb, (2.0, 0.3, 1.5) except via fb, and (0.5, 0.3, 0.5) in most.
+- The easy-case misses land on a branch 4e-4..9e-4 higher, at E .03710, .73134 and −.42164.
+
+Full grid, same stop (full f1/f2 < 1e-9 and exact filling). "root" is risb's default DIIS error. "canonical" is canonical_error plus the μ entry; it is also the switch test (root runs switch on max(full residual, filling error) < 1e-4). DIIS-only rows use the default start; schedule rows and "DIIS only, canonical" use the gem start and warm eigsh.
+
+| solver (feedback c = 4/β) | DIIS only, root | DIIS only, canonical | lin→DIIS, root | lin→DIIS, canonical |
+|---|---|---|---|---|
+| LatticeSolver, qp-count μ | 1(1)/0/1 | 0/0/1 | 3(0)/0/1 | 3(0)/3(3)/2 |
+| LatticeSolver + lazy imp μ | 6(6)/0/3 | 3(3)/1(1)/2 | — | 6(4)/2(2)/2 |
+| PhysicalMuLatticeSolver | 1(1)/0/2 | 1(1)/0/2 | 5(4)/3(3)/3 | 5(4)/3(3)/2 |
+| PhysicalMu + secant μ step | — | 1(1)/0/2 | 6(5)/3(3)/2 | 6(5)/3(3)/2 |
+
+- For PhysicalMuLatticeSolver the error makes no difference.
+- Root uses fewer solves per case: 24–189 against 28–266.
+- For qp-count μ, only the canonical error reaches the hard cases.

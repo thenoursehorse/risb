@@ -328,6 +328,23 @@ order parameters, distinguish their instabilities from auxiliary saddle
 directions, and compare the appropriate potentials of converged branches.
 These reductions do not prove a global Gibbs variational upper bound.
 
+\paragraph{Nested and coupled finite-temperature prototypes.}
+\path{benchmarks/thermal_saddle.py} tests local auxiliary maximization and
+simultaneous Newton/extragradient updates of the implemented functional.
+The quadratic and impurity bath rotation gauges are independent, so each
+potential may be diagonalized in its own basis. Gibbs Hessians use complete
+256-state traces for this tiny $B=3$ model and analytic spectral responses;
+Hessian evaluation itself needs no displaced impurity solves.
+At $U=2$, $T=0.2$, a particle-hole-based split gives a concave three-field
+inner block and positive remaining curvature. Nested minimization converges
+from two one-percent nonsymmetric restarts in 12 and 13 impurity solves.
+The common bath shift alone leaves negative directions. Larger starts and
+higher temperatures expose failed inner inversion, loss of concavity, or
+coupled-solver stagnation; no general thermal minimum principle is claimed.
+\path{benchmarks/thermal_saddle.md} records the split, methods, solve counts,
+curvature checks, failures, and production-DIIS comparisons.
+
+
 For a thermal Hamiltonian $H(z)$, the needed response follows from
 \begin{equation}
  \partial_{ab}\Omega
@@ -722,6 +739,218 @@ should leave it. If paramagnetism is deliberately imposed, the minimizer
 can instead find the minimum within that restricted symmetry sector.
 This distinction does not imply that every paramagnetic solution is
 excluded.
+
+\section{ADIIS, EDIIS, and geometric direct minimization}
+\label{sec:qchem-optimizers}
+The following are proposed optimizer adaptations, not additional numerical
+results. They use the admissible zero-temperature objective
+$\mathcal E(y)$ in Eq.~\eqref{eq:zero-objective}. A thermal extension needs a
+reduced free energy with the appropriate minimum property, as discussed
+above. The raw saddle-point Lagrangian is not a descent objective.
+
+\subsection{ADIIS: choose a mixture using a local energy model}
+Q-Chem's
+\href{https://manual.q-chem.com/5.4/sub_adiis.html}{ADIIS documentation}
+describes minimizing an augmented Roothaan--Hall energy model to choose
+coefficients for mixing stored Fock matrices. The coefficients satisfy
+$c_i\geq0$ and $\sum_i c_i=1$: despite the usual extrapolation terminology,
+this is interpolation within the stored history. Its
+\texttt{ADIIS\_DIIS} option starts with ADIIS and switches to residual DIIS
+for final convergence. See also the
+\href{https://doi.org/10.1063/1.3304922}{original Hu--Yang paper}.
+
+For a RISB adaptation, store accepted, gauge-consistent embedding fields
+$y_i$, their constrained energies $f_i=\mathcal E(y_i)$, and their actual
+energy gradients $g_i=\nabla_y\mathcal E(y_i)$. Coordinate scaling and the
+gradient pairing must be consistent. Here $i$ indexes history samples;
+each $y_i$ concatenates all clusters. Relative to the latest point $n$, set
+\[
+ s_i=y_i-y_n,\qquad u_i=g_i-g_n,\qquad
+ y(c)=\sum_i c_i y_i.
+\]
+An augmented Roothaan--Hall-inspired model is
+\begin{equation}
+ m_A(c)=f_n+g_n^{T}\sum_i c_i s_i
+             +\frac12\sum_{ij}c_i c_j s_i^{T} u_j,
+ \qquad c_i\geq0,\quad\sum_i c_i=1.
+ \label{eq:risb-adiis}
+\end{equation}
+Only the symmetric part of $s_i^{T}u_j$ contributes. If $f$ is quadratic,
+$u_i=H s_i$ and this is exactly $f(y(c))$. Otherwise the gradient
+differences supply an approximate Hessian on the sampled subspace.
+An alternative uses a symmetric quasi-Newton Hessian approximation $H_n$
+in $f_n+g_n^{T}s+\tfrac12s^{T}H_ns$, with $s=y(c)-y_n$.
+
+The small coefficient optimization uses stored data, not new impurity
+solves. Evaluating the resulting $y(c)$ still requires the impurity and
+constrained lattice calculation. Nonnegative coefficients preserve the
+convex hull of fields, not the nonlinear RISB constraints or lattice
+representability; every proposed mixture needs its own feasibility check.
+Mixing stored densities instead does not automatically supply a compatible
+embedding ground state and shared lattice state.
+
+Since the latest point is an allowed vertex, a globally minimized model
+satisfies $m_A(c_*)\leq f_n$. This is a model statement, not a guarantee that
+$\mathcal E(y(c_*))\leq f_n$. For a monotone variant, accept a trial only
+after checking its actual
+energy and feasibility, with inner-solve errors smaller than the required
+decrease. Reject or damp a poor trial as in Section~\ref{sec:damping}.
+A history of one cannot move, and a convex search cannot leave its current
+hull. Seed or enlarge the history with a feasible descent trial when needed.
+An SCF-style alternative mixes the mapped output fields and applies the
+proposal without an actual-energy rejection rule. It may take uphill steps;
+feasibility remains required. The standalone prototype below tests this
+alternative rather than the monotone variant.
+
+\subsection{EDIIS: use stored energies as well as gradient differences}
+Q-Chem discusses EDIIS under the
+\href{https://manual.q-chem.com/5.4/Ch4.S5.SS9.html}{relaxed constraint
+algorithm (RCA)}. Its implementation closely follows energy DIIS: minimize
+an energy expression over convex mixtures of density matrices. That
+expression is exact for the quadratic Hartree--Fock energy and approximate
+for nonlinear density functionals. The original EDIIS reference is
+\href{https://doi.org/10.1063/1.1470195}{Kudin, Scuseria, and Canc\`es (2002)}.
+
+Using the same reduced-field history, a quadratic-exact analogue is
+\begin{equation}
+ m_E(c)=\sum_i c_i f_i
+ -\frac14\sum_{ij}c_i c_j
+       (y_i-y_j)^{T}(g_i-g_j),
+ \qquad c_i\geq0,\quad\sum_i c_i=1.
+ \label{eq:risb-ediis}
+\end{equation}
+Here $g_i$ is the full real-coordinate energy gradient. The factor $1/4$
+follows from this convention; density/Fock formulas can carry different
+factors because their Fock and spin conventions differ. For
+$f(y)=a+b^{T}y+\tfrac12y^{T}Hy$,
+\[
+ \sum_i c_i f_i-f(y(c))
+ =\frac14\sum_{ij}c_i c_j
+             (y_i-y_j)^{T}H(y_i-y_j),
+\]
+which establishes the stated identity. For a general RISB reduced energy,
+Eq.~\eqref{eq:risb-ediis} is a proposed surrogate, not an exact
+interpolation of the physical energy throughout the hull.
+
+Unlike Eq.~\eqref{eq:risb-adiis}, this model reproduces each stored energy
+at its corresponding vertex. Both models coincide for a genuinely
+quadratic objective with exact gradients. The related equivalence of
+standard ADIIS and EDIIS for Hartree--Fock is established by
+\href{https://doi.org/10.1063/1.4740249}{Garza and Scuseria (2012)};
+it does not establish their equivalence for the nonlinear RISB objective.
+
+A monotone variant needs the same actual-energy acceptance; either variant
+still needs representability checks and a source of new trial states.
+Replacing Fock matrices by $R$ or $\Lambda$, or
+replacing gradients by the current root residuals, has no such derivation.
+These root residuals are not $\nabla_y\mathcal E$. This construction also
+needs gradients: fitting a surrogate using only energies is another
+possibility, but is not the EDIIS formula above and can require many more
+sampled impurity solves.
+
+\subsection{GDM: direct minimization with the geometry of the variables}
+Q-Chem's
+\href{https://manual.q-chem.com/5.4/sect_gdm.html}{geometric direct
+minimization (GDM)}
+optimizes orbitals through rotations that respect their orthonormal
+geometry, rather than choosing a convex mixture from history.
+Its recommended \texttt{DIIS\_GDM} sequence starts with DIIS and finishes
+with GDM. This differs from the ADIIS-to-DIIS sequence above.
+The original reference is
+\href{https://doi.org/10.1080/00268970110103642}{Van Voorhis and
+Head-Gordon, \emph{A geometric approach to direct minimization} (2002)}.
+
+For example, in an orthonormal one-particle basis, a complete orbital
+matrix can be updated as $C'=C\exp(\kappa)$ with
+$\kappa^{\dagger}=-\kappa$. This preserves $C^{\dagger} C=I$; occupied--virtual
+rotations change the Slater determinant while rotations within equally
+occupied subspaces are redundant. Descent uses the energy gradient in
+these physical directions and an energy-based step-length control.
+
+There are two distinct RISB possibilities:
+\begin{enumerate}
+ \item Keep the reduced embedding-field objective. The impurity solve and
+       inner lattice matching already eliminate the explicit states.
+       Apply a scaled, gauge-fixed descent, quasi-Newton, or trust-region
+       method to $y$, using its true energy gradient. This is direct
+       minimization inspired by GDM, but ordinary BFGS on these fields is
+       not Q-Chem's orbital GDM: $y$ has no orbital-orthonormality constraint
+       for a unitary exponential to enforce.
+ \item Retain the variational quasiparticle orbitals and embedding states
+       as explicit coordinates. Orbital rotations and normalized-state
+       tangent updates can enforce their separate normalizations.
+       The coupled RISB density and hybridization constraints still need
+       constrained tangent directions and a feasible restoration of each
+       trial. Normalization alone does not enforce those constraints.
+       This is a larger new constrained variational solver, and departs
+       from this note's implicit-impurity-state construction.
+\end{enumerate}
+The first route reuses the objective and adjoint gradient already derived
+here and is the smaller experiment. The second requires a new derivation
+of the joint feasible geometry and projected gradient. At finite
+temperature, occupation numbers and thermal density operators introduce
+additional variables; pure-state orbital rotations alone are insufficient.
+Neither route removes physical negative curvature or proves convergence
+to a global minimum.
+
+\subsection{Cost and a possible hybrid experiment}
+For the zero-temperature reduced objective, each new trial needs an
+impurity ground state and a shared lattice density-matching solve. The
+latter varies only noninteracting Hamiltonians: its repeated $k$-sums and
+diagonalizations hold the impurity data fixed and require no additional
+interacting solves. The gradient can use one adjoint response linear solve
+per impurity, Eq.~\eqref{eq:adjoint}, rather than displaced impurity
+ground-state solves for every field coordinate. It still requires
+solver-specific response support and can be ill-conditioned near a small
+gap. Additional line-search trials require additional impurity solves.
+
+A possible comparison would use the same reduced coordinates, initial
+state, inner tolerances, and final physical stationarity checks for:
+BFGS, the ADIIS-inspired model, and the EDIIS-inspired model. Supply a
+feasible descent proposal to enrich either convex-history method. A
+DIIS-to-direct-minimization hybrid is a separate experiment: at the switch,
+construct and evaluate a feasible reduced state rather than assuming an
+unconverged $(R,\Lambda)$ history already supplies reduced energies and
+gradients. If returning to the existing root solver, rebuild its history
+from actual cycle evaluations.
+
+The convex-input-mixture ADIIS and EDIIS proposals above and a geometric
+RISB solver have not been benchmarked. The earlier BFGS results do not
+validate them.
+
+\paragraph{Standalone output-mixing prototype.}
+\path{benchmarks/adiis.py} now preserves the zero-temperature constrained
+objective and dense adjoint calculation using the current APIs. It models
+energies in the input embedding fields, then mixes the expected output
+fields from the RISB equations, in a consistent bath gauge. No physical
+energy line search or rejection is imposed. This is an ADIIS-inspired
+adaptation, not a literal substitution into the SCF formula. It is compared
+with BFGS and production DIIS in five local metallic restart cases;
+\path{benchmarks/adiis.md} records the command, results, and limitations.
+\path{benchmarks/test_adiis.py} checks the physical solutions and gradient.
+One preserved ghost start takes an uphill energy step and converges.
+Different stopping criteria and proposal directions prevent attributing
+its cost advantage over BFGS solely to allowing energy increases.
+Compare complete
+impurity work, response solves, band work, rejected trials, physical
+residuals, and final energies; coefficient-optimization cost alone is not
+a useful measure.
+
+\paragraph{ADIIS-to-DIIS on the same energy.}
+\path{benchmarks/adiis_hybrid.py} retains the reduced coordinates,
+functional, and mapped outputs across the switch. Its late DIIS phase
+minimizes $\|\sum_i c_i\nabla\mathcal E(y_i)\|^2$ subject to
+$\sum_i c_i=1$, with unrestricted coefficients. It does not switch to
+the original saddle-point root problem. Six samples carry across the switch.
+Following Q-Chem's numerical defaults, it tests gradient maximum
+$10^{-3}$ or $10^{-4}$ and a 30-evaluation ADIIS cap; the RISB gradient
+and Q-Chem commutator error have different meanings and scales.
+\path{benchmarks/adiis_hybrid.md} records the small $B=3$ comparisons.
+The zero-temperature hybrid rescues one distorted near-Mott start where
+both pure methods fail their budgets or inner matching; pure gradient DIIS
+is faster on nearby starts. Full thermal runs remain stationarity
+diagnostics until auxiliary maximizing directions are eliminated.
+
 
 \section{Damping, minimum-change steps, and singular fields}
 \label{sec:damping}

@@ -31,6 +31,7 @@ from risb.kintegration import (
     BandObservables,
     Hamiltonian,
     KPoints,
+    max_occupation_slope,
 )
 from risb.optimize import NewtonSolver, ScipyRoot, SolveResult
 from risb.optimize.fixed_point import Callback
@@ -197,10 +198,11 @@ class LatticeSolver(BaseLatticeSolver):
             R = symmetrize(R)
 
         if self.density_feedback is not None:
+            slope = self._occupation_slope()
             for i in range(self.n_clusters):
                 for bl in Lambda[i]:
                     Lambda[i][bl] = self.density_feedback.qp_levels(
-                        Lambda[i][bl], self.R[i][bl], self.f2[i][bl]
+                        Lambda[i][bl], self.R[i][bl], self.f2[i][bl], slope
                     )
 
         if self.pin_full_empty is not None:
@@ -215,6 +217,14 @@ class LatticeSolver(BaseLatticeSolver):
                         self._kinetic_half_bandwidth,
                     )
         return R, Lambda
+
+    def _occupation_slope(self) -> float:
+        smearing = getattr(self.band_integrator, "smearing", None)
+        if smearing is None:
+            return np.inf
+        return max_occupation_slope(
+            smearing, getattr(self.band_integrator, "beta", np.inf)
+        )
 
     def _energy_scale(self) -> float:
         # The largest energy of the model. It is set by the model and not by

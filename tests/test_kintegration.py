@@ -16,6 +16,7 @@ from risb.kintegration import (
     WeightedKPointIntegrator,
     fermi_function,
     gaussian_function,
+    max_occupation_slope,
     methfessel_paxton_function,
 )
 from risb.types import BlockMatrix, BlockMatrixLike, SmearFunction
@@ -39,6 +40,19 @@ def test_band_filling_matches_the_target_with_nonuniform_k_weights(
     assert result.converged
     assert result.n_electrons == pytest.approx(1.2)
     assert result.quadrature_error is None
+
+
+@pytest.mark.parametrize(
+    ("smearing", "slope_per_beta"),
+    [(fermi_function, 1 / 4), (gaussian_function, 1 / np.sqrt(np.pi))],
+)
+def test_max_occupation_slope_of_fermi_and_gaussian_smearing(
+    smearing: SmearFunction, slope_per_beta: float
+) -> None:
+    assert max_occupation_slope(smearing, 800.0) == pytest.approx(
+        800 * slope_per_beta, rel=1e-6
+    )
+    assert max_occupation_slope(smearing, np.inf) == np.inf
 
 
 def test_band_integration_without_mu_or_n_target_raises() -> None:

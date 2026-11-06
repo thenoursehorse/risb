@@ -1,8 +1,12 @@
 """Smearing functions for band integrals."""
 
+from functools import cache
+
 import numpy as np
 from numpy.typing import NDArray
 from scipy.special import erfc, eval_hermite, expit, factorial
+
+from risb.types import SmearFunction
 
 
 def fermi_function(
@@ -35,3 +39,30 @@ def methfessel_paxton_function(
         coefficient = (-1) ** n / (factorial(n) * 4**n * np.sqrt(np.pi))
         result += coefficient * eval_hermite(2 * n - 1, x) * np.exp(-(x**2))
     return result
+
+
+@cache
+def max_occupation_slope(smearing: SmearFunction, beta: float) -> float:
+    """
+    Return the largest ``|df/de|`` of the occupation function ``f(e) = smearing(e, beta, 0)``.
+
+    The derivative is taken numerically for ``|e| < 10 / beta``.
+
+    Parameters
+    ----------
+    smearing : callable
+        Occupation function f(eigenvalues, beta, mu).
+    beta : float
+        Inverse temperature, or inverse smearing width.
+
+    Returns
+    -------
+    float
+        Infinite for ``beta = inf``.
+
+    """
+    if np.isinf(beta):
+        return np.inf
+    energies = np.linspace(-10 / beta, 10 / beta, 20001)
+    slopes = np.gradient(smearing(energies, beta, 0.0), energies)
+    return float(np.max(np.abs(slopes)))

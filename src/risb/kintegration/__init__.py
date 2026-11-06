@@ -21,7 +21,12 @@ from .integrators import (
     WeightedKPointIntegrator,
     get_filling_edges,
 )
-from .smearing import fermi_function, gaussian_function, methfessel_paxton_function
+from .smearing import (
+    fermi_function,
+    gaussian_function,
+    max_occupation_slope,
+    methfessel_paxton_function,
+)
 
 __all__ = [
     "AutoBZIntegrator",
@@ -42,6 +47,7 @@ __all__ = [
     "fermi_function",
     "gaussian_function",
     "get_filling_edges",
+    "max_occupation_slope",
     "methfessel_paxton_function",
     "richardson_extrapolate",
 ]

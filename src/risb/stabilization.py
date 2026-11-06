@@ -197,17 +197,18 @@ class LinearWeightedDensityFeedback(DensityFeedback):
     and :math:`\sqrt{\pi} / \beta` for
     :func:`~risb.kintegration.gaussian_function`. A decoupled ghost then
     reaches :math:`\rho_f` in one step. A smaller :math:`c` converges more
-    slowly; a larger one overshoots.
+    slowly; a larger one overshoots. By default :math:`c` is this inverse
+    slope, which is zero for a step function, e.g. at :math:`\beta = \infty`.
 
     Parameters
     ----------
     strength : float, optional
-        :math:`c`, in the energy units of the Hamiltonian. The default is
-        :math:`4 / \beta` at :math:`\beta = 100`.
+        :math:`c`, in the energy units of the Hamiltonian. Default is the
+        inverse of the largest slope of the band occupation function.
 
     """
 
-    def __init__(self, strength: float = 0.04) -> None:
+    def __init__(self, strength: float | None = None) -> None:
         self.strength = strength
 
     @override
@@ -216,10 +217,12 @@ class LinearWeightedDensityFeedback(DensityFeedback):
         Lambda: NDArray[np.inexact],
         R: NDArray[np.inexact],
         f2: NDArray[np.inexact],
+        occupation_slope: float,
     ) -> NDArray[np.inexact]:
         """Return the shifted quasiparticle levels."""
+        strength = 1 / occupation_slope if self.strength is None else self.strength
         eigenvalues, vectors = np.linalg.eigh(R @ R.conj().T)
         M = (vectors * np.sqrt(np.clip(1 - eigenvalues, 0, 1))) @ vectors.conj().T
         # rho_qp is the transpose of n_F(Lambda - mu)
-        result: NDArray[np.inexact] = Lambda - self.strength * M @ f2.T @ M
+        result: NDArray[np.inexact] = Lambda - strength * M @ f2.T @ M
         return result
