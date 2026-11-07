@@ -574,7 +574,9 @@ the referenced impurity solver and rotates them according to the list of
 functions in `rotations`. The referenced impurity solver must therefore be
 solved first, i.e., come before the `DummyImpuritySolver` in the list of
 impurity solvers passed to `LatticeSolver`. `solve()` also copies the
-`entropy` of the referenced solver, which the rotations do not change.
+`entropy` of the referenced solver, which the rotations do not change. The
+lattice solvers give the copied cluster the `R`, `Lambda`, `D` and `Lambda_c`
+of the referenced cluster, rotated in the same way, instead of computing them.
 :::
 
 :::{warning}

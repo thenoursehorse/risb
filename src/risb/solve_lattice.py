@@ -133,6 +133,8 @@ class LatticeSolver(BaseLatticeSolver):
     @override
     def update_bath(self) -> None:
         for i in range(self.n_clusters):
+            if i in self._copies:
+                continue
             for bl, _ in self.gf_struct[i]:
                 self.D[i][bl] = helpers.get_d(
                     self.rho_qp[i][bl], self.lopsided_ke_qp[i][bl]
@@ -146,6 +148,9 @@ class LatticeSolver(BaseLatticeSolver):
                     self.Lambda[i][bl],
                     self.D[i][bl],
                 )
+
+        self.D = self._copy_clusters(self.D)
+        self.Lambda_c = self._copy_clusters(self.Lambda_c)
 
         # Enforce matrix structure from symmetries
         self.Lambda_c = self._project(self.Lambda_c, is_hermitian=True, name="Lambda_c")
@@ -165,11 +170,15 @@ class LatticeSolver(BaseLatticeSolver):
     @override
     def update_residuals(self) -> None:
         for i in range(self.n_clusters):
+            if i in self._copies:
+                continue
             for bl, _ in self.gf_struct[i]:
                 self.f1[i][bl] = helpers.get_f1(
                     self.rho_cf[i][bl], self.rho_qp[i][bl], self.R[i][bl]
                 )
                 self.f2[i][bl] = helpers.get_f2(self.rho_f[i][bl], self.rho_qp[i][bl])
+        self.f1 = self._copy_clusters(self.f1)
+        self.f2 = self._copy_clusters(self.f2)
 
         # Enforce matrix structure from symmetries
         self.f2 = self._project(self.f2, is_hermitian=True, name="f2")
@@ -183,6 +192,8 @@ class LatticeSolver(BaseLatticeSolver):
         Lambda: list[BlockMatrix] = [{} for _ in range(self.n_clusters)]
         R: list[BlockMatrix] = [{} for _ in range(self.n_clusters)]
         for i in range(self.n_clusters):
+            if i in self._copies:
+                continue
             for bl, _ in self.gf_struct[i]:
                 Lambda[i][bl] = helpers.get_lambda(
                     self.R[i][bl],
@@ -191,6 +202,8 @@ class LatticeSolver(BaseLatticeSolver):
                     self.rho_f[i][bl],
                 )
                 R[i][bl] = helpers.get_r(self.rho_cf[i][bl], self.rho_f[i][bl])
+        Lambda = self._copy_clusters(Lambda)
+        R = self._copy_clusters(R)
 
         # Enforce matrix structure from symmetries
         Lambda = self._project(Lambda, is_hermitian=True, name="Lambda")

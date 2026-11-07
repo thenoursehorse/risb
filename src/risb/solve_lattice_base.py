@@ -30,6 +30,7 @@ from numpy.typing import NDArray
 from risb import helpers
 from risb.diagnostics import DiagnosticObserver
 from risb.diagnostics.output import stage
+from risb.impurity_solvers.dummy import DummyImpuritySolver
 from risb.kintegration import (
     BandKIntegration,
     BandKIntegrationResult,
@@ -88,7 +89,9 @@ class BaseLatticeSolver(ABC):
         The solver of the impurity problem for each cluster. It must
         already store the interacting Hamiltonian ``h_int`` of the physical
         orbitals on a cluster, and implement :class:`risb.types.ImpuritySolver`.
-        See class :class:`.FockitImpuritySolver`.
+        See class :class:`.FockitImpuritySolver`. A
+        :class:`.DummyImpuritySolver` must copy the solver of an earlier
+        cluster.
     projectors : sequence of risb.types.BlockMatrixLike, optional
         The projectors onto the subspace of each cluster. ``projectors[i][bl]``
         has a row for each orbital of block ``bl`` of cluster ``i`` and a
@@ -219,6 +222,22 @@ class BaseLatticeSolver(ABC):
         if len(self.impurity_solvers) != self.n_clusters:
             msg = f"Need an impurity solver (got {len(self.impurity_solvers)}) for each cluster (got {self.n_clusters}) !"
             raise ValueError(msg)
+
+        # For each copied cluster, the cluster it copies and its rotations
+        self._copies: dict[
+            int, tuple[int, Sequence[Callable[[BlockMatrix], BlockMatrix]]]
+        ] = {}
+        for i, solver in enumerate(self.impurity_solvers):
+            if isinstance(solver, DummyImpuritySolver):
+                originals = [
+                    j
+                    for j in range(i)
+                    if self.impurity_solvers[j] is solver.impurity_solver
+                ]
+                if not originals:
+                    msg = f"The DummyImpuritySolver of cluster {i} copies no earlier cluster."
+                    raise ValueError(msg)
+                self._copies[i] = (originals[0], solver.rotations)
 
         self.projectors = projectors
         if (
@@ -469,6 +488,16 @@ class BaseLatticeSolver(ABC):
                     x, like[i][bl].shape, is_hermitian, self.force_real, offset
                 )
         return A, offset
+
+    def _copy_clusters(self, A: list[BlockMatrix]) -> list[BlockMatrix]:
+        # A copied cluster gets the rotated matrices of the cluster it copies
+        A = [dict(A_i) for A_i in A]
+        for i, (j, rotations) in self._copies.items():
+            A_j = dict(A[j])
+            for rotate in rotations:
+                A_j = rotate(A_j)
+            A[i] = A_j
+        return A
 
     def _set_lambda_r(self, x: NDArray[np.float64]) -> None:
         # Lambda and R from the vector that cycle takes
@@ -822,6 +851,8 @@ class BaseLatticeSolver(ABC):
 
         """
         with self._stage("cycle", iteration=self.iteration + 1):
+            self.R = self._copy_clusters(self.R)
+            self.Lambda = self._copy_clusters(self.Lambda)
             for symmetrize in self.symmetrizers:
                 self.R = symmetrize(self.R)
                 self.Lambda = symmetrize(self.Lambda)

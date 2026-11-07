@@ -228,6 +228,8 @@ class ThermalLatticeSolver(BaseLatticeSolver):
     @override
     def update_bath(self) -> None:
         for i in range(self.n_clusters):
+            if i in self._copies:
+                continue
             for bl, _ in self.gf_struct[i]:
                 R, Lambda = self.R[i][bl], self.Lambda[i][bl]
                 rho_qp, ke = self.rho_qp[i][bl], self.lopsided_ke_qp[i][bl]
@@ -269,6 +271,9 @@ class ThermalLatticeSolver(BaseLatticeSolver):
                         )
                     )
 
+        self.D = self._copy_clusters(self.D)
+        self.Lambda_c = self._copy_clusters(self.Lambda_c)
+
         # Enforce matrix structure from symmetries
         self.Lambda_c = self._project(self.Lambda_c, is_hermitian=True, name="Lambda_c")
         self.D = self._project(self.D, is_hermitian=False, name="D")
@@ -280,6 +285,8 @@ class ThermalLatticeSolver(BaseLatticeSolver):
     def update_residuals(self) -> None:
         self.bath_fit_error = 0.0
         for i in range(self.n_clusters):
+            if i in self._copies:
+                continue
             for bl, _ in self.gf_struct[i]:
                 R = self.R[i][bl]
                 rho_qp_emb, rho_qpf, rho_f_emb = helpers.get_h0_emb_densities(
@@ -303,6 +310,8 @@ class ThermalLatticeSolver(BaseLatticeSolver):
                 )
                 self.f1[i][bl] = helpers.get_thermal_f1(self.rho_cf[i][bl], rho_qpf, R)
                 self.f2[i][bl] = helpers.get_thermal_f2(self.rho_f[i][bl], rho_f_emb)
+        self.f1 = self._copy_clusters(self.f1)
+        self.f2 = self._copy_clusters(self.f2)
 
         # Enforce matrix structure from symmetries
         self.f2 = self._project(self.f2, is_hermitian=True, name="f2")
@@ -324,6 +333,8 @@ class ThermalLatticeSolver(BaseLatticeSolver):
         R_next: list[BlockMatrix] = [{} for _ in range(self.n_clusters)]
         Lambda_next: list[BlockMatrix] = [{} for _ in range(self.n_clusters)]
         for i in range(self.n_clusters):
+            if i in self._copies:
+                continue
             for bl, _ in self.gf_struct[i]:
                 R, Lambda = self.R[i][bl], self.Lambda[i][bl]
                 self._warn_if_complex(R, "R", i, bl)
@@ -354,6 +365,9 @@ class ThermalLatticeSolver(BaseLatticeSolver):
                         if self.diagnostics is not None
                         else None,
                     )
+
+        R_next = self._copy_clusters(R_next)
+        Lambda_next = self._copy_clusters(Lambda_next)
 
         # Enforce matrix structure from symmetries
         R_next = self._project(R_next, is_hermitian=False, name="R")

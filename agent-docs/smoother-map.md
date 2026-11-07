@@ -2620,3 +2620,38 @@ Clip of R's singular values to ≤ 1 (clip_r.py; on R entering a cycle and on R 
 - Thermal examples with the clip (no shift, no window): R stays bounded (max eigenvalue of R†R ≤ 1), but neither converges.
   - kagome: μ 4.97, filling exact, f1/f2 stuck at 1.0.
   - trimer: f1/f2 8.5e-3 at cycle 8, then μ → −1.2e5 with all bands empty.
+
+Thermal examples: per-cycle checks (thermal_diag.py, clip on, no μ window).
+- The impurity is consistent: R from [ρ_f(1−ρ_f)]^(−1/2) ρ_cf† stays ≤ 0.95.
+- The bath fit matches (error ≤ 1e-8, a few cycles 1e-3–1e-2). The R, Λ fit misses its target:
+  - trimer β=40: mismatch 2.7e-2 with fitted R up to 3.2 once ρ_f drops to 1e-14..1e-3, after the first unit μ step 0.48 → 4.12; then the atomic limit and a μ runaway.
+  - kagome β=40: mismatch 0.04–0.26 already at ρ_f ≈ 0.3–0.49; later stuck at ρ_f = 1, f2 = 1, fitted R up to 82 before the clip.
+- β=10:
+  - trimer: plateau at f1/f2 1.9e-5, μ 4.14, exact filling, not converged in 1000 cycles; the fit still misses 3e-2 at cycle 3 with R 9.1.
+  - kagome: stuck at f1/f2 0.93.
+- Fit scan, kagome β=10 cycle 3 (fit_scan.py; R ∈ [−1.5, 1.5], Λ−μ ∈ [−30, 30]); targets ρ_f 0.448, ρ_cf 0.355 in every cluster:
+
+  | cluster | start R | start mismatch | fit | grid best |
+  |---|---|---|---|---|
+  | 0 | 0.80 | 0.11 | R 0.715, 4.1e-3 | 4.2e-3 |
+  | 1 | 0.66 | 0.12 | R 0.02, 0.43 | 6.1e-3 |
+  | 2 | 0.74 | 0.14 | R 0.61, 5.4e-2 | 4.2e-3 |
+
+  No exact match at these D, Λc (floor about 4e-3). The local fit lands in a bad minimum for clusters 1 and 2. R from the impurity densities, [ρ_f(1−ρ_f)]^(−1/2) ρ_cf†, is 0.74, next to the best point (0.71). The equivalent clusters start from different R, so their fits separate.
+- Correction: the real-R scan above was wrong; D, R and ρ_cf are complex.
+  - Complex scan of the same cycle: cluster 0 matches exactly; clusters 1 and 2 can do no better than 0.134 and 0.165.
+  - All three get cluster 0's ρ_cf (DummyImpuritySolver), but each fits its own D, with phases −0.33i, +0.15i, +0.27i, so clusters 1 and 2 cannot reproduce the copied ρ_cf.
+- Thermal examples with a symmetrizer that sets every cluster equal:
+  - kagome converges, 26 cycles (β=10) and 28 (β=40);
+  - trimer converges at β=10 (24 cycles); at β=40 μ still runs away (+7e6, filling +4).
+  - force_real=True alone does not fix kagome.
+  - Zero-T kagome (21 cycles) and trimer (14) still converge with the averaging.
+- Two-start fit (previous R, Λ and R from the impurity densities): thermal tests 6/19 fail, impurity rounds 580 → 7276. Rejected.
+- No DummyImpuritySolver (each cluster solves its own impurity):
+  - zero-T: kagome 21, trimer 14, site basis 14 cycles (same as with the copies);
+  - thermal β=10: kagome 44, trimer 28, site basis 827 cycles;
+  - thermal β=40: kagome 48, site basis 16; trimer not converged in 1000 (plateau at f1/f2 5e-6, μ 4.25, exact filling, no runaway).
+- Copies done properly (risb: copied clusters skip the updates and get the rotated R, Λ, D, Λc of their original). Thermal, with copies:
+  - β=10: kagome 14, trimer 34, site basis 37 cycles;
+  - β=40: kagome 29, site basis 7; trimer still has the μ runaway (+1e7, filling +4).
+  - Full suite 277 pass.

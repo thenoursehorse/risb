@@ -41,8 +41,9 @@ class DummyImpuritySolver(ImpuritySolver):
     impurity_solver : risb.types.ImpuritySolver
         The impurity solver to reference. It must be solved before this one.
     rotations : sequence of callable, optional
-        Functions applied in order to the density matrices of ``impurity_solver``.
-        Each takes and returns a dictionary of block matrices with the
+        Functions applied in order to the density matrices of ``impurity_solver``,
+        and by the lattice solvers to the R, Lambda, D and Lambda_c of its
+        cluster. Each takes and returns a dictionary of block matrices with the
         blocks of ``impurity_solver.gf_struct``.
 
     """

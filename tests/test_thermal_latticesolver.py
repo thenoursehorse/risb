@@ -14,7 +14,11 @@ from test_common import (
 
 from risb import LatticeSolver, ThermalLatticeSolver, helpers
 from risb.helpers_fockit import h_int_kanamori
-from risb.impurity_solvers import FockitImpuritySolver, FockitThermalImpuritySolver
+from risb.impurity_solvers import (
+    DummyImpuritySolver,
+    FockitImpuritySolver,
+    FockitThermalImpuritySolver,
+)
 from risb.kintegration import BandKIntegrator, WeightedKPointIntegrator
 from risb.optimize import (
     DIIS,
@@ -84,6 +88,44 @@ def two_site_cell(
         bath_size=[bath_size],
     )
     return S, impurity_solver
+
+
+@pytest.mark.parametrize("copy", [False, True], ids=["own solver", "copy"])
+def test_a_copied_cluster_gives_the_solution_of_its_own_impurity(copy: bool) -> None:
+    # One band on a two-site cell, with one cluster per site and two ghosts
+    # per orbital
+    spin_names = ["up", "dn"]
+    bath_size = dict.fromkeys(spin_names, 3)
+    T = 0.1
+
+    def solver() -> FockitThermalImpuritySolver:
+        return FockitThermalImpuritySolver(
+            2.0 * nc("up", 0) * nc("dn", 0),
+            ONE_BAND,
+            bath_size=bath_size,
+            beta=1 / T,
+            **EXACT_THERMAL,
+        )
+
+    first = solver()
+    S = ThermalLatticeSolver(
+        h0_k=dict.fromkeys(spin_names, one_band_cubic_h0_k(4, supercell=True)),
+        gf_struct=[ONE_BAND, ONE_BAND],
+        impurity_solvers=[first, DummyImpuritySolver(first) if copy else solver()],
+        beta=1 / T,
+        mu=1.0,
+        projectors=[
+            dict.fromkeys(spin_names, np.array([[1.0, 0.0]])),
+            dict.fromkeys(spin_names, np.array([[0.0, 1.0]])),
+        ],
+        bath_size=[bath_size, bath_size],
+    )
+    assert S.solve(tol=1e-8).converged
+    for bl in spin_names:
+        assert S.Z[1][bl] == pytest.approx(S.Z[0][bl], abs=1e-6)
+        assert np.linalg.eigvalsh(S.Lambda[1][bl]) == pytest.approx(
+            np.linalg.eigvalsh(S.Lambda[0][bl]), abs=1e-6
+        )
 
 
 def grand_potential(
