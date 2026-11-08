@@ -1,6 +1,6 @@
 # Using projectors
 
-This guide shows you how to project onto ineqvuialent correlated subspaces
+This guide shows you how to project onto inequivalent correlated subspaces
 $\mathcal{C}_i$.
 There are two technical choices for projectors.
 Projecting onto subspaces with the same block matrix structure as the larger set
@@ -12,6 +12,11 @@ than the larger space, e.g., to enforce some local symmetry.
 [About projectors](../explanations/projectors.md) for more details and the
 theory of projectors.
 :::
+
+At every $k$-point, the projectors must have orthonormal rows and different
+correlated subspaces must not overlap. They can depend on $k$ and need not
+cover every orbital of `h0_k`. Pass `check_projectors=True` to the lattice
+solver to check these conditions.
 
 ## Simple projectors
 
