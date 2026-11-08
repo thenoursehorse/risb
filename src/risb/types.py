@@ -169,6 +169,24 @@ class DensityFeedback(Protocol):
         """
 
 
+type ImpurityChargeSusceptibility = Callable[["ImpuritySolver"], float]
+"""Charge susceptibility of the physical orbitals of a solved impurity problem, e.g., :func:`risb.impurity_solvers.fockit.charge_susceptibility`."""
+
+
+class ChemicalPotentialStep(Protocol):
+    """Step of the chemical potential after a cycle of :class:`risb.PhysicalMuLatticeSolver` or :class:`risb.ThermalLatticeSolver`."""
+
+    def step(self, filling_error: float, slope: Callable[[], float]) -> float:
+        """
+        Return the change of the chemical potential.
+
+        ``filling_error`` is ``n_electrons - n_target`` of the cycle, and
+        ``slope()`` returns the derivative of ``n_electrons`` with respect to
+        the chemical potential, which costs a band integration and possibly
+        impurity calculations.
+        """
+
+
 class FixedPointProblem(Protocol):
     """
     A problem for :func:`risb.optimize.solve_fixed_point`, e.g., :class:`risb.LatticeSolver`.

@@ -9,7 +9,9 @@ from test_common import bethe_h0_k, build_cubic_h0_k, symmetrize_blocks
 from risb import LatticeSolver, PhysicalMuLatticeSolver
 from risb.helpers_fockit import h_int_kanamori
 from risb.impurity_solvers import FockitImpuritySolver
+from risb.impurity_solvers.fockit import charge_susceptibility
 from risb.kintegration import BandKIntegrator, WeightedKPointIntegrator
+from risb.stabilization import MuNewtonStep
 
 SPINS = ["up", "dn"]
 
@@ -138,6 +140,54 @@ def test_uncorrelated_ligand_shares_the_mu_of_the_metal() -> None:
     assert result.converged
     assert result.cycles <= 2
     assert band_integrator.mu == pytest.approx(S.mu, abs=1e-8)
+    for bl in SPINS:
+        assert np.trace(S.rho_c[0][bl]).real == pytest.approx(
+            np.trace(expected.rho_c[0][bl]).real, abs=1e-6
+        )
+        assert np.linalg.eigvalsh(S.Z[0][bl]) == pytest.approx(
+            np.linalg.eigvalsh(expected.Z[0][bl]), abs=1e-6
+        )
+
+
+def test_newton_mu_step_reaches_the_solution_of_the_unit_step() -> None:
+    # One metal orbital with three quasiparticles, hybridized with an
+    # uncorrelated ligand orbital, so that both the bands and the impurity
+    # contribute to dn/dmu
+    U, n_target = 6.0, 3.0
+    e = bethe_h0_k(2000)
+    h0_k = np.block([[0.5 * e, 0.5 + 0 * e], [0.5 + 0 * e, (U / 2 - 0.5) + e]])
+    gf_struct = [(bl, 1) for bl in SPINS]
+    bath_size = dict.fromkeys(SPINS, 3)
+    sz = nc("up", 0) - nc("dn", 0)
+    sz += sum((nc("bath_up", a) - nc("bath_dn", a) for a in range(3)), zero())
+
+    def solved(**options: object) -> PhysicalMuLatticeSolver:
+        S = PhysicalMuLatticeSolver(
+            h0_k=dict.fromkeys(SPINS, h0_k),
+            gf_struct=gf_struct,
+            impurity_solvers=FockitImpuritySolver(
+                U * nc("up", 0) * nc("dn", 0),
+                gf_struct,
+                diagonal_symmetries={sz: 0},
+                bath_size=bath_size,
+            ),
+            band_integrator=BandKIntegrator(WeightedKPointIntegrator(), beta=100),
+            projectors=[dict.fromkeys(SPINS, np.eye(2)[:1])],
+            symmetrizers=[symmetrize_blocks],
+            force_real=True,
+            bath_size=[bath_size],
+            n_target=n_target,
+            **options,  # type: ignore[arg-type]
+        )
+        assert S.solve(tol=1e-9, maxiter=300).converged
+        return S
+
+    expected = solved()
+    S = solved(
+        mu_step=MuNewtonStep(), impurity_charge_susceptibility=charge_susceptibility
+    )
+    # mu lies in a gap, so the filling does not fix it
+    assert S.n_electrons == pytest.approx(n_target, abs=1e-8)
     for bl in SPINS:
         assert np.trace(S.rho_c[0][bl]).real == pytest.approx(
             np.trace(expected.rho_c[0][bl]).real, abs=1e-6

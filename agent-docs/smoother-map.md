@@ -1,5 +1,12 @@
 # Smoother self-consistency map
 
+## Todo
+
+- [ ] μ step at finite temperature: thermal trimer at β = 40 runs away after the first unit step (filling saturates). There is no exact quasiparticle filling to centre a window on.
+- [ ] Leave copied clusters (DummyImpuritySolver) out of x for the optimizer.
+- [ ] Lazy μ refit for LatticeSolver (refit μ on the impurities only when the filling is off by more than a tolerance, as gem).
+
+
 Goal: improve reliable convergence; measure success across starts and final
 physical residuals, not only iteration count. Keep prototypes outside the repository.
 
@@ -2655,3 +2662,53 @@ Thermal examples: per-cycle checks (thermal_diag.py, clip on, no μ window).
   - β=10: kagome 14, trimer 34, site basis 37 cycles;
   - β=40: kagome 29, site basis 7; trimer still has the μ runaway (+1e7, filling +4).
   - Full suite 277 pass.
+
+## Berlingreen with PhysicalMuLatticeSolver (feedback, window 0.75, clip), 2026-11-07
+
+phys_berlin.py; run_risb's LatticeSolver replaced by PhysicalMuLatticeSolver.
+- Default start, 100 cycles: every run (DIIS β=100 and 200, lin→DIIS β=100 and 200) goes low spin (Fe1 S² 1.43–1.61). Root error stalls at 3e-7–1.5e-6 with f1/f2 5e-8–3e-7, just above the 1e-7 tolerance. Stopped before β=800.
+- Fe1 DMRG at one fixed Hamiltonian:
+  - repeated solves agree to 2e-12 in energy and 3e-11 in the densities;
+  - bond dim 1000, cutoff and tol 1e-12 changes the densities by up to 8e-8 and the energy by 1e-7.
+  - So the solves are not noisy. The 1e-3 eV cycle-to-cycle change in Fe1's energy comes from inputs moving in directions the residual does not see. The 1e-7 truncation error is the size of the residual floor.
+- HS seed (SEED=1), β=200, stopped early:
+  - DIIS: Fe1 still HS (S² 7.54) after 6 cycles, but error 1.5 and filling error −0.63;
+  - lin→DIIS: back to LS (S² 1.61) by cycle 12.
+
+## μ step from a model of n(μ) at frozen impurity densities (newton_mu.py, ligand benchmark, root error)
+
+- frozen: Λ shifted with μ, n(μ') = n_uncorrelated(μ') + Σ Tr ρ_c.
+- coherent: Λ held, n(μ') = n_uncorrelated(μ') + Σ Tr[Rᵀ ρ_qp(μ') R*] + Σ Tr C.
+- Step to the root of n(μ') = N (band integrations only).
+
+| μ step | DIIS only | lin→DIIS |
+|---|---|---|
+| unit (PhysicalMu, window 0.75) | 2(2)/0/2, 392 cycles | 5(4)/3(3)/2, 769 |
+| frozen | 4(4)/0/2, 588 | 6(6)/3(3)/2, 1202 |
+| coherent | 0/0/2, 75 | 1(1)/3(2)/2, 438 |
+
+The frozen step converges more cases; the coherent step is worse. The ligand model has a wide uncorrelated band, so the frozen step has a real slope here; untested where few orbitals lie outside the clusters.
+- Frozen step on the repo tests (swap_plugin physmu_newton; falls back to the unit step when n(μ′) has no slope):
+  - 85/93 pass, the same tests as the unit step; impurity rounds 2469 against 2465.
+  - test_physical_mu_latticesolver.py: 9/9 pass, 20 s against 6 s, from the bracket-and-Brent root search (10–20 band integrations per cycle).
+  - Most repo tests have every orbital in a cluster, where the step is the unit step.
+
+### Newton μ step with the impurity charge susceptibility (response_mu.py)
+
+χ_i = dn_c,i/dμ = 2⟨0|N_c Q (H−E₀)⁻¹ Q N_c|0⟩ from one linear solve (fockit, T=0; gmres where minres refuses symmetric-combination bases). It matches a finite difference to 6 digits on three ligand cases. Step (N − n)/slope, with slope = dn_uncorrelated/dμ (one extra band integration) [+ Σχ for "response"]; "capped" floors the slope at 1, so a step is never longer than the unit step.
+
+| step | repo tests /93 (rounds on common passes vs unit) | ligand DIIS only | ligand lin→DIIS |
+|---|---|---|---|
+| unit | 85 | 2(2)/0/2 | 5(4)/3(3)/2 |
+| frozen, bracket + Brent | 85 (1.00×) | 4(4)/0/2 | 6(6)/3(3)/2 |
+| frozen, one Newton step | 82; runs away with a site in no cluster | crashes (symmetry error) | crashes |
+| frozen, capped | 85 (1.00×) | 2(2)/0/2 | 5(4)/3(3)/2 |
+| response | 82; fixes the Hubbard example at U=4.75; 4 new symmetry and singular-matrix failures | crashes on 3 | crashes |
+| response, capped | 85 (1.00×) | 3(3)/0/3 | 6(6)/3(3)/3 |
+
+Uncapped Newton steps blow up where the slope is small (gapped impurity, no orbitals outside clusters). The bracketed frozen root avoids this because the nonlinear n(μ′) saturates.
+- block2 χ (block2_charge_susceptibility): DMRGDriver.multiply(bra, N_c, ket, left_mpo=H − E₀, proj_mpss=[ground state]). The projection removes |0⟩ from the solution, so χ = 2 × the returned overlap. It matches fockit to 6 digits on three ligand impurities, at 0.3–0.4 s against 1.0–1.5 s for the ground-state solve.
+- Trust region on the χ step (|step| ≤ k |N − n|):
+  - k = 3: repo tests 84/93, fixes the Hubbard example, breaks both decorated-honeycomb examples; ligand lin→DIIS 3(2)/3(3)/2.
+  - k = 10: 81/93; ligand lin→DIIS 4(2)/3(3)/2.
+  - Both are worse than the slope floor of 1 (85/93; 6(6)/3(3)/3).

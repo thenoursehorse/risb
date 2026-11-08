@@ -36,13 +36,19 @@ from risb.kintegration import (
 from risb.optimize import NewtonSolver, ScipyRoot, SolveResult
 from risb.optimize.fixed_point import Callback
 from risb.solve_lattice_base import BaseLatticeSolver
-from risb.stabilization import FullEmptyPinning, LinearWeightedDensityFeedback
+from risb.stabilization import (
+    FullEmptyPinning,
+    LinearWeightedDensityFeedback,
+    MuUnitStep,
+)
 from risb.types import (
     BlockMatrix,
     BlockMatrixLike,
+    ChemicalPotentialStep,
     DensityFeedback,
     GaugeFix,
     GfStruct,
+    ImpurityChargeSusceptibility,
     ImpuritySolver,
     PinFullEmpty,
     Symmetrize,
@@ -50,6 +56,9 @@ from risb.types import (
 
 _DEFAULT_PINNING = FullEmptyPinning()
 _DEFAULT_FEEDBACK = LinearWeightedDensityFeedback()
+_DEFAULT_MU_STEP = MuUnitStep()
+# Step of mu for the slope of the filling of the bands
+_SLOPE_DMU = 1e-4
 
 
 class LatticeSolver(BaseLatticeSolver):
@@ -257,7 +266,7 @@ class LatticeSolver(BaseLatticeSolver):
 
 
 class PhysicalMuLatticeSolver(LatticeSolver):
-    """
+    r"""
     Zero-temperature RISB lattice solver at a fixed physical chemical potential or filling.
 
     The quasiparticle bands are filled at the chemical potential :attr:`mu`.
@@ -290,6 +299,17 @@ class PhysicalMuLatticeSolver(LatticeSolver):
     max_qp_filling_deviation : float or None, optional
         Largest deviation of the quasiparticle filling from its value at a
         solution, in electrons per unit cell. ``None`` does not limit it.
+    mu_step : risb.types.ChemicalPotentialStep, optional
+        The step of :attr:`mu` after each cycle, with `n_target`. Default is
+        :class:`risb.stabilization.MuUnitStep`; see also
+        :class:`risb.stabilization.MuNewtonStep`.
+    impurity_charge_susceptibility : callable or sequence of callable, optional
+        Charge susceptibility of the physical orbitals of an impurity, e.g.,
+        :func:`risb.impurity_solvers.fockit.charge_susceptibility`, for the
+        :math:`dn/d\mu` that `mu_step` may use. One for all clusters, or one
+        per cluster in the order of `impurity_solvers`; ``None`` leaves an
+        impurity out. A cluster with a :class:`.DummyImpuritySolver` takes
+        that of the cluster it copies. Default leaves every impurity out.
     density_feedback : risb.types.DensityFeedback or None, optional
         Shifts the quasiparticle levels against the density mismatch, before
         pinning. Default is
@@ -319,6 +339,10 @@ class PhysicalMuLatticeSolver(LatticeSolver):
         mu: float | None = None,
         n_target: float | None = None,
         max_qp_filling_deviation: float | None = 0.75,
+        mu_step: ChemicalPotentialStep = _DEFAULT_MU_STEP,
+        impurity_charge_susceptibility: ImpurityChargeSusceptibility
+        | Sequence[ImpurityChargeSusceptibility | None]
+        | None = None,
         bath_size: Sequence[Mapping[str, int]] | None = None,
         h0_k_evaluator: Callable[[KPoints], BlockMatrixLike] | None = None,
         projectors_evaluator: Callable[[KPoints], Sequence[BlockMatrixLike]]
@@ -357,6 +381,10 @@ class PhysicalMuLatticeSolver(LatticeSolver):
         #: float or None : Number of electrons per unit cell to solve for.
         self.n_target = n_target
         self.max_qp_filling_deviation = max_qp_filling_deviation
+        self.mu_step = mu_step
+        self._impurity_charge_susceptibility = self._per_cluster(
+            impurity_charge_susceptibility
+        )
 
         self._mu_from_bands = mu is None
         self.mu: float
@@ -443,7 +471,7 @@ class PhysicalMuLatticeSolver(LatticeSolver):
         Returns
         -------
         x_new : numpy.ndarray
-            Next Lambda and R, followed by ``mu + n_target - n_electrons``
+            Next Lambda and R, followed by ``mu`` plus the step of :attr:`mu_step`
             when solving at fixed filling.
         residual : numpy.ndarray
             Packed f2 and f1, followed by ``n_electrons - n_target``
@@ -454,13 +482,49 @@ class PhysicalMuLatticeSolver(LatticeSolver):
             return super().cycle(x)
         self.mu = float(x[-1])
         x_new, residual = super().cycle(x[:-1])
-        step = self.n_target - self.n_electrons
+        step = self.mu_step.step(self.n_electrons - self.n_target, self._filling_slope)
         identity: list[BlockMatrix] = [
             {bl: np.eye(L.shape[0]) for bl, L in L_i.items()} for L_i in self.Lambda
         ]
         shift = self._flatten_matrix(identity, is_hermitian=True, name="Lambda")
         x_new[: len(shift)] += step * np.asarray(shift)
-        return np.append(x_new, self.mu + step), np.append(residual, -step)
+        return np.append(x_new, self.mu + step), np.append(
+            residual, self.n_electrons - self.n_target
+        )
+
+    def _filling_slope(self) -> float:
+        # dn_electrons/dmu at the R and Lambda of the cycle: the bands of the
+        # orbitals in no cluster, and the impurities given
+        bands = (
+            self._filling_outside_clusters(_SLOPE_DMU)
+            - self._filling_outside_clusters(0.0)
+        ) / _SLOPE_DMU
+        return bands + self._impurity_filling_slope(
+            self._impurity_charge_susceptibility
+        )
+
+    def _filling_outside_clusters(self, dmu: float) -> float:
+        # Electrons in the bands of the orbitals in no cluster after a step dmu
+        # of mu, which also shifts Lambda, as in cycle, so the quasiparticles
+        # of the clusters keep their occupations
+        Lambda = [
+            {bl: L + dmu * np.eye(L.shape[0]) for bl, L in L_i.items()}
+            for L_i in self.Lambda
+        ]
+        R_full, Lambda_full = self.R_full, self.Lambda_full
+        self.R_full, self.Lambda_full = helpers.upfold_r_lambda(
+            self.R, Lambda, self.h0_kin_k, self._projectors_qp, self.gf_struct_mapping
+        )
+        hamiltonian, observables = self._get_band_integrands()
+        result = self.band_integrator.integrate(
+            hamiltonian, observables=observables, mu=self.mu + dmu
+        )
+        self.R_full, self.Lambda_full = R_full, Lambda_full
+        return float(result.n_electrons) - sum(
+            float(np.trace(result.values["rho_qp", i, bl]).real)
+            for i, cluster in enumerate(self.gf_struct)
+            for bl, _ in cluster
+        )
 
     @override
     def solve(

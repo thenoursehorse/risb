@@ -23,6 +23,8 @@ explanations/index
 
 api/risb
 api/risb.impurity_solvers
+api/risb.impurity_solvers.fockit
+api/risb.impurity_solvers.block2
 api/risb.diagnostics
 api/risb.kintegration
 api/risb.optimize

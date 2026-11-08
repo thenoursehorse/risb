@@ -1,5 +1,7 @@
 # ruff: noqa: D100, D103
 
+from typing import Any
+
 import numpy as np
 import pytest
 from fockit.algebra import OpSum, nc
@@ -29,6 +31,7 @@ from risb.optimize import (
     SchedulerPhase,
     after_steps,
 )
+from risb.stabilization import MuNewtonStep
 from risb.types import BlockMatrix, BlockMatrixLike, FixedPointProblem, GfStruct
 
 ONE_BAND: GfStruct = [("up", 1), ("dn", 1)]
@@ -65,7 +68,7 @@ def bethe_lattice(
 
 
 def two_site_cell(
-    T: float, mu: float = 1.0
+    T: float, mu: float | None = 1.0, **options: Any
 ) -> tuple[ThermalLatticeSolver, FockitThermalImpuritySolver]:
     # One band on a cell of two sites, with two ghosts per orbital on site 0
     # and site 1 in no cluster
@@ -86,6 +89,7 @@ def two_site_cell(
         mu=mu,
         projectors=[dict.fromkeys(spin_names, np.array([[1.0, 0.0]]))],
         bath_size=[bath_size],
+        **options,
     )
     return S, impurity_solver
 
@@ -126,6 +130,18 @@ def test_a_copied_cluster_gives_the_solution_of_its_own_impurity(copy: bool) -> 
         assert np.linalg.eigvalsh(S.Lambda[1][bl]) == pytest.approx(
             np.linalg.eigvalsh(S.Lambda[0][bl]), abs=1e-6
         )
+
+
+def test_newton_mu_step_reaches_the_solution_of_the_unit_step() -> None:
+    T, n_target = 0.1, 1.6
+    expected, _ = two_site_cell(T, None, n_target=n_target)
+    S, _ = two_site_cell(T, None, n_target=n_target, mu_step=MuNewtonStep())
+    for X in (expected, S):
+        assert X.solve(tol=1e-10).converged
+        assert X.n_electrons == pytest.approx(n_target, abs=1e-8)
+    assert S.mu == pytest.approx(expected.mu, abs=1e-6)
+    for bl, _ in ONE_BAND:
+        assert S.Z[0][bl] == pytest.approx(expected.Z[0][bl], abs=1e-6)
 
 
 def grand_potential(

@@ -1,11 +1,12 @@
-"""Stabilization of the level updates of :class:`risb.LatticeSolver`."""
+"""Stabilization of the level updates of :class:`risb.LatticeSolver` and of the chemical potential."""
 
+from collections.abc import Callable
 from typing import Literal, override
 
 import numpy as np
 from numpy.typing import NDArray
 
-from risb.types import DensityFeedback, PinFullEmpty
+from risb.types import ChemicalPotentialStep, DensityFeedback, PinFullEmpty
 
 
 def clip_singular_values(A: NDArray[np.inexact]) -> NDArray[np.inexact]:
@@ -253,3 +254,37 @@ class LinearWeightedDensityFeedback(DensityFeedback):
         # rho_qp is the transpose of n_F(Lambda - mu)
         result: NDArray[np.inexact] = Lambda - strength * M @ f2.T @ M
         return result
+
+
+class MuUnitStep(ChemicalPotentialStep):
+    """Step the chemical potential by the missing number of electrons, ``n_target - n_electrons``."""
+
+    @override
+    def step(self, filling_error: float, slope: Callable[[], float]) -> float:
+        """Return the change of the chemical potential."""
+        return -filling_error
+
+
+class MuNewtonStep(ChemicalPotentialStep):
+    r"""
+    Newton step of the chemical potential, :math:`(n_\mathrm{target} - n) / (dn/d\mu)`.
+
+    :math:`dn/d\mu` is that of the bands of the orbitals in no cluster plus
+    the charge susceptibilities of the impurities given to the lattice solver.
+
+    Parameters
+    ----------
+    min_slope : float, optional
+        Smallest :math:`dn/d\mu` used, so that a step is at most
+        ``|n_target - n| / min_slope``. With ``min_slope = 1`` a step is never
+        longer than that of :class:`MuUnitStep`.
+
+    """
+
+    def __init__(self, min_slope: float = 1.0) -> None:
+        self.min_slope = min_slope
+
+    @override
+    def step(self, filling_error: float, slope: Callable[[], float]) -> float:
+        """Return the change of the chemical potential."""
+        return -filling_error / max(slope(), self.min_slope)

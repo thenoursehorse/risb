@@ -39,17 +39,24 @@ from risb.kintegration import (
 from risb.optimize import DIIS, NewtonSolver, OnPlateau, ScipyRoot, SolveResult
 from risb.optimize.fixed_point import Callback
 from risb.solve_lattice_base import BaseLatticeSolver
+from risb.stabilization import MuUnitStep
 from risb.types import (
     BlockMatrix,
     BlockMatrixLike,
     Checkpoint,
+    ChemicalPotentialStep,
     DensityMatchingJacobian,
     DensityMatchingRegularization,
     GaugeFix,
     GfStruct,
+    ImpurityChargeSusceptibility,
     ImpuritySolver,
     Symmetrize,
 )
+
+_DEFAULT_MU_STEP = MuUnitStep()
+# Step of mu for the slope of the filling of the bands
+_SLOPE_DMU = 1e-4
 
 
 class ThermalLatticeSolver(BaseLatticeSolver):
@@ -85,6 +92,13 @@ class ThermalLatticeSolver(BaseLatticeSolver):
         Number of electrons per unit cell. The chemical potential :attr:`mu`
         is then solved for with :attr:`Lambda` and :attr:`R`, and the root
         functions include ``n_electrons - n_target``. Default is a fixed `mu`.
+    mu_step : risb.types.ChemicalPotentialStep, optional
+        The step of :attr:`mu` after each cycle, with `n_target`. Default is
+        :class:`risb.stabilization.MuUnitStep`; see also
+        :class:`risb.stabilization.MuNewtonStep`.
+    impurity_charge_susceptibility : callable or sequence of callable, optional
+        As in :class:`.PhysicalMuLatticeSolver`, but of the thermal state of
+        each impurity.
     band_integrator : risb.kintegration.BandKIntegration, optional
         Band integration method. If omitted, use Fermi smearing on the
         supplied equally weighted mesh. Each cycle evaluates the band
@@ -139,6 +153,10 @@ class ThermalLatticeSolver(BaseLatticeSolver):
         density_matching_jacobian: DensityMatchingJacobian = "2-point",
         density_matching_regularization: DensityMatchingRegularization = "uniform",
         density_matching_regularization_scale: float = 1e-3,
+        mu_step: ChemicalPotentialStep = _DEFAULT_MU_STEP,
+        impurity_charge_susceptibility: ImpurityChargeSusceptibility
+        | Sequence[ImpurityChargeSusceptibility | None]
+        | None = None,
         gauge_fix: GaugeFix | None = None,
         clip_r: bool = True,
         force_real_atol: float = 1e-12,
@@ -178,6 +196,10 @@ class ThermalLatticeSolver(BaseLatticeSolver):
 
         #: float or None : Number of electrons per unit cell to solve for.
         self.n_target = n_target
+        self.mu_step = mu_step
+        self._impurity_charge_susceptibility = self._per_cluster(
+            impurity_charge_susceptibility
+        )
 
         #: float : Largest absolute entry of the bath density and kinetic
         #: matching residuals of the current cycle, excluding the anchor penalty.
@@ -409,7 +431,7 @@ class ThermalLatticeSolver(BaseLatticeSolver):
         Returns
         -------
         x_new : numpy.ndarray
-            Next Lambda and R, followed by ``mu + n_target - n_electrons``
+            Next Lambda and R, followed by ``mu`` plus the step of :attr:`mu_step`
             when solving at fixed filling.
         residual : numpy.ndarray
             Packed f2 and f1, followed by ``n_electrons - n_target``
@@ -423,7 +445,9 @@ class ThermalLatticeSolver(BaseLatticeSolver):
         else:
             self.mu = float(x[-1])
             x_new, residual = super().cycle(x[:-1])
-            mu_new = self.mu + self.n_target - self.n_electrons
+            mu_new = self.mu + self.mu_step.step(
+                self.n_electrons - self.n_target, self._filling_slope
+            )
             x_new = np.append(x_new, mu_new)
             residual = np.append(residual, self.n_electrons - self.n_target)
         base_checkpoint = super().checkpoint()
@@ -437,6 +461,30 @@ class ThermalLatticeSolver(BaseLatticeSolver):
         saved = Checkpoint(restore, evaluations=base_checkpoint.evaluations)
         self._checkpoint = saved
         return x_new, residual
+
+    def _filling_slope(self) -> float:
+        # dn_electrons/dmu at the R and Lambda of the cycle: the bands of the
+        # orbitals in no cluster, and the impurities given
+        bands = (
+            self._filling_outside_clusters(_SLOPE_DMU)
+            - self._filling_outside_clusters(0.0)
+        ) / _SLOPE_DMU
+        return bands + self._impurity_filling_slope(
+            self._impurity_charge_susceptibility
+        )
+
+    def _filling_outside_clusters(self, dmu: float) -> float:
+        # Electrons in the bands of the orbitals in no cluster after a step dmu
+        # of mu, at the R and Lambda of the last cycle
+        hamiltonian, observables = self._get_band_integrands()
+        result = self.band_integrator.integrate(
+            hamiltonian, observables=observables, beta=self.beta, mu=self.mu + dmu
+        )
+        return float(result.n_electrons) - sum(
+            float(np.trace(result.values["rho_qp", i, bl]).real)
+            for i, cluster in enumerate(self.gf_struct)
+            for bl, _ in cluster
+        )
 
     @override
     def default_optimizer(self) -> NewtonSolver:

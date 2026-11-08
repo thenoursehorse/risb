@@ -49,6 +49,7 @@ from risb.types import (
     Checkpoint,
     GaugeFix,
     GfStruct,
+    ImpurityChargeSusceptibility,
     ImpuritySolver,
     Symmetrize,
 )
@@ -488,6 +489,33 @@ class BaseLatticeSolver(ABC):
                     x, like[i][bl].shape, is_hermitian, self.force_real, offset
                 )
         return A, offset
+
+    def _per_cluster(
+        self,
+        susceptibility: ImpurityChargeSusceptibility
+        | Sequence[ImpurityChargeSusceptibility | None]
+        | None,
+    ) -> list[ImpurityChargeSusceptibility | None]:
+        # One impurity charge susceptibility, or None, for each cluster
+        if susceptibility is None or callable(susceptibility):
+            return [susceptibility] * self.n_clusters
+        if len(susceptibility) != self.n_clusters:
+            msg = f"Need an impurity charge susceptibility (got {len(susceptibility)}) for each cluster (got {self.n_clusters}) !"
+            raise ValueError(msg)
+        return list(susceptibility)
+
+    def _impurity_filling_slope(
+        self, susceptibilities: Sequence[ImpurityChargeSusceptibility | None]
+    ) -> float:
+        # Sum of the charge susceptibilities of the impurities; a copied cluster
+        # takes that of the cluster it copies
+        slope = 0.0
+        for i in range(self.n_clusters):
+            j = self._copies[i][0] if i in self._copies else i
+            susceptibility = susceptibilities[j]
+            if susceptibility is not None:
+                slope += susceptibility(self.impurity_solvers[j])
+        return slope
 
     def _copy_clusters(self, A: list[BlockMatrix]) -> list[BlockMatrix]:
         # A copied cluster gets the rotated matrices of the cluster it copies
