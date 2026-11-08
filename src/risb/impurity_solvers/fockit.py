@@ -53,7 +53,7 @@ from fockit.hilbert.symmetries import (
     symmetry_phases,
 )
 from numpy.typing import NDArray
-from scipy.sparse.linalg import ArpackNoConvergence, aslinearoperator, eigsh
+from scipy.sparse.linalg import ArpackNoConvergence, aslinearoperator, eigsh, gmres
 
 from risb.diagnostics import FockitObserver
 from risb.diagnostics.fockit import FockitContext
@@ -1259,6 +1259,47 @@ class FockitThermalImpuritySolver(_FockitBase):
                         diagnostics=self._eigensolver_report(keys[i]),
                     )
         return gather_tasks(self.comm, energies)
+
+
+def charge_susceptibility(impurity_solver: FockitImpuritySolver) -> float:
+    r"""
+    Return the static charge susceptibility of the physical orbitals of a solved impurity problem.
+
+    It is the change of the number of electrons :math:`N_c` on the physical
+    orbitals when :math:`-\mu N_c` is added to the impurity Hamiltonian,
+
+    .. math::
+
+        \frac{d \langle N_c \rangle}{d\mu}
+        = 2 \langle 0 | N_c Q (H - E_0)^{-1} Q N_c | 0 \rangle,
+
+    in the particle-number sector of the ground state :math:`|0\rangle`, with
+    :math:`Q = 1 - |0\rangle\langle 0|`. It needs one linear solve and no
+    new diagonalization. The ground state must not be degenerate.
+
+    Parameters
+    ----------
+    impurity_solver : FockitImpuritySolver
+        Solved.
+
+    Returns
+    -------
+    float
+
+    """
+    basis, ground = impurity_solver.basis, impurity_solver.gs_vector
+    N_c = zero()
+    for bl, size in impurity_solver.gf_struct:
+        for a in range(size):
+            N_c += nc(bl, a)
+    H = to_matrix(impurity_solver.h_imp, basis)
+    A = H - impurity_solver.gs_energy * sp.identity(basis.dim, format="csr")
+    b = to_matrix(N_c, basis) @ ground
+    b = b - ground * np.vdot(ground, b)
+    # In a basis of symmetric combinations the matrices need not be symmetric
+    x, _ = gmres(A, b, rtol=1e-12, restart=min(basis.dim, 200), maxiter=100)
+    x = x - ground * np.vdot(ground, x)
+    return 2 * float(np.vdot(b, x).real)
 
 
 def _eigsh(

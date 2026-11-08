@@ -1727,6 +1727,81 @@ class Block2ThermalImpuritySolver(_Block2Base):
         return self._mpo(driver, SymmetryTypes.SGF, const, h1_doubled, V_doubled)
 
 
+def charge_susceptibility(
+    impurity_solver: Block2ImpuritySolver, n_sweeps: int = 20, tol: float = 1e-12
+) -> float:
+    r"""
+    Return the static charge susceptibility of the physical orbitals of a solved impurity problem.
+
+    It is the change of the number of electrons :math:`N_c` on the physical
+    orbitals when :math:`-\mu N_c` is added to the impurity Hamiltonian,
+
+    .. math::
+
+        \frac{d \langle N_c \rangle}{d\mu}
+        = 2 \langle 0 | N_c Q (H - E_0)^{-1} Q N_c | 0 \rangle,
+
+    in the sector of the ground state :math:`|0\rangle`, with
+    :math:`Q = 1 - |0\rangle\langle 0|`. The state
+    :math:`(H - E_0)^{-1} Q N_c |0\rangle` is found by block2's linear solver
+    at the bond dimension of the solver, with :math:`|0\rangle` projected out.
+    The ground state must not be degenerate.
+
+    Parameters
+    ----------
+    impurity_solver : Block2ImpuritySolver
+        Solved, so that it keeps the matrix product state of its ground state.
+    n_sweeps : int, optional
+        Largest number of sweeps of the linear solver.
+    tol : float, optional
+        Convergence threshold of the linear solver.
+
+    Returns
+    -------
+    float
+
+    """
+    if impurity_solver._state is None:
+        msg = "The charge susceptibility needs a solved impurity problem."
+        raise ValueError(msg)
+    scratch, sector = impurity_solver._state
+    L = len(impurity_solver._sites)
+    driver, symm_type = impurity_solver._driver(scratch.name, sector, L)
+    ket = driver.load_mps("KET")
+    ground = driver.copy_mps(ket, tag="GROUND")
+    h1 = np.zeros((2 * L, 2 * L))
+    for bl, size in impurity_solver.gf_struct:
+        for a in range(size):
+            h1[impurity_solver._index[bl, a], impurity_solver._index[bl, a]] = 1.0
+    N_c = impurity_solver._mpo(driver, symm_type, 0.0, h1, np.zeros((2 * L,) * 4))
+    shifted = impurity_solver._mpo(
+        driver,
+        symm_type,
+        impurity_solver._const - impurity_solver.gs_energy,
+        impurity_solver._h1,
+        impurity_solver._V,
+    )
+    bra = driver.copy_mps(ket, tag="RESPONSE")
+    bond_dims = [impurity_solver.bond_dim]
+    overlap = driver.multiply(
+        bra,
+        N_c,
+        ket,
+        left_mpo=shifted,
+        proj_mpss=[ground],
+        proj_weights=[1.0],
+        bond_dims=bond_dims,
+        bra_bond_dims=bond_dims,
+        n_sweeps=n_sweeps,
+        tol=tol,
+        thrds=[tol] * n_sweeps,
+        iprint=impurity_solver._iprint,
+    )
+    for tag in ("GROUND", "RESPONSE"):
+        _remove_mps(scratch.name, tag)
+    return 2 * float(np.real(overlap))
+
+
 def _bath(bl: str) -> str:
     return "bath_" + bl
 

@@ -21,6 +21,9 @@ from risb import LatticeSolver, ThermalLatticeSolver
 from risb.diagnostics import Block2Diagnostics, Block2ThermalDiagnostics
 from risb.helpers_fockit import N_op, S2_op, h_int_kanamori
 from risb.impurity_solvers import FockitImpuritySolver, FockitThermalImpuritySolver
+from risb.impurity_solvers.fockit import (
+    charge_susceptibility as fockit_charge_susceptibility,
+)
 from risb.kintegration import BandKIntegrator, WeightedKPointIntegrator
 
 pytest.importorskip("pyblock2")
@@ -28,6 +31,9 @@ from risb.impurity_solvers import (
     Block2ImpuritySolver,
     Block2Settings,
     Block2ThermalImpuritySolver,
+)
+from risb.impurity_solvers.block2 import (
+    charge_susceptibility as block2_charge_susceptibility,
 )
 
 # The comparisons with exact results keep every state of a bond and converge
@@ -114,6 +120,28 @@ def test_ground_state_of_a_ghost_impurity_is_the_exact_one(
     assert_same_state(solver, expected)
     for Op in (N_op(["up", "dn"], 2), S2_op(["up", "dn"], 2)):
         assert solver.overlap(Op) == pytest.approx(expected.overlap(Op), abs=1e-6)
+
+
+def test_charge_susceptibility_is_the_exact_one() -> None:
+    problem = ghost_problem(2, 3)
+    h_int, gf_struct, bath_size = problem[:3]
+    expected = solved(
+        FockitImpuritySolver(h_int, gf_struct, bath_size=bath_size), problem
+    )
+    solver = solved(
+        Block2ImpuritySolver(
+            h_int,
+            gf_struct,
+            bond_dim=200,
+            symmetries={"sz": 0},
+            bath_size=bath_size,
+            settings=EXACT,
+        ),
+        problem,
+    )
+    assert block2_charge_susceptibility(solver) == pytest.approx(
+        fockit_charge_susceptibility(expected), rel=1e-6
+    )
 
 
 @pytest.mark.parametrize("settings", [Block2Settings(), Block2Settings(tol=1e-8)])

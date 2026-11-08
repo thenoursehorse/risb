@@ -18,6 +18,7 @@ from risb import LatticeSolver
 from risb.diagnostics import FockitDiagnostics, FockitThermalDiagnostics
 from risb.helpers_fockit import N_op, S2_op, h_int_kanamori
 from risb.impurity_solvers import FockitImpuritySolver, FockitThermalImpuritySolver
+from risb.impurity_solvers.fockit import charge_susceptibility
 from risb.kintegration import BandKIntegrator, WeightedKPointIntegrator
 from risb.types import BlockMatrix
 
@@ -306,6 +307,33 @@ def test_fockit_diagnostics_report_work_and_can_be_disabled(
         solver.diagnostics = None
         solver.solve()
         assert output.read_text() == report
+
+
+def test_charge_susceptibility_is_the_change_of_the_filling_with_the_level() -> None:
+    # Two orbitals with three bath orbitals each
+    spins, n_orb = ["up", "dn"], 2
+    gf_struct = [(bl, n_orb) for bl in spins]
+    bath_size = dict.fromkeys(spins, 3 * n_orb)
+    off = 1 - np.eye(n_orb)
+    h_int = h_int_kanamori(
+        spins, n_orb, U=1.8 * off, Uprime=3 * np.eye(n_orb) + 1.8 * off, J_hund=0.6
+    )
+    Lambda_c = dict.fromkeys(spins, np.kron(np.diag([-0.8, 0.0, 0.8]), np.eye(n_orb)))
+    D = dict.fromkeys(spins, np.kron(np.array([[0.4], [0.7], [0.5]]), np.eye(n_orb)))
+    h0_loc = dict.fromkeys(spins, np.diag([-0.1, 0.1]))
+    solver = FockitImpuritySolver(h_int, gf_struct, bath_size=bath_size)
+
+    def filling(dmu: float) -> float:
+        solver.set_h_imp(
+            Lambda_c, D, {bl: h - dmu * np.eye(n_orb) for bl, h in h0_loc.items()}
+        )
+        solver.solve()
+        return sum(float(np.trace(solver.rho_c[bl]).real) for bl in spins)
+
+    dmu = 1e-4
+    slope = (filling(dmu) - filling(-dmu)) / (2 * dmu)
+    filling(0.0)
+    assert charge_susceptibility(solver) == pytest.approx(slope, rel=1e-5)
 
 
 def test_fockit_solver_rejects_non_hermitian_hamiltonian() -> None:
