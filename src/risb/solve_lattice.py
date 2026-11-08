@@ -272,8 +272,10 @@ class PhysicalMuLatticeSolver(LatticeSolver):
     The quasiparticle bands are filled at the chemical potential :attr:`mu`.
     With `n_target`, :attr:`mu` is solved for with :attr:`Lambda` and
     :attr:`R` so that :attr:`n_electrons` is `n_target`. Each step of
-    :attr:`mu` also shifts :attr:`Lambda` by the same amount, so it does not
-    change the occupations of the quasiparticles. A solution is a solution of
+    :attr:`mu` also shifts :attr:`Lambda` by the same amount, so the
+    quasiparticle levels of the clusters keep their place relative to
+    :attr:`mu`. Their occupations then change only through hybridization with
+    the orbitals in no cluster. A solution is a solution of
     :class:`LatticeSolver` with the same :attr:`Lambda` and :attr:`R`.
 
     At a solution the filling of the quasiparticle bands is `n_target` plus
@@ -310,6 +312,17 @@ class PhysicalMuLatticeSolver(LatticeSolver):
         per cluster in the order of `impurity_solvers`; ``None`` leaves an
         impurity out. A cluster with a :class:`.DummyImpuritySolver` takes
         that of the cluster it copies. Default leaves every impurity out.
+    max_filling_error : float or None, optional
+        With `n_target`, :attr:`mu` is refitted inside each cycle, after the
+        impurities are solved, until ``|n_electrons - n_target|`` is at most
+        this. Each refit takes a step of `mu_step`, moves :attr:`Lambda` with
+        :attr:`mu`, and solves the impurities again. A step outside the
+        interval between the refits with too few and too many electrons goes
+        to its midpoint instead. The next :attr:`Lambda` and :attr:`R` come
+        from the impurities at the last :attr:`mu`. ``None`` does not refit.
+    max_mu_refits : int, optional
+        Largest number of refits in a cycle. When they run out, the cycle
+        carries on.
     density_feedback : risb.types.DensityFeedback or None, optional
         Shifts the quasiparticle levels against the density mismatch, before
         pinning. Default is
@@ -343,6 +356,8 @@ class PhysicalMuLatticeSolver(LatticeSolver):
         impurity_charge_susceptibility: ImpurityChargeSusceptibility
         | Sequence[ImpurityChargeSusceptibility | None]
         | None = None,
+        max_filling_error: float | None = None,
+        max_mu_refits: int = 3,
         bath_size: Sequence[Mapping[str, int]] | None = None,
         h0_k_evaluator: Callable[[KPoints], BlockMatrixLike] | None = None,
         projectors_evaluator: Callable[[KPoints], Sequence[BlockMatrixLike]]
@@ -385,6 +400,8 @@ class PhysicalMuLatticeSolver(LatticeSolver):
         self._impurity_charge_susceptibility = self._per_cluster(
             impurity_charge_susceptibility
         )
+        self.max_filling_error = max_filling_error
+        self.max_mu_refits = max_mu_refits
 
         self._mu_from_bands = mu is None
         self.mu: float
@@ -429,6 +446,35 @@ class PhysicalMuLatticeSolver(LatticeSolver):
         )
         self.mu = float(result.mu)
         return result
+
+    @override
+    def solve_impurities(self) -> None:
+        super().solve_impurities()
+        if self.n_target is None or self.max_filling_error is None:
+            return
+        # Highest mu with too few electrons and lowest mu with too many
+        below, above = -np.inf, np.inf
+        for _ in range(self.max_mu_refits):
+            filling_error = self.n_electrons - self.n_target
+            if abs(filling_error) <= self.max_filling_error:
+                return
+            if filling_error < 0:
+                below = max(below, self.mu)
+            else:
+                above = min(above, self.mu)
+            mu = self.mu + self.mu_step.step(filling_error, self._filling_slope)
+            if np.isfinite(below) and np.isfinite(above) and not below < mu < above:
+                mu = (below + above) / 2
+            # Lambda moves with mu, as in cycle
+            dmu = mu - self.mu
+            self.mu = mu
+            self.Lambda = [
+                {bl: L + dmu * np.eye(L.shape[0]) for bl, L in L_i.items()}
+                for L_i in self.Lambda
+            ]
+            self.update_bands()
+            self.update_bath()
+            super().solve_impurities()
 
     @override
     def update_residuals(self) -> None:
@@ -505,8 +551,7 @@ class PhysicalMuLatticeSolver(LatticeSolver):
 
     def _filling_outside_clusters(self, dmu: float) -> float:
         # Electrons in the bands of the orbitals in no cluster after a step dmu
-        # of mu, which also shifts Lambda, as in cycle, so the quasiparticles
-        # of the clusters keep their occupations
+        # of mu, which also shifts Lambda, as in cycle
         Lambda = [
             {bl: L + dmu * np.eye(L.shape[0]) for bl, L in L_i.items()}
             for L_i in self.Lambda

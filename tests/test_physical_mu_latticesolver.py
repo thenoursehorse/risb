@@ -149,7 +149,7 @@ def test_uncorrelated_ligand_shares_the_mu_of_the_metal() -> None:
         )
 
 
-def test_newton_mu_step_reaches_the_solution_of_the_unit_step() -> None:
+def test_mu_steps_and_refits_reach_the_solution_of_the_unit_step() -> None:
     # One metal orbital with three quasiparticles, hybridized with an
     # uncorrelated ligand orbital, so that both the bands and the impurity
     # contribute to dn/dmu
@@ -183,18 +183,25 @@ def test_newton_mu_step_reaches_the_solution_of_the_unit_step() -> None:
         return S
 
     expected = solved()
-    S = solved(
-        mu_step=MuNewtonStep(), impurity_charge_susceptibility=charge_susceptibility
-    )
-    # mu lies in a gap, so the filling does not fix it
-    assert S.n_electrons == pytest.approx(n_target, abs=1e-8)
-    for bl in SPINS:
-        assert np.trace(S.rho_c[0][bl]).real == pytest.approx(
-            np.trace(expected.rho_c[0][bl]).real, abs=1e-6
-        )
-        assert np.linalg.eigvalsh(S.Z[0][bl]) == pytest.approx(
-            np.linalg.eigvalsh(expected.Z[0][bl]), abs=1e-6
-        )
+    newton = {
+        "mu_step": MuNewtonStep(),
+        "impurity_charge_susceptibility": charge_susceptibility,
+    }
+    for options in (
+        {**newton},
+        {"max_filling_error": 1e-4},
+        {**newton, "max_filling_error": 1e-4},
+    ):
+        S = solved(**options)
+        # mu lies in a gap, so the filling does not fix it
+        assert S.n_electrons == pytest.approx(n_target, abs=1e-8)
+        for bl in SPINS:
+            assert np.trace(S.rho_c[0][bl]).real == pytest.approx(
+                np.trace(expected.rho_c[0][bl]).real, abs=1e-6
+            )
+            assert np.linalg.eigvalsh(S.Z[0][bl]) == pytest.approx(
+                np.linalg.eigvalsh(expected.Z[0][bl]), abs=1e-6
+            )
 
 
 def test_physical_mu_finds_the_neel_antiferromagnet() -> None:

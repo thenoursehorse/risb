@@ -4,7 +4,9 @@
 
 - [ ] μ step at finite temperature: thermal trimer at β = 40 runs away after the first unit step (filling saturates). There is no exact quasiparticle filling to centre a window on.
 - [ ] Leave copied clusters (DummyImpuritySolver) out of x for the optimizer.
-- [ ] Lazy μ refit for LatticeSolver (refit μ on the impurities only when the filling is off by more than a tolerance, as gem).
+- [x] Lazy μ refit: in PhysicalMuLatticeSolver (max_filling_error, max_mu_refits), not LatticeSolver, which has no physical μ.
+- [ ] μ refit for ThermalLatticeSolver. Careful: (a) Λ moves with μ in the refit, or stays fixed (a full cycle per trial)? The thermal step keeps Λ fixed. (b) update_bath is the density-matching fit, redone at every refit; check it behaves under the shift. (c) No thermal charge susceptibility yet, so MuNewtonStep has only the band part.
+- [ ] Thermal charge susceptibility of fockit and block2 impurities (for MuNewtonStep at finite temperature).
 
 
 Goal: improve reliable convergence; measure success across starts and final

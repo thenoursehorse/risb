@@ -21,3 +21,6 @@ _build
 
 # Visual Studio Code
 .vscode
+
+# Local prototypes and benchmark output
+scratch/

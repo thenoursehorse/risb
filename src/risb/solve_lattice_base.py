@@ -786,6 +786,60 @@ class BaseLatticeSolver(ABC):
         """
         return []
 
+    def update_bands(self) -> None:
+        """
+        Integrate the quasiparticle bands of :attr:`R` and :attr:`Lambda` with :meth:`integrate_bands`.
+
+        Sets :attr:`band_integration_result`, the quasiparticle eigenstates and
+        densities, and :attr:`rho_qp` and :attr:`lopsided_ke_qp` of each cluster.
+        """
+        # Make R, Lambda in supercell basis from basis of the clusters. The
+        # orbitals in no cluster keep their bands: R = 1, Lambda = 0 there
+        with self._stage("bands"):
+            self.R_full, self.Lambda_full = helpers.upfold_r_lambda(
+                self.R,
+                self.Lambda,
+                self.h0_kin_k,
+                self._projectors_qp,
+                self.gf_struct_mapping,
+            )
+
+            hamiltonian, observables = self._get_band_integrands()
+
+        with self._stage("densities"):
+            result = self.integrate_bands(hamiltonian, observables)
+            self.band_integration_result = result
+            if not result.converged:
+                msg = "Band integration did not meet its requested accuracy."
+                raise RuntimeError(msg)
+            self.eigenvalues_qp = result.eigenvalues
+            self.eigenvectors_qp = result.eigenvectors
+            self.density_qp_k = result.density_k
+            self.weighted_occupations_qp = (
+                {
+                    block: f * result.weights[:, None]
+                    for block, f in result.occupations.items()
+                }
+                if result.weights is not None
+                else {}
+            )
+            for i, cluster in enumerate(self.gf_struct):
+                for block, _ in cluster:
+                    self.rho_qp[i][block] = result.values["rho_qp", i, block]
+                    self.lopsided_ke_qp[i][block] = result.values[
+                        "lopsided_ke_qp", i, block
+                    ]
+
+            # FIXME More expensive to do this than just storing and working with the coefficients, but
+            # nothing compared to solving the impurity problem so this is likely fine
+            # Enforce matrix structure from symmetries
+            self.rho_qp = self._project(self.rho_qp, is_hermitian=True, name="rho_qp")
+            # self.lopsided_ke_qp, _ = self._unflatten_matrix( self._flatten_matrix( self.lopsided_ke_qp, is_hermitian=False ), is_hermitian=False )
+            for symmetrize in self.symmetrizers:
+                self.rho_qp = symmetrize(self.rho_qp)
+                # self.lopsided_ke_qp = symmetrize(self.lopsided_ke_qp) # FIXME can I do it to ke as well? It should have same symm as D
+                # self.ke_qp = symmetrize(self.ke_qp)
+
     def integrate_bands(
         self, hamiltonian: Hamiltonian, observables: BandObservables
     ) -> BandKIntegrationResult:
@@ -885,55 +939,7 @@ class BaseLatticeSolver(ABC):
                 self.R = symmetrize(self.R)
                 self.Lambda = symmetrize(self.Lambda)
 
-            # Make R, Lambda in supercell basis from basis of the clusters. The
-            # orbitals in no cluster keep their bands: R = 1, Lambda = 0 there
-            with self._stage("bands"):
-                self.R_full, self.Lambda_full = helpers.upfold_r_lambda(
-                    self.R,
-                    self.Lambda,
-                    self.h0_kin_k,
-                    self._projectors_qp,
-                    self.gf_struct_mapping,
-                )
-
-                hamiltonian, observables = self._get_band_integrands()
-
-            with self._stage("densities"):
-                result = self.integrate_bands(hamiltonian, observables)
-                self.band_integration_result = result
-                if not result.converged:
-                    msg = "Band integration did not meet its requested accuracy."
-                    raise RuntimeError(msg)
-                self.eigenvalues_qp = result.eigenvalues
-                self.eigenvectors_qp = result.eigenvectors
-                self.density_qp_k = result.density_k
-                self.weighted_occupations_qp = (
-                    {
-                        block: f * result.weights[:, None]
-                        for block, f in result.occupations.items()
-                    }
-                    if result.weights is not None
-                    else {}
-                )
-                for i, cluster in enumerate(self.gf_struct):
-                    for block, _ in cluster:
-                        self.rho_qp[i][block] = result.values["rho_qp", i, block]
-                        self.lopsided_ke_qp[i][block] = result.values[
-                            "lopsided_ke_qp", i, block
-                        ]
-
-                # FIXME More expensive to do this than just storing and working with the coefficients, but
-                # nothing compared to solving the impurity problem so this is likely fine
-                # Enforce matrix structure from symmetries
-                self.rho_qp = self._project(
-                    self.rho_qp, is_hermitian=True, name="rho_qp"
-                )
-                # self.lopsided_ke_qp, _ = self._unflatten_matrix( self._flatten_matrix( self.lopsided_ke_qp, is_hermitian=False ), is_hermitian=False )
-                for symmetrize in self.symmetrizers:
-                    self.rho_qp = symmetrize(self.rho_qp)
-                    # self.lopsided_ke_qp = symmetrize(self.lopsided_ke_qp) # FIXME can I do it to ke as well? It should have same symm as D
-                    # self.ke_qp = symmetrize(self.ke_qp)
-
+            self.update_bands()
             with self._stage("bath"):
                 self.update_bath()
             with self._stage("impurities"):
