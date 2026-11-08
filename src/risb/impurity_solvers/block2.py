@@ -1728,7 +1728,7 @@ class Block2ThermalImpuritySolver(_Block2Base):
 
 
 def charge_susceptibility(
-    impurity_solver: Block2ImpuritySolver, n_sweeps: int = 20, tol: float = 1e-12
+    impurity_solver: Block2ImpuritySolver, n_sweeps: int = 20, tol: float = 1e-8
 ) -> float:
     r"""
     Return the static charge susceptibility of the physical orbitals of a solved impurity problem.
@@ -1754,7 +1754,8 @@ def charge_susceptibility(
     n_sweeps : int, optional
         Largest number of sweeps of the linear solver.
     tol : float, optional
-        Convergence threshold of the linear solver.
+        Convergence threshold of the linear solver, of the order of the
+        tolerance of the ground state. Default is ``1e-8``.
 
     Returns
     -------

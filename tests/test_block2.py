@@ -140,7 +140,7 @@ def test_charge_susceptibility_is_the_exact_one() -> None:
         problem,
     )
     assert block2_charge_susceptibility(solver) == pytest.approx(
-        fockit_charge_susceptibility(expected), rel=1e-6
+        fockit_charge_susceptibility(expected), rel=1e-4
     )
 
 
