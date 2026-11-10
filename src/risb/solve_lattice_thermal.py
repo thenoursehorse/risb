@@ -463,7 +463,7 @@ class ThermalLatticeSolver(BaseLatticeSolver):
         -------
         x_new : numpy.ndarray
             Next Lambda and R, followed by ``mu`` plus the steps of the refits
-            and of :attr:`mu_step` when solving at fixed filling. After a
+            and of `mu_step` when solving at fixed filling. After a
             refit, :attr:`mu`, :attr:`Lambda` and :attr:`Lambda_c` stay at the
             last refit.
         residual : numpy.ndarray

@@ -64,17 +64,19 @@ _DEFAULT_REFIT_STEP = MuNewtonStep(min_slope=1e-3)
 _SLOPE_DMU = 1e-4
 
 
-class LatticeSolver(BaseLatticeSolver):
+class ZeroTemperatureLatticeSolver(BaseLatticeSolver):
     """
-    Rotationally invariant slave-bosons (RISB) lattice solver with a local interaction on each cluster.
+    Base for the zero-temperature RISB lattice solvers.
 
-    It solves the zero-temperature RISB equations.
+    It computes the bath, the residuals and the next :attr:`R` and
+    :attr:`Lambda` from the zero-temperature RISB equations, and can pin the
+    levels of full and empty orbitals and shift the quasiparticle levels
+    against the density mismatch.
 
     Parameters
     ----------
     band_integrator : risb.kintegration.BandKIntegration
         Integrates the quasiparticle densities and kinetic matrices.
-        Set beta and the band filling on this integrator.
     pin_full_empty : risb.types.PinFullEmpty or None, optional
         Sets the levels of full or empty auxiliary orbitals. Default is
         :class:`risb.stabilization.FullEmptyPinning` with its default parameters.
@@ -268,7 +270,30 @@ class LatticeSolver(BaseLatticeSolver):
         return self._kinetic_half_bandwidth + largest
 
 
-class PhysicalMuLatticeSolver(LatticeSolver):
+class LatticeSolver(ZeroTemperatureLatticeSolver):
+    """
+    Rotationally invariant slave-bosons (RISB) lattice solver with a local interaction on each cluster.
+
+    It solves the zero-temperature RISB equations, with the chemical potential
+    of the quasiparticle bands set by their filling on `band_integrator`.
+
+    Parameters
+    ----------
+    band_integrator : risb.kintegration.BandKIntegration
+        Integrates the quasiparticle densities and kinetic matrices.
+        Set beta and the band filling on this integrator.
+    pin_full_empty, density_feedback, diagnostics
+        As in :class:`.ZeroTemperatureLatticeSolver`.
+
+    Other Parameters
+    ----------------
+    h0_k, gf_struct, impurity_solvers, projectors, gf_struct_mapping, symmetrizers, force_real, force_real_atol, force_real_rtol, check_projectors, double_counting, bath_size, h0_k_evaluator, projectors_evaluator, gauge_fix, clip_r
+        As in :class:`.BaseLatticeSolver`.
+
+    """
+
+
+class PhysicalMuLatticeSolver(ZeroTemperatureLatticeSolver):
     r"""
     Zero-temperature RISB lattice solver at a fixed physical chemical potential or filling.
 
@@ -344,7 +369,7 @@ class PhysicalMuLatticeSolver(LatticeSolver):
     Other Parameters
     ----------------
     h0_k, gf_struct, impurity_solvers, projectors, gf_struct_mapping, symmetrizers, force_real, check_projectors, double_counting, bath_size, h0_k_evaluator, projectors_evaluator, pin_full_empty, gauge_fix, clip_r, force_real_atol, force_real_rtol, diagnostics
-        As in :class:`.LatticeSolver`.
+        As in :class:`.ZeroTemperatureLatticeSolver`.
 
     """
 
@@ -554,7 +579,7 @@ class PhysicalMuLatticeSolver(LatticeSolver):
         -------
         x_new : numpy.ndarray
             Next Lambda and R, followed by ``mu`` plus the steps of the refits
-            and of :attr:`mu_step`
+            and of `mu_step`
             when solving at fixed filling.
         residual : numpy.ndarray
             Packed f2 and f1, followed by ``n_electrons - n_target``
