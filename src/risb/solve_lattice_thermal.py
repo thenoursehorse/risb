@@ -446,7 +446,9 @@ class ThermalLatticeSolver(BaseLatticeSolver):
             self.mu = float(x[-1])
             x_new, residual = super().cycle(x[:-1])
             mu_new = self.mu + self.mu_step.step(
-                self.n_electrons - self.n_target, self._filling_slope
+                self.n_electrons - self.n_target,
+                self._filling_slope,
+                [(self.mu, self.n_electrons)],
             )
             x_new = np.append(x_new, mu_new)
             residual = np.append(residual, self.n_electrons - self.n_target)

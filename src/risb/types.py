@@ -1,6 +1,6 @@
 """Type aliases and interfaces used across risb."""
 
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Literal, Protocol, runtime_checkable
 
@@ -174,16 +174,24 @@ type ImpurityChargeSusceptibility = Callable[["ImpuritySolver"], float]
 
 
 class ChemicalPotentialStep(Protocol):
-    """Step of the chemical potential after a cycle of :class:`risb.PhysicalMuLatticeSolver` or :class:`risb.ThermalLatticeSolver`."""
+    """Step of the chemical potential in a cycle of :class:`risb.PhysicalMuLatticeSolver` or :class:`risb.ThermalLatticeSolver`."""
 
-    def step(self, filling_error: float, slope: Callable[[], float]) -> float:
+    def step(
+        self,
+        filling_error: float,
+        slope: Callable[[], float],
+        history: Sequence[tuple[float, float]],
+    ) -> float:
         """
         Return the change of the chemical potential.
 
-        ``filling_error`` is ``n_electrons - n_target`` of the cycle, and
-        ``slope()`` returns the derivative of ``n_electrons`` with respect to
-        the chemical potential, which costs a band integration and possibly
-        impurity calculations.
+        ``filling_error`` is ``n_electrons - n_target`` at the current
+        chemical potential. ``slope()`` returns ``dn_electrons/dmu`` from the
+        bands of the orbitals in no cluster and the impurity charge
+        susceptibilities given to the lattice solver; it costs a band
+        integration and possibly impurity calculations. ``history`` holds the
+        chemical potential and ``n_electrons`` of each impurity solution in
+        this cycle, in order, the current one last.
         """
 
 

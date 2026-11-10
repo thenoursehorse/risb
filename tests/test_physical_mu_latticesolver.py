@@ -11,7 +11,7 @@ from risb.helpers_fockit import h_int_kanamori
 from risb.impurity_solvers import FockitImpuritySolver
 from risb.impurity_solvers.fockit import charge_susceptibility
 from risb.kintegration import BandKIntegrator, WeightedKPointIntegrator
-from risb.stabilization import MuNewtonStep
+from risb.stabilization import MuNewtonStep, MuSecantStep
 
 SPINS = ["up", "dn"]
 
@@ -161,7 +161,7 @@ def test_mu_steps_and_refits_reach_the_solution_of_the_unit_step() -> None:
     sz = nc("up", 0) - nc("dn", 0)
     sz += sum((nc("bath_up", a) - nc("bath_dn", a) for a in range(3)), zero())
 
-    def solved(**options: object) -> PhysicalMuLatticeSolver:
+    def solved(**options: object) -> tuple[PhysicalMuLatticeSolver, list[float]]:
         S = PhysicalMuLatticeSolver(
             h0_k=dict.fromkeys(SPINS, h0_k),
             gf_struct=gf_struct,
@@ -179,20 +179,22 @@ def test_mu_steps_and_refits_reach_the_solution_of_the_unit_step() -> None:
             n_target=n_target,
             **options,  # type: ignore[arg-type]
         )
-        assert S.solve(tol=1e-9, maxiter=300).converged
-        return S
+        fillings: list[float] = []
+        callbacks = [*S.default_callbacks(), lambda *_: fillings.append(S.n_electrons)]
+        assert S.solve(tol=1e-9, maxiter=300, callbacks=callbacks).converged
+        return S, fillings
 
-    expected = solved()
-    newton = {
-        "mu_step": MuNewtonStep(),
-        "impurity_charge_susceptibility": charge_susceptibility,
-    }
+    expected, _ = solved()
+    chi = {"impurity_charge_susceptibility": charge_susceptibility}
+    refit = {"max_filling_error": 1e-4, "max_mu_refits": 10}
     for options in (
-        {**newton},
-        {"max_filling_error": 1e-4},
-        {**newton, "max_filling_error": 1e-4},
+        {"mu_step": MuNewtonStep(), **chi},
+        {**refit, **chi},
+        {**refit, "mu_impurity_refit_step": MuSecantStep()},
     ):
-        S = solved(**options)
+        S, fillings = solved(**options)
+        if "max_filling_error" in options:
+            assert fillings == pytest.approx([n_target] * len(fillings), abs=1e-4)
         # mu lies in a gap, so the filling does not fix it
         assert S.n_electrons == pytest.approx(n_target, abs=1e-8)
         for bl in SPINS:

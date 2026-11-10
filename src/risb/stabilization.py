@@ -1,6 +1,6 @@
 """Stabilization of the level updates of :class:`risb.LatticeSolver` and of the chemical potential."""
 
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from typing import Literal, override
 
 import numpy as np
@@ -260,7 +260,12 @@ class MuUnitStep(ChemicalPotentialStep):
     """Step the chemical potential by the missing number of electrons, ``n_target - n_electrons``."""
 
     @override
-    def step(self, filling_error: float, slope: Callable[[], float]) -> float:
+    def step(
+        self,
+        filling_error: float,
+        slope: Callable[[], float],
+        history: Sequence[tuple[float, float]],
+    ) -> float:
         """Return the change of the chemical potential."""
         return -filling_error
 
@@ -271,6 +276,7 @@ class MuNewtonStep(ChemicalPotentialStep):
 
     :math:`dn/d\mu` is that of the bands of the orbitals in no cluster plus
     the charge susceptibilities of the impurities given to the lattice solver.
+    Without them, only the bands count.
 
     Parameters
     ----------
@@ -285,6 +291,43 @@ class MuNewtonStep(ChemicalPotentialStep):
         self.min_slope = min_slope
 
     @override
-    def step(self, filling_error: float, slope: Callable[[], float]) -> float:
+    def step(
+        self,
+        filling_error: float,
+        slope: Callable[[], float],
+        history: Sequence[tuple[float, float]],
+    ) -> float:
         """Return the change of the chemical potential."""
         return -filling_error / max(slope(), self.min_slope)
+
+
+class MuSecantStep(ChemicalPotentialStep):
+    r"""
+    Secant step of the chemical potential, :math:`(n_\mathrm{target} - n) / (dn/d\mu)`.
+
+    :math:`dn/d\mu` is the slope through the last two entries of the history
+    of the cycle. With only one entry, the step is that of :class:`MuUnitStep`.
+
+    Parameters
+    ----------
+    min_slope : float, optional
+        Smallest :math:`dn/d\mu` used, so that a step is at most
+        ``|n_target - n| / min_slope``.
+
+    """
+
+    def __init__(self, min_slope: float = 1e-3) -> None:
+        self.min_slope = min_slope
+
+    @override
+    def step(
+        self,
+        filling_error: float,
+        slope: Callable[[], float],
+        history: Sequence[tuple[float, float]],
+    ) -> float:
+        """Return the change of the chemical potential."""
+        if len(history) < 2:
+            return -filling_error
+        (mu_0, n_0), (mu_1, n_1) = history[-2:]
+        return -filling_error / max((n_1 - n_0) / (mu_1 - mu_0), self.min_slope)

@@ -39,6 +39,7 @@ from risb.solve_lattice_base import BaseLatticeSolver
 from risb.stabilization import (
     FullEmptyPinning,
     LinearWeightedDensityFeedback,
+    MuNewtonStep,
     MuUnitStep,
 )
 from risb.types import (
@@ -57,6 +58,7 @@ from risb.types import (
 _DEFAULT_PINNING = FullEmptyPinning()
 _DEFAULT_FEEDBACK = LinearWeightedDensityFeedback()
 _DEFAULT_MU_STEP = MuUnitStep()
+_DEFAULT_REFIT_STEP = MuNewtonStep(min_slope=1e-3)
 # Step of mu for the slope of the filling of the bands
 _SLOPE_DMU = 1e-4
 
@@ -313,13 +315,22 @@ class PhysicalMuLatticeSolver(LatticeSolver):
         impurity out. A cluster with a :class:`.DummyImpuritySolver` takes
         that of the cluster it copies. Default leaves every impurity out.
     max_filling_error : float or None, optional
-        With `n_target`, :attr:`mu` is refitted inside each cycle, after the
-        impurities are solved, until ``|n_electrons - n_target|`` is at most
-        this. Each refit takes a step of `mu_step`, moves :attr:`Lambda` with
-        :attr:`mu`, and solves the impurities again. A step outside the
-        interval between the refits with too few and too many electrons goes
-        to its midpoint instead. The next :attr:`Lambda` and :attr:`R` come
-        from the impurities at the last :attr:`mu`. ``None`` does not refit.
+        With `n_target`, the chemical potential of the impurities is refitted
+        in each cycle until ``|n_electrons - n_target|`` is at most this. A
+        refit shifts :attr:`Lambda_c` of the cycle by :math:`-\delta\mu`,
+        which at the fixed particle number of each impurity adds
+        :math:`-\delta\mu N_c`, with :math:`N_c` the number of electrons on
+        its physical orbitals, and solves the impurities again. The step comes
+        from `mu_impurity_refit_step`, kept between the chemical potentials
+        found with too few and too many electrons. The next :attr:`Lambda` and
+        :attr:`R` come from the impurities at the last refit, and
+        :math:`\delta\mu` is added to the next :attr:`mu`. ``None`` does not
+        refit.
+    mu_impurity_refit_step : risb.types.ChemicalPotentialStep, optional
+        The step of each refit. Default is
+        :class:`risb.stabilization.MuNewtonStep` with ``min_slope = 1e-3``,
+        which needs `impurity_charge_susceptibility`; see also
+        :class:`risb.stabilization.MuSecantStep`, which does not.
     max_mu_refits : int, optional
         Largest number of refits in a cycle. When they run out, the cycle
         carries on.
@@ -357,6 +368,7 @@ class PhysicalMuLatticeSolver(LatticeSolver):
         | Sequence[ImpurityChargeSusceptibility | None]
         | None = None,
         max_filling_error: float | None = None,
+        mu_impurity_refit_step: ChemicalPotentialStep = _DEFAULT_REFIT_STEP,
         max_mu_refits: int = 3,
         bath_size: Sequence[Mapping[str, int]] | None = None,
         h0_k_evaluator: Callable[[KPoints], BlockMatrixLike] | None = None,
@@ -401,7 +413,15 @@ class PhysicalMuLatticeSolver(LatticeSolver):
             impurity_charge_susceptibility
         )
         self.max_filling_error = max_filling_error
+        self.mu_impurity_refit_step = mu_impurity_refit_step
         self.max_mu_refits = max_mu_refits
+        # Shift of the chemical potential of the impurities by the refits of
+        # this cycle, and the change of the filling of the orbitals in no
+        # cluster it causes
+        self._mu_refit = 0.0
+        self._outside_filling_change = 0.0
+        # Chemical potential and filling of each impurity solution in this cycle
+        self._history: list[tuple[float, float]] = []
 
         self._mu_from_bands = mu is None
         self.mu: float
@@ -450,31 +470,42 @@ class PhysicalMuLatticeSolver(LatticeSolver):
     @override
     def solve_impurities(self) -> None:
         super().solve_impurities()
-        if self.n_target is None or self.max_filling_error is None:
+        self._mu_refit, self._outside_filling_change = 0.0, 0.0
+        if self.n_target is None:
             return
+        self._history = [(self.mu, self.n_electrons)]
+        if self.max_filling_error is None:
+            return
+        outside = self._filling_outside_clusters(0.0)
+        Lambda_c = self.Lambda_c
         # Highest mu with too few electrons and lowest mu with too many
         below, above = -np.inf, np.inf
         for _ in range(self.max_mu_refits):
-            filling_error = self.n_electrons - self.n_target
+            mu, n = self._history[-1]
+            filling_error = n - self.n_target
             if abs(filling_error) <= self.max_filling_error:
                 return
             if filling_error < 0:
-                below = max(below, self.mu)
+                below = max(below, mu)
             else:
-                above = min(above, self.mu)
-            mu = self.mu + self.mu_step.step(filling_error, self._filling_slope)
+                above = min(above, mu)
+            mu += self.mu_impurity_refit_step.step(
+                filling_error, self._filling_slope, self._history
+            )
             if np.isfinite(below) and np.isfinite(above) and not below < mu < above:
                 mu = (below + above) / 2
-            # Lambda moves with mu, as in cycle
-            dmu = mu - self.mu
-            self.mu = mu
-            self.Lambda = [
-                {bl: L + dmu * np.eye(L.shape[0]) for bl, L in L_i.items()}
-                for L_i in self.Lambda
+            # At fixed particle number of the impurity, shifting the bath levels
+            # by -dmu adds -dmu N_c
+            self._mu_refit = mu - self.mu
+            self.Lambda_c = [
+                {bl: L - self._mu_refit * np.eye(L.shape[0]) for bl, L in L_i.items()}
+                for L_i in Lambda_c
             ]
-            self.update_bands()
-            self.update_bath()
             super().solve_impurities()
+            self._outside_filling_change = (
+                self._filling_outside_clusters(self._mu_refit) - outside
+            )
+            self._history.append((mu, self.n_electrons))
 
     @override
     def update_residuals(self) -> None:
@@ -517,7 +548,8 @@ class PhysicalMuLatticeSolver(LatticeSolver):
         Returns
         -------
         x_new : numpy.ndarray
-            Next Lambda and R, followed by ``mu`` plus the step of :attr:`mu_step`
+            Next Lambda and R, followed by ``mu`` plus the steps of the refits
+            and of :attr:`mu_step`
             when solving at fixed filling.
         residual : numpy.ndarray
             Packed f2 and f1, followed by ``n_electrons - n_target``
@@ -528,22 +560,39 @@ class PhysicalMuLatticeSolver(LatticeSolver):
             return super().cycle(x)
         self.mu = float(x[-1])
         x_new, residual = super().cycle(x[:-1])
-        step = self.mu_step.step(self.n_electrons - self.n_target, self._filling_slope)
+        # The next Lambda already carries the step of the refits, through
+        # Lambda_c
+        step = self.mu_step.step(
+            self.n_electrons - self.n_target, self._filling_slope, self._history
+        )
         identity: list[BlockMatrix] = [
             {bl: np.eye(L.shape[0]) for bl, L in L_i.items()} for L_i in self.Lambda
         ]
         shift = self._flatten_matrix(identity, is_hermitian=True, name="Lambda")
         x_new[: len(shift)] += step * np.asarray(shift)
-        return np.append(x_new, self.mu + step), np.append(
+        return np.append(x_new, self.mu + self._mu_refit + step), np.append(
             residual, self.n_electrons - self.n_target
         )
 
+    @property
+    @override
+    def n_electrons(self) -> float:
+        """
+        Number of electrons per unit cell.
+
+        These are the electrons of the impurity problems (:attr:`rho_c`) plus
+        those of the bands of the orbitals in no cluster, at the chemical
+        potential of the last refit of the impurities.
+        """
+        return super().n_electrons + self._outside_filling_change
+
     def _filling_slope(self) -> float:
-        # dn_electrons/dmu at the R and Lambda of the cycle: the bands of the
-        # orbitals in no cluster, and the impurities given
+        # dn/dmu at the R and Lambda of the cycle and the chemical potential of
+        # the last refit, from the bands of the orbitals in no cluster and the
+        # given impurity susceptibilities
         bands = (
-            self._filling_outside_clusters(_SLOPE_DMU)
-            - self._filling_outside_clusters(0.0)
+            self._filling_outside_clusters(self._mu_refit + _SLOPE_DMU)
+            - self._filling_outside_clusters(self._mu_refit)
         ) / _SLOPE_DMU
         return bands + self._impurity_filling_slope(
             self._impurity_charge_susceptibility
