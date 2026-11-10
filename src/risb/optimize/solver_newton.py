@@ -150,8 +150,8 @@ class NewtonSolver(ABC):
         max_size: int | None = None,
     ) -> None:
         vec.insert(0, vec_new)
-        if max_size is not None and len(vec) > max_size:
-            vec.pop()
+        if max_size is not None:
+            del vec[max_size:]
 
     @abstractmethod
     def update_x(self) -> NDArray[np.float64]:

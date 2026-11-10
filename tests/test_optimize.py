@@ -67,6 +67,15 @@ def test_diis_keeps_history_size_vectors() -> None:
     assert len(solver.error) == 4
 
 
+def test_diis_given_a_longer_history_keeps_only_its_own_size() -> None:
+    long = DIIS(history_size=6)
+    long.solve(fixed_point, np.zeros(3), tol=0, maxiter=8)
+    solver = DIIS(history_size=1, policy=Pulay(mixing_period=None, alpha=0.3))
+    solver.x, solver.g_x, solver.error = list(long.x), list(long.g_x), list(long.error)
+    solver.solve(fixed_point, long.x[0], tol=0, maxiter=2)
+    assert len(solver.x) == len(solver.g_x) == len(solver.error) == 1
+
+
 @pytest.mark.parametrize(("n_restart", "n_vectors"), [(None, 3), (2, 1)])
 def test_diis_restarts_history_after_n_restart_iterations(
     n_restart: int | None, n_vectors: int
