@@ -29,10 +29,7 @@ from risb import helpers
 from risb.diagnostics import DiagnosticObserver
 from risb.kintegration import (
     BandKIntegration,
-    BandKIntegrationResult,
     BandKIntegrator,
-    BandObservables,
-    Hamiltonian,
     KPoints,
     WeightedKPointIntegrator,
 )
@@ -56,8 +53,6 @@ from risb.types import (
 
 _DEFAULT_MU_STEP = MuUnitStep()
 _DEFAULT_REFIT_STEP = MuSecantStep()
-# Step of mu for the slope of the filling of the bands
-_SLOPE_DMU = 1e-4
 
 
 class ThermalLatticeSolver(BaseLatticeSolver):
@@ -74,6 +69,12 @@ class ThermalLatticeSolver(BaseLatticeSolver):
     quasiparticles, solves the impurity problems, and then fits
     :attr:`Lambda` and :attr:`R` so that it has their :attr:`rho_f` and
     :attr:`rho_cf`.
+
+    With `n_target`, :attr:`mu` is solved for with :attr:`Lambda` and
+    :attr:`R` so that :attr:`n_electrons` is `n_target`. Each step of
+    :attr:`mu` also shifts :attr:`Lambda` by the same amount and
+    :attr:`Lambda_c` the other way, so the quasiparticle levels of the
+    clusters keep their place relative to :attr:`mu`.
 
     Parameters
     ----------
@@ -150,6 +151,9 @@ class ThermalLatticeSolver(BaseLatticeSolver):
 
     """
 
+    beta: float
+    mu: float
+
     def __init__(
         self,
         h0_k: BlockMatrixLike,
@@ -207,7 +211,6 @@ class ThermalLatticeSolver(BaseLatticeSolver):
             projectors_evaluator=projectors_evaluator,
             gauge_fix=gauge_fix,
             clip_r=clip_r,
-            mu=mu,
         )
         #: float : Inverse temperature.
         self.beta = beta
@@ -216,21 +219,6 @@ class ThermalLatticeSolver(BaseLatticeSolver):
         self.density_matching_regularization_scale = (
             density_matching_regularization_scale
         )
-
-        #: float or None : Number of electrons per unit cell to solve for.
-        self.n_target = n_target
-        self.mu_step = mu_step
-        self._impurity_charge_susceptibility = self._per_cluster(
-            impurity_charge_susceptibility
-        )
-        self.max_filling_error = max_filling_error
-        self.mu_impurity_refit_step = mu_impurity_refit_step
-        self.max_mu_refits = max_mu_refits
-        # Change of the filling of the orbitals in no cluster made by the refits
-        # of this cycle
-        self._outside_filling_change = 0.0
-        # Chemical potential and filling of each impurity solution in this cycle
-        self._history: list[tuple[float, float]] = []
 
         #: float : Largest absolute entry of the bath density and kinetic
         #: matching residuals of the current cycle, excluding the anchor penalty.
@@ -242,41 +230,24 @@ class ThermalLatticeSolver(BaseLatticeSolver):
             tuple[str, int, str], tuple[NDArray[np.inexact], NDArray[np.inexact]]
         ] = {}
 
-        self._mu_from_bands = mu is None
-        self.mu: float
-        if mu is not None:
-            self.mu = mu
-            # The quasiparticle levels start at the chemical potential
-            for i in range(self.n_clusters):
-                for bl in self.Lambda[i]:
-                    self.Lambda[i][bl] = self.Lambda[i][bl] + mu * np.eye(
-                        self.Lambda[i][bl].shape[0]
-                    )
-        elif n_target is not None:
-            self.mu = self._band_mu(n_target)
-        else:
-            msg = "Need mu, or n_target to solve for it !"
-            raise ValueError(msg)
+        self._set_chemical_potential(
+            mu,
+            n_target,
+            mu_step,
+            impurity_charge_susceptibility,
+            max_filling_error,
+            mu_impurity_refit_step,
+            max_mu_refits,
+        )
 
     @override
     def _diagnostic_configuration(self) -> dict[str, object]:
         return super()._diagnostic_configuration() | {
             "beta": self.beta,
-            "mu": self.mu,
-            "n_target": self.n_target,
             "density_matching_jacobian": self.density_matching_jacobian,
             "density_matching_regularization": self.density_matching_regularization,
             "density_matching_regularization_scale": self.density_matching_regularization_scale,
         }
-
-    @override
-    def integrate_bands(
-        self, hamiltonian: Hamiltonian, observables: BandObservables
-    ) -> BandKIntegrationResult:
-        """Integrate at the physical beta and the current outer-loop mu."""
-        return self.band_integrator.integrate(
-            hamiltonian, observables=observables, beta=self.beta, mu=self.mu
-        )
 
     @override
     def update_bath(self) -> None:
@@ -373,14 +344,6 @@ class ThermalLatticeSolver(BaseLatticeSolver):
             self.f1 = symmetrize(self.f1)
             self.f2 = symmetrize(self.f2)
 
-        self._emit(
-            "filling",
-            iteration=self.iteration + 1,
-            mu=self.mu,
-            filling=self.n_electrons,
-            target=self.n_target,
-        )
-
     @override
     def next_r_lambda(self) -> tuple[list[BlockMatrix], list[BlockMatrix]]:
         R_next: list[BlockMatrix] = [{} for _ in range(self.n_clusters)]
@@ -431,164 +394,6 @@ class ThermalLatticeSolver(BaseLatticeSolver):
         return R_next, Lambda_next
 
     @override
-    def get_x(self) -> NDArray[np.float64]:
-        """
-        Return :attr:`Lambda`, :attr:`R`, and with ``n_target`` :attr:`mu`, as the vector that :meth:`cycle` takes.
-
-        Returns
-        -------
-        numpy.ndarray
-
-        """
-        x = super().get_x()
-        if self.n_target is None:
-            return x
-        return np.append(x, self.mu)
-
-    @override
-    def cycle(
-        self, x: NDArray[np.float64]
-    ) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
-        """
-        Run one cycle using the parameters packed in x.
-
-        The vector contains Lambda and R, and also mu when n_target is set.
-
-        Parameters
-        ----------
-        x : numpy.ndarray
-            As from :meth:`get_x`.
-
-        Returns
-        -------
-        x_new : numpy.ndarray
-            Next Lambda and R, followed by ``mu`` plus the steps of the refits
-            and of `mu_step` when solving at fixed filling. After a
-            refit, :attr:`mu`, :attr:`Lambda` and :attr:`Lambda_c` stay at the
-            last refit.
-        residual : numpy.ndarray
-            Packed f2 and f1, followed by ``n_electrons - n_target``
-            when n_target is set.
-
-        """
-        D, Lambda_c = deepcopy(self.D), deepcopy(self.Lambda_c)
-        alpha, anchors = self._anchor_alpha, deepcopy(self._anchors)
-        if self.n_target is None:
-            x_new, residual = super().cycle(x)
-        else:
-            self.mu = float(x[-1])
-            x_new, residual = super().cycle(x[:-1])
-            mu_new = self.mu + self.mu_step.step(
-                self.n_electrons - self.n_target, self._filling_slope, self._history
-            )
-            x_new = np.append(x_new, mu_new)
-            residual = np.append(residual, self.n_electrons - self.n_target)
-        base_checkpoint = super().checkpoint()
-
-        def restore() -> None:
-            self.D, self.Lambda_c = deepcopy(D), deepcopy(Lambda_c)
-            self._anchor_alpha, self._anchors = alpha, deepcopy(anchors)
-            base_checkpoint.restore()
-            self._checkpoint = saved
-
-        saved = Checkpoint(restore, evaluations=base_checkpoint.evaluations)
-        self._checkpoint = saved
-        return x_new, residual
-
-    @override
-    def solve_impurities(self) -> None:
-        # The double counting of the cycle comes from the rho_c it starts with,
-        # and the refits hold it, as they hold D
-        rho_c = deepcopy(self.rho_c)
-        super().solve_impurities()
-        self._outside_filling_change = 0.0
-        if self.n_target is None:
-            return
-        self._history = [(self.mu, self.n_electrons)]
-        if self.max_filling_error is None:
-            return
-        mu_0, Lambda, Lambda_c = self.mu, self.Lambda, self.Lambda_c
-        outside = self._filling_outside_clusters(Lambda, mu_0)
-        # Highest mu with too few electrons and lowest mu with too many
-        below, above = -np.inf, np.inf
-        for _ in range(self.max_mu_refits):
-            mu, n = self._history[-1]
-            filling_error = n - self.n_target
-            if abs(filling_error) <= self.max_filling_error:
-                return
-            if filling_error < 0:
-                below = max(below, mu)
-            else:
-                above = min(above, mu)
-            mu += self.mu_impurity_refit_step.step(
-                filling_error, self._refit_slope, self._history
-            )
-            if np.isfinite(below) and np.isfinite(above) and not below < mu < above:
-                mu = (below + above) / 2
-            self.mu = mu
-            self.Lambda = _shifted(Lambda, mu - mu_0)
-            self.Lambda_c = _shifted(Lambda_c, mu_0 - mu)
-            self.rho_c = deepcopy(rho_c)
-            super().solve_impurities()
-            self._outside_filling_change = (
-                self._filling_outside_clusters(self.Lambda, mu) - outside
-            )
-            self._history.append((mu, self.n_electrons))
-
-    @property
-    @override
-    def n_electrons(self) -> float:
-        """
-        Number of electrons per unit cell.
-
-        These are the electrons of the impurity problems (:attr:`rho_c`) plus
-        those of the bands of the orbitals in no cluster, at the chemical
-        potential of the last refit of the impurities.
-        """
-        return super().n_electrons + self._outside_filling_change
-
-    def _filling_slope(self) -> float:
-        # dn_electrons/dmu at the R and Lambda of the cycle: the bands of the
-        # orbitals in no cluster, and the impurities given
-        bands = (
-            self._filling_outside_clusters(self.Lambda, self.mu + _SLOPE_DMU)
-            - self._filling_outside_clusters(self.Lambda, self.mu)
-        ) / _SLOPE_DMU
-        return bands + self._impurity_filling_slope(
-            self._impurity_charge_susceptibility
-        )
-
-    def _refit_slope(self) -> float:
-        # As _filling_slope, with Lambda moving with mu as in a refit
-        bands = (
-            self._filling_outside_clusters(
-                _shifted(self.Lambda, _SLOPE_DMU), self.mu + _SLOPE_DMU
-            )
-            - self._filling_outside_clusters(self.Lambda, self.mu)
-        ) / _SLOPE_DMU
-        return bands + self._impurity_filling_slope(
-            self._impurity_charge_susceptibility
-        )
-
-    def _filling_outside_clusters(self, Lambda: list[BlockMatrix], mu: float) -> float:
-        # Electrons in the bands of the orbitals in no cluster at the R of the
-        # cycle and the given Lambda and mu
-        R_full, Lambda_full = self.R_full, self.Lambda_full
-        self.R_full, self.Lambda_full = helpers.upfold_r_lambda(
-            self.R, Lambda, self.h0_kin_k, self._projectors_qp, self.gf_struct_mapping
-        )
-        hamiltonian, observables = self._get_band_integrands()
-        result = self.band_integrator.integrate(
-            hamiltonian, observables=observables, beta=self.beta, mu=mu
-        )
-        self.R_full, self.Lambda_full = R_full, Lambda_full
-        return float(result.n_electrons) - sum(
-            float(np.trace(result.values["rho_qp", i, bl]).real)
-            for i, cluster in enumerate(self.gf_struct)
-            for bl, _ in cluster
-        )
-
-    @override
     def default_optimizer(self) -> NewtonSolver:
         """
         Return the optimizer that :meth:`solve` uses by default.
@@ -630,10 +435,6 @@ class ThermalLatticeSolver(BaseLatticeSolver):
         """
         Solve as :meth:`.BaseLatticeSolver.solve`, after :meth:`release`.
 
-        On the first solve without `x0`, a chemical potential that was not
-        given is set from the quasiparticle bands of the current
-        :attr:`Lambda` and :attr:`R`.
-
         Parameters
         ----------
         optimizer, callbacks, tol, maxiter, self_consistency_tol, x0, rho_c0
@@ -645,10 +446,6 @@ class ThermalLatticeSolver(BaseLatticeSolver):
 
         """
         self.release()
-        if self._mu_from_bands and x0 is None:
-            assert self.n_target is not None
-            self.mu = self._band_mu(self.n_target)
-        self._mu_from_bands = False
         return super().solve(
             optimizer=optimizer,
             callbacks=callbacks,
@@ -659,20 +456,24 @@ class ThermalLatticeSolver(BaseLatticeSolver):
             rho_c0=rho_c0,
         )
 
-    def _band_mu(self, n_target: float) -> float:
-        # The chemical potential at which the quasiparticle bands have the
-        # filling n_target plus that of the ghosts
-        self.R_full, self.Lambda_full = helpers.upfold_r_lambda(
-            self.R,
-            self.Lambda,
-            self.h0_kin_k,
-            self._projectors_qp,
-            self.gf_struct_mapping,
-        )
-        hamiltonian, _ = self._get_band_integrands()
-        return self.band_integrator.integrate(
-            hamiltonian, beta=self.beta, n_target=n_target + self.n_ghost_electrons
-        ).mu
+    @override
+    def checkpoint(self) -> Checkpoint:
+        """
+        Return a checkpoint that can restore the last completed cycle, as :meth:`.BaseLatticeSolver.checkpoint`, and the anchor set by :meth:`anchor`.
+
+        Returns
+        -------
+        risb.types.Checkpoint
+
+        """
+        base = super().checkpoint()
+        alpha, anchors = self._anchor_alpha, deepcopy(self._anchors)
+
+        def restore() -> None:
+            self._anchor_alpha, self._anchors = alpha, deepcopy(anchors)
+            base.restore()
+
+        return Checkpoint(restore, evaluations=base.evaluations)
 
     def anchor(self, alpha: float = 1e-8) -> None:
         """
@@ -712,7 +513,3 @@ class ThermalLatticeSolver(BaseLatticeSolver):
         if self._anchor_alpha is None:
             return None
         return self._anchors.setdefault(key, (start[0].copy(), start[1].copy()))
-
-
-def _shifted(A: list[BlockMatrix], shift: float) -> list[BlockMatrix]:
-    return [{bl: M + shift * np.eye(M.shape[0]) for bl, M in A_i.items()} for A_i in A]
