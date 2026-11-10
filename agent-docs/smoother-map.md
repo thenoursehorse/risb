@@ -2,12 +2,15 @@
 
 ## Todo
 
-- [ ] μ step at finite temperature: thermal trimer at β = 40 runs away after the first unit step (filling saturates). There is no exact quasiparticle filling to centre a window on.
+- [x] μ step at finite temperature: thermal trimer at β = 40 runs away after the first unit step (filling saturates). The thermal refit (max_filling_error, 3 refits) converges it in 14 cycles; without the refit it still runs away.
 - [ ] Leave copied clusters (DummyImpuritySolver) out of x for the optimizer.
 - [x] Lazy μ refit: in PhysicalMuLatticeSolver (max_filling_error, max_mu_refits), not LatticeSolver, which has no physical μ.
-- [ ] μ refit for ThermalLatticeSolver. Careful: (a) Λ moves with μ in the refit, or stays fixed (a full cycle per trial)? The thermal step keeps Λ fixed. (b) update_bath is the density-matching fit, redone at every refit; check it behaves under the shift. (c) No thermal charge susceptibility yet, so MuNewtonStep has only the band part.
+- [x] μ refit for ThermalLatticeSolver: a refit moves μ, Λ by δμ and Λc by −δμ (D and the double counting held); the thermal fits are covariant under this up to a rotation of the ghosts. MuSecantStep by default, as there is no thermal charge susceptibility yet.
+- [ ] Berlingreen with the impurity-only refit: linear mixing → DIIS, MuNewtonStep with the block2 charge susceptibility. Impurity solves, cycles off the filling, convergence.
+- [ ] Impurity-only μ refit for LatticeSolver: shift Λc by −δμ and add δμ to the next Λ of the clusters. Prototype and compare on the swapped suite and the hard cases.
 - [ ] Thermal charge susceptibility of fockit and block2 impurities (for MuNewtonStep at finite temperature).
 - [ ] A root at the R clip that is not a fixed point passes the convergence test. Decorated honeycomb, site basis, thermal at β = 40 with 10 refits: singular values of R at 1.000, f1/f2/filling at 9e-7, but one more cycle moves x by 5e-2 (2e-2 with the clip), against 8e-6 for the refit-3 solution; F = 3.945 against 3.8195.
+- [ ] After the restructuring, the lattice solvers no longer pass mu to the impurity solvers' set_h_imp (μ goes into h0_loc on the physical orbitals). Decide: keep μ in h0_loc, or make the impurity's mu act on the physical orbitals only (now it acts on the physical and bath orbitals); then remove or redefine the mu argument.
 - [ ] Restructure the lattice solvers. The chemical potential at fixed filling (μ in x, the filling residual, the step, μ from the bands at the first solve, the slope, the refit) is written separately in PhysicalMuLatticeSolver and ThermalLatticeSolver by overriding cycle, get_x, solve, solve_impurities and n_electrons, with _filling_slope, _filling_outside_clusters and _band_mu in both. Put it in the base cycle once; the only difference between the two is whether a step of μ moves Λ. Also decide what happens to LatticeSolver's μ from the quasiparticle count.
 
 
