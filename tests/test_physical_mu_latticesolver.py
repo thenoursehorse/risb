@@ -206,6 +206,47 @@ def test_mu_steps_and_refits_reach_the_solution_of_the_unit_step() -> None:
             )
 
 
+def test_mu_refit_with_double_counting_reaches_the_solution_without_it() -> None:
+    # Hubbard model on the Bethe lattice away from half filling, with a Hartree
+    # double counting of the density of the other spin
+    B, U, n_target = 3, 2.0, 0.8
+    gf_struct = [("up", 1), ("dn", 1)]
+    bath_size = {bl: B for bl, _ in gf_struct}
+
+    def solved(**options: object) -> tuple[PhysicalMuLatticeSolver, list[float]]:
+        S = PhysicalMuLatticeSolver(
+            h0_k={bl: bethe_h0_k(200) for bl, _ in gf_struct},
+            gf_struct=gf_struct,
+            impurity_solvers=FockitImpuritySolver(
+                U * nc("up", 0) * nc("dn", 0), gf_struct, bath_size=bath_size
+            ),
+            band_integrator=BandKIntegrator(WeightedKPointIntegrator(), beta=200),
+            symmetrizers=[symmetrize_blocks],
+            force_real=True,
+            double_counting=lambda _i, rho: {"up": U * rho["dn"], "dn": U * rho["up"]},
+            bath_size=[bath_size],
+            n_target=n_target,
+            **options,  # type: ignore[arg-type]
+        )
+        fillings: list[float] = []
+        callbacks = [*S.default_callbacks(), lambda *_: fillings.append(S.n_electrons)]
+        assert S.solve(tol=1e-10, callbacks=callbacks).converged
+        return S, fillings
+
+    expected, _ = solved()
+    S, fillings = solved(
+        max_filling_error=1e-4, max_mu_refits=10, mu_impurity_refit_step=MuSecantStep()
+    )
+    assert fillings == pytest.approx([n_target] * len(fillings), abs=1e-4)
+    for bl, _ in gf_struct:
+        assert np.trace(S.rho_c[0][bl]).real == pytest.approx(
+            np.trace(expected.rho_c[0][bl]).real, abs=1e-6
+        )
+        assert np.linalg.eigvalsh(S.Z[0][bl]) == pytest.approx(
+            np.linalg.eigvalsh(expected.Z[0][bl]), abs=1e-6
+        )
+
+
 def test_physical_mu_finds_the_neel_antiferromagnet() -> None:
     # Half filling of a bipartite lattice with a cluster on each sublattice,
     # from a start with opposite spin splittings on the two sublattices

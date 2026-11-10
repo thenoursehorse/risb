@@ -18,6 +18,7 @@
 """Solver for rotationally invariant slave-boson mean-field theory on a lattice."""
 
 from collections.abc import Callable, Mapping, Sequence
+from copy import deepcopy
 from typing import override
 
 import numpy as np
@@ -469,6 +470,9 @@ class PhysicalMuLatticeSolver(LatticeSolver):
 
     @override
     def solve_impurities(self) -> None:
+        # The double counting of the cycle comes from the rho_c it starts with,
+        # and the refits hold it, as they hold D and Lambda_c
+        rho_c = deepcopy(self.rho_c)
         super().solve_impurities()
         self._mu_refit, self._outside_filling_change = 0.0, 0.0
         if self.n_target is None:
@@ -501,6 +505,7 @@ class PhysicalMuLatticeSolver(LatticeSolver):
                 {bl: L - self._mu_refit * np.eye(L.shape[0]) for bl, L in L_i.items()}
                 for L_i in Lambda_c
             ]
+            self.rho_c = deepcopy(rho_c)
             super().solve_impurities()
             self._outside_filling_change = (
                 self._filling_outside_clusters(self._mu_refit) - outside
