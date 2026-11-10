@@ -7,6 +7,8 @@
 - [x] Lazy μ refit: in PhysicalMuLatticeSolver (max_filling_error, max_mu_refits), not LatticeSolver, which has no physical μ.
 - [ ] μ refit for ThermalLatticeSolver. Careful: (a) Λ moves with μ in the refit, or stays fixed (a full cycle per trial)? The thermal step keeps Λ fixed. (b) update_bath is the density-matching fit, redone at every refit; check it behaves under the shift. (c) No thermal charge susceptibility yet, so MuNewtonStep has only the band part.
 - [ ] Thermal charge susceptibility of fockit and block2 impurities (for MuNewtonStep at finite temperature).
+- [ ] A root at the R clip that is not a fixed point passes the convergence test. Decorated honeycomb, site basis, thermal at β = 40 with 10 refits: singular values of R at 1.000, f1/f2/filling at 9e-7, but one more cycle moves x by 5e-2 (2e-2 with the clip), against 8e-6 for the refit-3 solution; F = 3.945 against 3.8195.
+- [ ] Restructure the lattice solvers. The chemical potential at fixed filling (μ in x, the filling residual, the step, μ from the bands at the first solve, the slope, the refit) is written separately in PhysicalMuLatticeSolver and ThermalLatticeSolver by overriding cycle, get_x, solve, solve_impurities and n_electrons, with _filling_slope, _filling_outside_clusters and _band_mu in both. Put it in the base cycle once; the only difference between the two is whether a step of μ moves Λ. Also decide what happens to LatticeSolver's μ from the quasiparticle count.
 
 
 Goal: improve reliable convergence; measure success across starts and final

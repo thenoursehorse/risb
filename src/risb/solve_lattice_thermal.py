@@ -39,7 +39,7 @@ from risb.kintegration import (
 from risb.optimize import DIIS, NewtonSolver, OnPlateau, ScipyRoot, SolveResult
 from risb.optimize.fixed_point import Callback
 from risb.solve_lattice_base import BaseLatticeSolver
-from risb.stabilization import MuUnitStep
+from risb.stabilization import MuSecantStep, MuUnitStep
 from risb.types import (
     BlockMatrix,
     BlockMatrixLike,
@@ -55,12 +55,13 @@ from risb.types import (
 )
 
 _DEFAULT_MU_STEP = MuUnitStep()
+_DEFAULT_REFIT_STEP = MuSecantStep()
 # Step of mu for the slope of the filling of the bands
 _SLOPE_DMU = 1e-4
 
 
 class ThermalLatticeSolver(BaseLatticeSolver):
-    """
+    r"""
     Finite-temperature RISB lattice solver at a fixed chemical potential or filling.
 
     It solves the finite-temperature ghost RISB equations of `arXiv:2603.20559
@@ -99,6 +100,25 @@ class ThermalLatticeSolver(BaseLatticeSolver):
     impurity_charge_susceptibility : callable or sequence of callable, optional
         As in :class:`.PhysicalMuLatticeSolver`, but of the thermal state of
         each impurity.
+    max_filling_error : float or None, optional
+        With `n_target`, the chemical potential of the impurities is refitted
+        in each cycle until ``|n_electrons - n_target|`` is at most this. A
+        refit moves :attr:`mu` and :attr:`Lambda` by :math:`\delta\mu` and
+        :attr:`Lambda_c` by :math:`-\delta\mu`, with :attr:`D` and the
+        double counting held, and solves the impurities again. The
+        quasiparticle levels of the clusters keep their place relative to
+        :attr:`mu`, the bath of each impurity is unchanged, and each impurity
+        gets :math:`-\delta\mu N_c`, with :math:`N_c` the number of
+        electrons on its physical orbitals. The step comes from
+        `mu_impurity_refit_step`, kept between the chemical potentials found
+        with too few and too many electrons. The rest of the cycle runs at the
+        last refit. ``None`` does not refit.
+    mu_impurity_refit_step : risb.types.ChemicalPotentialStep, optional
+        The step of each refit. Default is
+        :class:`risb.stabilization.MuSecantStep`.
+    max_mu_refits : int, optional
+        Largest number of refits in a cycle. When they run out, the cycle
+        carries on.
     band_integrator : risb.kintegration.BandKIntegration, optional
         Band integration method. If omitted, use Fermi smearing on the
         supplied equally weighted mesh. Each cycle evaluates the band
@@ -157,6 +177,9 @@ class ThermalLatticeSolver(BaseLatticeSolver):
         impurity_charge_susceptibility: ImpurityChargeSusceptibility
         | Sequence[ImpurityChargeSusceptibility | None]
         | None = None,
+        max_filling_error: float | None = None,
+        mu_impurity_refit_step: ChemicalPotentialStep = _DEFAULT_REFIT_STEP,
+        max_mu_refits: int = 3,
         gauge_fix: GaugeFix | None = None,
         clip_r: bool = True,
         force_real_atol: float = 1e-12,
@@ -200,6 +223,14 @@ class ThermalLatticeSolver(BaseLatticeSolver):
         self._impurity_charge_susceptibility = self._per_cluster(
             impurity_charge_susceptibility
         )
+        self.max_filling_error = max_filling_error
+        self.mu_impurity_refit_step = mu_impurity_refit_step
+        self.max_mu_refits = max_mu_refits
+        # Change of the filling of the orbitals in no cluster made by the refits
+        # of this cycle
+        self._outside_filling_change = 0.0
+        # Chemical potential and filling of each impurity solution in this cycle
+        self._history: list[tuple[float, float]] = []
 
         #: float : Largest absolute entry of the bath density and kinetic
         #: matching residuals of the current cycle, excluding the anchor penalty.
@@ -431,8 +462,10 @@ class ThermalLatticeSolver(BaseLatticeSolver):
         Returns
         -------
         x_new : numpy.ndarray
-            Next Lambda and R, followed by ``mu`` plus the step of :attr:`mu_step`
-            when solving at fixed filling.
+            Next Lambda and R, followed by ``mu`` plus the steps of the refits
+            and of :attr:`mu_step` when solving at fixed filling. After a
+            refit, :attr:`mu`, :attr:`Lambda` and :attr:`Lambda_c` stay at the
+            last refit.
         residual : numpy.ndarray
             Packed f2 and f1, followed by ``n_electrons - n_target``
             when n_target is set.
@@ -446,9 +479,7 @@ class ThermalLatticeSolver(BaseLatticeSolver):
             self.mu = float(x[-1])
             x_new, residual = super().cycle(x[:-1])
             mu_new = self.mu + self.mu_step.step(
-                self.n_electrons - self.n_target,
-                self._filling_slope,
-                [(self.mu, self.n_electrons)],
+                self.n_electrons - self.n_target, self._filling_slope, self._history
             )
             x_new = np.append(x_new, mu_new)
             residual = np.append(residual, self.n_electrons - self.n_target)
@@ -464,24 +495,93 @@ class ThermalLatticeSolver(BaseLatticeSolver):
         self._checkpoint = saved
         return x_new, residual
 
+    @override
+    def solve_impurities(self) -> None:
+        # The double counting of the cycle comes from the rho_c it starts with,
+        # and the refits hold it, as they hold D
+        rho_c = deepcopy(self.rho_c)
+        super().solve_impurities()
+        self._outside_filling_change = 0.0
+        if self.n_target is None:
+            return
+        self._history = [(self.mu, self.n_electrons)]
+        if self.max_filling_error is None:
+            return
+        mu_0, Lambda, Lambda_c = self.mu, self.Lambda, self.Lambda_c
+        outside = self._filling_outside_clusters(Lambda, mu_0)
+        # Highest mu with too few electrons and lowest mu with too many
+        below, above = -np.inf, np.inf
+        for _ in range(self.max_mu_refits):
+            mu, n = self._history[-1]
+            filling_error = n - self.n_target
+            if abs(filling_error) <= self.max_filling_error:
+                return
+            if filling_error < 0:
+                below = max(below, mu)
+            else:
+                above = min(above, mu)
+            mu += self.mu_impurity_refit_step.step(
+                filling_error, self._refit_slope, self._history
+            )
+            if np.isfinite(below) and np.isfinite(above) and not below < mu < above:
+                mu = (below + above) / 2
+            self.mu = mu
+            self.Lambda = _shifted(Lambda, mu - mu_0)
+            self.Lambda_c = _shifted(Lambda_c, mu_0 - mu)
+            self.rho_c = deepcopy(rho_c)
+            super().solve_impurities()
+            self._outside_filling_change = (
+                self._filling_outside_clusters(self.Lambda, mu) - outside
+            )
+            self._history.append((mu, self.n_electrons))
+
+    @property
+    @override
+    def n_electrons(self) -> float:
+        """
+        Number of electrons per unit cell.
+
+        These are the electrons of the impurity problems (:attr:`rho_c`) plus
+        those of the bands of the orbitals in no cluster, at the chemical
+        potential of the last refit of the impurities.
+        """
+        return super().n_electrons + self._outside_filling_change
+
     def _filling_slope(self) -> float:
         # dn_electrons/dmu at the R and Lambda of the cycle: the bands of the
         # orbitals in no cluster, and the impurities given
         bands = (
-            self._filling_outside_clusters(_SLOPE_DMU)
-            - self._filling_outside_clusters(0.0)
+            self._filling_outside_clusters(self.Lambda, self.mu + _SLOPE_DMU)
+            - self._filling_outside_clusters(self.Lambda, self.mu)
         ) / _SLOPE_DMU
         return bands + self._impurity_filling_slope(
             self._impurity_charge_susceptibility
         )
 
-    def _filling_outside_clusters(self, dmu: float) -> float:
-        # Electrons in the bands of the orbitals in no cluster after a step dmu
-        # of mu, at the R and Lambda of the last cycle
+    def _refit_slope(self) -> float:
+        # As _filling_slope, with Lambda moving with mu as in a refit
+        bands = (
+            self._filling_outside_clusters(
+                _shifted(self.Lambda, _SLOPE_DMU), self.mu + _SLOPE_DMU
+            )
+            - self._filling_outside_clusters(self.Lambda, self.mu)
+        ) / _SLOPE_DMU
+        return bands + self._impurity_filling_slope(
+            self._impurity_charge_susceptibility
+        )
+
+    def _filling_outside_clusters(self, Lambda: list[BlockMatrix], mu: float) -> float:
+        # Electrons in the bands of the orbitals in no cluster at the R of the
+        # cycle and the given Lambda and mu
+        R_full, Lambda_full = self.R_full, self.Lambda_full
+        self.R_full, self.Lambda_full = helpers.upfold_r_lambda(
+            self.R, Lambda, self.h0_kin_k, self._projectors_qp, self.gf_struct_mapping
+        )
         hamiltonian, observables = self._get_band_integrands()
         result = self.band_integrator.integrate(
-            hamiltonian, observables=observables, beta=self.beta, mu=self.mu + dmu
+            hamiltonian, observables=observables, beta=self.beta, mu=mu
         )
+        self.R_full, self.Lambda_full = R_full, Lambda_full
         return float(result.n_electrons) - sum(
             float(np.trace(result.values["rho_qp", i, bl]).real)
             for i, cluster in enumerate(self.gf_struct)
@@ -612,3 +712,7 @@ class ThermalLatticeSolver(BaseLatticeSolver):
         if self._anchor_alpha is None:
             return None
         return self._anchors.setdefault(key, (start[0].copy(), start[1].copy()))
+
+
+def _shifted(A: list[BlockMatrix], shift: float) -> list[BlockMatrix]:
+    return [{bl: M + shift * np.eye(M.shape[0]) for bl, M in A_i.items()} for A_i in A]

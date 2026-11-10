@@ -144,6 +144,45 @@ def test_newton_mu_step_reaches_the_solution_of_the_unit_step() -> None:
         assert S.Z[0][bl] == pytest.approx(expected.Z[0][bl], abs=1e-6)
 
 
+@pytest.mark.parametrize("model", ["a site in no cluster", "double counting"])
+def test_mu_refit_keeps_the_filling_and_reaches_the_solution_without_it(
+    model: str,
+) -> None:
+    U, n_target = 2.0, 1.6 if model == "a site in no cluster" else 0.8
+
+    def solved(**options: Any) -> tuple[ThermalLatticeSolver, list[float]]:
+        if model == "a site in no cluster":
+            S, _ = two_site_cell(0.1, None, n_target=n_target, **options)
+        else:
+            S = ThermalLatticeSolver(
+                h0_k={bl: bethe_h0_k(200) for bl, _ in ONE_BAND},
+                gf_struct=ONE_BAND,
+                impurity_solvers=FockitThermalImpuritySolver(
+                    hubbard(U), ONE_BAND, 1.0, **EXACT_THERMAL
+                ),
+                beta=1.0,
+                n_target=n_target,
+                symmetrizers=[symmetrize_blocks],
+                force_real=True,
+                double_counting=lambda _i, rho: {
+                    "up": U * rho["dn"],
+                    "dn": U * rho["up"],
+                },
+                **options,
+            )
+        fillings: list[float] = []
+        callbacks = [*S.default_callbacks(), lambda *_: fillings.append(S.n_electrons)]
+        assert S.solve(tol=1e-10, callbacks=callbacks).converged
+        return S, fillings
+
+    expected, _ = solved()
+    S, fillings = solved(max_filling_error=1e-4, max_mu_refits=10)
+    assert fillings == pytest.approx([n_target] * len(fillings), abs=1e-4)
+    assert S.mu == pytest.approx(expected.mu, abs=1e-6)
+    for bl, _ in ONE_BAND:
+        assert S.Z[0][bl] == pytest.approx(expected.Z[0][bl], abs=1e-6)
+
+
 def grand_potential(
     S: ThermalLatticeSolver, impurity_solver: FockitThermalImpuritySolver
 ) -> float:
