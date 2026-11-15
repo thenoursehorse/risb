@@ -71,9 +71,90 @@ class Checkpointable(Protocol):
         """Return a checkpoint of the last completed calculation."""
 
 
-class ImpuritySolver(Protocol):
+class ZeroTemperatureImpuritySolver(Protocol):
     """
-    Solver for the impurity problem of one cluster.
+    Solver for the impurity problem of one cluster, for the zero-temperature lattice solvers.
+
+    It finds the ground state, or an average over the lowest eigenstates.
+    Besides the density matrices it gives the hole density and the particle
+    and hole energy matrices of the bath orbitals, from which the lattice
+    solver gets the quasiparticle levels. Subclass this to write your own
+    solver, so that type checkers verify it implements everything here.
+    """
+
+    gf_struct: GfStruct
+    """Block structure of the physical orbitals (c-electrons)."""
+
+    h_int: OpSum
+    """Interaction of the physical orbitals."""
+
+    rho_f: BlockMatrix
+    """f-electron density matrix of each block in :attr:`gf_struct`, set by :meth:`solve`."""
+
+    rho_cf: BlockMatrix
+    """c-f hybridization density matrix of each block in :attr:`gf_struct`, set by :meth:`solve`."""
+
+    rho_c: BlockMatrix
+    """c-electron density matrix of each block in :attr:`gf_struct`, set by :meth:`solve`."""
+
+    entropy: float
+    """Entropy of the states of the impurity problem, set by :meth:`solve`."""
+
+    def checkpoint(self) -> Checkpoint:
+        """
+        Save any state that affects the next impurity solve.
+
+        Override this if solve uses results from earlier solves. The default
+        saves nothing. When restoring its checkpoint, the lattice sets the
+        Hamiltonian and solves the impurity again.
+        """
+        return Checkpoint(lambda: None)
+
+    def set_h_imp(
+        self,
+        Lambda_c: BlockMatrixLike,
+        D: BlockMatrixLike,
+        h0_loc_matrix: BlockMatrixLike | None = None,
+        mu: float | None = None,
+    ) -> None:
+        """Set the impurity Hamiltonian, with the chemical potential `mu` if it is given."""
+
+    def solve(self) -> None:
+        """Solve the impurity problem and set :attr:`rho_f`, :attr:`rho_cf`, and :attr:`rho_c` for every block."""
+
+    def get_rho_f(self, bl: str) -> NDArray[np.inexact]:
+        """Return the f-electron density matrix of block ``bl``."""
+
+    def get_rho_cf(self, bl: str) -> NDArray[np.inexact]:
+        """Return the c-f hybridization density matrix of block ``bl``."""
+
+    def get_rho_c(self, bl: str) -> NDArray[np.inexact]:
+        """Return the c-electron density matrix of block ``bl``."""
+
+    def get_hole_rho_f(self, bl: str) -> NDArray[np.inexact]:
+        """
+        Return ``<f_a^dag f_b>`` of block ``bl``, the bath-electron density matrix.
+
+        It is ``1 - rho_f``, computed from the states rather than from
+        :attr:`rho_f`, so that it stays accurate where ``rho_f`` is nearly one.
+        """
+
+    def get_particle_energy_f(self, bl: str) -> NDArray[np.inexact]:
+        """
+        Return ``<f_a (E - H) f_b^dag>`` of block ``bl``, with ``H`` the impurity Hamiltonian and ``E`` the energy of the state.
+
+        Averaged over the states with their weights, each with its own
+        ``E``. With :meth:`get_hole_energy_f` it adds up to the transpose of
+        ``Lambda_c``.
+        """
+
+    def get_hole_energy_f(self, bl: str) -> NDArray[np.inexact]:
+        """Return ``<f_b^dag (H - E) f_a>`` of block ``bl``, averaged as :meth:`get_particle_energy_f`."""
+
+
+class ThermalImpuritySolver(Protocol):
+    """
+    Solver for the impurity problem of one cluster at finite temperature, for :class:`risb.ThermalLatticeSolver`.
 
     Subclass this to write your own solver, so that type checkers verify it
     implements everything below.
@@ -169,7 +250,9 @@ class DensityFeedback(Protocol):
         """
 
 
-type ImpurityChargeSusceptibility = Callable[["ImpuritySolver"], float]
+type ImpurityChargeSusceptibility = Callable[
+    ["ZeroTemperatureImpuritySolver | ThermalImpuritySolver"], float
+]
 """Charge susceptibility of the physical orbitals of a solved impurity problem, e.g., :func:`risb.impurity_solvers.fockit.charge_susceptibility`."""
 
 

@@ -18,7 +18,7 @@
 """Solver for rotationally invariant slave-boson mean-field theory on a lattice."""
 
 from collections.abc import Callable, Mapping, Sequence
-from typing import override
+from typing import cast, override
 
 import numpy as np
 
@@ -47,9 +47,9 @@ from risb.types import (
     GaugeFix,
     GfStruct,
     ImpurityChargeSusceptibility,
-    ImpuritySolver,
     PinFullEmpty,
     Symmetrize,
+    ZeroTemperatureImpuritySolver,
 )
 
 _DEFAULT_PINNING = FullEmptyPinning()
@@ -94,7 +94,8 @@ class ZeroTemperatureLatticeSolver(BaseLatticeSolver):
         self,
         h0_k: BlockMatrixLike,
         gf_struct: GfStruct | list[GfStruct],
-        impurity_solvers: ImpuritySolver | Sequence[ImpuritySolver],
+        impurity_solvers: ZeroTemperatureImpuritySolver
+        | Sequence[ZeroTemperatureImpuritySolver],
         band_integrator: BandKIntegration,
         projectors: Sequence[BlockMatrixLike] | None = None,
         gf_struct_mapping: Sequence[Mapping[str, str]] | None = None,
@@ -137,6 +138,51 @@ class ZeroTemperatureLatticeSolver(BaseLatticeSolver):
         )
         self.pin_full_empty = pin_full_empty
         self.density_feedback = density_feedback
+
+        #: list of risb.types.BlockMatrix : Bath-electron density matrix
+        #: ``<f_a^dag f_b>`` of each cluster, 1 - :attr:`rho_f` computed from
+        #: the impurity states, set by :meth:`solve_impurities`.
+        self.hole_rho_f: list[BlockMatrix] = [{} for _ in range(self.n_clusters)]
+
+        #: list of risb.types.BlockMatrix : ``<f_a (E - H) f_b^dag>`` of each
+        #: cluster, see :meth:`risb.types.ZeroTemperatureImpuritySolver.get_particle_energy_f`.
+        self.particle_energy_f: list[BlockMatrix] = [{} for _ in range(self.n_clusters)]
+
+        #: list of risb.types.BlockMatrix : ``<f_b^dag (H - E) f_a>`` of each
+        #: cluster, see :meth:`risb.types.ZeroTemperatureImpuritySolver.get_hole_energy_f`.
+        self.hole_energy_f: list[BlockMatrix] = [{} for _ in range(self.n_clusters)]
+
+    @override
+    def solve_impurities(self) -> None:
+        """
+        Solve the impurity problem of each cluster.
+
+        Sets :attr:`rho_f`, :attr:`rho_cf` and :attr:`rho_c`, and
+        :attr:`hole_rho_f`, :attr:`particle_energy_f` and
+        :attr:`hole_energy_f`.
+        """
+        super().solve_impurities()
+        for i, solver in enumerate(self.impurity_solvers):
+            # The zero-temperature lattice solvers take only zero-temperature
+            # impurity solvers
+            solver = cast(ZeroTemperatureImpuritySolver, solver)
+            for bl, _ in self.gf_struct[i]:
+                self.hole_rho_f[i][bl] = solver.get_hole_rho_f(bl)
+                self.particle_energy_f[i][bl] = solver.get_particle_energy_f(bl)
+                self.hole_energy_f[i][bl] = solver.get_hole_energy_f(bl)
+        self.hole_rho_f = self._project(
+            self.hole_rho_f, is_hermitian=True, name="hole_rho_f"
+        )
+        self.particle_energy_f = self._project(
+            self.particle_energy_f, is_hermitian=True, name="particle_energy_f"
+        )
+        self.hole_energy_f = self._project(
+            self.hole_energy_f, is_hermitian=True, name="hole_energy_f"
+        )
+        for symmetrize in self.symmetrizers:
+            self.hole_rho_f = symmetrize(self.hole_rho_f)
+            self.particle_energy_f = symmetrize(self.particle_energy_f)
+            self.hole_energy_f = symmetrize(self.hole_energy_f)
 
     @override
     def update_bath(self) -> None:
@@ -370,7 +416,8 @@ class PhysicalMuLatticeSolver(ZeroTemperatureLatticeSolver):
         self,
         h0_k: BlockMatrixLike,
         gf_struct: GfStruct | list[GfStruct],
-        impurity_solvers: ImpuritySolver | Sequence[ImpuritySolver],
+        impurity_solvers: ZeroTemperatureImpuritySolver
+        | Sequence[ZeroTemperatureImpuritySolver],
         band_integrator: BandKIntegration,
         projectors: Sequence[BlockMatrixLike] | None = None,
         gf_struct_mapping: Sequence[Mapping[str, str]] | None = None,

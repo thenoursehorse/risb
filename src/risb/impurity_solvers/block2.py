@@ -44,7 +44,8 @@ from risb.types import (
     BlockMatrixLike,
     Checkpoint,
     GfStruct,
-    ImpuritySolver,
+    ThermalImpuritySolver,
+    ZeroTemperatureImpuritySolver,
 )
 
 logger = logging.getLogger(__name__)
@@ -177,7 +178,7 @@ class Block2Settings:
     scratch_dir: str | None = None
 
 
-class _Block2Base(ImpuritySolver):
+class _Block2Base:
     # The chain of spatial orbitals, the impurity Hamiltonian as tensors, and
     # the density matrices, shared by the solvers
 
@@ -250,6 +251,10 @@ class _Block2Base(ImpuritySolver):
         #: :meth:`solve`.
         self.rho_f: BlockMatrix = {}
 
+        #: risb.types.BlockMatrix : Bath-electron density matrix
+        #: ``<f_a^dag f_b>``, 1 - :attr:`rho_f`, set by :meth:`solve`.
+        self.hole_rho_f: BlockMatrix = {}
+
         #: risb.types.BlockMatrix : c-electron density matrix, set by
         #: :meth:`solve`.
         self.rho_c: BlockMatrix = {}
@@ -299,7 +304,6 @@ class _Block2Base(ImpuritySolver):
         )
         self._const, self._h1 = self._const_int, self._h1_int
 
-    @override
     def set_h_imp(
         self,
         Lambda_c: BlockMatrixLike,
@@ -352,15 +356,12 @@ class _Block2Base(ImpuritySolver):
             h1 -= mu * np.eye(len(h1))
         self._const, self._h1 = _real(np.array(const)).item(), _real(h1)
 
-    @override
     def get_rho_f(self, bl: str) -> NDArray[np.inexact]:
         return self.rho_f[bl]
 
-    @override
     def get_rho_cf(self, bl: str) -> NDArray[np.inexact]:
         return self.rho_cf[bl]
 
-    @override
     def get_rho_c(self, bl: str) -> NDArray[np.inexact]:
         return self.rho_c[bl]
 
@@ -393,7 +394,8 @@ class _Block2Base(ImpuritySolver):
         for bl, n in self.gf_struct:
             cs = [self._index[bl, i] for i in range(n)]
             fs = [self._index[_bath(bl), a] for a in range(self._bath_sizes[bl])]
-            self.rho_f[bl] = np.eye(len(fs)) - G[np.ix_(fs, fs)]
+            self.hole_rho_f[bl] = G[np.ix_(fs, fs)]
+            self.rho_f[bl] = np.eye(len(fs)) - self.hole_rho_f[bl]
             self.rho_cf[bl] = G[np.ix_(cs, fs)]
             self.rho_c[bl] = G[np.ix_(cs, cs)]
 
@@ -798,7 +800,7 @@ class _Block2Base(ImpuritySolver):
         )
 
 
-class Block2ImpuritySolver(_Block2Base):
+class Block2ImpuritySolver(_Block2Base, ZeroTemperatureImpuritySolver):
     """
     Impurity solver using the density matrix renormalization group (DMRG) from block2.
 
@@ -960,6 +962,26 @@ class Block2ImpuritySolver(_Block2Base):
         #: float : Entropy of the ground state, zero.
         self.entropy = 0.0
 
+        #: risb.types.BlockMatrix : ``<f_a (E - H) f_b^dag>`` of each block in
+        #: the ground state, set by :meth:`solve`.
+        self.particle_energy_f: BlockMatrix = {}
+
+        #: risb.types.BlockMatrix : ``<f_b^dag (H - E) f_a>`` of each block in
+        #: the ground state, set by :meth:`solve`.
+        self.hole_energy_f: BlockMatrix = {}
+
+    @override
+    def get_hole_rho_f(self, bl: str) -> NDArray[np.inexact]:
+        return self.hole_rho_f[bl]
+
+    @override
+    def get_particle_energy_f(self, bl: str) -> NDArray[np.inexact]:
+        return self.particle_energy_f[bl]
+
+    @override
+    def get_hole_energy_f(self, bl: str) -> NDArray[np.inexact]:
+        return self.hole_energy_f[bl]
+
     @override
     def checkpoint(self) -> Checkpoint:
         """Save the previous ground-state sector to resolve nearly equal energies."""
@@ -1046,6 +1068,10 @@ class Block2ImpuritySolver(_Block2Base):
         if self.calculate_variance:
             self.variance = self.comm.allreduce(variance)
         G = self.comm.allreduce(G)
+        particle, hole = np.zeros((2 * L, 2 * L)), np.zeros((2 * L, 2 * L))
+        if self._state is not None:
+            particle, hole = self._energy_matrices(*self._state)
+        particle, hole = self.comm.allreduce(particle), self.comm.allreduce(hole)
         twos, twosz = lowest
         self.sector = {}
         if twos is not None:
@@ -1053,6 +1079,10 @@ class Block2ImpuritySolver(_Block2Base):
         if twosz is not None:
             self.sector["sz"] = twosz / 2
         self._set_rho(G)
+        for bl, _ in self.gf_struct:
+            fs = [self._index[_bath(bl), a] for a in range(self._bath_sizes[bl])]
+            self.particle_energy_f[bl] = particle[np.ix_(fs, fs)]
+            self.hole_energy_f[bl] = hole[np.ix_(fs, fs)]
         if self.comm.rank == 0:
             self._emit(
                 "ground_state.summary",
@@ -1060,6 +1090,90 @@ class Block2ImpuritySolver(_Block2Base):
                 discarded_weight=self.discarded_weight,
                 variance=self.variance,
             )
+
+    @diagnostic_stage
+    def _energy_matrices(
+        self, scratch: tempfile.TemporaryDirectory[str], sector: _Sector
+    ) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
+        # <f_p (E - H) f_q^dag> and <f_q^dag (H - E) f_p> of the bath spin
+        # orbitals p, q of each block in the ground state, averaged over the
+        # spin multiplet with a conserved total spin and no spin projection
+        twos, twosz = sector
+        L = len(self._sites)
+        if twos is None:
+            return self._fixed_spin_energy_matrices(scratch.name, sector, "KET")
+        twoszs = [twosz] if twosz is not None else list(range(-twos, twos + 1, 2))
+        particle, hole = np.zeros((2 * L, 2 * L)), np.zeros((2 * L, 2 * L))
+        for m in twoszs:
+            (sz_tag,) = self._to_sz_states(scratch.name, sector, L, ["KET"], m)
+            p, h = self._fixed_spin_energy_matrices(scratch.name, (None, m), sz_tag)
+            particle += p / len(twoszs)
+            hole += h / len(twoszs)
+            _remove_mps(scratch.name, sz_tag)
+        return particle, hole
+
+    @capture_block2
+    def _fixed_spin_energy_matrices(
+        self, scratch: str, sector: _Sector, tag: str
+    ) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
+        # The matrices of _energy_matrices in the state tag of a sector without
+        # a conserved total spin. The states f^dag psi and f psi are fitted at
+        # the bond dimension of psi, which one creator or annihilator does not
+        # raise, so two sweeps suffice. H - E is taken between them, so that a
+        # small weight is not found as a difference of large numbers
+        L = len(self._sites)
+        driver, symm_type = self._driver(scratch, sector, L)
+        ket = driver.load_mps(tag)
+        identity = driver.get_identity_mpo()
+        norm = float(driver.expectation(ket, identity, ket, iprint=self._iprint))
+        H = self._mpo(driver, symm_type, self._const, self._h1, self._V)
+        energy = float(driver.expectation(ket, H, ket, iprint=self._iprint)) / norm
+        bond_dim = ket.info.bond_dim
+
+        def fitted(p: int, create: bool) -> _MPS:
+            # f_p^dag psi or f_p psi; the fit keeps its norm
+            j, s = divmod(p, 2)
+            if symm_type == SymmetryTypes.SGF:
+                site_op = driver.get_site_mpo("C" if create else "D", p, iprint=0)
+            else:
+                name = ("c" if create else "d") if s == 0 else ("C" if create else "D")
+                site_op = driver.get_site_mpo(name, j, iprint=0)
+            state = driver.get_random_mps(
+                tag=f"{'P' if create else 'R'}{p}{tag}",
+                bond_dim=bond_dim,
+                center=ket.center,
+                dot=ket.dot,
+                target=site_op.op.q_label + ket.info.target,
+            )
+            driver.multiply(
+                state,
+                site_op,
+                ket,
+                n_sweeps=2,
+                tol=1e-12,
+                bra_bond_dims=[bond_dim],
+                iprint=self._iprint,
+            )
+            return state
+
+        particle, hole = np.zeros((2 * L, 2 * L)), np.zeros((2 * L, 2 * L))
+        for bl, _ in self.gf_struct:
+            fs = [self._index[_bath(bl), a] for a in range(self._bath_sizes[bl])]
+            added = [fitted(p, create=True) for p in fs]
+            removed = [fitted(p, create=False) for p in fs]
+            for a, p in enumerate(fs):
+                for b, q in enumerate(fs):
+                    particle[p, q] = (
+                        energy * driver.expectation(added[a], identity, added[b])
+                        - driver.expectation(added[a], H, added[b])
+                    ) / norm
+                    hole[p, q] = (
+                        driver.expectation(removed[b], H, removed[a])
+                        - energy * driver.expectation(removed[b], identity, removed[a])
+                    ) / norm
+            for state in [*added, *removed]:
+                _remove_mps(scratch, state.info.tag)
+        return particle, hole
 
     @diagnostic_stage
     def overlap(self, Op: OpSum, force_real: bool = True) -> float | complex:
@@ -1106,7 +1220,7 @@ class Block2ImpuritySolver(_Block2Base):
         return float(self.comm.allreduce(total))
 
 
-class Block2ThermalImpuritySolver(_Block2Base):
+class Block2ThermalImpuritySolver(_Block2Base, ThermalImpuritySolver):
     """
     Grand-canonical impurity solver at finite temperature using DMRG from block2.
 

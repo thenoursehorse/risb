@@ -18,15 +18,20 @@
 """Impurity solver that acts as a copy of another solver without calculating anything."""
 
 from collections.abc import Callable, Sequence
-from typing import override
+from typing import cast, override
 
 import numpy as np
 from numpy.typing import NDArray
 
-from risb.types import BlockMatrix, BlockMatrixLike, ImpuritySolver
+from risb.types import (
+    BlockMatrix,
+    BlockMatrixLike,
+    ThermalImpuritySolver,
+    ZeroTemperatureImpuritySolver,
+)
 
 
-class DummyImpuritySolver(ImpuritySolver):
+class DummyImpuritySolver(ZeroTemperatureImpuritySolver, ThermalImpuritySolver):
     """
     Dummy impurity solver.
 
@@ -38,7 +43,7 @@ class DummyImpuritySolver(ImpuritySolver):
 
     Parameters
     ----------
-    impurity_solver : risb.types.ImpuritySolver
+    impurity_solver : risb.types.ZeroTemperatureImpuritySolver or risb.types.ThermalImpuritySolver
         The impurity solver to reference. It must be solved before this one.
     rotations : sequence of callable, optional
         Functions applied in order to the density matrices of ``impurity_solver``,
@@ -50,7 +55,7 @@ class DummyImpuritySolver(ImpuritySolver):
 
     def __init__(
         self,
-        impurity_solver: ImpuritySolver,
+        impurity_solver: ZeroTemperatureImpuritySolver | ThermalImpuritySolver,
         rotations: Sequence[Callable[[BlockMatrix], BlockMatrix]] = (),
     ) -> None:
         self.impurity_solver = impurity_solver
@@ -106,3 +111,28 @@ class DummyImpuritySolver(ImpuritySolver):
     @override
     def get_rho_c(self, bl: str) -> NDArray[np.inexact]:
         return self.rho_c[bl]
+
+    @override
+    def get_hole_rho_f(self, bl: str) -> NDArray[np.inexact]:
+        return self._rotated(self._zero_temperature_solver().get_hole_rho_f)[bl]
+
+    @override
+    def get_particle_energy_f(self, bl: str) -> NDArray[np.inexact]:
+        return self._rotated(self._zero_temperature_solver().get_particle_energy_f)[bl]
+
+    @override
+    def get_hole_energy_f(self, bl: str) -> NDArray[np.inexact]:
+        return self._rotated(self._zero_temperature_solver().get_hole_energy_f)[bl]
+
+    def _zero_temperature_solver(self) -> ZeroTemperatureImpuritySolver:
+        # Only the zero-temperature lattice solvers ask for these matrices,
+        # and there the copied solver is a zero-temperature one
+        return cast(ZeroTemperatureImpuritySolver, self.impurity_solver)
+
+    def _rotated(self, get: Callable[[str], NDArray[np.inexact]]) -> BlockMatrix:
+        # The matrices of the referenced solver, rotated as the density
+        # matrices
+        A: BlockMatrix = {bl: get(bl) for bl, _ in self.gf_struct}
+        for rotate in self.rotations:
+            A = rotate(A)
+        return A

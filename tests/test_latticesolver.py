@@ -55,14 +55,14 @@ from risb.types import (
     FixedPointProblem,
     GaugeFix,
     GfStruct,
-    ImpuritySolver,
     PinFullEmpty,
+    ZeroTemperatureImpuritySolver,
 )
 
 type Model = tuple[
     GfStruct,
     dict[str, NDArray[np.float64]],
-    ImpuritySolver,
+    ZeroTemperatureImpuritySolver,
     BandKIntegrator,
     float,
     NDArray[np.float64],

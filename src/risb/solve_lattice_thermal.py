@@ -47,8 +47,8 @@ from risb.types import (
     GaugeFix,
     GfStruct,
     ImpurityChargeSusceptibility,
-    ImpuritySolver,
     Symmetrize,
+    ThermalImpuritySolver,
 )
 
 _DEFAULT_MU_STEP = MuUnitStep()
@@ -78,7 +78,7 @@ class ThermalLatticeSolver(BaseLatticeSolver):
 
     Parameters
     ----------
-    impurity_solvers : risb.types.ImpuritySolver or sequence of risb.types.ImpuritySolver
+    impurity_solvers : risb.types.ThermalImpuritySolver or sequence of risb.types.ThermalImpuritySolver
         As in :class:`.BaseLatticeSolver`, but each must solve the thermal
         state at `beta` over every particle number, e.g.,
         :class:`.FockitThermalImpuritySolver`.
@@ -158,7 +158,7 @@ class ThermalLatticeSolver(BaseLatticeSolver):
         self,
         h0_k: BlockMatrixLike,
         gf_struct: GfStruct | list[GfStruct],
-        impurity_solvers: ImpuritySolver | Sequence[ImpuritySolver],
+        impurity_solvers: ThermalImpuritySolver | Sequence[ThermalImpuritySolver],
         beta: float,
         mu: float | None = None,
         projectors: Sequence[BlockMatrixLike] | None = None,

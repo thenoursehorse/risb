@@ -120,6 +120,11 @@ def test_ground_state_of_a_ghost_impurity_is_the_exact_one(
     assert_same_state(solver, expected)
     for Op in (N_op(["up", "dn"], 2), S2_op(["up", "dn"], 2)):
         assert solver.overlap(Op) == pytest.approx(expected.overlap(Op), abs=1e-6)
+    for bl, _ in gf_struct:
+        for get in ["get_hole_rho_f", "get_particle_energy_f", "get_hole_energy_f"]:
+            assert getattr(solver, get)(bl) == pytest.approx(
+                getattr(expected, get)(bl), abs=1e-6
+            )
 
 
 def test_charge_susceptibility_is_the_exact_one() -> None:

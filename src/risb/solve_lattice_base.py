@@ -51,8 +51,9 @@ from risb.types import (
     GaugeFix,
     GfStruct,
     ImpurityChargeSusceptibility,
-    ImpuritySolver,
     Symmetrize,
+    ThermalImpuritySolver,
+    ZeroTemperatureImpuritySolver,
 )
 
 # Part of R^dag R = 1 that the ghost copies of an orbital start with
@@ -91,10 +92,14 @@ class BaseLatticeSolver(ABC):
         list of pairs, each containing the name of the
         matrix block as a string and the size of that block.
         For example for a single cluster: ``[ ('up', 3), ('down', 3) ]``.
-    impurity_solvers : risb.types.ImpuritySolver or sequence of risb.types.ImpuritySolver
+    impurity_solvers : risb.types.ZeroTemperatureImpuritySolver or risb.types.ThermalImpuritySolver or sequence of risb.types.ZeroTemperatureImpuritySolver or risb.types.ThermalImpuritySolver
         The solver of the impurity problem for each cluster. It must
         already store the interacting Hamiltonian ``h_int`` of the physical
-        orbitals on a cluster, and implement :class:`risb.types.ImpuritySolver`.
+        orbitals on a cluster, and implement
+        :class:`risb.types.ZeroTemperatureImpuritySolver` for the
+        zero-temperature lattice solvers or
+        :class:`risb.types.ThermalImpuritySolver` for
+        :class:`risb.ThermalLatticeSolver`.
         See class :class:`.FockitImpuritySolver`. A
         :class:`.DummyImpuritySolver` must copy the solver of an earlier
         cluster.
@@ -183,7 +188,9 @@ class BaseLatticeSolver(ABC):
         self,
         h0_k: BlockMatrixLike,
         gf_struct: GfStruct | list[GfStruct],
-        impurity_solvers: ImpuritySolver | Sequence[ImpuritySolver],
+        impurity_solvers: ZeroTemperatureImpuritySolver
+        | ThermalImpuritySolver
+        | Sequence[ZeroTemperatureImpuritySolver | ThermalImpuritySolver],
         projectors: Sequence[BlockMatrixLike] | None = None,
         gf_struct_mapping: Sequence[Mapping[str, str]] | None = None,
         symmetrizers: Sequence[Symmetrize] = (),
@@ -220,9 +227,12 @@ class BaseLatticeSolver(ABC):
         #: int : Number of correlated clusters per supercell on the lattice.
         self.n_clusters = len(self.gf_struct)
 
-        #: list of risb.types.ImpuritySolver : Solver of the impurity problem
+        #: list of risb.types.ZeroTemperatureImpuritySolver or
+        #: risb.types.ThermalImpuritySolver : Solver of the impurity problem
         #: for each cluster.
-        self.impurity_solvers: list[ImpuritySolver]
+        self.impurity_solvers: list[
+            ZeroTemperatureImpuritySolver | ThermalImpuritySolver
+        ]
         if isinstance(impurity_solvers, Sequence):
             self.impurity_solvers = list(impurity_solvers)
         else:

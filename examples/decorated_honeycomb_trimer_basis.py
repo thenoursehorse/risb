@@ -11,7 +11,7 @@ from risb.helpers import block_to_full, get_h0_kin_k
 from risb.helpers_fockit import get_h0_loc
 from risb.impurity_solvers import DummyImpuritySolver, FockitImpuritySolver
 from risb.kintegration import BandKIntegrator, WeightedKPointIntegrator
-from risb.types import BlockMatrix, ImpuritySolver
+from risb.types import BlockMatrix, ZeroTemperatureImpuritySolver
 
 logging.basicConfig(level=logging.INFO, format="%(message)s")
 # Set to logging.INFO to see each iteration of the solver
@@ -220,7 +220,7 @@ for bl, _ in gf_struct_molecule:
             c3_factors.append(c(*mode) * cdag(*mode) + w**q * cdag(*mode) * c(*mode))
 
 # Set up impurity solvers
-impurity_solvers: list[ImpuritySolver] = [
+impurity_solvers: list[ZeroTemperatureImpuritySolver] = [
     FockitImpuritySolver(h_loc[0], gf_struct[0], onsite_symmetries=[(c3_factors, 1)])
 ]
 for _ in range(n_clusters - 1):

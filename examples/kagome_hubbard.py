@@ -10,7 +10,7 @@ from risb import LatticeSolver
 from risb.helpers_fockit import N_op, S2_op
 from risb.impurity_solvers import DummyImpuritySolver, FockitImpuritySolver
 from risb.kintegration import BandKIntegrator, WeightedKPointIntegrator
-from risb.types import BlockMatrix, ImpuritySolver
+from risb.types import BlockMatrix, ZeroTemperatureImpuritySolver
 
 logging.basicConfig(level=logging.INFO, format="%(message)s")
 # Set to logging.INFO to see each iteration of the solver
@@ -97,7 +97,7 @@ for o in range(n_orb):
 impurity_solver = FockitImpuritySolver(
     h_int[0], gf_struct[0], permutation_symmetries=[(spin_swap, -1)]
 )
-impurity_solvers: list[ImpuritySolver] = [
+impurity_solvers: list[ZeroTemperatureImpuritySolver] = [
     impurity_solver,
     DummyImpuritySolver(impurity_solver),
     DummyImpuritySolver(impurity_solver),

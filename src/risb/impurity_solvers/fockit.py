@@ -60,7 +60,13 @@ from risb.diagnostics.fockit import FockitContext
 from risb.diagnostics.output import stage
 from risb.helpers import get_entropy_impurity
 from risb.helpers_mpi import Comm, SerialComm, gather_tasks
-from risb.types import BlockMatrix, BlockMatrixLike, GfStruct, ImpuritySolver
+from risb.types import (
+    BlockMatrix,
+    BlockMatrixLike,
+    GfStruct,
+    ThermalImpuritySolver,
+    ZeroTemperatureImpuritySolver,
+)
 
 # Boltzmann weight, relative to the ground state, below which a state is dropped
 _WEIGHT_TOL = 1e-14
@@ -87,8 +93,12 @@ type _Key = tuple[tuple[float | None, ...], tuple[complex, ...] | None]
 # modes and the matrices
 type _Annihilators = tuple[list[int], list[Any]]
 
+# The annihilators (creators) of the modes into one sector they reach: that
+# sector, the indices of the modes and the matrices
+type _Ladder = tuple[_Key, list[int], list[Any]]
 
-class _FockitBase(ImpuritySolver):
+
+class _FockitBase:
     # The impurity Hamiltonian, density matrices and expectation values of the
     # fockit solvers. A subclass finds the states in _find_states
 
@@ -147,7 +157,7 @@ class _FockitBase(ImpuritySolver):
         # Built once: the bases of the sectors, the annihilators from them,
         # and the matrices of h_int in them
         self._bases: dict[_Key, Basis] = {}
-        self._annihilators: dict[_Key, list[_Annihilators] | None] = {}
+        self._ladders: dict[tuple[_Key, bool], list[_Ladder] | None] = {}
         self._h_int_matrices: dict[_Key, Any] = {}
 
         #: float : Lowest energy of the impurity problem, set by :meth:`solve`.
@@ -184,6 +194,10 @@ class _FockitBase(ImpuritySolver):
         #: risb.types.BlockMatrix : f-electron density matrix, set by
         #: :meth:`solve`.
         self.rho_f: BlockMatrix = {}
+
+        #: risb.types.BlockMatrix : Bath-electron density matrix
+        #: ``<f_a^dag f_b>``, 1 - :attr:`rho_f`, set by :meth:`solve`.
+        self.hole_rho_f: BlockMatrix = {}
 
         #: risb.types.BlockMatrix : c-electron density matrix, set by
         #: :meth:`solve`.
@@ -270,7 +284,6 @@ class _FockitBase(ImpuritySolver):
             )
             self.h_hybr += tmp + hc(tmp)
 
-    @override
     def set_h_imp(
         self,
         Lambda_c: BlockMatrixLike,
@@ -322,7 +335,6 @@ class _FockitBase(ImpuritySolver):
     def _eigensolver_report(self, key: _Key) -> Callable[..., None] | None:
         return None if self.diagnostics is None else partial(self._emit, sector=key)
 
-    @override
     def solve(self) -> None:
         """
         Solve the impurity problem.
@@ -365,7 +377,8 @@ class _FockitBase(ImpuritySolver):
                 ):
                     cs = [self._index[(bl, alpha)] for alpha in range(bl_size)]
                     fs = [self._index[(bl_bath, a)] for a in range(n_bath)]
-                    self.rho_f[bl] = np.eye(n_bath) - G[np.ix_(fs, fs)]
+                    self.hole_rho_f[bl] = G[np.ix_(fs, fs)]
+                    self.rho_f[bl] = np.eye(n_bath) - self.hole_rho_f[bl]
                     self.rho_cf[bl] = G[np.ix_(cs, fs)]
                     self.rho_c[bl] = G[np.ix_(cs, cs)]
 
@@ -435,33 +448,47 @@ class _FockitBase(ImpuritySolver):
         # each sector they reach, or None if the permutation and on-site
         # symmetries do not keep the particle number, or do not split them
         # into parts that reach one sector each
-        if key not in self._annihilators:
-            with self._stage("annihilators", sector=key):
+        ladders = self._ladders_of(key, create=False)
+        if ladders is None:
+            return None
+        return [(modes, matrices) for _, modes, matrices in ladders]
+
+    def _ladders_of(self, key: _Key, create: bool) -> list[_Ladder] | None:
+        # The matrices of the annihilators (creators) of the modes from the
+        # sector into each sector they reach, with that sector, or None as in
+        # _annihilators_of
+        if (key, create) not in self._ladders:
+            name = "creators" if create else "annihilators"
+            with self._stage(name, sector=key):
                 values, eigenvalues = key
                 if eigenvalues is not None and self._shifts[0] is None:
                     self._emit(
-                        "annihilators.unavailable", sector=key, reason="particle_number"
+                        f"{name}.unavailable", sector=key, reason="particle_number"
                     )
-                    self._annihilators[key] = None
+                    self._ladders[key, create] = None
                     return None
                 source = self._basis(key)
+                sign = 1 if create else -1
                 reached: dict[_Key, _Annihilators] = {}
                 for j, mode in enumerate(self._modes):
                     target_values = tuple(
-                        None if v is None or shift is None else round(v - shift[j], 8)
+                        None
+                        if v is None or shift is None
+                        else round(v + sign * shift[j], 8)
                         for v, shift in zip(values, self._shifts, strict=True)
                     )
-                    parts: dict[tuple[complex, ...] | None, OpSum] = {None: c(*mode)}
+                    op = cdag(*mode) if create else c(*mode)
+                    parts: dict[tuple[complex, ...] | None, OpSum] = {None: op}
                     if eigenvalues is not None:
                         try:
-                            parts = dict(symmetry_components(c(*mode), source).items())
+                            parts = dict(symmetry_components(op, source).items())
                         except ValueError:
                             self._emit(
-                                "annihilators.unavailable",
+                                f"{name}.unavailable",
                                 sector=key,
                                 reason="symmetry_components",
                             )
-                            self._annihilators[key] = None
+                            self._ladders[key, create] = None
                             return None
                     for target_eigenvalues, part in parts.items():
                         target = (target_values, target_eigenvalues)
@@ -470,10 +497,15 @@ class _FockitBase(ImpuritySolver):
                         matrices.append(
                             to_matrix(part, self._basis(target), source=source).tocsr()
                         )
-                self._annihilators[key] = list(reached.values())
+                self._ladders[key, create] = [
+                    (target, modes, matrices)
+                    for target, (modes, matrices) in reached.items()
+                ]
         else:
-            self._emit("cache.hit", item="annihilators", sector=key)
-        return self._annihilators[key]
+            self._emit(
+                "cache.hit", item="creators" if create else "annihilators", sector=key
+            )
+        return self._ladders[key, create]
 
     def _hamiltonian(
         self, key: _Key, T: NDArray[np.inexact], const: float, rest: OpSum
@@ -511,7 +543,6 @@ class _FockitBase(ImpuritySolver):
             )
             return H
 
-    @override
     def get_rho_f(self, bl: str) -> NDArray[np.inexact]:
         """
         Return f-electron density matrix.
@@ -529,7 +560,6 @@ class _FockitBase(ImpuritySolver):
         """
         return self.rho_f[bl]
 
-    @override
     def get_rho_c(self, bl: str) -> NDArray[np.inexact]:
         """
         Return c-electron density matrix.
@@ -547,7 +577,6 @@ class _FockitBase(ImpuritySolver):
         """
         return self.rho_c[bl]
 
-    @override
     def get_rho_cf(self, bl: str) -> NDArray[np.inexact]:
         """
         Return the cf hybridization (off-diagonal) density matrix.
@@ -613,7 +642,7 @@ class _FockitBase(ImpuritySolver):
         return res
 
 
-class FockitImpuritySolver(_FockitBase):
+class FockitImpuritySolver(_FockitBase, ZeroTemperatureImpuritySolver):
     """
     Impurity solver using exact diagonalization from fockit.
 
@@ -744,6 +773,17 @@ class FockitImpuritySolver(_FockitBase):
         #: :meth:`solve`.
         self.states: NDArray[np.complex128]
 
+        #: numpy.ndarray : Energies of :attr:`states`, set by :meth:`solve`.
+        self.energies: NDArray[np.float64]
+
+        #: risb.types.BlockMatrix : ``<f_a (E - H) f_b^dag>`` of each block,
+        #: averaged over :attr:`states`, set by :meth:`solve`.
+        self.particle_energy_f: BlockMatrix = {}
+
+        #: risb.types.BlockMatrix : ``<f_b^dag (H - E) f_a>`` of each block,
+        #: averaged over :attr:`states`, set by :meth:`solve`.
+        self.hole_energy_f: BlockMatrix = {}
+
     @override
     def solve(self) -> None:
         """
@@ -751,7 +791,9 @@ class FockitImpuritySolver(_FockitBase):
 
         With :attr:`beta` set, also find the low-lying eigenstates for the
         averages with Boltzmann weights. Sets the density matrices
-        :attr:`rho_f`, :attr:`rho_cf`, and :attr:`rho_c` of every block.
+        :attr:`rho_f`, :attr:`rho_cf`, :attr:`rho_c` and :attr:`hole_rho_f`,
+        and :attr:`particle_energy_f` and :attr:`hole_energy_f`, of every
+        block.
 
         Raises
         ------
@@ -767,6 +809,51 @@ class FockitImpuritySolver(_FockitBase):
 
         """
         super().solve()
+        with self._stage("energy_matrices"):
+            self._set_energy_matrices()
+
+    @override
+    def get_hole_rho_f(self, bl: str) -> NDArray[np.inexact]:
+        return self.hole_rho_f[bl]
+
+    @override
+    def get_particle_energy_f(self, bl: str) -> NDArray[np.inexact]:
+        return self.particle_energy_f[bl]
+
+    @override
+    def get_hole_energy_f(self, bl: str) -> NDArray[np.inexact]:
+        return self.hole_energy_f[bl]
+
+    def _set_energy_matrices(self) -> None:
+        # <f_a (E - H) f_b^dag> and <f_b^dag (H - E) f_a>, from the states
+        # f^dag psi and f psi in the sectors one electron up and down, with
+        # (H - E) applied to them, so that a small weight there is not found
+        # as a difference of large numbers
+        T, const, rest = _one_body(self.h_imp - self.h_int, self._index)
+        n_modes = len(self._modes)
+        particle = np.zeros((n_modes, n_modes), dtype=complex)
+        hole = np.zeros((n_modes, n_modes), dtype=complex)
+        for create, result in ((True, particle), (False, hole)):
+            ladders = self._ladders_of(self._states_key, create)
+            assert ladders is not None
+            for target, modes, matrices in ladders:
+                H = self._hamiltonian(target, T, const, rest)
+                for psi, weight, energy in zip(
+                    self.states.T, self.weights, self.energies, strict=True
+                ):
+                    A = np.stack([C @ psi for C in matrices])
+                    X = H @ A.T - energy * A.T
+                    # [a, b] is <psi| f_a (E - H) f_b^dag |psi> for the
+                    # creators and <psi| f_b^dag (H - E) f_a |psi> for the
+                    # annihilators
+                    block = -(A.conj() @ X) if create else (A.conj() @ X).T
+                    result[np.ix_(modes, modes)] += weight * block
+        for (bl, _), (bl_bath, n_bath) in zip(
+            self.gf_struct, self.gf_struct_bath, strict=True
+        ):
+            fs = [self._index[(bl_bath, a)] for a in range(n_bath)]
+            self.particle_energy_f[bl] = particle[np.ix_(fs, fs)]
+            self.hole_energy_f[bl] = hole[np.ix_(fs, fs)]
 
     @override
     def _find_states(self) -> list[_Key]:
@@ -817,11 +904,13 @@ class FockitImpuritySolver(_FockitBase):
         if self.beta is None:
             states = states[:, :1]
             self.weights = np.ones(1)
+            self.energies = np.asarray(energies[:1], dtype=float)
         else:
             weights = _weight(energies, self.beta, energies[0])
             keep = weights > _WEIGHT_TOL
             states = states[:, keep]
             self.weights = weights[keep] / np.sum(weights[keep])
+            self.energies = np.asarray(energies, dtype=float)[keep]
         if self._states_key != self._key:
             self._emit("states.expanded", source=self._key, target=self._states_key)
             states = np.column_stack(
@@ -842,7 +931,7 @@ class FockitImpuritySolver(_FockitBase):
         return [self._states_key]
 
 
-class FockitThermalImpuritySolver(_FockitBase):
+class FockitThermalImpuritySolver(_FockitBase, ThermalImpuritySolver):
     """
     Grand-canonical impurity solver at finite temperature using exact diagonalization from fockit.
 

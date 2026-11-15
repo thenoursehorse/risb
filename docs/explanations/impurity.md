@@ -107,8 +107,11 @@ minimal and simple.
 :::
 
 Any impurity solver can be used with our code provided it implements
-{py:class}`risb.types.ImpuritySolver`. Subclass it so that type checkers
-verify your implementation. It needs
+{py:class}`risb.types.ZeroTemperatureImpuritySolver`, for
+{py:class}`risb.LatticeSolver` and {py:class}`risb.PhysicalMuLatticeSolver`,
+or {py:class}`risb.types.ThermalImpuritySolver`, for
+{py:class}`risb.ThermalLatticeSolver`. Subclass it so that type checkers
+verify your implementation. Both need
 
 - `gf_struct`, the block structure of the physical orbitals.
 - A method to set the impurity Hamiltonian, called as
@@ -132,3 +135,18 @@ verify your implementation. It needs
 - `entropy`, the entropy of the states found by `solve()`, which is zero for
   a single ground state. It is only used if you pass it to
   {py:func}`risb.helpers.get_lagrangian` or {py:func}`risb.helpers.get_entropy`.
+
+A zero-temperature solver also needs, for every block, with $\hat{H}$ the
+impurity Hamiltonian and $E$ the energy of the state:
+
+- `get_hole_rho_f(block)`, $\langle \hat{f}^{\dagger}_{ia} \hat{f}^{}_{ib} \rangle$,
+  which is `1 - rho_f` but computed from the states, so that it stays accurate
+  where `rho_f` is nearly one.
+- `get_particle_energy_f(block)`,
+  $\langle \hat{f}^{}_{ia} (E - \hat{H}) \hat{f}^{\dagger}_{ib} \rangle$, and
+  `get_hole_energy_f(block)`,
+  $\langle \hat{f}^{\dagger}_{ib} (\hat{H} - E) \hat{f}^{}_{ia} \rangle$.
+  They add up to the transpose of `Lambda_c`. Compute them by applying
+  $\hat{f}^{\dagger}$ and $\hat{f}$ to the state and then $\hat{H} - E$, not
+  from an expectation value of the product of operators, which would subtract
+  numbers close to each other where an orbital is nearly full or empty.
