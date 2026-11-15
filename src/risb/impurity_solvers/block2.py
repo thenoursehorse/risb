@@ -856,6 +856,13 @@ class Block2ImpuritySolver(_Block2Base, ZeroTemperatureImpuritySolver):
         <H>^2`` of the ground state, which is zero for an eigenstate. It
         costs about half a solve without the symmetry-mixing sweeps. Default
         is False.
+    full_empty_tol : float, optional
+        A block with a bath orbital whose ``n (1 - n)``, with ``n`` an
+        eigenvalue of :attr:`rho_f`, is below this gets its energy matrices
+        from the states ``f^dag psi`` and ``f psi``, fitted at the bond
+        dimension of the ground state. The other blocks get them from the
+        density matrices, which costs nothing but loses digits for an
+        orbital close to full or empty. Default is ``1e-4``.
     bath_size : mapping, optional
         Number of bath orbitals of each block, ``B`` times its size for ghost
         RISB with ``B`` quasiparticle orbitals per orbital, e.g.,
@@ -890,6 +897,7 @@ class Block2ImpuritySolver(_Block2Base, ZeroTemperatureImpuritySolver):
         *,
         settings: Block2Settings | None = None,
         calculate_variance: bool = False,
+        full_empty_tol: float = 1e-4,
         bath_size: Mapping[str, int] | None = None,
         comm: Comm | None = None,
         diagnostics: Block2Observer | None = None,
@@ -907,6 +915,10 @@ class Block2ImpuritySolver(_Block2Base, ZeroTemperatureImpuritySolver):
 
         #: dict : Conserved quantities and their sectors.
         self.symmetries = dict(symmetries or {})
+
+        #: float : Value of ``n (1 - n)`` of a bath orbital below which its
+        #: block gets the energy matrices from fitted states.
+        self.full_empty_tol = full_empty_tol
 
         L = len(self._sites)
         unknown = set(self.symmetries) - {"s", "sz"}
@@ -1068,10 +1080,21 @@ class Block2ImpuritySolver(_Block2Base, ZeroTemperatureImpuritySolver):
         if self.calculate_variance:
             self.variance = self.comm.allreduce(variance)
         G = self.comm.allreduce(G)
-        particle, hole = np.zeros((2 * L, 2 * L)), np.zeros((2 * L, 2 * L))
-        if self._state is not None:
-            particle, hole = self._energy_matrices(*self._state)
-        particle, hole = self.comm.allreduce(particle), self.comm.allreduce(hole)
+        # The energy matrices from the density matrices, except in blocks with
+        # a bath orbital close to full or empty, where those lose digits
+        particle, hole = _energy_matrices_from_densities(self._h1, G)
+        nearly_full_or_empty = [
+            bl for bl, _ in self.gf_struct if self._nearly_full_or_empty(G, bl)
+        ]
+        if nearly_full_or_empty:
+            fitted = np.zeros((2, 2 * L, 2 * L))
+            if self._state is not None:
+                fitted[:] = self._energy_matrices(*self._state, nearly_full_or_empty)
+            fitted = self.comm.allreduce(fitted)
+            for bl in nearly_full_or_empty:
+                fs = [self._index[_bath(bl), a] for a in range(self._bath_sizes[bl])]
+                particle[np.ix_(fs, fs)] = fitted[0][np.ix_(fs, fs)]
+                hole[np.ix_(fs, fs)] = fitted[1][np.ix_(fs, fs)]
         twos, twosz = lowest
         self.sector = {}
         if twos is not None:
@@ -1091,22 +1114,35 @@ class Block2ImpuritySolver(_Block2Base, ZeroTemperatureImpuritySolver):
                 variance=self.variance,
             )
 
+    def _nearly_full_or_empty(self, G: NDArray[np.float64], bl: str) -> bool:
+        # Whether a bath orbital of block bl has n (1 - n) below
+        # full_empty_tol, from <f^dag f> of G
+        fs = [self._index[_bath(bl), a] for a in range(self._bath_sizes[bl])]
+        s = np.linalg.eigvalsh(G[np.ix_(fs, fs)])
+        return bool(np.min(s * (1 - s)) < self.full_empty_tol)
+
     @diagnostic_stage
     def _energy_matrices(
-        self, scratch: tempfile.TemporaryDirectory[str], sector: _Sector
+        self,
+        scratch: tempfile.TemporaryDirectory[str],
+        sector: _Sector,
+        blocks: Sequence[str],
     ) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
         # <f_p (E - H) f_q^dag> and <f_q^dag (H - E) f_p> of the bath spin
-        # orbitals p, q of each block in the ground state, averaged over the
-        # spin multiplet with a conserved total spin and no spin projection
+        # orbitals p, q of each of blocks in the ground state, from fitted
+        # states, averaged over the spin multiplet with a conserved total spin
+        # and no spin projection
         twos, twosz = sector
         L = len(self._sites)
         if twos is None:
-            return self._fixed_spin_energy_matrices(scratch.name, sector, "KET")
+            return self._fixed_spin_energy_matrices(scratch.name, sector, "KET", blocks)
         twoszs = [twosz] if twosz is not None else list(range(-twos, twos + 1, 2))
         particle, hole = np.zeros((2 * L, 2 * L)), np.zeros((2 * L, 2 * L))
         for m in twoszs:
             (sz_tag,) = self._to_sz_states(scratch.name, sector, L, ["KET"], m)
-            p, h = self._fixed_spin_energy_matrices(scratch.name, (None, m), sz_tag)
+            p, h = self._fixed_spin_energy_matrices(
+                scratch.name, (None, m), sz_tag, blocks
+            )
             particle += p / len(twoszs)
             hole += h / len(twoszs)
             _remove_mps(scratch.name, sz_tag)
@@ -1114,7 +1150,7 @@ class Block2ImpuritySolver(_Block2Base, ZeroTemperatureImpuritySolver):
 
     @capture_block2
     def _fixed_spin_energy_matrices(
-        self, scratch: str, sector: _Sector, tag: str
+        self, scratch: str, sector: _Sector, tag: str, blocks: Sequence[str]
     ) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
         # The matrices of _energy_matrices in the state tag of a sector without
         # a conserved total spin. The states f^dag psi and f psi are fitted at
@@ -1157,7 +1193,7 @@ class Block2ImpuritySolver(_Block2Base, ZeroTemperatureImpuritySolver):
             return state
 
         particle, hole = np.zeros((2 * L, 2 * L)), np.zeros((2 * L, 2 * L))
-        for bl, _ in self.gf_struct:
+        for bl in blocks:
             fs = [self._index[_bath(bl), a] for a in range(self._bath_sizes[bl])]
             added = [fitted(p, create=True) for p in fs]
             removed = [fitted(p, create=False) for p in fs]
@@ -1915,6 +1951,17 @@ def charge_susceptibility(
     for tag in ("GROUND", "RESPONSE"):
         _remove_mps(scratch.name, tag)
     return 2 * float(np.real(overlap))
+
+
+def _energy_matrices_from_densities(
+    h1: NDArray[np.float64], G: NDArray[np.float64]
+) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
+    # <c_p (E - H) c_q^dag> and <c_q^dag (H - E) c_p> of an eigenstate, for
+    # modes p, q that the interaction does not act on, from the one-body terms
+    # h1 and G = <c^dag c>: there [H, c_p] = -sum_r h1[p, r] c_r
+    particle = G.T @ h1 - h1
+    hole = -h1 @ G.T
+    return particle, hole
 
 
 def _bath(bl: str) -> str:

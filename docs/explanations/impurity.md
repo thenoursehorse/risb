@@ -146,7 +146,8 @@ impurity Hamiltonian and $E$ the energy of the state:
   $\langle \hat{f}^{}_{ia} (E - \hat{H}) \hat{f}^{\dagger}_{ib} \rangle$, and
   `get_hole_energy_f(block)`,
   $\langle \hat{f}^{\dagger}_{ib} (\hat{H} - E) \hat{f}^{}_{ia} \rangle$.
-  They add up to the transpose of `Lambda_c`. Compute them by applying
+  They add up to the transpose of `Lambda_c`, plus `mu` when `set_h_imp` has
+  one. Compute them by applying
   $\hat{f}^{\dagger}$ and $\hat{f}$ to the state and then $\hat{H} - E$, not
   from an expectation value of the product of operators, which would subtract
   numbers close to each other where an orbital is nearly full or empty.

@@ -98,8 +98,11 @@ def assert_same_rho(solver: Any, expected: Any) -> None:
 @pytest.mark.parametrize(
     "symmetries", [{}, {"sz": None}, {"sz": 0}, {"s": None}, {"s": 0}]
 )
+@pytest.mark.parametrize(
+    "full_empty_tol", [0.0, 1.0], ids=["from densities", "from fitted states"]
+)
 def test_ground_state_of_a_ghost_impurity_is_the_exact_one(
-    symmetries: dict[str, Any],
+    symmetries: dict[str, Any], full_empty_tol: float
 ) -> None:
     problem = ghost_problem(2, 3)
     h_int, gf_struct, bath_size = problem[:3]
@@ -112,6 +115,7 @@ def test_ground_state_of_a_ghost_impurity_is_the_exact_one(
             gf_struct,
             bond_dim=200,
             symmetries=symmetries,
+            full_empty_tol=full_empty_tol,
             bath_size=bath_size,
             settings=EXACT,
         ),
@@ -120,6 +124,32 @@ def test_ground_state_of_a_ghost_impurity_is_the_exact_one(
     assert_same_state(solver, expected)
     for Op in (N_op(["up", "dn"], 2), S2_op(["up", "dn"], 2)):
         assert solver.overlap(Op) == pytest.approx(expected.overlap(Op), abs=1e-6)
+    for bl, _ in gf_struct:
+        for get in ["get_hole_rho_f", "get_particle_energy_f", "get_hole_energy_f"]:
+            assert getattr(solver, get)(bl) == pytest.approx(
+                getattr(expected, get)(bl), abs=1e-6
+            )
+
+
+def test_energy_matrices_of_a_nearly_full_bath_orbital_are_the_exact_ones() -> None:
+    # The highest ghost of each orbital far below the others, so that its
+    # quasiparticle is nearly full and the fitted states are used for its
+    # block; the ground state stays non-degenerate
+    problem = ghost_problem(2, 3)
+    h_int, gf_struct, bath_size, Lambda_c, D, h0_loc = problem
+    Lambda_c = {bl: L - np.diag([0, 0, 0, 0, 40.0, 40.0]) for bl, L in Lambda_c.items()}
+    problem = (h_int, gf_struct, bath_size, Lambda_c, D, h0_loc)
+    expected = solved(
+        FockitImpuritySolver(h_int, gf_struct, bath_size=bath_size), problem
+    )
+    solver = solved(
+        Block2ImpuritySolver(
+            h_int, gf_struct, bond_dim=200, bath_size=bath_size, settings=EXACT
+        ),
+        problem,
+    )
+    n = np.linalg.eigvalsh(expected.get_rho_f("up"))
+    assert np.min(n * (1 - n)) < solver.full_empty_tol
     for bl, _ in gf_struct:
         for get in ["get_hole_rho_f", "get_particle_energy_f", "get_hole_energy_f"]:
             assert getattr(solver, get)(bl) == pytest.approx(

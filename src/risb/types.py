@@ -145,7 +145,7 @@ class ZeroTemperatureImpuritySolver(Protocol):
 
         Averaged over the states with their weights, each with its own
         ``E``. With :meth:`get_hole_energy_f` it adds up to the transpose of
-        ``Lambda_c``.
+        ``Lambda_c``, plus ``mu`` when :meth:`set_h_imp` has one.
         """
 
     def get_hole_energy_f(self, bl: str) -> NDArray[np.inexact]:
