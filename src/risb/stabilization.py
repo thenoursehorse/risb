@@ -6,6 +6,7 @@ from typing import Literal, override
 import numpy as np
 from numpy.typing import NDArray
 
+from risb.helpers import _occupations
 from risb.types import ChemicalPotentialStep, DensityFeedback, PinFullEmpty
 
 
@@ -38,53 +39,78 @@ def clip_singular_values(A: NDArray[np.inexact]) -> NDArray[np.inexact]:
 
 class FullEmptyPinning(PinFullEmpty):
     """
-    Move the levels of full or empty auxiliary orbitals far from the active levels.
+    Decouple the auxiliary orbitals that are close to full or empty, and move their levels away from the others.
 
-    An orbital is full or empty when its density eigenvalue ``n`` satisfies
-    ``n * (1 - n) < edge_tol``. Bath levels use the quasiparticle density
-    :attr:`~risb.LatticeSolver.rho_qp`; quasiparticle levels use
-    :attr:`~risb.LatticeSolver.rho_f` after the impurity solve. This enforces
-    complementary bath occupations in the decoupled limit, but can affect
-    convergence and which solution is found.
+    An auxiliary orbital is close to full or empty when its occupation ``n``,
+    an eigenvalue of :attr:`~risb.LatticeSolver.rho_qp` (for the bath) or of
+    :attr:`~risb.LatticeSolver.rho_f` after the impurity solve (for the
+    quasiparticles), has ``n * (1 - n)`` below ``onset_tol``. It is pinned
+    with a weight ``w`` that rises smoothly, as a smoothstep in
+    ``log10(n * (1 - n))``, from 0 at ``onset_tol`` to 1 at ``edge_tol``.
+    Its row of D (for the bath) or R (for the quasiparticles) and its
+    couplings to the other levels are scaled by ``1 - w``, and its level
+    moves a fraction ``w`` of the way to a level far from the others:
 
-    Close to full or empty, the quasiparticle level grows as
-    ``1 / sqrt(n * (1 - n))``, and one cycle can move it far away. So the
-    change in a cycle of the levels of nearly full or empty quasiparticle
-    orbitals is limited.
+    - the bath partner of a full (empty) quasiparticle orbital to
+      ``-pinned_level_distance`` (``+pinned_level_distance``) times the
+      energy scale of the model, so that the bath orbital is empty (full);
+    - a full (empty) quasiparticle orbital below (above) every other level,
+      by the kinetic half-bandwidth plus ``pinned_level_distance`` times the
+      energy scale.
+
+    An orbital that is full or empty to below ``edge_tol`` is decoupled, and
+    the RISB equations do not fix its levels; the pinning chooses them. This
+    finds the solution where the orbital stays decoupled. A solution with a
+    lower energy, where it is weakly coupled as an extra channel for the
+    other orbitals, can also exist. With ``onset_tol`` equal to ``edge_tol``
+    the pinning switches on at once.
+
+    Close to full or empty, the quasiparticle level changes fast with the
+    other parameters, and one cycle can move it far away. So the change in a
+    cycle of the levels of nearly full or empty quasiparticle orbitals is
+    limited. The occupations come from the density matrices of the occupied
+    and of the empty states separately, which keep their digits close to 0
+    and 1.
 
     Parameters
     ----------
+    onset_tol : float, optional
+        Value of ``n * (1 - n)`` below which the pinning starts to act.
     edge_tol : float, optional
-        An orbital is full or empty when ``n * (1 - n)`` is below this.
-        The gradients in :mod:`risb.helpers` use ``risb.helpers.EDGE_TOL``.
-    margin : float, optional
-        Distance of the pinned levels from the active levels, in units of the
+        Value of ``n * (1 - n)`` below which the pinning acts completely.
+    pinned_level_distance : float, optional
+        Distance of the pinned levels from the other levels, in units of the
         energy scale of the model.
     near_edge_tol : float, optional
-        A quasiparticle orbital that is not full or empty is nearly full or
-        empty when ``n * (1 - n)`` is below this.
+        A quasiparticle orbital is nearly full or empty when ``n * (1 - n)``
+        is below this.
     step_cap : float or None, optional
         Scale for limiting quasiparticle level changes, in units of the
         kinetic half-bandwidth. ``None`` disables limiting.
     step_cap_method : {"clip", "smooth"}, optional
         ``"clip"`` limits changes to the levels of nearly full or empty
-        orbitals, excluding those already pinned. It uses the spectral norm.
-        ``"smooth"`` weights the change continuously as occupations approach
-        0 or 1 and limits its Frobenius norm.
+        orbitals, excluding those below ``edge_tol``. It uses the spectral
+        norm. ``"smooth"`` weights the change continuously as occupations
+        approach 0 or 1 and limits its Frobenius norm.
 
     """
 
     def __init__(
         self,
+        onset_tol: float = 1e-10,
         edge_tol: float = 1e-12,
-        margin: float = 10.0,
+        pinned_level_distance: float = 10.0,
         near_edge_tol: float = 1e-3,
         step_cap: float | None = 2.0,
         *,
         step_cap_method: Literal["clip", "smooth"] = "smooth",
     ) -> None:
+        if onset_tol < edge_tol:
+            msg = "onset_tol must not be below edge_tol."
+            raise ValueError(msg)
+        self.onset_tol = onset_tol
         self.edge_tol = edge_tol
-        self.margin = margin
+        self.pinned_level_distance = pinned_level_distance
         self.near_edge_tol = near_edge_tol
         self.step_cap = step_cap
         methods = {"clip": self._clip_level_step, "smooth": self._smooth_level_step}
@@ -94,59 +120,58 @@ class FullEmptyPinning(PinFullEmpty):
         self._limit_level_step = methods[step_cap_method]
 
     @override
-    def bath_levels(
+    def bath(
         self,
+        D: NDArray[np.inexact],
         Lambda_c: NDArray[np.inexact],
         rho_qp: NDArray[np.inexact],
+        hole_rho_qp: NDArray[np.inexact],
         energy_scale: float,
-    ) -> NDArray[np.inexact]:
+    ) -> tuple[NDArray[np.inexact], NDArray[np.inexact]]:
         """
-        Return the bath levels with the bath partners of full or empty quasiparticle orbitals far away.
+        Return D and the bath levels, with the bath partners of quasiparticle orbitals close to full or empty decoupled.
 
-        A completely full (empty) quasiparticle orbital has no bath partner.
-        Its D is zero, and the limit of the gradient term that would put its
-        bath orbital empty (full) is not finite, so put the bath level far
-        away instead. Otherwise the bath orbital competes for electrons and
-        the impurity problem can end at R = 0 with the wrong filling.
+        A completely full (empty) quasiparticle orbital has no bath partner:
+        the bath orbital would compete for electrons, and the impurity problem
+        can end at R = 0 with the wrong filling. So its row of D goes to zero
+        and its bath level far away, empty (full).
         """
-        eigenvalues, vectors = np.linalg.eigh(rho_qp)
-        edge = eigenvalues * (1 - eigenvalues) < self.edge_tol
-        scale = self.margin * energy_scale
+        # rho_qp, hole_rho_qp and Lambda_c are the transposes of the matrices
+        # in the basis of the quasiparticles, in which D has its rows
+        vectors, n, s = _occupations(rho_qp.T, hole_rho_qp.T)
+        w = self._weights(n * s)
+        if not w.any():
+            return D, Lambda_c
+        scale = self.pinned_level_distance * energy_scale
         # The bath term is f Lambda_c f^dag, so filling the bath orbital costs
         # -Lambda_c: empty for a full quasiparticle orbital, full for an empty one
-        for delta, v in zip(eigenvalues[edge], vectors[:, edge].T, strict=True):
-            level = -scale if delta > 0.5 else scale
-            Lambda_c = Lambda_c + (level - np.real(v.conj() @ Lambda_c @ v)) * np.outer(
-                v, v.conj()
-            )
-        return Lambda_c
+        targets = np.where(n > 0.5, -scale, scale)
+        levels, D = _decouple(Lambda_c.T, D, vectors, w, targets)
+        return D, levels.T
 
     @override
-    def qp_levels(
+    def qp(
         self,
+        R: NDArray[np.inexact],
         Lambda: NDArray[np.inexact],
         Lambda_in: NDArray[np.inexact],
         rho_f: NDArray[np.inexact],
+        hole_rho_f: NDArray[np.inexact],
         energy_scale: float,
         half_bandwidth: float,
-    ) -> NDArray[np.inexact]:
+    ) -> tuple[NDArray[np.inexact], NDArray[np.inexact]]:
         """
-        Return the quasiparticle levels with full or empty orbitals below or above every other band.
+        Return R and the quasiparticle levels, with the orbitals close to full or empty decoupled below or above every other band.
 
         The quasiparticle level of a full (empty) orbital is only fixed to be
         below (above) the chemical potential, so keep it below (above) every
-        other quasiparticle band. This finds the solution where the orbital
-        stays decoupled. A solution with a lower energy, where the
-        quasiparticle orbital is not exactly full (empty) and is an extra
-        channel for the other orbitals, can also exist.
+        other quasiparticle band.
         """
-        eigenvalues, vectors = np.linalg.eigh(rho_f)
-        spread = eigenvalues * (1 - eigenvalues)
-        edge = spread < self.edge_tol
+        vectors, n, s = _occupations(rho_f, hole_rho_f)
         # rho_qp is the transpose of n_F(lambda - mu), so these are the
-        # eigenvectors of lambda
+        # eigenvectors of lambda, and the basis of the rows of R
         vectors = vectors.conj()
-
+        spread = n * s
         if self.step_cap is not None:
             Lambda = self._limit_level_step(
                 Lambda,
@@ -155,22 +180,31 @@ class FullEmptyPinning(PinFullEmpty):
                 vectors,
                 self.step_cap * half_bandwidth,
             )
-
-        if not edge.any():
-            return Lambda
-        active = vectors[:, ~edge]
+        w = self._weights(spread)
+        if not w.any():
+            return R, Lambda
+        active = vectors[:, w == 0]
         others = (
             np.linalg.eigvalsh(active.conj().T @ Lambda @ active)
             if active.size
             else np.zeros(1)
         )
-        margin = half_bandwidth + self.margin * energy_scale
-        for delta, v in zip(eigenvalues[edge], vectors[:, edge].T, strict=True):
-            level = others.min() - margin if delta > 0.5 else others.max() + margin
-            Lambda = Lambda + (level - np.real(v.conj() @ Lambda @ v)) * np.outer(
-                v, v.conj()
+        distance = half_bandwidth + self.pinned_level_distance * energy_scale
+        targets = np.where(n > 0.5, others.min() - distance, others.max() + distance)
+        Lambda, R = _decouple(Lambda, R, vectors, w, targets)
+        return R, Lambda
+
+    def _weights(self, spread: NDArray[np.floating]) -> NDArray[np.float64]:
+        # 0 above onset_tol, 1 below edge_tol, a smoothstep in log10 between
+        if self.onset_tol == self.edge_tol:
+            return (spread < self.edge_tol).astype(float)
+        with np.errstate(divide="ignore"):
+            x = (np.log10(self.onset_tol) - np.log10(spread)) / (
+                np.log10(self.onset_tol) - np.log10(self.edge_tol)
             )
-        return Lambda
+        x = np.clip(np.nan_to_num(x, posinf=1.0), 0, 1)
+        weights: NDArray[np.float64] = x**2 * (3 - 2 * x)
+        return weights
 
     def _clip_level_step(
         self,
@@ -331,3 +365,29 @@ class MuSecantStep(ChemicalPotentialStep):
             return -filling_error
         (mu_0, n_0), (mu_1, n_1) = history[-2:]
         return -filling_error / max((n_1 - n_0) / (mu_1 - mu_0), self.min_slope)
+
+
+def _decouple(
+    levels: NDArray[np.inexact],
+    rows: NDArray[np.inexact],
+    vectors: NDArray[np.inexact],
+    weights: NDArray[np.float64],
+    targets: NDArray[np.float64],
+) -> tuple[NDArray[np.inexact], NDArray[np.inexact]]:
+    # For each column v of vectors with weight w > 0: the couplings of v to
+    # the rest in levels, and the row of v in rows, scaled by 1 - w, and the
+    # level of v moved a fraction w of the way to its target
+    for k in np.flatnonzero(weights > 0):
+        v = vectors[:, k : k + 1]
+        P = v @ v.conj().T
+        Q = np.eye(len(P)) - P
+        level = float(np.real(v.conj().T @ levels @ v).item())
+        w = weights[k]
+        levels = (
+            P @ levels @ P
+            + Q @ levels @ Q
+            + (1 - w) * (P @ levels @ Q + Q @ levels @ P)
+            + w * (targets[k] - level) * P
+        )
+        rows = rows - w * P @ rows
+    return levels, rows

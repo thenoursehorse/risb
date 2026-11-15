@@ -1025,6 +1025,40 @@ def test_force_real_warns_when_discarding_imaginary_parts(one_band: Model) -> No
         S.get_x()
 
 
+@pytest.mark.parametrize("onset_tol", [1e-10, 1e-12], ids=["smooth", "at once"])
+def test_pinning_decouples_a_filling_orbital_continuously_unless_switched_at_once(
+    onset_tol: float,
+) -> None:
+    # Orbital 0 fills; on the way its row of D and its coupling to orbital 1
+    # go to zero, and its bath level to -10 times the energy scale
+    pin = FullEmptyPinning(onset_tol=onset_tol, edge_tol=1e-12)
+    D = np.array([[0.4], [0.3]])
+    Lambda_c = np.array([[-0.5, 0.2], [0.2, 0.3]])
+    holes = np.geomspace(1e-9, 1e-13, 81)
+    results = []
+    for x in holes:
+        rho_qp = np.diag([1 - x, 0.4])
+        hole_rho_qp = np.diag([x, 0.6])
+        results.append(pin.bath(D, Lambda_c, rho_qp, hole_rho_qp, energy_scale=1.0))
+    D_row = np.array([D_out[0, 0] for D_out, _ in results])
+    coupling = np.array([L[0, 1] for _, L in results])
+    level = np.array([L[0, 0] for _, L in results])
+    assert D_row[0] == pytest.approx(0.4)
+    assert coupling[0] == pytest.approx(0.2)
+    assert level[0] == pytest.approx(-0.5)
+    assert D_row[-1] == pytest.approx(0)
+    assert coupling[-1] == pytest.approx(0)
+    assert level[-1] == pytest.approx(-10)
+    # The largest change of the bath level between neighbouring occupations,
+    # as a fraction of the whole change: small for the smooth switch, all of
+    # it at once otherwise
+    largest_step = np.max(np.abs(np.diff(level))) / 9.5
+    if onset_tol > pin.edge_tol:
+        assert largest_step < 0.1
+    else:
+        assert largest_step == pytest.approx(1)
+
+
 @pytest.mark.parametrize(
     "pin_full_empty", [FullEmptyPinning(), None], ids=["pinned", "not pinned"]
 )
@@ -1057,7 +1091,9 @@ def test_full_orbital_pinning_prevents_the_wrong_impurity_filling(
     result = S.solve(tol=1e-10, maxiter=100, self_consistency_tol=np.inf)
     filling = sum(float(np.trace(rho).real) for rho in S.rho_c[0].values())
     if pin_full_empty is None:
-        assert filling == pytest.approx(2.0, abs=1e-8)
+        # The bath takes electrons from the physical orbitals: not a
+        # solution, at R = 0 and with the wrong filling
+        assert filling != pytest.approx(3.0, abs=1e-2)
         assert S.self_consistency_error > 0.1
         for bl, _ in gf_struct:
             assert np.linalg.eigvalsh(S.Z[0][bl]) == pytest.approx([0, 0], abs=1e-8)

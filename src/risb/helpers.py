@@ -245,6 +245,192 @@ def get_r(
     return R
 
 
+def get_d_2(
+    rho_qp: NDArray[np.inexact],
+    hole_rho_qp: NDArray[np.inexact],
+    ke: NDArray[np.inexact],
+) -> NDArray[np.inexact]:
+    """
+    Return the hybridization matrix of the impurity problem, as :func:`get_d`, accurate near full or empty.
+
+    The occupations ``n`` and ``1 - n`` of the quasiparticle orbitals are
+    taken from ``rho_qp`` and ``hole_rho_qp`` separately, so that the inverse
+    of ``sqrt(n (1 - n))`` keeps its digits where ``n`` is close to 0 or 1.
+    The row of an orbital with ``n (1 - n)`` exactly zero is zero.
+
+    Parameters
+    ----------
+    rho_qp : numpy.ndarray
+        Quasiparticle density matrix obtained from the mean-field.
+    hole_rho_qp : numpy.ndarray
+        Density matrix of the empty quasiparticle states, ``1 - rho_qp``.
+    ke : numpy.ndarray
+        Lopsided quasiparticle kinetic energy.
+
+    Returns
+    -------
+    D : numpy.ndarray
+        Hybridization coupling.
+
+    """
+    # rho_qp is the transpose of the density matrix of the quasiparticles
+    V, n, s = _occupations(rho_qp.T, hole_rho_qp.T)
+    D: NDArray[np.inexact] = (ke @ (V * _inverse_sqrt(n, s)) @ V.conj().T).T
+    return D
+
+
+def get_lambda_c_2(
+    rho_qp: NDArray[np.inexact],
+    hole_rho_qp: NDArray[np.inexact],
+    particle_energy_qp: NDArray[np.inexact],
+    hole_energy_qp: NDArray[np.inexact],
+    Lambda: NDArray[np.inexact],
+) -> NDArray[np.inexact]:
+    r"""
+    Return the bath matrix of the impurity problem, as :func:`get_lambda_c`, accurate near full or empty.
+
+    In the eigenbasis of the density matrix of the quasiparticles, with
+    occupations :math:`n_a`, :math:`s_a = 1 - n_a`, :math:`f_a = \sqrt{n_a s_a}`,
+    and :math:`H^p`, :math:`H^h` the energy matrices of the occupied and the
+    empty states, which add up to :math:`\Lambda`,
+
+    .. math::
+        [\Lambda^c]^T_{ab}
+        = \frac{(n_a + n_b - 1) H^p_{ab} - n_a n_b \Lambda_{ab}}{f_a f_b}
+        = \frac{(s_a + s_b - 1) H^h_{ab} - s_a s_b \Lambda_{ab}}{f_a f_b}.
+
+    This is Eq. 36 of `10.1103/PhysRevX.5.011008 <PRX011008_>`__, rewritten
+    with :math:`\sum_k h_{qp}(k) = \Lambda`. The first form is used where
+    :math:`n_a + n_b < 1`, the second otherwise, so that nothing large
+    cancels for an orbital close to empty or full. Where :math:`f_a f_b` is
+    exactly zero the gradient term is left out, as in :func:`get_lambda_c`.
+
+    Parameters
+    ----------
+    rho_qp : numpy.ndarray
+        Quasiparticle density matrix obtained from the mean-field.
+    hole_rho_qp : numpy.ndarray
+        Density matrix of the empty quasiparticle states, ``1 - rho_qp``.
+    particle_energy_qp : numpy.ndarray
+        Sum over k of h_qp(k) times the density matrix of the occupied
+        states, transposed like ``rho_qp``.
+    hole_energy_qp : numpy.ndarray
+        The same over the empty states.
+    Lambda : numpy.ndarray
+        Correlation potential of quasiparticles.
+
+    Returns
+    -------
+    Lambda_c : numpy.ndarray
+        Bath coupling, transposed as from :func:`get_lambda_c`.
+
+    Notes
+    -----
+    .. _PRX011008: https://doi.org/10.1103/PhysRevX.5.011008
+
+    """
+    levels = _levels_from_energies(
+        rho_qp.T, hole_rho_qp.T, particle_energy_qp.T, hole_energy_qp.T, Lambda
+    )
+    Lambda_c: NDArray[np.inexact] = levels.T
+    return Lambda_c
+
+
+def get_r_2(
+    rho_cf: NDArray[np.inexact],
+    rho_f: NDArray[np.inexact],
+    hole_rho_f: NDArray[np.inexact],
+) -> NDArray[np.inexact]:
+    """
+    Return the renormalization matrix, as :func:`get_r`, accurate near full or empty.
+
+    The occupations of the auxiliary orbitals are taken from ``rho_f`` and
+    ``hole_rho_f`` separately. The row of an orbital with ``n (1 - n)``
+    exactly zero is zero.
+
+    Parameters
+    ----------
+    rho_cf : numpy.ndarray
+        Off-diagonal density matrix (c-f-electrons) from the impurity problem.
+    rho_f : numpy.ndarray
+        f-electron density matrix from the impurity problem.
+    hole_rho_f : numpy.ndarray
+        Bath-electron density matrix ``<f_a^dag f_b>``, ``1 - rho_f``.
+
+    Returns
+    -------
+    R : numpy.ndarray
+        Renormalization matrix from electrons to quasiparticles.
+
+    """
+    V, n, s = _occupations(rho_f, hole_rho_f)
+    R: NDArray[np.inexact] = (rho_cf @ (V * _inverse_sqrt(n, s)) @ V.conj().T).T
+    return R
+
+
+def get_lambda_2(
+    rho_f: NDArray[np.inexact],
+    hole_rho_f: NDArray[np.inexact],
+    particle_energy_f: NDArray[np.inexact],
+    hole_energy_f: NDArray[np.inexact],
+    Lambda_c: NDArray[np.inexact],
+    R: NDArray[np.inexact],
+    D: NDArray[np.inexact],
+    rho_cf: NDArray[np.inexact],
+) -> NDArray[np.inexact]:
+    r"""
+    Return the correlation potential, as :func:`get_lambda`, accurate near full or empty.
+
+    :func:`get_lambda` is :math:`-T(R) - [\Lambda^c]^T`, with :math:`T(R)`
+    the derivative of :math:`\mathrm{Tr}[D R^T \sqrt{\rho_f (1 - \rho_f)}]
+    + \mathrm{c.c.}` with respect to :math:`\rho_f`, linear in :math:`R`.
+    The energy matrices of the bath orbitals, ``<f_a (E - H) f_b^dag>`` and
+    ``<f_b^dag (H - E) f_a>``, which add up to the transpose of
+    ``Lambda_c``, give :math:`-T(R') - [\Lambda^c]^T` in the closed form of
+    :func:`get_lambda_c_2`, with :math:`R'` the renormalization matrix of
+    :func:`get_r_2` from these density matrices. This returns that plus
+    :math:`-T(R - R')`, which is zero at a solution. Neither term subtracts
+    numbers close to each other for an orbital close to full or empty.
+
+    Parameters
+    ----------
+    rho_f : numpy.ndarray
+        f-electron density matrix from the impurity problem.
+    hole_rho_f : numpy.ndarray
+        Bath-electron density matrix ``<f_a^dag f_b>``, ``1 - rho_f``.
+    particle_energy_f : numpy.ndarray
+        ``<f_a (E - H) f_b^dag>``.
+    hole_energy_f : numpy.ndarray
+        ``<f_b^dag (H - E) f_a>``.
+    Lambda_c : numpy.ndarray
+        Bath coupling.
+    R : numpy.ndarray
+        Renormalization matrix of the cycle, from electrons to quasiparticles.
+    D : numpy.ndarray
+        Hybridization coupling.
+    rho_cf : numpy.ndarray
+        Off-diagonal density matrix (c-f-electrons) from the impurity problem.
+
+    Returns
+    -------
+    Lambda : numpy.ndarray
+        Correlation potential matrix.
+
+    """
+    # T is formed in the eigenbasis of the transpose of rho_f, so the closed
+    # form takes the energy matrices transposed, which add up to Lambda_c, and
+    # transposes its result
+    levels = _levels_from_energies(
+        rho_f, hole_rho_f, particle_energy_f.T, hole_energy_f.T, Lambda_c
+    )
+    V, n, s = _occupations(rho_f, hole_rho_f)
+    R_next = get_r_2(rho_cf, rho_f, hole_rho_f)
+    Lambda: NDArray[np.inexact] = levels.T - _sqrt_term_gradient_2(
+        V, n, s, D @ (R - R_next).T
+    )
+    return Lambda
+
+
 def get_f1(
     rho_cf: NDArray[np.inexact], rho_qp: NDArray[np.inexact], R: NDArray[np.inexact]
 ) -> NDArray[np.inexact]:
@@ -2536,6 +2722,73 @@ def _sqrt_term_gradient(
     )
     V_dag = V.conj().T
     W = V @ (divided_differences * (V_dag @ D @ R.T @ V)) @ V_dag
+    gradient: NDArray[np.inexact] = W.T + W.conj()
+    return gradient
+
+
+def _occupations(
+    rho: NDArray[np.inexact], hole_rho: NDArray[np.inexact]
+) -> tuple[NDArray[np.inexact], NDArray[np.float64], NDArray[np.float64]]:
+    # The eigenvectors of rho, and the weight of each in rho and in hole_rho,
+    # which keep their digits where an eigenvalue of rho is close to 0 or 1
+    _, V = np.linalg.eigh(rho)
+    n = np.clip(np.real(np.einsum("an,ab,bn->n", V.conj(), rho, V)), 0, 1)
+    s = np.clip(np.real(np.einsum("an,ab,bn->n", V.conj(), hole_rho, V)), 0, 1)
+    return V, n, s
+
+
+def _inverse_sqrt(
+    n: NDArray[np.float64], s: NDArray[np.float64]
+) -> NDArray[np.float64]:
+    # 1 / sqrt(n s), zero for a completely full or empty orbital, n s below
+    # EDGE_TOL, as in _sqrt_k
+    edge = n * s < EDGE_TOL
+    return np.where(edge, 0.0, 1 / np.sqrt(np.where(edge, 1, n * s)))
+
+
+def _levels_from_energies(
+    rho: NDArray[np.inexact],
+    hole_rho: NDArray[np.inexact],
+    particle_energy: NDArray[np.inexact],
+    hole_energy: NDArray[np.inexact],
+    levels: NDArray[np.inexact],
+) -> NDArray[np.inexact]:
+    # The closed form of get_lambda_c_2, in the basis of rho, with the
+    # particle and hole energy matrices adding up to levels
+    V, n, s = _occupations(rho, hole_rho)
+    V_dag = V.conj().T
+    particle = V_dag @ particle_energy @ V
+    hole = V_dag @ hole_energy @ V
+    L = V_dag @ levels @ V
+    numerator = np.where(
+        n[:, None] + n[None, :] < 1,
+        (n[:, None] + n[None, :] - 1) * particle - np.outer(n, n) * L,
+        (s[:, None] + s[None, :] - 1) * hole - np.outer(s, s) * L,
+    )
+    ff = np.outer(np.sqrt(n * s), np.sqrt(n * s))
+    # Where ff is exactly zero, the gradient term is left out
+    result = np.where(ff > 0, numerator / np.where(ff > 0, ff, 1), -L)
+    out: NDArray[np.inexact] = V @ result @ V_dag
+    return out
+
+
+def _sqrt_term_gradient_2(
+    V: NDArray[np.inexact],
+    n: NDArray[np.float64],
+    s: NDArray[np.float64],
+    X: NDArray[np.inexact],
+) -> NDArray[np.inexact]:
+    # As _sqrt_term_gradient, the gradient of Tr[X f(rho)] + c.c. with f(x) =
+    # sqrt(x (1 - x)), in the eigenbasis V of rho with occupations n and
+    # 1 - n = s taken separately; left out between two orbitals with n s
+    # exactly zero
+    f = np.sqrt(n * s)
+    pair = f[:, None] + f[None, :]
+    divided_differences = np.where(
+        pair > 0, (s[:, None] + s[None, :] - 1) / np.where(pair > 0, pair, 1), 0.0
+    )
+    V_dag = V.conj().T
+    W = V @ (divided_differences * (V_dag @ X @ V)) @ V_dag
     gradient: NDArray[np.inexact] = W.T + W.conj()
     return gradient
 

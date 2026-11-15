@@ -90,6 +90,8 @@ class ZeroTemperatureLatticeSolver(BaseLatticeSolver):
 
     """
 
+    _impurities_take_mu = False
+
     def __init__(
         self,
         h0_k: BlockMatrixLike,
@@ -190,17 +192,20 @@ class ZeroTemperatureLatticeSolver(BaseLatticeSolver):
             if i in self._copies:
                 continue
             for bl, _ in self.gf_struct[i]:
-                self.D[i][bl] = helpers.get_d(
-                    self.rho_qp[i][bl], self.lopsided_ke_qp[i][bl]
+                self.D[i][bl] = helpers.get_d_2(
+                    self.rho_qp[i][bl],
+                    self.hole_rho_qp[i][bl],
+                    self.lopsided_ke_qp[i][bl],
                 )
                 if self.force_real:
                     self._warn_if_complex(self.D[i][bl], "D", i, bl)
                     self.D[i][bl] = self.D[i][bl].real
-                self.Lambda_c[i][bl] = helpers.get_lambda_c(
+                self.Lambda_c[i][bl] = helpers.get_lambda_c_2(
                     self.rho_qp[i][bl],
-                    self.R[i][bl],
+                    self.hole_rho_qp[i][bl],
+                    self.particle_energy_qp[i][bl],
+                    self.hole_energy_qp[i][bl],
                     self.Lambda[i][bl],
-                    self.D[i][bl],
                 )
 
         self.D = self._copy_clusters(self.D)
@@ -217,8 +222,12 @@ class ZeroTemperatureLatticeSolver(BaseLatticeSolver):
             energy_scale = self._energy_scale()
             for i in range(self.n_clusters):
                 for bl in self.Lambda_c[i]:
-                    self.Lambda_c[i][bl] = self.pin_full_empty.bath_levels(
-                        self.Lambda_c[i][bl], self.rho_qp[i][bl], energy_scale
+                    self.D[i][bl], self.Lambda_c[i][bl] = self.pin_full_empty.bath(
+                        self.D[i][bl],
+                        self.Lambda_c[i][bl],
+                        self.rho_qp[i][bl],
+                        self.hole_rho_qp[i][bl],
+                        energy_scale,
                     )
 
     @override
@@ -249,13 +258,19 @@ class ZeroTemperatureLatticeSolver(BaseLatticeSolver):
             if i in self._copies:
                 continue
             for bl, _ in self.gf_struct[i]:
-                Lambda[i][bl] = helpers.get_lambda(
+                Lambda[i][bl] = helpers.get_lambda_2(
+                    self.rho_f[i][bl],
+                    self.hole_rho_f[i][bl],
+                    self.particle_energy_f[i][bl],
+                    self.hole_energy_f[i][bl],
+                    self.Lambda_c[i][bl],
                     self.R[i][bl],
                     self.D[i][bl],
-                    self.Lambda_c[i][bl],
-                    self.rho_f[i][bl],
+                    self.rho_cf[i][bl],
                 )
-                R[i][bl] = helpers.get_r(self.rho_cf[i][bl], self.rho_f[i][bl])
+                R[i][bl] = helpers.get_r_2(
+                    self.rho_cf[i][bl], self.rho_f[i][bl], self.hole_rho_f[i][bl]
+                )
         Lambda = self._copy_clusters(Lambda)
         R = self._copy_clusters(R)
 
@@ -278,10 +293,12 @@ class ZeroTemperatureLatticeSolver(BaseLatticeSolver):
             energy_scale = self._energy_scale()
             for i in range(self.n_clusters):
                 for bl in Lambda[i]:
-                    Lambda[i][bl] = self.pin_full_empty.qp_levels(
+                    R[i][bl], Lambda[i][bl] = self.pin_full_empty.qp(
+                        R[i][bl],
                         Lambda[i][bl],
                         self.Lambda[i][bl],
                         self.rho_f[i][bl],
+                        self.hole_rho_f[i][bl],
                         energy_scale,
                         self._kinetic_half_bandwidth,
                     )

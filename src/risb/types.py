@@ -211,25 +211,29 @@ class ThermalImpuritySolver(Protocol):
 
 
 class PinFullEmpty(Protocol):
-    """Levels of the auxiliary orbitals that are full or empty, for :class:`risb.LatticeSolver`."""
+    """Decoupling of the auxiliary orbitals that are full or empty, for the zero-temperature lattice solvers."""
 
-    def bath_levels(
+    def bath(
         self,
+        D: NDArray[np.inexact],
         Lambda_c: NDArray[np.inexact],
         rho_qp: NDArray[np.inexact],
+        hole_rho_qp: NDArray[np.inexact],
         energy_scale: float,
-    ) -> NDArray[np.inexact]:
-        """Return the bath levels ``Lambda_c`` of one block, set where the quasiparticle orbitals of ``rho_qp`` are full or empty."""
+    ) -> tuple[NDArray[np.inexact], NDArray[np.inexact]]:
+        """Return the hybridization ``D`` and bath levels ``Lambda_c`` of one block, changed where the quasiparticle orbitals of ``rho_qp`` and ``hole_rho_qp`` are close to full or empty."""
 
-    def qp_levels(
+    def qp(
         self,
+        R: NDArray[np.inexact],
         Lambda: NDArray[np.inexact],
         Lambda_in: NDArray[np.inexact],
         rho_f: NDArray[np.inexact],
+        hole_rho_f: NDArray[np.inexact],
         energy_scale: float,
         half_bandwidth: float,
-    ) -> NDArray[np.inexact]:
-        """Return the new quasiparticle levels ``Lambda`` of one block, set where the orbitals of ``rho_f`` are full or empty, from the levels ``Lambda_in`` of the cycle."""
+    ) -> tuple[NDArray[np.inexact], NDArray[np.inexact]]:
+        """Return the new ``R`` and ``Lambda`` of one block, changed where the orbitals of ``rho_f`` and ``hole_rho_f`` are close to full or empty, from the levels ``Lambda_in`` of the cycle."""
 
 
 class DensityFeedback(Protocol):

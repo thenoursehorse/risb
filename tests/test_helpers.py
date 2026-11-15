@@ -119,6 +119,146 @@ def test_get_f2() -> None:
     pass
 
 
+def _complex_lattice() -> LatticeSolver:
+    gf_struct = [(bl, 2) for bl in ["up", "dn"]]
+    S = LatticeSolver(
+        h0_k=build_two_orbital_complex_h0_k(),
+        gf_struct=gf_struct,
+        impurity_solvers=FockitImpuritySolver(zero(), gf_struct),
+        band_integrator=BandKIntegrator(
+            WeightedKPointIntegrator(), beta=40, n_target=2
+        ),
+    )
+    u = random_unitary(2, seed=4)
+    for bl in ["up", "dn"]:
+        S.R[0][bl] = 0.8 * u
+        S.Lambda[0][bl] = u @ np.diag([-0.5, 1.0]) @ u.conj().T
+    S.update_bands()
+    return S
+
+
+def _embedding(
+    deep: float, complex_terms: bool
+) -> tuple[FockitImpuritySolver, BlockMatrix, BlockMatrix]:
+    # One orbital per spin with U = 2 and three bath orbitals, the last at
+    # the level -deep
+    B = 3
+    gf_struct = [("up", 1), ("dn", 1)]
+    off: NDArray[np.inexact] = (
+        np.triu(np.ones((B, B)), 1) - np.tril(np.ones((B, B)), -1)
+    ) * 1j
+    if not complex_terms:
+        off = 1 - np.eye(B)
+    Lambda_c: BlockMatrix = {
+        bl: np.diag([0.6, -0.3, -deep]) + 0.1 * off for bl, _ in gf_struct
+    }
+    D: BlockMatrix = {
+        bl: np.array([[0.5], [0.3 + 0.2j * complex_terms], [0.2]])
+        for bl, _ in gf_struct
+    }
+    solver = FockitImpuritySolver(
+        2.0 * nc("up", 0) * nc("dn", 0),
+        gf_struct,
+        bath_size={bl: B for bl, _ in gf_struct},
+    )
+    solver.set_h_imp(Lambda_c, D, {bl: np.array([[-1.0]]) for bl, _ in gf_struct})
+    solver.solve()
+    return solver, Lambda_c, D
+
+
+def test_helpers_for_full_and_empty_orbitals_are_the_rotationally_invariant_ones_elsewhere() -> (
+    None
+):
+    S = _complex_lattice()
+    rho, hole = S.rho_qp[0]["up"], S.hole_rho_qp[0]["up"]
+    ke, R, Lambda = S.lopsided_ke_qp[0]["up"], S.R[0]["up"], S.Lambda[0]["up"]
+    D = helpers.get_d(rho, ke)
+    assert helpers.get_d_2(rho, hole, ke) == pytest.approx(D, abs=1e-12)
+    assert helpers.get_lambda_c_2(
+        rho, hole, S.particle_energy_qp[0]["up"], S.hole_energy_qp[0]["up"], Lambda
+    ) == pytest.approx(helpers.get_lambda_c(rho, R, Lambda, D), abs=1e-12)
+
+    solver, Lambda_c, D_imp = _embedding(2.0, complex_terms=True)
+    rho_f, hole_f, rho_cf = (
+        solver.get_rho_f("up"),
+        solver.get_hole_rho_f("up"),
+        solver.get_rho_cf("up"),
+    )
+    R_next = helpers.get_r(rho_cf, rho_f)
+    assert helpers.get_r_2(rho_cf, rho_f, hole_f) == pytest.approx(R_next, abs=1e-12)
+    # The R of the cycle, which is not the R of the impurity's density matrices
+    R_in = R_next + np.array([[0.05], [-0.1j], [0.02]])
+    assert helpers.get_lambda_2(
+        rho_f,
+        hole_f,
+        solver.get_particle_energy_f("up"),
+        solver.get_hole_energy_f("up"),
+        Lambda_c["up"],
+        R_in,
+        D_imp["up"],
+        rho_cf,
+    ) == pytest.approx(
+        helpers.get_lambda(R_in, D_imp["up"], Lambda_c["up"], rho_f), abs=1e-10
+    )
+
+
+def test_bath_level_of_a_filling_quasiparticle_orbital_stays_finite() -> None:
+    B = 3
+    gf_struct = [("up", 1), ("dn", 1)]
+    bath_size = {bl: B for bl, _ in gf_struct}
+    S = LatticeSolver(
+        h0_k={bl: bethe_h0_k(200) for bl, _ in gf_struct},
+        gf_struct=gf_struct,
+        impurity_solvers=FockitImpuritySolver(zero(), gf_struct, bath_size=bath_size),
+        band_integrator=BandKIntegrator(WeightedKPointIntegrator(), beta=200, mu=0.0),
+        bath_size=[bath_size],
+    )
+    Lambda0 = S.Lambda[0]["up"].copy()
+    _, vectors = np.linalg.eigh(Lambda0)
+    v = vectors[:, 0]
+    levels = []
+    for depth in [1e2, 1e4, 1e6]:
+        S.Lambda = [dict.fromkeys(["up", "dn"], Lambda0 - depth * np.outer(v, v))]
+        S.update_bands()
+        Lambda_c = helpers.get_lambda_c_2(
+            S.rho_qp[0]["up"],
+            S.hole_rho_qp[0]["up"],
+            S.particle_energy_qp[0]["up"],
+            S.hole_energy_qp[0]["up"],
+            S.Lambda[0]["up"],
+        )
+        levels.append(v @ Lambda_c.T @ v)
+    # The orbital fills as 1 / depth^2, and its bath level tends to a limit
+    assert -10 < levels[2] < 10
+    assert levels[2] == pytest.approx(levels[1], abs=1e-3)
+
+
+def test_quasiparticle_level_of_a_filling_auxiliary_orbital_stays_finite() -> None:
+    levels = []
+    for deep in [1e3, 1e5, 1e7]:
+        solver, Lambda_c, D = _embedding(deep, complex_terms=False)
+        rho_f, hole_f, rho_cf = (
+            solver.get_rho_f("up"),
+            solver.get_hole_rho_f("up"),
+            solver.get_rho_cf("up"),
+        )
+        R = helpers.get_r_2(rho_cf, rho_f, hole_f)
+        Lambda = helpers.get_lambda_2(
+            rho_f,
+            hole_f,
+            solver.get_particle_energy_f("up"),
+            solver.get_hole_energy_f("up"),
+            Lambda_c["up"],
+            R,
+            D["up"],
+            rho_cf,
+        )
+        vectors = np.linalg.eigh(rho_f)[1]
+        levels.append(float(np.real(vectors[:, -1].conj() @ Lambda @ vectors[:, -1])))
+    assert -10 < levels[2] < 10
+    assert levels[2] == pytest.approx(levels[1], abs=1e-4)
+
+
 def test_get_h0_kin_k_removes_local_terms_with_complex_projector() -> None:
     rng = np.random.default_rng(0)
     h0_k = {"up": rng.random((4, 2, 2))}

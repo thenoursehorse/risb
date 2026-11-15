@@ -184,6 +184,11 @@ class BaseLatticeSolver(ABC):
 
     """
 
+    # Whether the impurity solvers are given the chemical potential. A
+    # zero-temperature impurity is solved at fixed particle number, where it
+    # is a constant, so the zero-temperature lattice solvers leave it out
+    _impurities_take_mu = True
+
     def __init__(
         self,
         h0_k: BlockMatrixLike,
@@ -1020,7 +1025,7 @@ class BaseLatticeSolver(ABC):
                     self.Lambda_c[i],
                     self.D[i],
                     h0_loc_matrix,
-                    mu=self.mu,
+                    mu=self.mu if self._impurities_take_mu else None,
                 )
                 self.impurity_solvers[i].solve()
                 for bl, _ in self.gf_struct[i]:
