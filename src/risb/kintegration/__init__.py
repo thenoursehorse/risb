@@ -23,9 +23,13 @@ from .integrators import (
 )
 from .smearing import (
     fermi_function,
+    fermi_hole_function,
     gaussian_function,
+    gaussian_hole_function,
+    hole_function,
     max_occupation_slope,
     methfessel_paxton_function,
+    methfessel_paxton_hole_function,
 )
 
 __all__ = [
@@ -45,9 +49,13 @@ __all__ = [
     "TemperatureExtrapolatedBandKIntegrator",
     "WeightedKPointIntegrator",
     "fermi_function",
+    "fermi_hole_function",
     "gaussian_function",
+    "gaussian_hole_function",
     "get_filling_edges",
+    "hole_function",
     "max_occupation_slope",
     "methfessel_paxton_function",
+    "methfessel_paxton_hole_function",
     "richardson_extrapolate",
 ]

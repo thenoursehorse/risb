@@ -907,6 +907,47 @@ def two_orbital_complex_lattice(h_int: OpSum) -> tuple[LatticeSolver, BandKInteg
     return S, band_integrator
 
 
+def _bethe_ghost_lattice() -> LatticeSolver:
+    B = 3
+    gf_struct = [("up", 1), ("dn", 1)]
+    bath_size = {bl: B for bl, _ in gf_struct}
+    return LatticeSolver(
+        h0_k={bl: bethe_h0_k(200) for bl, _ in gf_struct},
+        gf_struct=gf_struct,
+        impurity_solvers=FockitImpuritySolver(
+            2.4 * nc("up", 0) * nc("dn", 0), gf_struct, bath_size=bath_size
+        ),
+        band_integrator=BandKIntegrator(
+            WeightedKPointIntegrator(), beta=200, n_target=1 + (B - 1)
+        ),
+        bath_size=[bath_size],
+    )
+
+
+@pytest.mark.parametrize("lattice", ["complex", "ghosts"])
+def test_occupied_and_empty_quasiparticle_states_add_up_to_the_levels(
+    lattice: str,
+) -> None:
+    if lattice == "complex":
+        S, _ = two_orbital_complex_lattice(zero())
+        u = random_unitary(2, seed=4)
+        for bl in ["up", "dn"]:
+            S.R[0][bl] = 0.8 * u
+            S.Lambda[0][bl] = u @ np.diag([-0.5, 1.0]) @ u.conj().T
+    else:
+        S = _bethe_ghost_lattice()
+    S.update_bands()
+    for bl, _ in S.gf_struct[0]:
+        n_qp = S.Lambda[0][bl].shape[0]
+        assert S.rho_qp[0][bl] + S.hole_rho_qp[0][bl] == pytest.approx(
+            np.eye(n_qp), abs=1e-12
+        )
+        # Summed over k, h_qp is Lambda; the matrices are transposed like rho_qp
+        assert S.particle_energy_qp[0][bl] + S.hole_energy_qp[0][bl] == pytest.approx(
+            S.Lambda[0][bl].T, abs=1e-12
+        )
+
+
 def test_quasiparticle_basis_of_the_starting_guess_does_not_change_the_physics() -> (
     None
 ):

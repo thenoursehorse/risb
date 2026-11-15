@@ -384,6 +384,23 @@ class BaseLatticeSolver(ABC):
         #: list of risb.types.BlockMatrix : Density matrix of quasiparticles for each cluster.
         self.rho_qp: list[BlockMatrix] = [{} for i in range(self.n_clusters)]
 
+        #: list of risb.types.BlockMatrix : Density matrix of the empty
+        #: quasiparticle states for each cluster, 1 - rho_qp, summed over the
+        #: empty states so that it stays accurate for nearly full orbitals.
+        self.hole_rho_qp: list[BlockMatrix] = [{} for i in range(self.n_clusters)]
+
+        #: list of risb.types.BlockMatrix : Sum over k of h_qp(k) times the
+        #: density matrix of the occupied states, for each cluster, transposed
+        #: like rho_qp. With hole_energy_qp it adds up to the transpose of
+        #: Lambda.
+        self.particle_energy_qp: list[BlockMatrix] = [
+            {} for i in range(self.n_clusters)
+        ]
+
+        #: list of risb.types.BlockMatrix : The same over the empty states,
+        #: for each cluster, transposed like rho_qp.
+        self.hole_energy_qp: list[BlockMatrix] = [{} for i in range(self.n_clusters)]
+
         #: list of risb.types.BlockMatrix : Lopsided kinetic energy of quasiparticles for each cluster.
         self.lopsided_ke_qp: list[BlockMatrix] = [{} for i in range(self.n_clusters)]
 
@@ -693,14 +710,24 @@ class BaseLatticeSolver(ABC):
             }
 
         def get_risb_k_observables(
-            kpoints: KPoints | None, density_k: BlockMatrixLike
+            kpoints: KPoints | None,
+            density_k: BlockMatrixLike,
+            hole_density_k: BlockMatrixLike,
         ) -> IntegralValues:
-            kinetic, R, _, projectors, qp_projectors = lattice_fields(kpoints)
+            kinetic, R, Lambda, projectors, qp_projectors = lattice_fields(kpoints)
             values: IntegralValues = {}
             for i, cluster in enumerate(self.gf_struct):
                 for block, _ in cluster:
                     lattice_block = self.gf_struct_mapping[i][block]
                     density = density_k[lattice_block]
+                    hole_density = hole_density_k[lattice_block]
+                    h_qp = helpers.get_h_qp(
+                        R[lattice_block], Lambda[lattice_block], kinetic[lattice_block]
+                    )
+                    # h_qp commutes with the density matrices, so these are
+                    # Hermitian
+                    energy = h_qp @ density
+                    hole_energy = h_qp @ hole_density
                     ke = (
                         kinetic[lattice_block]
                         @ R[lattice_block].conj().swapaxes(-1, -2)
@@ -710,9 +737,16 @@ class BaseLatticeSolver(ABC):
                         ke = projectors[i][block] @ ke
                     if qp_projectors is not None:
                         P = qp_projectors[i][block]
-                        density = P @ density @ P.conj().swapaxes(-1, -2)
-                        ke = ke @ P.conj().swapaxes(-1, -2)
+                        P_dag = P.conj().swapaxes(-1, -2)
+                        density = P @ density @ P_dag
+                        hole_density = P @ hole_density @ P_dag
+                        energy = P @ energy @ P_dag
+                        hole_energy = P @ hole_energy @ P_dag
+                        ke = ke @ P_dag
                     values["rho_qp", i, block] = density.swapaxes(-1, -2)
+                    values["hole_rho_qp", i, block] = hole_density.swapaxes(-1, -2)
+                    values["particle_energy_qp", i, block] = energy.swapaxes(-1, -2)
+                    values["hole_energy_qp", i, block] = hole_energy.swapaxes(-1, -2)
                     values["lopsided_ke_qp", i, block] = ke
             return values
 
@@ -879,7 +913,9 @@ class BaseLatticeSolver(ABC):
         Integrate the quasiparticle bands of :attr:`R` and :attr:`Lambda` with :meth:`integrate_bands`.
 
         Sets :attr:`band_integration_result`, the quasiparticle eigenstates and
-        densities, and :attr:`rho_qp` and :attr:`lopsided_ke_qp` of each cluster.
+        densities, and :attr:`rho_qp`, :attr:`hole_rho_qp`,
+        :attr:`particle_energy_qp`, :attr:`hole_energy_qp` and
+        :attr:`lopsided_ke_qp` of each cluster.
         """
         # Make R, Lambda in supercell basis from basis of the clusters. The
         # orbitals in no cluster keep their bands: R = 1, Lambda = 0 there
@@ -914,6 +950,8 @@ class BaseLatticeSolver(ABC):
             for i, cluster in enumerate(self.gf_struct):
                 for block, _ in cluster:
                     self.rho_qp[i][block] = result.values["rho_qp", i, block]
+                    for name in ("hole_rho_qp", "particle_energy_qp", "hole_energy_qp"):
+                        getattr(self, name)[i][block] = result.values[name, i, block]
                     self.lopsided_ke_qp[i][block] = result.values[
                         "lopsided_ke_qp", i, block
                     ]
@@ -922,9 +960,21 @@ class BaseLatticeSolver(ABC):
             # nothing compared to solving the impurity problem so this is likely fine
             # Enforce matrix structure from symmetries
             self.rho_qp = self._project(self.rho_qp, is_hermitian=True, name="rho_qp")
+            self.hole_rho_qp = self._project(
+                self.hole_rho_qp, is_hermitian=True, name="hole_rho_qp"
+            )
+            self.particle_energy_qp = self._project(
+                self.particle_energy_qp, is_hermitian=True, name="particle_energy_qp"
+            )
+            self.hole_energy_qp = self._project(
+                self.hole_energy_qp, is_hermitian=True, name="hole_energy_qp"
+            )
             # self.lopsided_ke_qp, _ = self._unflatten_matrix( self._flatten_matrix( self.lopsided_ke_qp, is_hermitian=False ), is_hermitian=False )
             for symmetrize in self.symmetrizers:
                 self.rho_qp = symmetrize(self.rho_qp)
+                self.hole_rho_qp = symmetrize(self.hole_rho_qp)
+                self.particle_energy_qp = symmetrize(self.particle_energy_qp)
+                self.hole_energy_qp = symmetrize(self.hole_energy_qp)
                 # self.lopsided_ke_qp = symmetrize(self.lopsided_ke_qp) # FIXME can I do it to ke as well? It should have same symm as D
                 # self.ke_qp = symmetrize(self.ke_qp)
 

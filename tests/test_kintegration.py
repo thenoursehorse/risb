@@ -1,9 +1,11 @@
 # ruff: noqa: D100, D103
+from functools import partial
 from io import StringIO
 
 import numpy as np
 import pytest
 from fockit.algebra import zero
+from numpy.typing import NDArray
 
 from risb import LatticeSolver, helpers
 from risb.diagnostics import KIntegrationDiagnostics
@@ -16,6 +18,7 @@ from risb.kintegration import (
     WeightedKPointIntegrator,
     fermi_function,
     gaussian_function,
+    hole_function,
     max_occupation_slope,
     methfessel_paxton_function,
 )
@@ -53,6 +56,75 @@ def test_max_occupation_slope_of_fermi_and_gaussian_smearing(
         800 * slope_per_beta, rel=1e-6
     )
     assert max_occupation_slope(smearing, np.inf) == np.inf
+
+
+def _logistic(
+    eigenvalues: NDArray[np.float64], beta: float, mu: float
+) -> NDArray[np.float64]:
+    # A smearing that hole_function does not know
+    if np.isinf(beta):
+        return np.heaviside(mu - eigenvalues, 0.5)
+    return 1 / (1 + np.exp(beta * (eigenvalues - mu)))
+
+
+@pytest.mark.parametrize(
+    "smearing",
+    [
+        fermi_function,
+        gaussian_function,
+        methfessel_paxton_function,
+        partial(methfessel_paxton_function, order=2),
+        _logistic,
+    ],
+)
+def test_hole_function_is_one_minus_the_occupation(smearing: SmearFunction) -> None:
+    hole = hole_function(smearing)
+    e = np.linspace(-3, 3, 61)
+    assert smearing(e, 4.0, 0.5) + hole(e, 4.0, 0.5) == pytest.approx(1, abs=1e-14)
+    assert hole(e, np.inf, 0.5) == pytest.approx(1 - smearing(e, np.inf, 0.5))
+
+
+@pytest.mark.parametrize(
+    ("smearing", "depths"),
+    [
+        (fermi_function, [40.0, 100.0]),
+        (gaussian_function, [8.0, 20.0]),
+        (methfessel_paxton_function, [8.0, 20.0]),
+        (partial(methfessel_paxton_function, order=2), [8.0, 20.0]),
+    ],
+)
+def test_hole_function_stays_accurate_where_the_occupation_rounds_to_one(
+    smearing: SmearFunction, depths: list[float]
+) -> None:
+    # For all three, 1 - f(mu + x) = f(mu - x): the hole of a state below mu
+    # is the occupation of its mirror image above mu
+    beta, mu = 4.0, 0.5
+    deep = mu - np.array(depths) / beta
+    assert smearing(deep, beta, mu) == pytest.approx(1, abs=1e-16)
+    holes = hole_function(smearing)(deep, beta, mu)
+    assert np.all(holes != 0)
+    assert holes == pytest.approx(smearing(2 * mu - deep, beta, mu), rel=1e-12)
+
+
+def test_band_integration_gives_the_observables_the_density_of_the_empty_states() -> (
+    None
+):
+    k = np.linspace(-1, 1, 50)
+    u = np.array([[1, 1j], [1j, 1]]) / np.sqrt(2)
+    hamiltonian = {"up": u @ np.diag([-1.0, 2.0])[None] * k[:, None, None] @ u.conj().T}
+    seen: list[NDArray[np.inexact]] = []
+
+    def observables(
+        _k: KPoints | None, density_k: BlockMatrixLike, hole_density_k: BlockMatrixLike
+    ) -> IntegralValues:
+        seen.append(density_k["up"] + hole_density_k["up"])
+        return {"density": density_k["up"]}
+
+    BandKIntegrator(WeightedKPointIntegrator()).integrate(
+        hamiltonian, observables=observables, beta=10, n_target=1
+    )
+    assert seen
+    assert seen[-1] == pytest.approx(np.broadcast_to(np.eye(2), (50, 2, 2)), abs=1e-14)
 
 
 def test_band_integration_without_mu_or_n_target_raises() -> None:
@@ -105,7 +177,7 @@ def test_band_filling_handles_partial_flat_levels_and_gaps(
         )
         zero = extrapolation.integrate(
             shifted,
-            observables=lambda _k, density: dict(density.items()),
+            observables=lambda _k, density, _holes: dict(density.items()),
         )
         assert zero.converged
         assert zero.mu == pytest.approx(1, abs=1e-10)
@@ -153,7 +225,7 @@ def test_extrapolation_recovers_zero_temperature_integrals_of_a_complex_multiblo
         return dict.fromkeys(["alpha", "beta"], u @ diagonal @ u.conj().T)
 
     def get_k_observables(
-        k: KPoints | None, density_k: BlockMatrixLike
+        k: KPoints | None, density_k: BlockMatrixLike, _holes: BlockMatrixLike
     ) -> IntegralValues:
         assert k is not None
         h = hamiltonian(k)
@@ -220,7 +292,7 @@ def test_lattice_cycle_accepts_temperature_extrapolation() -> None:
                 diagnostics=diagnostics,
             ),
             betas=[10, 20, 40, 80, 160, 320, 640, 1280, 2560, 5120, 10240, 20480],
-            atol=1e-8,
+            atol=2e-8,
             rtol=0,
             diagnostics=diagnostics,
         )

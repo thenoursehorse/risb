@@ -11,7 +11,7 @@ from scipy.optimize import brentq
 from risb.diagnostics.output import DiagnosticObserver, stage
 from risb.types import BlockMatrix, BlockMatrixLike, BlockRealArray, SmearFunction
 
-from .smearing import fermi_function
+from .smearing import fermi_function, hole_function
 
 type KPoints = NDArray[np.float64]
 type IntegralValues = dict[Hashable, NDArray[np.inexact]]
@@ -20,7 +20,7 @@ type KIntegrand = Callable[
 ]
 type Hamiltonian = BlockMatrixLike | Callable[[NDArray[np.float64]], BlockMatrixLike]
 type BandObservables = Callable[
-    [NDArray[np.float64] | None, BlockMatrixLike],
+    [NDArray[np.float64] | None, BlockMatrixLike, BlockMatrixLike],
     Mapping[Hashable, NDArray[np.inexact]],
 ]
 
@@ -217,7 +217,8 @@ class BandKIntegrator:
     smearing : callable, optional
         Occupation function f(eigenvalues, beta, mu). It must depend on
         eigenvalues and mu through their difference; the filling
-        search may shift both by a common reference energy.
+        search may shift both by a common reference energy. One minus it
+        is taken from :func:`~risb.kintegration.hole_function`.
     beta : float, optional
         Inverse temperature in inverse Hamiltonian-energy units. For Gaussian
         and Methfessel-Paxton smearing, 1/beta is the broadening width.
@@ -298,11 +299,14 @@ class BandKIntegrator:
         Hamiltonian function receives k-points of shape (n_k, dimension)
         and returns those blocks.
 
-        The observables function receives the k-points and density matrices
-        P(k) = U(k) f(k) U(k)^dagger. It returns a named array for each
-        quantity to integrate, with k as the first index. When the Hamiltonian
-        is supplied as arrays, its k-points argument is None and the density
-        matrices follow the input mesh.
+        The observables function receives the k-points, the density matrices
+        P(k) = U(k) f(k) U(k)^dagger and the hole density matrices
+        U(k) (1 - f(k)) U(k)^dagger, with 1 - f from
+        :func:`~risb.kintegration.hole_function`, accurate for nearly full
+        states. It returns a named array for each quantity to integrate, with
+        k as the first index. When the Hamiltonian is supplied as arrays, its
+        k-points argument is None and the density matrices follow the input
+        mesh.
         """
         with stage(self.diagnostics, "kintegration"):
             beta = self.beta if beta is None else beta
@@ -321,6 +325,7 @@ class BandKIntegrator:
             occupations: BlockRealArray = {}
             eigenvalues: BlockRealArray = {}
             eigenvectors: BlockMatrix = {}
+            hole = hole_function(self.smearing)
 
             mu_reference = 0.0
             mu_correction = mu
@@ -349,7 +354,18 @@ class BandKIntegrator:
                             for block, v in eigenvectors.items()
                         }
                         if observables is not None:
-                            values.update(observables(kpoints, density_k))
+                            holes = {
+                                block: hole(e - mu_reference, beta, mu_correction)
+                                for block, e in eigenvalues.items()
+                            }
+                            hole_density_k = {
+                                block: (v * holes[block][:, None, :])
+                                @ v.conj().swapaxes(-1, -2)
+                                for block, v in eigenvectors.items()
+                            }
+                            values.update(
+                                observables(kpoints, density_k, hole_density_k)
+                            )
                     return values
 
                 if eigenstates is not None:
