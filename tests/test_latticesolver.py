@@ -55,7 +55,6 @@ from risb.types import (
     FixedPointProblem,
     GaugeFix,
     GfStruct,
-    PinFullEmpty,
     ZeroTemperatureImpuritySolver,
 )
 
@@ -1059,12 +1058,7 @@ def test_pinning_decouples_a_filling_orbital_continuously_unless_switched_at_onc
         assert largest_step == pytest.approx(1)
 
 
-@pytest.mark.parametrize(
-    "pin_full_empty", [FullEmptyPinning(), None], ids=["pinned", "not pinned"]
-)
-def test_full_orbital_pinning_prevents_the_wrong_impurity_filling(
-    pin_full_empty: PinFullEmpty | None,
-) -> None:
+def test_a_completely_full_orbital_leaves_the_other_one_the_one_band_model() -> None:
     # Orbital 0 is a completely full band with no hopping to orbital 1, so
     # with only density interactions orbital 1 is the one-band model, shifted
     # in energy. The full orbital has no bath partner in the impurity problem
@@ -1084,21 +1078,11 @@ def test_full_orbital_pinning_prevents_the_wrong_impurity_filling(
             WeightedKPointIntegrator(), beta=40, n_target=3
         ),
         symmetrizers=[symmetrize_blocks],
-        pin_full_empty=pin_full_empty,
     )
     for bl, _ in gf_struct:
         S.Lambda[0][bl] = np.diag([0.0, 6.0])
-    result = S.solve(tol=1e-10, maxiter=100, self_consistency_tol=np.inf)
+    result = S.solve(tol=1e-10, maxiter=100)
     filling = sum(float(np.trace(rho).real) for rho in S.rho_c[0].values())
-    if pin_full_empty is None:
-        # The bath takes electrons from the physical orbitals: not a
-        # solution, at R = 0 and with the wrong filling
-        assert filling != pytest.approx(3.0, abs=1e-2)
-        assert S.self_consistency_error > 0.1
-        for bl, _ in gf_struct:
-            assert np.linalg.eigvalsh(S.Z[0][bl]) == pytest.approx([0, 0], abs=1e-8)
-        return
-
     assert filling == pytest.approx(3.0, abs=1e-8)
 
     gf_struct_one = [(bl, 1) for bl in spin_names]

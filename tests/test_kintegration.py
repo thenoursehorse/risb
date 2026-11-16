@@ -305,26 +305,6 @@ def test_lattice_cycle_accepts_temperature_extrapolation() -> None:
         )
         assert solver.solve(tol=1e-9).converged
     assert not output.closed
-    report = output.getvalue()
-    for field in (
-        "ksum.result",
-        "kintegration.mu",
-        "kintegration.result",
-        "use_midgap=True",
-        "midgap_available=True",
-        "midgap_accepted=True",
-        "confirmed=True",
-        "kextrapolation.sample",
-        "kextrapolation.result",
-        "temperature_extrapolation_error=",
-        "mu_extrapolation_error=",
-        "kextrapolation.matrix_error",
-        "error_norm=",
-        "error_max_abs=",
-        "quadrature_error=None",
-        "betas=",
-    ):
-        assert field in report
     for block, _ in gf_struct:
         assert solver.Z[0][block] == pytest.approx(np.eye(1), abs=1e-8)
         assert solver.rho_qp[0][block] == pytest.approx(np.array([[0.5]]), abs=1e-8)

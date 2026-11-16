@@ -5,6 +5,74 @@ levels Λc from the quasiparticle bands (PRX 5, 011008, Eqs. 35–36). As a quas
 fills or empties, both formulas divide by √(n(1 − n)). This note shows that D and Λc have finite
 limits, writes Λc in a form that does not lose digits near the edge, and records the checks.
 
+## Status
+
+**Implemented** (two commits):
+
+- **Band and impurity quantities.** For each cluster block, the lattice side integrates the hole
+  density `hole_rho_qp` and the particle and hole energy matrices `particle_energy_qp` and
+  `hole_energy_qp` (Σ_k h_qp(k) times the density of the occupied or the empty states). The
+  smearing functions have hole functions, 1 − f computed without subtracting.
+  `ZeroTemperatureImpuritySolver` (separate from `ThermalImpuritySolver`) gives `hole_rho_f`,
+  `particle_energy_f` and `hole_energy_f`. Fockit computes them from f†ψ and fψ in the sectors
+  one electron up and down. Block2 computes them from its densities, exact for an eigenstate, and
+  from fitted f†ψ and fψ for blocks with an orbital below `full_empty_tol` (1e-4).
+- **Closed forms.** `get_d_2`, `get_lambda_c_2`, `get_r_2` and `get_lambda_2`, beside the
+  unchanged PRX helpers, are used by `ZeroTemperatureLatticeSolver`. They give the same D, Λc,
+  R and Λ as the PRX helpers where those are accurate. `get_lambda_2` includes −T(R − R'), so the
+  next Λ uses the R of the cycle, as `get_lambda` does. The zero-temperature lattice solvers no
+  longer pass μ to their impurity solvers, where at fixed particle number it is a constant.
+- **Pinning switched on smoothly.** `FullEmptyPinning(onset_tol=1e-10, edge_tol=1e-12,
+  pinned_level_distance=10.0, ...)` pins an orbital with a weight that rises as a smoothstep in
+  log10 n(1 − n). The orbital's row of D or R and its couplings are scaled by 1 − w, and its
+  level moves a fraction w of the way to the far level.
+
+**Tried and dropped:**
+
+- a smooth pseudo-inverse √K/(K + ε): it breaks converged solutions with K between 1e-12 and ε;
+- the first-order continuation below the precision floor: the pin acts completely there anyway;
+- a rule for decoupled orbitals by the size of their R rows: arbitrary thresholds;
+- keeping the previous level of a decoupled orbital: it falls into the trap and lets levels run
+  away.
+
+**Open:**
+
+- [ ] **The next Λ with the impurity's R** (option (a)): −T(R') − Λcᵀ instead of −T(R) − Λcᵀ.
+  It has the same solutions, and no 1/√(n(1 − n)) amplification of R − R' near full or empty.
+  But it changes convergence: the B = 1 Kanamori Mott case with `LatticeSolver` stalls at
+  Z = 5.6e-5 with self-consistency 2.1e-5, and with `PhysicalMuLatticeSolver` it stops at
+  Z = 0.46 at tolerance 1e-8 (Z = 0 at 1e-14). Measure the steepness of both rules near the edge
+  first.
+- [ ] Block2: weights below the truncation error are lost, which limits Λ near full or empty
+  (NiO t2g s_f ≈ 1e-9 at bond dimension 500 jitters by 1–3 %).
+- [ ] The thermal bath fit near full or empty may have a flat direction; not checked.
+- [x] (closed: keep onset_tol = 1e-10, no docs) NiO has two solutions with the same energy (to 5 μeV), the same densities and spin, and a
+  different t2g quasiparticle weight. They are set apart by the third auxiliary t2g orbital, which
+  is full. A full quasiparticle band adds no kinetic energy (R Σ_k ε_k R† = 0), so its coupling is
+  not fixed. The fresh starts reach the solution where it is coupled (s = 1.3e-9, level 4.53, Z
+  0.891, μ 7.633, error floor 6e-6). From cycle 19, the run reaches the one where it is decoupled
+  (s_qp 1e-15, level −61, Z 0.941, μ 8.131, error 4e-7).
+  Scan from the coupled solution (`scratch/clip/nio13`):
+  - The row of R is not free. Halved at the start, the impurity sets it back to 0.20 in one cycle.
+  - The level is free, as far as the residual can tell. It drifts from 4.53 to −2.4 in 24 cycles at
+    an error of 2–5e-5, with s_f 1.3e-9 against s_qp 3.3e-10. Z goes from 0.891 to 0.894.
+  - Decoupled (row of R removed) is a fixed point at the default onset_tol: error 8e-6, level
+    about −20, Z 0.941, μ 7.633. μ in the gap depends on the start.
+  - Energies of all these agree to about 10 μeV, within the block2 noise.
+  - onset_tol = 1e-8 decouples the coupled solution: row of R 0.2 → 0.002, Z → 0.941, which is a
+    trap. 1e-9 leaves it alone only because its weight is 1.3e-9. The test suite passes at 1e-10,
+    1e-9 and 1e-8, with the pinning acting in the same 8 tests. Keep 1e-10: a larger onset can only
+    make the starts agree by removing the coupled solution.
+
+**Results** (swapped suite and NiO, with the closed forms and the smooth pinning):
+
+- Swapped suite (`PhysicalMuLatticeSolver` for `LatticeSolver`): the same 9 failures as with the
+  old pin and with the smooth-pin prototype. It took 5154 cycles over the 279 tests in common, against
+  5466 with the old pin.
+- NiO from cycle 19 with linear mixing converges (error 2.4e-4 at 20 iterations, 4e-7 after 22
+  more). Every earlier variant jumped at iteration 5 and ended at an error of 0.3–1.
+- NiO fresh starts are unchanged: 5.7e-6 (linear) and 9.1e-6 (linear, then DIIS) at 50.
+
 ## Notation
 
 For one block of one cluster, with the quasiparticle Hamiltonian h_k = R ε_k R† + Λ and occupations
@@ -244,13 +312,14 @@ NiO with the closed form is unchanged: fresh starts converge as before (error 8e
 
 ## Open
 
-- [ ] The impurity half: a form of Λ and R that does not divide by s_f, e.g. from ground-state
-  identities of the embedding Hamiltonian. Noise in s_f matters at bond dimension 500 (NiO), not at 1500.
-- [ ] NiO: the full t2g ghost drifts towards the edge. Is the solution there (decoupled ghost)?
-- [ ] The thermal bath fit: ρ_qp near 0 or 1 barely depends on the level, so the fit may have a flat
-  direction there. Not checked.
-- [ ] AutoBZIntegrator does not evaluate the observables per k in Python; the closed form falls back
-  there.
+- [x] The impurity half: a form of Λ and R that does not divide by s_f (the closed form with the
+  impurity's particle and hole energy matrices, in the Status section).
+- [x] NiO: the full t2g ghost drifts towards the edge. Is the solution there (decoupled ghost)? Yes,
+  from cycle 19; see the Status section.
+- [ ] (same as the Status item) The thermal bath fit: ρ_qp near 0 or 1 barely depends on the level, so the fit may have a flat
+  direction there. Not checked (also in the Status section).
+- [x] AutoBZIntegrator calls back into Python for each set of k-points, so the observables get the
+  hole density with it too.
 
 ## Decoupled orbitals
 
