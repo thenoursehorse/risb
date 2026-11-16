@@ -600,13 +600,16 @@ class BaseLatticeSolver(ABC):
         self, susceptibilities: Sequence[ImpurityChargeSusceptibility | None]
     ) -> float:
         # Sum of the charge susceptibilities of the impurities; a copied cluster
-        # takes that of the cluster it copies
+        # takes that of the cluster it copies, found once
         slope = 0.0
+        chi: dict[int, float] = {}
         for i in range(self.n_clusters):
             j = self._copies[i][0] if i in self._copies else i
             susceptibility = susceptibilities[j]
             if susceptibility is not None:
-                slope += susceptibility(self.impurity_solvers[j])
+                if j not in chi:
+                    chi[j] = susceptibility(self.impurity_solvers[j])
+                slope += chi[j]
         return slope
 
     def _copy_clusters(self, A: list[BlockMatrix]) -> list[BlockMatrix]:
