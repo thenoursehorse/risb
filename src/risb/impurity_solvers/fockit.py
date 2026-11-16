@@ -492,6 +492,9 @@ class _FockitBase:
                             return None
                     for target_eigenvalues, part in parts.items():
                         target = (target_values, target_eigenvalues)
+                        # A sector with no states is not reached
+                        if self._basis(target).dim == 0:
+                            continue
                         modes, matrices = reached.setdefault(target, ([], []))
                         modes.append(j)
                         matrices.append(

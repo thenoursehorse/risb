@@ -430,7 +430,9 @@ def test_particle_hole_sector_gives_the_same_ground_state() -> None:
             )
 
 
-def _ghost_embedding(beta: float | None) -> tuple[FockitImpuritySolver, BlockMatrix]:
+def _ghost_embedding(
+    beta: float | None, diagonal_symmetries: dict[OpSum, float] | None = None
+) -> tuple[FockitImpuritySolver, BlockMatrix]:
     # One orbital per spin with U = 2 and three bath orbitals
     U, B = 2.0, 3
     gf_struct = [("up", 1), ("dn", 1)]
@@ -438,6 +440,7 @@ def _ghost_embedding(beta: float | None) -> tuple[FockitImpuritySolver, BlockMat
         U * nc("up", 0) * nc("dn", 0),
         gf_struct,
         beta=beta,
+        diagonal_symmetries=diagonal_symmetries,
         bath_size={bl: B for bl, _ in gf_struct},
     )
     Lambda_c: BlockMatrix = {
@@ -463,29 +466,39 @@ def test_bath_hole_density_and_energy_matrices_add_up_to_one_and_the_bath_levels
         ) == pytest.approx(Lambda_c[bl].T, abs=1e-12)
 
 
-def test_bath_energy_matrices_are_the_expectation_values_of_the_ground_state() -> None:
-    solver, _ = _ghost_embedding(None)
+# With the largest Sz every spin-up mode is full and every spin-down mode
+# empty, so the sectors one spin-up electron up and one spin-down electron
+# down have no states
+@pytest.mark.parametrize("Sz", [None, 2.0], ids=["lowest", "largest Sz"])
+def test_bath_energy_matrices_are_the_expectation_values_of_the_ground_state(
+    Sz: float | None,
+) -> None:
+    Sz_op = 0.5 * (nc("up", 0) - nc("dn", 0))
+    for a in range(3):
+        Sz_op += 0.5 * (nc("bath_up", a) - nc("bath_dn", a))
+    solver, _ = _ghost_embedding(None, None if Sz is None else {Sz_op: Sz})
     E, H = solver.gs_energy, solver.h_imp
-    f = [c("bath_up", a) for a in range(3)]
-    fd = [cdag("bath_up", a) for a in range(3)]
-    particle = [
-        [
-            E * solver.overlap(f[a] * fd[b]) - solver.overlap(f[a] * H * fd[b])
-            for b in range(3)
+    for bl in ["up", "dn"]:
+        f = [c(f"bath_{bl}", a) for a in range(3)]
+        fd = [cdag(f"bath_{bl}", a) for a in range(3)]
+        particle = [
+            [
+                E * solver.overlap(f[a] * fd[b]) - solver.overlap(f[a] * H * fd[b])
+                for b in range(3)
+            ]
+            for a in range(3)
         ]
-        for a in range(3)
-    ]
-    hole = [
-        [
-            solver.overlap(fd[b] * H * f[a]) - E * solver.overlap(fd[b] * f[a])
-            for b in range(3)
+        hole = [
+            [
+                solver.overlap(fd[b] * H * f[a]) - E * solver.overlap(fd[b] * f[a])
+                for b in range(3)
+            ]
+            for a in range(3)
         ]
-        for a in range(3)
-    ]
-    assert solver.get_particle_energy_f("up") == pytest.approx(
-        np.array(particle), abs=1e-10
-    )
-    assert solver.get_hole_energy_f("up") == pytest.approx(np.array(hole), abs=1e-10)
+        assert solver.get_particle_energy_f(bl) == pytest.approx(
+            np.array(particle), abs=1e-10
+        )
+        assert solver.get_hole_energy_f(bl) == pytest.approx(np.array(hole), abs=1e-10)
 
 
 def test_decoupled_extra_bath_orbitals_leave_the_impurity_unchanged() -> None:
