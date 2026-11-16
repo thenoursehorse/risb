@@ -64,6 +64,8 @@ _DEFAULT_MU_STEP = MuUnitStep()
 _DEFAULT_REFIT_STEP = MuNewtonStep(min_slope=1e-3)
 # Step of mu for the slope of the filling of the bands
 _SLOPE_DMU = 1e-4
+# A quasiparticle is full or empty when n (1 - n) is below this
+_FULL_EMPTY_TOL = 1e-10
 
 
 class DiscardedImaginaryWarning(RuntimeWarning):
@@ -1281,6 +1283,21 @@ class BaseLatticeSolver(ABC):
                     "observables. Otherwise the result is not a solution."
                 )
                 warnings.warn(msg, RuntimeWarning, stacklevel=2)
+            for i in range(self.n_clusters):
+                if i in self._copies:
+                    continue
+                spread = 0.0
+                for bl in self.rho_qp[i]:
+                    _, n, s = helpers._occupations(
+                        self.rho_qp[i][bl], self.hole_rho_qp[i][bl]
+                    )
+                    spread = max(spread, float(np.max(n * s, initial=0)))
+                if spread < _FULL_EMPTY_TOL:
+                    msg = (
+                        f"Every quasiparticle of cluster {i} is full or empty "
+                        f"(largest n(1 - n) = {spread:.0e})."
+                    )
+                    warnings.warn(msg, RuntimeWarning, stacklevel=2)
             self._emit(
                 "solve.result",
                 optimizer_converged=result.converged,
