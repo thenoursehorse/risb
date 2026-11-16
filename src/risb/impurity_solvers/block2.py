@@ -1197,13 +1197,14 @@ class Block2ImpuritySolver(_Block2Base, ZeroTemperatureImpuritySolver):
             fs = [self._index[_bath(bl), a] for a in range(self._bath_sizes[bl])]
             added = [fitted(p, create=True) for p in fs]
             removed = [fitted(p, create=False) for p in fs]
+            # Both matrices are real symmetric
             for a, p in enumerate(fs):
-                for b, q in enumerate(fs):
-                    particle[p, q] = (
+                for b, q in enumerate(fs[a:], start=a):
+                    particle[p, q] = particle[q, p] = (
                         energy * driver.expectation(added[a], identity, added[b])
                         - driver.expectation(added[a], H, added[b])
                     ) / norm
-                    hole[p, q] = (
+                    hole[p, q] = hole[q, p] = (
                         driver.expectation(removed[b], H, removed[a])
                         - energy * driver.expectation(removed[b], identity, removed[a])
                     ) / norm
