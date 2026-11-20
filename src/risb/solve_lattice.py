@@ -313,20 +313,6 @@ class ZeroTemperatureLatticeSolver(BaseLatticeSolver):
             smearing, getattr(self.band_integrator, "beta", np.inf)
         )
 
-    def _energy_scale(self) -> float:
-        # The largest energy of the model. It is set by the model and not by
-        # Lambda, which can drift together with the chemical potential, so
-        # that the pinned levels do not grow from cycle to cycle
-        largest = max(
-            float(np.max(np.abs(A[bl]), initial=0))
-            for A in self.h0_loc_matrix
-            for bl in A
-        )
-        for solver in self.impurity_solvers:
-            terms = solver.h_int.terms.values()
-            largest = max([largest, *(abs(complex(coeff)) for coeff in terms)])
-        return self._kinetic_half_bandwidth + largest
-
 
 class LatticeSolver(ZeroTemperatureLatticeSolver):
     """
@@ -408,8 +394,10 @@ class PhysicalMuLatticeSolver(ZeroTemperatureLatticeSolver):
         particle number of each impurity this adds :math:`-\delta\mu N_c`,
         with :math:`N_c` the number of electrons on its physical orbitals. The
         step comes from `mu_impurity_refit_step`, kept between the chemical
-        potentials found with too few and too many electrons. The rest of the
-        cycle runs at the last refit. ``None`` does not refit.
+        potentials found with too few and too many electrons, and is at most
+        the largest energy of the model, the half bandwidth plus the largest
+        local term or interaction. The rest of the cycle runs at the last
+        refit. ``None`` does not refit.
     mu_impurity_refit_step : risb.types.ChemicalPotentialStep, optional
         The step of each refit. Default is
         :class:`risb.stabilization.MuNewtonStep` with ``min_slope = 1e-3``,
@@ -420,12 +408,14 @@ class PhysicalMuLatticeSolver(ZeroTemperatureLatticeSolver):
         carries on.
     impurity_charge_predictor : sequence of risb.types.ImpurityChargePredictor, optional
         Predicts :math:`N_c` of each impurity from its earlier solves, e.g.,
-        ``risb.impurity_solvers.fockit.ChargePredictor(impurity_solver)``. From the second
-        cycle, :attr:`mu` is set before the impurity solves so that the
-        filling with the predicted :math:`N_c` is `n_target`. :attr:`mu`,
-        :attr:`Lambda` and :attr:`Lambda_c` change as in a refit. One per
-        cluster in the order of `impurity_solvers`, and ``None`` for a cluster
-        with a :class:`.DummyImpuritySolver`. Needs `n_target` and
+        ``risb.impurity_solvers.fockit.ChargePredictor(impurity_solver)``.
+        From the second cycle, :attr:`mu` is set before the impurity solves
+        so that the filling with the predicted :math:`N_c` is `n_target`.
+        The change of :attr:`mu` is at most the largest step of a refit, and
+        :attr:`mu` is kept if there is none. :attr:`mu`, :attr:`Lambda` and
+        :attr:`Lambda_c` change as in a refit. One per cluster in the order
+        of `impurity_solvers`, and ``None`` for a cluster with a
+        :class:`.DummyImpuritySolver`. Needs `n_target` and
         `max_filling_error`. Default is no prediction.
     density_feedback : risb.types.DensityFeedback or None, optional
         Shifts the quasiparticle levels against the density mismatch, before

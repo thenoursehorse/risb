@@ -64,8 +64,6 @@ _DEFAULT_MU_STEP = MuUnitStep()
 _DEFAULT_REFIT_STEP = MuNewtonStep(min_slope=1e-3)
 # Step of mu for the slope of the filling of the bands
 _SLOPE_DMU = 1e-4
-# Times the step of the predicted mu is doubled to bracket n_target
-_MAX_MU_PREDICTION_DOUBLINGS = 20
 
 
 class DiscardedImaginaryWarning(RuntimeWarning):
@@ -618,6 +616,20 @@ class BaseLatticeSolver(ABC):
                 msg = f"The impurity charge susceptibility of cluster {i} must be None, as the cluster is a copy !"
                 raise ValueError(msg)
         return list(susceptibility)
+
+    def _energy_scale(self) -> float:
+        # The largest energy of the model. It is set by the model and not by
+        # Lambda, which can drift together with the chemical potential, so
+        # that the pinned levels do not grow from cycle to cycle
+        largest = max(
+            float(np.max(np.abs(A[bl]), initial=0))
+            for A in self.h0_loc_matrix
+            for bl in A
+        )
+        for solver in self.impurity_solvers:
+            terms = solver.h_int.terms.values()
+            largest = max([largest, *(abs(complex(coeff)) for coeff in terms)])
+        return self._kinetic_half_bandwidth + largest
 
     def _impurity_filling_slope(
         self, susceptibilities: Sequence[ImpurityChargeSusceptibility | None]
@@ -1368,16 +1380,18 @@ class BaseLatticeSolver(ABC):
         outside_at_cycle_mu = outside(0.0)
         dmu, outside_at_dmu = 0.0, outside_at_cycle_mu
         n = outside_at_cycle_mu + impurity_filling(0.0)
-        if abs(n - self.n_target) > self.max_filling_error:
-            error = n - self.n_target
-            previous, step = 0.0, -error
-            for _ in range(_MAX_MU_PREDICTION_DOUBLINGS):
-                if (filling(step) - self.n_target) * error <= 0:
-                    dmu = brentq(lambda x: filling(x) - self.n_target, previous, step)
-                    outside_at_dmu = outside(dmu)
-                    n = outside_at_dmu + impurity_filling(dmu)
-                    break
-                previous, step = step, 2 * step
+        largest_step = self._energy_scale()
+        if (
+            abs(n - self.n_target) > self.max_filling_error
+            and (filling(-largest_step) - self.n_target)
+            * (filling(largest_step) - self.n_target)
+            < 0
+        ):
+            dmu = brentq(
+                lambda x: filling(x) - self.n_target, -largest_step, largest_step
+            )
+            outside_at_dmu = outside(dmu)
+            n = outside_at_dmu + impurity_filling(dmu)
         self._move_mu(dmu)
         self._outside_filling_change = outside_at_dmu - outside_at_cycle_mu
         self._emit(
@@ -1402,6 +1416,7 @@ class BaseLatticeSolver(ABC):
         outside_at_cycle_mu = (
             self._outside_filling()(0.0) - self._outside_filling_change
         )
+        largest_step = self._energy_scale()
         # Highest mu with too few electrons and lowest mu with too many
         below, above = -np.inf, np.inf
         for _ in range(self.max_mu_refits):
@@ -1413,9 +1428,10 @@ class BaseLatticeSolver(ABC):
                 below = max(below, mu)
             else:
                 above = min(above, mu)
-            mu += self.mu_impurity_refit_step.step(
+            step = self.mu_impurity_refit_step.step(
                 filling_error, self._filling_slope, self._history
             )
+            mu += float(np.clip(step, -largest_step, largest_step))
             if np.isfinite(below) and np.isfinite(above) and not below < mu < above:
                 mu = (below + above) / 2
             self._move_mu(mu - self.mu)

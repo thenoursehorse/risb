@@ -112,8 +112,10 @@ class ThermalLatticeSolver(BaseLatticeSolver):
         gets :math:`-\delta\mu N_c`, with :math:`N_c` the number of
         electrons on its physical orbitals. The step comes from
         `mu_impurity_refit_step`, kept between the chemical potentials found
-        with too few and too many electrons. The rest of the cycle runs at the
-        last refit. ``None`` does not refit.
+        with too few and too many electrons, and is at most the largest
+        energy of the model, the half bandwidth plus the largest local term or
+        interaction. The rest of the cycle runs at the last refit. ``None``
+        does not refit.
     mu_impurity_refit_step : risb.types.ChemicalPotentialStep, optional
         The step of each refit. Default is
         :class:`risb.stabilization.MuSecantStep`.
