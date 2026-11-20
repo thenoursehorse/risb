@@ -44,6 +44,7 @@ from fockit.hilbert import (
     build_basis,
     expand_state,
     expectation,
+    matrix_elements,
     symmetry_components,
     to_matrix,
 )
@@ -58,12 +59,13 @@ from scipy.sparse.linalg import ArpackNoConvergence, aslinearoperator, eigsh, gm
 from risb.diagnostics import FockitObserver
 from risb.diagnostics.fockit import FockitContext
 from risb.diagnostics.output import stage
-from risb.helpers import get_entropy_impurity
+from risb.helpers import get_entropy_impurity, get_rayleigh_ritz_impurity_charge
 from risb.helpers_mpi import Comm, SerialComm, gather_tasks
 from risb.types import (
     BlockMatrix,
     BlockMatrixLike,
     GfStruct,
+    ImpurityChargePredictor,
     ThermalImpuritySolver,
     ZeroTemperatureImpuritySolver,
 )
@@ -83,6 +85,10 @@ _MISSED_TOL = 1e-10
 # Weight of the found states outside the window of a thermal solve, relative
 # to the states in it, above which it warns
 _EXCLUDED_WEIGHT_TOL = 1e-4
+
+# Eigenvalue of the inner products of the kept states of ChargePredictor,
+# relative to the largest, below which a combination of them is dropped
+_LINEAR_DEPENDENCE_TOL = 1e-10
 
 # A symmetry sector: the values of the diagonal symmetries, None where a
 # sector does not fix one, and the eigenvalues of the permutation and on-site
@@ -787,6 +793,8 @@ class FockitImpuritySolver(_FockitBase, ZeroTemperatureImpuritySolver):
         #: averaged over :attr:`states`, set by :meth:`solve`.
         self.hole_energy_f: BlockMatrix = {}
 
+        self._charge_response: NDArray[np.inexact] | None = None
+
     @override
     def solve(self) -> None:
         """
@@ -811,6 +819,7 @@ class FockitImpuritySolver(_FockitBase, ZeroTemperatureImpuritySolver):
             degenerate.
 
         """
+        self._charge_response = None
         super().solve()
         with self._stage("energy_matrices"):
             self._set_energy_matrices()
@@ -826,6 +835,41 @@ class FockitImpuritySolver(_FockitBase, ZeroTemperatureImpuritySolver):
     @override
     def get_hole_energy_f(self, bl: str) -> NDArray[np.inexact]:
         return self.hole_energy_f[bl]
+
+    def charge_response(self) -> NDArray[np.inexact]:
+        r"""
+        Return the charge response of the ground state of the last solve.
+
+        It is :math:`(H - E_0)^{-1} Q N_c |0\rangle`, with
+        :math:`Q = 1 - |0\rangle\langle 0|`, the first-order change of the
+        ground state :math:`|0\rangle` when :math:`-\delta\mu N_c` is added to
+        the impurity Hamiltonian :math:`H`. It is found once after each
+        :meth:`solve`.
+
+        Returns
+        -------
+        numpy.ndarray
+            In :attr:`basis`.
+
+        """
+        if self._charge_response is None:
+            ground = self.gs_vector
+            A = to_matrix(self.h_imp, self.basis) - self.gs_energy * sp.identity(
+                self.basis.dim, format="csr"
+            )
+            b = to_matrix(_n_c(self), self.basis) @ ground
+            b = b - ground * np.vdot(ground, b)
+            # In a basis of symmetric combinations the matrices need not be symmetric
+            x, _ = gmres(
+                A,
+                b,
+                rtol=1e-12,
+                atol=1e-12,
+                restart=min(self.basis.dim, 200),
+                maxiter=100,
+            )
+            self._charge_response = x - ground * np.vdot(ground, x)
+        return self._charge_response
 
     def _set_energy_matrices(self) -> None:
         # <f_a (E - H) f_b^dag> and <f_b^dag (H - E) f_a>, from the states
@@ -1353,6 +1397,123 @@ class FockitThermalImpuritySolver(_FockitBase, ThermalImpuritySolver):
         return gather_tasks(self.comm, energies)
 
 
+class ChargePredictor(ImpurityChargePredictor):
+    r"""
+    Number of electrons :math:`N_c` on the physical orbitals of a :class:`FockitImpuritySolver`, for an impurity Hamiltonian that has not been solved.
+
+    The prediction is :math:`N_c` of the lowest state of the impurity
+    Hamiltonian in the span of the kept states. These are the ground state
+    :math:`|0\rangle` and the charge response
+    :math:`(H - E_0)^{-1} Q N_c |0\rangle` of each of the last `max_solves`
+    solves, with :math:`Q = 1 - |0\rangle\langle 0|`. The charge response is
+    the first-order change of the ground state when :math:`-\delta\mu N_c` is
+    added to :math:`H`. Nearly linearly dependent combinations of the kept
+    states are dropped.
+
+    Parameters
+    ----------
+    impurity_solver : FockitImpuritySolver
+        Impurity solver whose ground states are kept, without ``beta``.
+    max_solves : int, optional
+        Number of the most recent solves whose states are kept.
+    match_last_solve : bool, optional
+        Shift the prediction so that at the impurity Hamiltonian of the last
+        solve it is the :math:`N_c` of that solve. This removes the error of
+        the Rayleigh-Ritz method from a ground state that is not an exact
+        eigenstate. Default is ``True``.
+
+    """
+
+    def __init__(
+        self,
+        impurity_solver: FockitImpuritySolver,
+        max_solves: int = 4,
+        match_last_solve: bool = True,
+    ) -> None:
+        self.impurity_solver = impurity_solver
+        self.max_solves = max_solves
+        self.match_last_solve = match_last_solve
+
+        #: list of numpy.ndarray : Ground state and charge response of each
+        #: kept solve, in the basis of the impurity solver.
+        self.states: list[NDArray[np.inexact]] = []
+
+        #: numpy.ndarray : Inner products of :attr:`states`.
+        self.inner_products = np.zeros((0, 0), dtype=complex)
+
+        #: numpy.ndarray : Matrix elements of :math:`N_c` between
+        #: :attr:`states`.
+        self.N_c_elements = np.zeros((0, 0), dtype=complex)
+
+        #: numpy.ndarray : Matrix elements of the impurity Hamiltonian between
+        #: :attr:`states`.
+        self.h_imp_elements = np.zeros((0, 0), dtype=complex)
+
+        #: float : :math:`N_c` of the Rayleigh-Ritz method at the impurity
+        #: Hamiltonian of the last solve minus the :math:`N_c` of that solve.
+        #: Zero without `match_last_solve`.
+        self.charge_offset = 0.0
+
+    @override
+    def add_states(self) -> None:
+        """
+        Keep the ground state and charge response of the last solve of :attr:`impurity_solver`.
+
+        With `match_last_solve`, also set :attr:`h_imp_elements` and
+        :attr:`charge_offset` at the impurity Hamiltonian of the solve.
+
+        Raises
+        ------
+        ValueError
+            If :attr:`impurity_solver` has ``beta``.
+
+        """
+        solver = self.impurity_solver
+        if solver.beta is not None:
+            # TODO: add support for averaging over states
+            msg = (
+                "ChargePredictor needs the ground state of the impurity, without beta."
+            )
+            raise ValueError(msg)
+        response = solver.charge_response()
+        norm = np.linalg.norm(response)
+        kept = [solver.gs_vector] if norm == 0 else [solver.gs_vector, response / norm]
+        self.states = [*self.states, *kept][-2 * self.max_solves :]
+        states = np.column_stack(self.states)
+        self.inner_products = states.conj().T @ states
+        self.N_c_elements = matrix_elements(
+            to_matrix(_n_c(solver), solver.basis), states
+        )
+        self.charge_offset = 0.0
+        if self.match_last_solve:
+            self.set_h_imp_elements()
+            self.charge_offset = self.charge(0.0) - sum(
+                np.trace(solver.rho_c[bl]).real for bl, _ in solver.gf_struct
+            )
+
+    @override
+    def set_h_imp_elements(self) -> None:
+        """Set :attr:`h_imp_elements` from the current impurity Hamiltonian of :attr:`impurity_solver`."""
+        solver = self.impurity_solver
+        self.h_imp_elements = matrix_elements(
+            to_matrix(solver.h_imp, solver.basis), np.column_stack(self.states)
+        )
+
+    @override
+    def charge(self, dmu: float) -> float:
+        r"""Return :math:`N_c` of the lowest state in the span of :attr:`states`, with :math:`-\delta\mu N_c` added to the impurity Hamiltonian of :meth:`set_h_imp_elements` and :math:`\delta\mu` = ``dmu``, minus :attr:`charge_offset`."""
+        return (
+            get_rayleigh_ritz_impurity_charge(
+                self.inner_products,
+                self.h_imp_elements,
+                self.N_c_elements,
+                dmu,
+                _LINEAR_DEPENDENCE_TOL,
+            )
+            - self.charge_offset
+        )
+
+
 def charge_susceptibility(impurity_solver: FockitImpuritySolver) -> float:
     r"""
     Return the static charge susceptibility of the physical orbitals of a solved impurity problem.
@@ -1379,19 +1540,11 @@ def charge_susceptibility(impurity_solver: FockitImpuritySolver) -> float:
     float
 
     """
-    basis, ground = impurity_solver.basis, impurity_solver.gs_vector
-    N_c = zero()
-    for bl, size in impurity_solver.gf_struct:
-        for a in range(size):
-            N_c += nc(bl, a)
-    H = to_matrix(impurity_solver.h_imp, basis)
-    A = H - impurity_solver.gs_energy * sp.identity(basis.dim, format="csr")
-    b = to_matrix(N_c, basis) @ ground
-    b = b - ground * np.vdot(ground, b)
-    # In a basis of symmetric combinations the matrices need not be symmetric
-    x, _ = gmres(A, b, rtol=1e-12, restart=min(basis.dim, 200), maxiter=100)
-    x = x - ground * np.vdot(ground, x)
-    return 2 * float(np.vdot(b, x).real)
+    N_c_ground = (
+        to_matrix(_n_c(impurity_solver), impurity_solver.basis)
+        @ impurity_solver.gs_vector
+    )
+    return 2 * float(np.vdot(N_c_ground, impurity_solver.charge_response()).real)
 
 
 def _eigsh(
@@ -1626,3 +1779,11 @@ def _rounded(eigenvalues: Sequence[complex]) -> tuple[complex, ...]:
         complex(round(complex(e).real, 10) + 0.0, round(complex(e).imag, 10) + 0.0)
         for e in eigenvalues
     )
+
+
+def _n_c(impurity_solver: FockitImpuritySolver) -> OpSum:
+    N_c = zero()
+    for bl, size in impurity_solver.gf_struct:
+        for a in range(size):
+            N_c += nc(bl, a)
+    return N_c

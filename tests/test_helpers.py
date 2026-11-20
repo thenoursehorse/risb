@@ -75,6 +75,27 @@ def test_get_rho_qp() -> None:
     assert rho_qp == pytest.approx(rho_qp_expected, abs=abs)
 
 
+def test_outside_filling_is_the_density_of_the_orbital_in_no_cluster() -> None:
+    # Two orbitals, with a k-dependent combination of them in the cluster
+    n_k = 4
+    rng = np.random.default_rng(2)
+    U_k = np.linalg.qr(
+        rng.normal(size=(n_k, 2, 2)) + 1j * rng.normal(size=(n_k, 2, 2))
+    )[0]
+    occupations = rng.uniform(size=(n_k, 2))
+    density_k = {"up": (U_k * occupations[:, None, :]) @ U_k.conj().swapaxes(-1, -2)}
+    h0_k = {"up": np.zeros((n_k, 2, 2))}
+    rows = U_k.conj().swapaxes(-1, -2)
+    for projectors, expected in [
+        ([{"up": rows[:, :1, :]}], occupations[:, 1]),
+        ([{"up": rows}], np.zeros(n_k)),
+    ]:
+        identities = [{"up": np.eye(P["up"].shape[-2])} for P in projectors]
+        cluster_projector = helpers.upfold(identities, h0_k, projectors)
+        filling = helpers.get_outside_filling_k(density_k, cluster_projector)
+        assert filling == pytest.approx(expected, abs=1e-12)
+
+
 def test_get_d() -> None:
     rho_qp = np.array([[0.19618454, 0.0], [0.0, 0.19618454]])
     ke = np.array([[-0.13447044, 0.0], [0.0, -0.13447044]])

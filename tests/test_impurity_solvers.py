@@ -18,7 +18,7 @@ from risb import LatticeSolver
 from risb.diagnostics import FockitDiagnostics, FockitThermalDiagnostics
 from risb.helpers_fockit import N_op, S2_op, h_int_kanamori
 from risb.impurity_solvers import FockitImpuritySolver, FockitThermalImpuritySolver
-from risb.impurity_solvers.fockit import charge_susceptibility
+from risb.impurity_solvers.fockit import ChargePredictor, charge_susceptibility
 from risb.kintegration import BandKIntegrator, WeightedKPointIntegrator
 from risb.types import BlockMatrix
 
@@ -334,6 +334,48 @@ def test_charge_susceptibility_is_the_change_of_the_filling_with_the_level() -> 
     slope = (filling(dmu) - filling(-dmu)) / (2 * dmu)
     filling(0.0)
     assert charge_susceptibility(solver) == pytest.approx(slope, rel=1e-5)
+
+
+def test_charge_predictor_gives_the_filling_of_an_unsolved_impurity() -> None:
+    # Two orbitals with three bath orbitals each
+    spins, n_orb = ["up", "dn"], 2
+    gf_struct = [(bl, n_orb) for bl in spins]
+    bath_size = dict.fromkeys(spins, 3 * n_orb)
+    off = 1 - np.eye(n_orb)
+    h_int = h_int_kanamori(
+        spins, n_orb, U=1.8 * off, Uprime=3 * np.eye(n_orb) + 1.8 * off, J_hund=0.6
+    )
+    h0_loc = dict.fromkeys(spins, np.diag([-0.1, 0.1]))
+    solver = FockitImpuritySolver(h_int, gf_struct, bath_size=bath_size)
+
+    def set_h_imp(t: float, dmu: float) -> None:
+        levels = np.diag([-0.8, 0.0, 0.8]) + t * np.diag([0.3, -0.2, 0.1])
+        hybridization = (1 + t) * np.array([[0.4], [0.7], [0.5]])
+        solver.set_h_imp(
+            dict.fromkeys(spins, np.kron(levels, np.eye(n_orb))),
+            dict.fromkeys(spins, np.kron(hybridization, np.eye(n_orb))),
+            {bl: h - dmu * np.eye(n_orb) for bl, h in h0_loc.items()},
+        )
+
+    def filling() -> float:
+        solver.solve()
+        return sum(float(np.trace(solver.rho_c[bl]).real) for bl in spins)
+
+    predictor = ChargePredictor(solver)
+    fillings = []
+    for t in [0.0, 0.05, 0.1, 0.15]:
+        set_h_imp(t, 0.0)
+        fillings.append(filling())
+        predictor.add_states()
+    last = fillings[-1]
+    set_h_imp(0.2, 0.0)
+    predictor.set_h_imp_elements()
+    for dmu in [0.0, 0.05]:
+        predicted = predictor.charge(dmu)
+        set_h_imp(0.2, dmu)
+        exact = filling()
+        assert abs(exact - last) > 1e-2
+        assert predicted == pytest.approx(exact, abs=1e-6)
 
 
 def test_fockit_solver_rejects_non_hermitian_hamiltonian() -> None:

@@ -33,6 +33,9 @@ from risb.impurity_solvers import (
     Block2ThermalImpuritySolver,
 )
 from risb.impurity_solvers.block2 import (
+    ChargePredictor,
+)
+from risb.impurity_solvers.block2 import (
     charge_susceptibility as block2_charge_susceptibility,
 )
 
@@ -177,6 +180,108 @@ def test_charge_susceptibility_is_the_exact_one() -> None:
     assert block2_charge_susceptibility(solver) == pytest.approx(
         fockit_charge_susceptibility(expected), rel=1e-4
     )
+
+
+def test_charge_predictor_gives_the_filling_of_an_unsolved_impurity() -> None:
+    # Two orbitals with three bath orbitals each
+    spins, n_orb = ["up", "dn"], 2
+    gf_struct = [(bl, n_orb) for bl in spins]
+    bath_size = dict.fromkeys(spins, 3 * n_orb)
+    off = 1 - np.eye(n_orb)
+    h_int = h_int_kanamori(
+        spins, n_orb, U=1.8 * off, Uprime=3 * np.eye(n_orb) + 1.8 * off, J_hund=0.6
+    )
+    h0_loc = dict.fromkeys(spins, np.diag([-0.1, 0.1]))
+    solver = Block2ImpuritySolver(
+        h_int,
+        gf_struct,
+        bond_dim=200,
+        symmetries={"sz": 0},
+        bath_size=bath_size,
+        settings=EXACT,
+    )
+    exact_solver = FockitImpuritySolver(h_int, gf_struct, bath_size=bath_size)
+
+    def set_h_imp(solver: Any, t: float, dmu: float) -> None:
+        levels = np.diag([-0.8, 0.0, 0.8]) + t * np.diag([0.3, -0.2, 0.1])
+        hybridization = (1 + t) * np.array([[0.4], [0.7], [0.5]])
+        solver.set_h_imp(
+            dict.fromkeys(spins, np.kron(levels, np.eye(n_orb))),
+            dict.fromkeys(spins, np.kron(hybridization, np.eye(n_orb))),
+            {bl: h - dmu * np.eye(n_orb) for bl, h in h0_loc.items()},
+        )
+
+    def filling(solver: Any) -> float:
+        solver.solve()
+        return sum(float(np.trace(solver.rho_c[bl]).real) for bl in spins)
+
+    predictor = ChargePredictor(solver)
+    fillings = []
+    for t in [0.0, 0.05, 0.1, 0.15]:
+        set_h_imp(solver, t, 0.0)
+        fillings.append(filling(solver))
+        predictor.add_states()
+    last = fillings[-1]
+    set_h_imp(solver, 0.2, 0.0)
+    predictor.set_h_imp_elements()
+    for dmu in [0.0, 0.05]:
+        predicted = predictor.charge(dmu)
+        set_h_imp(exact_solver, 0.2, dmu)
+        exact = filling(exact_solver)
+        assert abs(exact - last) > 1e-2
+        assert predicted == pytest.approx(exact, abs=1e-5)
+
+
+def test_charge_predictor_gives_the_filling_of_a_truncated_solve() -> None:
+    # Two orbitals with three bath orbitals each, at a bond dimension too
+    # small for the exact ground state
+    spins, n_orb = ["up", "dn"], 2
+    gf_struct = [(bl, n_orb) for bl in spins]
+    bath_size = dict.fromkeys(spins, 3 * n_orb)
+    off = 1 - np.eye(n_orb)
+    h_int = h_int_kanamori(
+        spins, n_orb, U=1.8 * off, Uprime=3 * np.eye(n_orb) + 1.8 * off, J_hund=0.6
+    )
+    h0_loc = dict.fromkeys(spins, np.diag([-0.1, 0.1]))
+    solver = Block2ImpuritySolver(
+        h_int,
+        gf_struct,
+        bond_dim=12,
+        symmetries={"sz": 0},
+        bath_size=bath_size,
+        settings=EXACT,
+    )
+
+    def set_h_imp(t: float, dmu: float) -> None:
+        levels = np.diag([-0.8, 0.0, 0.8]) + t * np.diag([0.3, -0.2, 0.1])
+        hybridization = (1 + t) * np.array([[0.4], [0.7], [0.5]])
+        solver.set_h_imp(
+            dict.fromkeys(spins, np.kron(levels, np.eye(n_orb))),
+            dict.fromkeys(spins, np.kron(hybridization, np.eye(n_orb))),
+            {bl: h - dmu * np.eye(n_orb) for bl, h in h0_loc.items()},
+        )
+
+    def filling() -> float:
+        solver.solve()
+        return sum(float(np.trace(solver.rho_c[bl]).real) for bl in spins)
+
+    predictor = ChargePredictor(solver)
+    fillings = []
+    for t in [0.0, 0.05, 0.1, 0.15]:
+        set_h_imp(t, 0.0)
+        fillings.append(filling())
+        predictor.add_states()
+    last = fillings[-1]
+    predictor.set_h_imp_elements()
+    assert predictor.charge(0.0) == pytest.approx(last, abs=1e-10)
+    set_h_imp(0.2, 0.0)
+    predictor.set_h_imp_elements()
+    for dmu in [0.0, 0.05]:
+        predicted = predictor.charge(dmu)
+        set_h_imp(0.2, dmu)
+        solved = filling()
+        assert abs(solved - last) > 1e-2
+        assert predicted == pytest.approx(solved, abs=1e-5)
 
 
 @pytest.mark.parametrize("settings", [Block2Settings(), Block2Settings(tol=1e-8)])

@@ -22,10 +22,11 @@ from abc import ABC, abstractmethod
 from collections.abc import Callable, Mapping, Sequence
 from contextlib import AbstractContextManager
 from copy import deepcopy
-from typing import TypeIs
+from typing import TypeIs, cast
 
 import numpy as np
 from numpy.typing import NDArray
+from scipy.optimize import brentq
 
 from risb import helpers
 from risb.diagnostics import DiagnosticObserver
@@ -50,6 +51,7 @@ from risb.types import (
     ChemicalPotentialStep,
     GaugeFix,
     GfStruct,
+    ImpurityChargePredictor,
     ImpurityChargeSusceptibility,
     Symmetrize,
     ThermalImpuritySolver,
@@ -62,6 +64,8 @@ _DEFAULT_MU_STEP = MuUnitStep()
 _DEFAULT_REFIT_STEP = MuNewtonStep(min_slope=1e-3)
 # Step of mu for the slope of the filling of the bands
 _SLOPE_DMU = 1e-4
+# Times the step of the predicted mu is doubled to bracket n_target
+_MAX_MU_PREDICTION_DOUBLINGS = 20
 
 
 class DiscardedImaginaryWarning(RuntimeWarning):
@@ -482,8 +486,11 @@ class BaseLatticeSolver(ABC):
         self._impurity_charge_susceptibility: list[
             ImpurityChargeSusceptibility | None
         ] = [None] * self.n_clusters
-        # Change of the filling of the orbitals in no cluster made by the refits
-        # of this cycle
+        self._impurity_charge_predictors: (
+            list[ImpurityChargePredictor | None] | None
+        ) = None
+        # Change of the filling of the orbitals in no cluster made by the
+        # prediction and refits of this cycle
         self._outside_filling_change = 0.0
         # Chemical potential and filling of each impurity solution in this cycle
         self._history: list[tuple[float, float]] = []
@@ -494,18 +501,32 @@ class BaseLatticeSolver(ABC):
         mu: float | None,
         n_target: float | None,
         mu_step: ChemicalPotentialStep,
-        impurity_charge_susceptibility: ImpurityChargeSusceptibility
-        | Sequence[ImpurityChargeSusceptibility | None]
+        impurity_charge_susceptibility: Sequence[ImpurityChargeSusceptibility | None]
         | None,
         max_filling_error: float | None,
         mu_impurity_refit_step: ChemicalPotentialStep,
         max_mu_refits: int,
+        impurity_charge_predictor: Sequence[ImpurityChargePredictor | None]
+        | None = None,
     ) -> None:
         # The chemical potential of the physical orbitals, fixed at mu or
         # solved for at the filling n_target
         if mu is None and n_target is None:
             msg = "Need mu, or n_target to solve for it !"
             raise ValueError(msg)
+        if impurity_charge_predictor is not None:
+            if n_target is None or max_filling_error is None:
+                msg = "impurity_charge_predictor needs n_target and max_filling_error !"
+                raise ValueError(msg)
+            predictors = list(impurity_charge_predictor)
+            if len(predictors) != self.n_clusters:
+                msg = f"Need an impurity charge predictor (got {len(predictors)}) for each cluster (got {self.n_clusters}) !"
+                raise ValueError(msg)
+            for i, predictor in enumerate(predictors):
+                if (predictor is None) != (i in self._copies):
+                    msg = f"The impurity charge predictor of cluster {i} must be None if and only if the cluster is a copy !"
+                    raise ValueError(msg)
+            self._impurity_charge_predictors = predictors
         self.n_target = n_target
         self.mu_step = mu_step
         self._impurity_charge_susceptibility = self._per_cluster(
@@ -584,16 +605,18 @@ class BaseLatticeSolver(ABC):
 
     def _per_cluster(
         self,
-        susceptibility: ImpurityChargeSusceptibility
-        | Sequence[ImpurityChargeSusceptibility | None]
-        | None,
+        susceptibility: Sequence[ImpurityChargeSusceptibility | None] | None,
     ) -> list[ImpurityChargeSusceptibility | None]:
         # One impurity charge susceptibility, or None, for each cluster
-        if susceptibility is None or callable(susceptibility):
-            return [susceptibility] * self.n_clusters
+        if susceptibility is None:
+            return [None] * self.n_clusters
         if len(susceptibility) != self.n_clusters:
             msg = f"Need an impurity charge susceptibility (got {len(susceptibility)}) for each cluster (got {self.n_clusters}) !"
             raise ValueError(msg)
+        for i in self._copies:
+            if susceptibility[i] is not None:
+                msg = f"The impurity charge susceptibility of cluster {i} must be None, as the cluster is a copy !"
+                raise ValueError(msg)
         return list(susceptibility)
 
     def _impurity_filling_slope(
@@ -608,7 +631,7 @@ class BaseLatticeSolver(ABC):
             susceptibility = susceptibilities[j]
             if susceptibility is not None:
                 if j not in chi:
-                    chi[j] = susceptibility(self.impurity_solvers[j])
+                    chi[j] = susceptibility()
                 slope += chi[j]
         return slope
 
@@ -687,41 +710,41 @@ class BaseLatticeSolver(ABC):
             return self.projectors_evaluator(kpoints)
         return self.projectors
 
-    def _get_band_integrands(self) -> tuple[Hamiltonian, BandObservables]:
-        def lattice_fields(
-            kpoints: KPoints | None,
-        ) -> tuple[
-            BlockMatrixLike,
-            BlockMatrixLike,
-            BlockMatrixLike,
-            Sequence[BlockMatrixLike] | None,
-            Sequence[BlockMatrixLike] | None,
-        ]:
-            if kpoints is None:
-                return (
-                    self.h0_kin_k,
-                    self.R_full,
-                    self.Lambda_full,
-                    self.projectors,
-                    self._projectors_qp,
-                )
-            h0 = self._get_h0_at(kpoints)
-            projectors = self._get_projectors_at(kpoints)
-            kinetic = helpers.get_h0_kin_k(
-                h0, projectors, self.gf_struct_mapping, h0_loc_matrix=self.h0_loc_matrix
+    def _lattice_fields(
+        self, kpoints: KPoints | None
+    ) -> tuple[
+        BlockMatrixLike,
+        BlockMatrixLike,
+        BlockMatrixLike,
+        Sequence[BlockMatrixLike] | None,
+        Sequence[BlockMatrixLike] | None,
+    ]:
+        if kpoints is None:
+            return (
+                self.h0_kin_k,
+                self.R_full,
+                self.Lambda_full,
+                self.projectors,
+                self._projectors_qp,
             )
-            qp_projectors = projectors
-            if self.n_ghost_electrons:
-                qp_projectors = helpers.get_ghost_projectors(
-                    h0, self.bath_size, projectors, self.gf_struct_mapping
-                )
-            R, Lambda = helpers.upfold_r_lambda(
-                self.R, self.Lambda, kinetic, qp_projectors, self.gf_struct_mapping
+        h0 = self._get_h0_at(kpoints)
+        projectors = self._get_projectors_at(kpoints)
+        kinetic = helpers.get_h0_kin_k(
+            h0, projectors, self.gf_struct_mapping, h0_loc_matrix=self.h0_loc_matrix
+        )
+        qp_projectors = projectors
+        if self.n_ghost_electrons:
+            qp_projectors = helpers.get_ghost_projectors(
+                h0, self.bath_size, projectors, self.gf_struct_mapping
             )
-            return kinetic, R, Lambda, projectors, qp_projectors
+        R, Lambda = helpers.upfold_r_lambda(
+            self.R, self.Lambda, kinetic, qp_projectors, self.gf_struct_mapping
+        )
+        return kinetic, R, Lambda, projectors, qp_projectors
 
+    def _get_band_integrands(self) -> tuple[Hamiltonian, BandObservables]:
         def get_hamiltonian(kpoints: KPoints | None) -> BlockMatrix:
-            kinetic, R, Lambda, _, _ = lattice_fields(kpoints)
+            kinetic, R, Lambda, _, _ = self._lattice_fields(kpoints)
             return {
                 block: helpers.get_h_qp(R[block], Lambda[block], h0)
                 for block, h0 in kinetic.items()
@@ -732,7 +755,9 @@ class BaseLatticeSolver(ABC):
             density_k: BlockMatrixLike,
             hole_density_k: BlockMatrixLike,
         ) -> IntegralValues:
-            kinetic, R, Lambda, projectors, qp_projectors = lattice_fields(kpoints)
+            kinetic, R, Lambda, projectors, qp_projectors = self._lattice_fields(
+                kpoints
+            )
             values: IntegralValues = {}
             for i, cluster in enumerate(self.gf_struct):
                 for block, _ in cluster:
@@ -1010,27 +1035,17 @@ class BaseLatticeSolver(ABC):
 
     def solve_impurities(self) -> None:
         """Solve the impurity problem of each cluster, and set :attr:`rho_f`, :attr:`rho_cf`, and :attr:`rho_c`."""
+        self._set_impurity_hamiltonians()
         for i in range(self.n_clusters):
             with self._stage("impurity", cluster=i):
-                h0_loc_matrix = self.h0_loc_matrix[i]
-                if self.double_counting is not None:
-                    rho = self.rho_c[i]
-                    if not rho:
-                        rho = {
-                            bl: R.T @ self.rho_qp[i][bl] @ R.conj()
-                            for bl, R in self.R[i].items()
-                        }
-                    potential = self.double_counting(i, rho)
-                    h0_loc_matrix = {
-                        bl: h0_loc_matrix[bl] - potential[bl] for bl in h0_loc_matrix
-                    }
-                self.impurity_solvers[i].set_h_imp(
-                    self.Lambda_c[i],
-                    self.D[i],
-                    h0_loc_matrix,
-                    mu=self.mu if self._impurities_take_mu else None,
-                )
                 self.impurity_solvers[i].solve()
+                predictor = (
+                    None
+                    if self._impurity_charge_predictors is None
+                    else self._impurity_charge_predictors[i]
+                )
+                if predictor is not None:
+                    predictor.add_states()
                 for bl, _ in self.gf_struct[i]:
                     self.rho_f[i][bl] = self.impurity_solvers[i].get_rho_f(bl)
                     self.rho_cf[i][bl] = self.impurity_solvers[i].get_rho_cf(bl)
@@ -1102,6 +1117,8 @@ class BaseLatticeSolver(ABC):
                 self.update_bath()
             with self._stage("impurities"):
                 rho_c = deepcopy(self.rho_c)
+                self._outside_filling_change = 0.0
+                self._predict_mu()
                 self.solve_impurities()
                 self._refit_mu(rho_c)
             with self._stage("residuals"):
@@ -1302,18 +1319,89 @@ class BaseLatticeSolver(ABC):
                 Z[i][bl] = self.R[i][bl].conj().T @ self.R[i][bl]
         return Z
 
+    def _set_impurity_hamiltonians(self) -> None:
+        for i in range(self.n_clusters):
+            h0_loc_matrix = self.h0_loc_matrix[i]
+            if self.double_counting is not None:
+                rho = self.rho_c[i]
+                if not rho:
+                    rho = {
+                        bl: R.T @ self.rho_qp[i][bl] @ R.conj()
+                        for bl, R in self.R[i].items()
+                    }
+                potential = self.double_counting(i, rho)
+                h0_loc_matrix = {
+                    bl: h0_loc_matrix[bl] - potential[bl] for bl in h0_loc_matrix
+                }
+            self.impurity_solvers[i].set_h_imp(
+                self.Lambda_c[i],
+                self.D[i],
+                h0_loc_matrix,
+                mu=self.mu if self._impurities_take_mu else None,
+            )
+
+    def _predict_mu(self) -> None:
+        predictors = self._impurity_charge_predictors
+        if predictors is None or self.iteration == 0:
+            return
+        assert self.n_target is not None
+        assert self.max_filling_error is not None
+        self._set_impurity_hamiltonians()
+        for predictor in predictors:
+            if predictor is not None:
+                predictor.set_h_imp_elements()
+        original_predictors = [
+            predictors[self._copies[i][0] if i in self._copies else i]
+            for i in range(self.n_clusters)
+        ]
+        outside = self._outside_filling()
+
+        def impurity_filling(dmu: float) -> float:
+            return sum(
+                cast(ImpurityChargePredictor, predictor).charge(dmu)
+                for predictor in original_predictors
+            )
+
+        def filling(dmu: float) -> float:
+            return outside(dmu) + impurity_filling(dmu)
+
+        outside_at_cycle_mu = outside(0.0)
+        dmu, outside_at_dmu = 0.0, outside_at_cycle_mu
+        n = outside_at_cycle_mu + impurity_filling(0.0)
+        if abs(n - self.n_target) > self.max_filling_error:
+            error = n - self.n_target
+            previous, step = 0.0, -error
+            for _ in range(_MAX_MU_PREDICTION_DOUBLINGS):
+                if (filling(step) - self.n_target) * error <= 0:
+                    dmu = brentq(lambda x: filling(x) - self.n_target, previous, step)
+                    outside_at_dmu = outside(dmu)
+                    n = outside_at_dmu + impurity_filling(dmu)
+                    break
+                previous, step = step, 2 * step
+        self._move_mu(dmu)
+        self._outside_filling_change = outside_at_dmu - outside_at_cycle_mu
+        self._emit(
+            "filling.predicted",
+            iteration=self.iteration + 1,
+            mu=self.mu,
+            dmu=dmu,
+            filling=n,
+            target=self.n_target,
+        )
+
     def _refit_mu(self, rho_c: list[BlockMatrix]) -> None:
         # With max_filling_error, move mu, Lambda and Lambda_c together and solve
         # the impurities again until the filling is within it. The double
         # counting of the cycle comes from the rho_c it starts with, and the
         # refits hold it, as they hold D
-        self._outside_filling_change = 0.0
         if self.n_target is None or self.mu is None:
             return
         self._history = [(self.mu, self.n_electrons)]
         if self.max_filling_error is None:
             return
-        outside = self._filling_outside_clusters(0.0)
+        outside_at_cycle_mu = (
+            self._outside_filling()(0.0) - self._outside_filling_change
+        )
         # Highest mu with too few electrons and lowest mu with too many
         below, above = -np.inf, np.inf
         for _ in range(self.max_mu_refits):
@@ -1333,7 +1421,9 @@ class BaseLatticeSolver(ABC):
             self._move_mu(mu - self.mu)
             self.rho_c = deepcopy(rho_c)
             self.solve_impurities()
-            self._outside_filling_change = self._filling_outside_clusters(0.0) - outside
+            self._outside_filling_change = (
+                self._outside_filling()(0.0) - outside_at_cycle_mu
+            )
             self._history.append((mu, self.n_electrons))
 
     def _move_mu(self, dmu: float) -> None:
@@ -1349,36 +1439,77 @@ class BaseLatticeSolver(ABC):
         # dn_electrons/dmu at the R of the cycle for a step of mu that moves
         # Lambda with it: the bands of the orbitals in no cluster, and the
         # impurities given
-        bands = (
-            self._filling_outside_clusters(_SLOPE_DMU)
-            - self._filling_outside_clusters(0.0)
-        ) / _SLOPE_DMU
+        outside = self._outside_filling()
+        bands = (outside(_SLOPE_DMU) - outside(0.0)) / _SLOPE_DMU
         return bands + self._impurity_filling_slope(
             self._impurity_charge_susceptibility
         )
 
-    def _filling_outside_clusters(self, dmu: float) -> float:
-        # Electrons in the bands of the orbitals in no cluster after a step dmu
-        # of mu that moves Lambda with it
+    def _outside_filling(self) -> Callable[[float], float]:
+        # Electrons in the bands of the orbitals in no cluster, as a function
+        # of the change dmu of mu and Lambda
         assert self.mu is not None
-        R_full, Lambda_full = self.R_full, self.Lambda_full
-        self.R_full, self.Lambda_full = helpers.upfold_r_lambda(
-            self.R,
-            _shifted(self.Lambda, dmu),
-            self.h0_kin_k,
-            self._projectors_qp,
-            self.gf_struct_mapping,
-        )
-        hamiltonian, observables = self._get_band_integrands()
-        result = self.band_integrator.integrate(
-            hamiltonian, observables=observables, mu=self.mu + dmu, beta=self.beta
-        )
-        self.R_full, self.Lambda_full = R_full, Lambda_full
-        return float(result.n_electrons) - sum(
-            float(np.trace(result.values["rho_qp", i, bl]).real)
-            for i, cluster in enumerate(self.gf_struct)
-            for bl, _ in cluster
-        )
+        mu = self.mu
+
+        def h_qp_and_cluster_projector(
+            kpoints: KPoints | None,
+        ) -> tuple[BlockMatrix, BlockMatrix]:
+            kinetic: BlockMatrixLike
+            R: BlockMatrixLike
+            Lambda: BlockMatrixLike
+            if kpoints is None:
+                kinetic, qp_projectors = self.h0_kin_k, self._projectors_qp
+                R, Lambda = helpers.upfold_r_lambda(
+                    self.R, self.Lambda, kinetic, qp_projectors, self.gf_struct_mapping
+                )
+            else:
+                kinetic, R, Lambda, _, qp_projectors = self._lattice_fields(kpoints)
+            h_qp = {
+                bl: helpers.get_h_qp(R[bl], Lambda[bl], h0)
+                for bl, h0 in kinetic.items()
+            }
+            identities = [
+                {bl: np.eye(L.shape[0]) for bl, L in Lambda_i.items()}
+                for Lambda_i in self.Lambda
+            ]
+            C = helpers.upfold(
+                identities, kinetic, qp_projectors, self.gf_struct_mapping
+            )
+            return h_qp, C
+
+        if self.h0_k_evaluator is None:
+            h_qp_now, C_now = h_qp_and_cluster_projector(None)
+
+        def integrands(dmu: float) -> tuple[Hamiltonian, BandObservables]:
+            if self.h0_k_evaluator is None:
+                return {
+                    bl: h + dmu * C_now[bl] for bl, h in h_qp_now.items()
+                }, lambda _, density_k, __: {
+                    "outside": helpers.get_outside_filling_k(density_k, C_now)
+                }
+
+            def hamiltonian(kpoints: KPoints | None) -> BlockMatrix:
+                h_qp, C = h_qp_and_cluster_projector(kpoints)
+                return {bl: h + dmu * C[bl] for bl, h in h_qp.items()}
+
+            def observables(
+                kpoints: KPoints | None,
+                density_k: BlockMatrixLike,
+                _hole_density_k: BlockMatrixLike,
+            ) -> IntegralValues:
+                _, C = h_qp_and_cluster_projector(kpoints)
+                return {"outside": helpers.get_outside_filling_k(density_k, C)}
+
+            return hamiltonian, observables
+
+        def filling(dmu: float) -> float:
+            hamiltonian, observables = integrands(dmu)
+            result = self.band_integrator.integrate(
+                hamiltonian, observables=observables, mu=mu + dmu, beta=self.beta
+            )
+            return float(result.values["outside"].real)
+
+        return filling
 
     def _band_mu(self, n_target: float) -> float:
         # The chemical potential at which the quasiparticle bands have the

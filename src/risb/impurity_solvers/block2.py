@@ -19,6 +19,7 @@
 
 import logging
 import math
+import shutil
 import tempfile
 import warnings
 from collections.abc import Collection, Mapping, Sequence
@@ -37,6 +38,7 @@ from risb.diagnostics.block2 import (
     capture_block2,
     diagnostic_stage,
 )
+from risb.helpers import get_rayleigh_ritz_impurity_charge
 from risb.helpers_fockit import Op_to_tensors
 from risb.helpers_mpi import Comm, SerialComm, gather_tasks, round_robin
 from risb.types import (
@@ -44,6 +46,7 @@ from risb.types import (
     BlockMatrixLike,
     Checkpoint,
     GfStruct,
+    ImpurityChargePredictor,
     ThermalImpuritySolver,
     ZeroTemperatureImpuritySolver,
 )
@@ -70,6 +73,10 @@ _FIRST_DAVIDSON_TOL = 1e-15
 # conserved spin
 _SEED_TIME = 0.01
 _SEED_ORDER = 6
+# Eigenvalue of the inner products of the kept states of ChargePredictor,
+# relative to the largest, below which a combination of them is dropped.
+# Above the noise of the overlaps of matrix product states
+_LINEAR_DEPENDENCE_TOL = 1e-8
 
 # block2's matrix product states and operators, which it gives no types for
 type _MPS = Any
@@ -147,6 +154,13 @@ class Block2Settings:
     sub_sweeps : int, optional
         Sweeps of each imaginary time step of ``"purification"``. Default
         is 4.
+    response_sweeps : int, optional
+        Most sweeps of the linear solver of the charge response of
+        :meth:`Block2ImpuritySolver.charge_response`. Default is 20.
+    response_tol : float, optional
+        Convergence threshold of the linear solver of the charge response,
+        of the order of the tolerance of the ground state. Default is
+        ``1e-8``.
     stack_mem : int, optional
         Bytes of working memory of block2. Default is ``1 << 30`` (1 GiB),
         block2's default.
@@ -173,6 +187,8 @@ class Block2Settings:
     max_sweeps: int = 40
     refine_sweeps: int = 20
     sub_sweeps: int = 4
+    response_sweeps: int = 20
+    response_tol: float = 1e-8
     stack_mem: int = 1 << 30
     n_threads: int | None = None
     scratch_dir: str | None = None
@@ -954,6 +970,7 @@ class Block2ImpuritySolver(_Block2Base, ZeroTemperatureImpuritySolver):
         # The directory with the matrix product state of the ground state, and
         # its sector
         self._state: tuple[tempfile.TemporaryDirectory[str], _Sector] | None = None
+        self._charge_response: str | None = None
         self.set_h_int(h_int)
 
         #: float : Lowest energy of the impurity problem, set by :meth:`solve`.
@@ -1003,6 +1020,63 @@ class Block2ImpuritySolver(_Block2Base, ZeroTemperatureImpuritySolver):
             self._previous = previous
 
         return Checkpoint(restore)
+
+    def charge_response(self) -> str:
+        r"""
+        Return the tag of the charge response of the ground state of the last solve.
+
+        It is the matrix product state :math:`(H - E_0)^{-1} Q N_c |0\rangle`,
+        with :math:`Q = 1 - |0\rangle\langle 0|`, the first-order change of
+        the ground state :math:`|0\rangle` when :math:`-\delta\mu N_c` is added
+        to the impurity Hamiltonian :math:`H`. It is found once after each
+        :meth:`solve`, by block2's linear solver at the bond dimension of the
+        solver, with ``response_sweeps`` and ``response_tol`` of
+        :attr:`settings`, and kept with the ground state.
+
+        Returns
+        -------
+        str
+            Tag of the state in the directory of the ground state.
+
+        Raises
+        ------
+        ValueError
+            If the impurity problem is not solved, or on a rank without the
+            ground state.
+
+        """
+        if self._state is None:
+            msg = "The charge response needs a solved impurity problem."
+            raise ValueError(msg)
+        if self._charge_response is None:
+            scratch, sector = self._state
+            L = len(self._sites)
+            driver, symm_type = self._driver(scratch.name, sector, L)
+            ket = driver.load_mps("KET")
+            ground = driver.copy_mps(ket, tag="GROUND")
+            shifted = self._mpo(
+                driver, symm_type, self._const - self.gs_energy, self._h1, self._V
+            )
+            response = driver.copy_mps(ket, tag="RESPONSE")
+            bond_dims = [self.bond_dim]
+            sweeps, tol = self.settings.response_sweeps, self.settings.response_tol
+            driver.multiply(
+                response,
+                _n_c_mpo(self, driver, symm_type),
+                ket,
+                left_mpo=shifted,
+                proj_mpss=[ground],
+                proj_weights=[1.0],
+                bond_dims=bond_dims,
+                bra_bond_dims=bond_dims,
+                n_sweeps=sweeps,
+                tol=tol,
+                thrds=[tol] * sweeps,
+                iprint=self._iprint,
+            )
+            _remove_mps(scratch.name, "GROUND")
+            self._charge_response = "RESPONSE"
+        return self._charge_response
 
     @override
     @diagnostic_stage
@@ -1064,6 +1138,7 @@ class Block2ImpuritySolver(_Block2Base, ZeroTemperatureImpuritySolver):
         if self._state is not None:
             self._state[0].cleanup()
         self._state = None
+        self._charge_response = None
         # The rank of the lowest sector has its state
         G, discarded_weight, variance = np.zeros((2 * L, 2 * L)), 0.0, 0.0
         for i, run in runs.items():
@@ -1878,9 +1953,182 @@ class Block2ThermalImpuritySolver(_Block2Base, ThermalImpuritySolver):
         return self._mpo(driver, SymmetryTypes.SGF, const, h1_doubled, V_doubled)
 
 
-def charge_susceptibility(
-    impurity_solver: Block2ImpuritySolver, n_sweeps: int = 20, tol: float = 1e-8
-) -> float:
+class ChargePredictor(ImpurityChargePredictor):
+    r"""
+    Number of electrons :math:`N_c` on the physical orbitals of a :class:`Block2ImpuritySolver`, for an impurity Hamiltonian that has not been solved.
+
+    The prediction is :math:`N_c` of the lowest state of the impurity
+    Hamiltonian in the span of the kept states. These are the ground state
+    :math:`|0\rangle` and the charge response
+    :math:`(H - E_0)^{-1} Q N_c |0\rangle` of each of the last `max_solves`
+    solves, with :math:`Q = 1 - |0\rangle\langle 0|`. The charge response is
+    the first-order change of the ground state when :math:`-\delta\mu N_c` is
+    added to :math:`H`. Nearly linearly dependent combinations of the kept
+    states are dropped. The kept states are of one sector of the spin: a solve
+    in another sector replaces them.
+
+    Parameters
+    ----------
+    impurity_solver : Block2ImpuritySolver
+        Impurity solver whose ground states are kept.
+    max_solves : int, optional
+        Number of the most recent solves whose states are kept.
+    match_last_solve : bool, optional
+        Shift the prediction so that at the impurity Hamiltonian of the last
+        solve it is the :math:`N_c` of that solve. This removes the error of
+        the Rayleigh-Ritz method from a ground state that is not an exact
+        eigenstate, e.g., a matrix product state of finite bond dimension.
+        Default is ``True``.
+
+    """
+
+    def __init__(
+        self,
+        impurity_solver: Block2ImpuritySolver,
+        max_solves: int = 4,
+        match_last_solve: bool = True,
+    ) -> None:
+        self.impurity_solver = impurity_solver
+        self.max_solves = max_solves
+        self.match_last_solve = match_last_solve
+
+        #: list of str : Tags of the matrix product states of the ground state
+        #: and charge response of each kept solve.
+        self.tags: list[str] = []
+
+        #: tuple : Sector of the kept states, as :attr:`Block2ImpuritySolver.sector`.
+        self.sector: tuple[tuple[str, float], ...] | None = None
+
+        #: numpy.ndarray : Inner products of the states of :attr:`tags`.
+        self.inner_products = np.zeros((0, 0), dtype=complex)
+
+        #: numpy.ndarray : Matrix elements of :math:`N_c` between the states of
+        #: :attr:`tags`.
+        self.N_c_elements = np.zeros((0, 0), dtype=complex)
+
+        #: numpy.ndarray : Matrix elements of the impurity Hamiltonian between
+        #: the states of :attr:`tags`.
+        self.h_imp_elements = np.zeros((0, 0), dtype=complex)
+
+        #: float : :math:`N_c` of the Rayleigh-Ritz method at the impurity
+        #: Hamiltonian of the last solve minus the :math:`N_c` of that solve.
+        #: Zero without `match_last_solve`.
+        self.charge_offset = 0.0
+
+        self._scratch: tempfile.TemporaryDirectory[str] | None = None
+        self._n_added = 0
+
+    @override
+    def add_states(self) -> None:
+        """
+        Keep the ground state and charge response of the last solve of :attr:`impurity_solver`.
+
+        With `match_last_solve`, also set :attr:`h_imp_elements` and
+        :attr:`charge_offset` at the impurity Hamiltonian of the solve.
+
+        """
+        solver = self.impurity_solver
+        if self._scratch is None:
+            self._scratch = tempfile.TemporaryDirectory(dir=solver.settings.scratch_dir)
+        sector = tuple(sorted(solver.sector.items()))
+        n_drop = len(self.tags) if sector != self.sector else 0
+        self.sector = sector
+        kept: list[str] = []
+        if solver._state is not None:
+            response = solver.charge_response()
+            scratch, solver_sector = solver._state
+            L = len(solver._sites)
+            driver, _ = solver._driver(scratch.name, solver_sector, L)
+            norm = driver.expectation(
+                driver.load_mps(response),
+                driver.get_identity_mpo(),
+                driver.load_mps(response),
+                iprint=solver._iprint,
+            )
+            kept = ["KET"] if norm == 0 else ["KET", response]
+            for m, tag in enumerate(kept):
+                new_tag = f"STATE{self._n_added + m}"
+                copied = driver.copy_mps(driver.load_mps(tag), tag=new_tag)
+                copied.info.save_data(f"{scratch.name}/{new_tag}-mps_info.bin")
+                _move_mps(scratch.name, self._scratch.name, new_tag)
+        n_new = solver.comm.allreduce(len(kept))
+        new_tags = [f"STATE{self._n_added + m}" for m in range(n_new)]
+        self._n_added += n_new
+        n_drop = max(n_drop, len(self.tags) + len(new_tags) - 2 * self.max_solves)
+        for tag in self.tags[:n_drop]:
+            _remove_mps(self._scratch.name, tag)
+        self.tags = [*self.tags[n_drop:], *new_tags]
+        overlaps = np.zeros((len(self.tags), len(new_tags)), dtype=complex)
+        N_c = np.zeros_like(overlaps)
+        if solver._state is not None:
+            driver, symm_type = solver._driver(
+                self._scratch.name, solver._state[1], len(solver._sites)
+            )
+            identity = driver.get_identity_mpo()
+            N_c_mpo = _n_c_mpo(solver, driver, symm_type)
+            for j, new_tag in enumerate(new_tags):
+                ket = driver.load_mps(new_tag)
+                for i, tag in enumerate(self.tags):
+                    bra = driver.load_mps(tag)
+                    driver.align_mps_center(bra, ket)
+                    overlaps[i, j] = driver.expectation(
+                        bra, identity, ket, iprint=solver._iprint
+                    )
+                    N_c[i, j] = driver.expectation(
+                        bra, N_c_mpo, ket, iprint=solver._iprint
+                    )
+        self.inner_products = _with_new_states(
+            self.inner_products, n_drop, solver.comm.allreduce(overlaps)
+        )
+        self.N_c_elements = _with_new_states(
+            self.N_c_elements, n_drop, solver.comm.allreduce(N_c)
+        )
+        self.charge_offset = 0.0
+        if self.match_last_solve:
+            self.set_h_imp_elements()
+            self.charge_offset = self.charge(0.0) - sum(
+                np.trace(solver.rho_c[bl]).real for bl, _ in solver.gf_struct
+            )
+
+    @override
+    def set_h_imp_elements(self) -> None:
+        """Set :attr:`h_imp_elements` from the current impurity Hamiltonian of :attr:`impurity_solver`."""
+        solver = self.impurity_solver
+        elements = np.zeros((len(self.tags),) * 2, dtype=complex)
+        if solver._state is not None and self._scratch is not None:
+            driver, symm_type = solver._driver(
+                self._scratch.name, solver._state[1], len(solver._sites)
+            )
+            h_imp = solver._mpo(driver, symm_type, solver._const, solver._h1, solver._V)
+            for j, ket_tag in enumerate(self.tags):
+                ket = driver.load_mps(ket_tag)
+                for i, bra_tag in enumerate(self.tags[: j + 1]):
+                    bra = driver.load_mps(bra_tag)
+                    driver.align_mps_center(bra, ket)
+                    elements[i, j] = driver.expectation(
+                        bra, h_imp, ket, iprint=solver._iprint
+                    )
+                    elements[j, i] = np.conj(elements[i, j])
+        self.h_imp_elements = solver.comm.allreduce(elements)
+
+    @override
+    def charge(self, dmu: float) -> float:
+        r"""Return :math:`N_c` of the lowest state in the span of the states of :attr:`tags`, with :math:`-\delta\mu N_c` added to the impurity Hamiltonian of :meth:`set_h_imp_elements` and :math:`\delta\mu` = ``dmu``, minus :attr:`charge_offset`."""
+        scale = 1 / np.sqrt(np.diag(self.inner_products).real)
+        normalized = np.outer(scale, scale)
+        return (
+            get_rayleigh_ritz_impurity_charge(
+                normalized * self.inner_products,
+                normalized * self.h_imp_elements,
+                normalized * self.N_c_elements,
+                dmu,
+                _LINEAR_DEPENDENCE_TOL,
+            )
+            - self.charge_offset
+        )
+
+
+def charge_susceptibility(impurity_solver: Block2ImpuritySolver) -> float:
     r"""
     Return the static charge susceptibility of the physical orbitals of a solved impurity problem.
 
@@ -1893,64 +2141,31 @@ def charge_susceptibility(
         = 2 \langle 0 | N_c Q (H - E_0)^{-1} Q N_c | 0 \rangle,
 
     in the sector of the ground state :math:`|0\rangle`, with
-    :math:`Q = 1 - |0\rangle\langle 0|`. The state
-    :math:`(H - E_0)^{-1} Q N_c |0\rangle` is found by block2's linear solver
-    at the bond dimension of the solver, with :math:`|0\rangle` projected out.
-    The ground state must not be degenerate.
+    :math:`Q = 1 - |0\rangle\langle 0|`, from the charge response of
+    :meth:`Block2ImpuritySolver.charge_response`. The ground state must not be
+    degenerate.
 
     Parameters
     ----------
     impurity_solver : Block2ImpuritySolver
         Solved, so that it keeps the matrix product state of its ground state.
-    n_sweeps : int, optional
-        Largest number of sweeps of the linear solver.
-    tol : float, optional
-        Convergence threshold of the linear solver, of the order of the
-        tolerance of the ground state. Default is ``1e-8``.
 
     Returns
     -------
     float
 
     """
-    if impurity_solver._state is None:
-        msg = "The charge susceptibility needs a solved impurity problem."
-        raise ValueError(msg)
+    tag = impurity_solver.charge_response()
+    assert impurity_solver._state is not None
     scratch, sector = impurity_solver._state
-    L = len(impurity_solver._sites)
-    driver, symm_type = impurity_solver._driver(scratch.name, sector, L)
-    ket = driver.load_mps("KET")
-    ground = driver.copy_mps(ket, tag="GROUND")
-    h1 = np.zeros((2 * L, 2 * L))
-    for bl, size in impurity_solver.gf_struct:
-        for a in range(size):
-            h1[impurity_solver._index[bl, a], impurity_solver._index[bl, a]] = 1.0
-    N_c = impurity_solver._mpo(driver, symm_type, 0.0, h1, np.zeros((2 * L,) * 4))
-    shifted = impurity_solver._mpo(
-        driver,
-        symm_type,
-        impurity_solver._const - impurity_solver.gs_energy,
-        impurity_solver._h1,
-        impurity_solver._V,
+    driver, symm_type = impurity_solver._driver(
+        scratch.name, sector, len(impurity_solver._sites)
     )
-    bra = driver.copy_mps(ket, tag="RESPONSE")
-    bond_dims = [impurity_solver.bond_dim]
-    overlap = driver.multiply(
-        bra,
-        N_c,
-        ket,
-        left_mpo=shifted,
-        proj_mpss=[ground],
-        proj_weights=[1.0],
-        bond_dims=bond_dims,
-        bra_bond_dims=bond_dims,
-        n_sweeps=n_sweeps,
-        tol=tol,
-        thrds=[tol] * n_sweeps,
-        iprint=impurity_solver._iprint,
-    )
-    for tag in ("GROUND", "RESPONSE"):
-        _remove_mps(scratch.name, tag)
+    ground = driver.load_mps("KET")
+    response = driver.load_mps(tag)
+    driver.align_mps_center(response, ground)
+    N_c = _n_c_mpo(impurity_solver, driver, symm_type)
+    overlap = driver.expectation(ground, N_c, response, iprint=impurity_solver._iprint)
     return 2 * float(np.real(overlap))
 
 
@@ -1991,6 +2206,39 @@ def _sector_size(L: int, n_elec: int, sector: _Sector) -> int:
     if twosz is not None:
         return math.comb(L, (n_elec + twosz) // 2) * math.comb(L, (n_elec - twosz) // 2)
     return math.comb(2 * L, n_elec)
+
+
+def _n_c_mpo(
+    impurity_solver: Block2ImpuritySolver, driver: DMRGDriver, symm_type: SymmetryTypes
+) -> _MPO:
+    # The MPO of the number of electrons on the physical orbitals
+    L = len(impurity_solver._sites)
+    h1 = np.zeros((2 * L, 2 * L))
+    for bl, size in impurity_solver.gf_struct:
+        for a in range(size):
+            h1[impurity_solver._index[bl, a], impurity_solver._index[bl, a]] = 1.0
+    return impurity_solver._mpo(driver, symm_type, 0.0, h1, np.zeros((2 * L,) * 4))
+
+
+def _move_mps(source: str, target: str, tag: str) -> None:
+    # Move the files of the matrix product state tag from source to target
+    for path in Path(source).iterdir():
+        if path.name == f"{tag}-mps_info.bin" or f".{tag}." in path.name:
+            shutil.move(path, Path(target) / path.name)
+
+
+def _with_new_states(
+    M: NDArray[np.inexact], n_drop: int, new_columns: NDArray[np.inexact]
+) -> NDArray[np.inexact]:
+    # M without its first n_drop states, with the columns and rows of the new
+    # states, <psi_i|op|psi_new> for every kept state i
+    old = M[n_drop:, n_drop:]
+    n_old = old.shape[0]
+    grown = np.zeros((n_old + new_columns.shape[1],) * 2, dtype=complex)
+    grown[:n_old, :n_old] = old
+    grown[:, n_old:] = new_columns
+    grown[n_old:, :] = new_columns.conj().T
+    return grown
 
 
 def _remove_mps(scratch: str, tag: str) -> None:

@@ -98,7 +98,7 @@ class ThermalLatticeSolver(BaseLatticeSolver):
         The step of :attr:`mu` after each cycle, with `n_target`. Default is
         :class:`risb.stabilization.MuUnitStep`; see also
         :class:`risb.stabilization.MuNewtonStep`.
-    impurity_charge_susceptibility : callable or sequence of callable, optional
+    impurity_charge_susceptibility : sequence of callable, optional
         As in :class:`.PhysicalMuLatticeSolver`, but of the thermal state of
         each impurity.
     max_filling_error : float or None, optional
@@ -178,8 +178,7 @@ class ThermalLatticeSolver(BaseLatticeSolver):
         density_matching_regularization: DensityMatchingRegularization = "uniform",
         density_matching_regularization_scale: float = 1e-3,
         mu_step: ChemicalPotentialStep = _DEFAULT_MU_STEP,
-        impurity_charge_susceptibility: ImpurityChargeSusceptibility
-        | Sequence[ImpurityChargeSusceptibility | None]
+        impurity_charge_susceptibility: Sequence[ImpurityChargeSusceptibility | None]
         | None = None,
         max_filling_error: float | None = None,
         mu_impurity_refit_step: ChemicalPotentialStep = _DEFAULT_REFIT_STEP,

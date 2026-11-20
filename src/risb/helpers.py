@@ -2452,6 +2452,79 @@ def get_rho_qp(
     return np.sum(P @ middle @ P_dag, axis=0).T
 
 
+def get_outside_filling_k(
+    density_k: BlockMatrixLike, cluster_projector: BlockMatrixLike
+) -> NDArray[np.float64]:
+    r"""
+    Return the number of electrons on the orbitals in no cluster at each k-point.
+
+    Parameters
+    ----------
+    density_k : risb.types.BlockMatrixLike
+        Density matrix of the bands at each k-point, indexed as k, orb_i, orb_j.
+    cluster_projector : risb.types.BlockMatrixLike
+        Projector :math:`C` onto the quasiparticles of the clusters in each
+        block of ``density_k``, :math:`\sum_i P_i^\dagger P_i`. It can depend
+        on k.
+
+    Returns
+    -------
+    numpy.ndarray
+        :math:`\sum_{\mathrm{blocks}} \mathrm{Tr}[(1 - C) \rho(k)]`, indexed
+        as k.
+
+    """
+    filling = np.zeros(next(iter(density_k.values())).shape[0])
+    for bl, rho in density_k.items():
+        outside = np.einsum("...aa->...", rho) - np.einsum(
+            "...ab,...ba->...", cluster_projector[bl], rho
+        )
+        filling = filling + outside.real
+    return filling
+
+
+def get_rayleigh_ritz_impurity_charge(
+    inner_products: NDArray[np.inexact],
+    h_imp_elements: NDArray[np.inexact],
+    N_c_elements: NDArray[np.inexact],
+    dmu: float,
+    tol: float,
+) -> float:
+    r"""
+    Return :math:`N_c` of the lowest state of an impurity Hamiltonian in the span of some states, by the Rayleigh-Ritz method.
+
+    Parameters
+    ----------
+    inner_products : numpy.ndarray
+        :math:`\langle \psi_i | \psi_j \rangle` of the states.
+    h_imp_elements : numpy.ndarray
+        :math:`\langle \psi_i | H | \psi_j \rangle`, with :math:`H` the
+        impurity Hamiltonian.
+    N_c_elements : numpy.ndarray
+        :math:`\langle \psi_i | N_c | \psi_j \rangle`, with :math:`N_c` the
+        number of electrons on the physical orbitals.
+    dmu : float
+        :math:`-\delta\mu N_c` is added to :math:`H`, with
+        :math:`\delta\mu` = ``dmu``.
+    tol : float
+        Combinations of the states with an eigenvalue of ``inner_products``
+        below ``tol`` times the largest are dropped, as nearly linearly
+        dependent.
+
+    Returns
+    -------
+    float
+
+    """
+    values, vectors = np.linalg.eigh(inner_products)
+    independent = values > tol * values[-1]
+    orthonormal = vectors[:, independent] / np.sqrt(values[independent])
+    h = orthonormal.conj().T @ (h_imp_elements - dmu * N_c_elements) @ orthonormal
+    _, lowest = np.linalg.eigh((h + h.conj().T) / 2)
+    coefficients = orthonormal @ lowest[:, 0]
+    return float(np.vdot(coefficients, N_c_elements @ coefficients).real)
+
+
 def get_ke(
     h0_kin_k_R: NDArray[np.inexact],
     eigenvectors: NDArray[np.inexact],

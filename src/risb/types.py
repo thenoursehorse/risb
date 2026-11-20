@@ -254,10 +254,29 @@ class DensityFeedback(Protocol):
         """
 
 
-type ImpurityChargeSusceptibility = Callable[
-    ["ZeroTemperatureImpuritySolver | ThermalImpuritySolver"], float
-]
-"""Charge susceptibility of the physical orbitals of a solved impurity problem, e.g., :func:`risb.impurity_solvers.fockit.charge_susceptibility`."""
+type ImpurityChargeSusceptibility = Callable[[], float]
+"""Charge susceptibility of the physical orbitals of one solved impurity problem, e.g., ``partial(risb.impurity_solvers.fockit.charge_susceptibility, impurity_solver)``."""
+
+
+class ImpurityChargePredictor(Protocol):
+    r"""
+    Number of electrons :math:`N_c` on the physical orbitals of one impurity, for an impurity Hamiltonian that has not been solved.
+
+    :math:`N_c` comes from earlier solves of the impurity, e.g., from the
+    lowest state of the impurity Hamiltonian in the span of their states
+    (Rayleigh-Ritz method). The lattice solver uses it to set the chemical
+    potential before the impurity solves. An example is
+    :class:`risb.impurity_solvers.fockit.ChargePredictor`.
+    """
+
+    def add_states(self) -> None:
+        """Keep the ground state of the last solve of the impurity solver."""
+
+    def set_h_imp_elements(self) -> None:
+        """Set the matrix elements of the current impurity Hamiltonian between the kept states."""
+
+    def charge(self, dmu: float) -> float:
+        r"""Return :math:`N_c` of the lowest state in the span of the kept states, with :math:`-\delta\mu N_c` added to the impurity Hamiltonian of :meth:`set_h_imp_elements` and :math:`\delta\mu` = ``dmu``."""
 
 
 class ChemicalPotentialStep(Protocol):

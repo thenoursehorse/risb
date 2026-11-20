@@ -1,5 +1,7 @@
 # ruff: noqa: D100, D103
+from collections.abc import Callable
 from copy import deepcopy
+from functools import partial
 
 import numpy as np
 import pytest
@@ -8,10 +10,11 @@ from test_common import bethe_h0_k, build_cubic_h0_k, symmetrize_blocks
 
 from risb import LatticeSolver, PhysicalMuLatticeSolver
 from risb.helpers_fockit import h_int_kanamori
-from risb.impurity_solvers import FockitImpuritySolver
-from risb.impurity_solvers.fockit import charge_susceptibility
+from risb.impurity_solvers import DummyImpuritySolver, FockitImpuritySolver
+from risb.impurity_solvers.fockit import ChargePredictor, charge_susceptibility
 from risb.kintegration import BandKIntegrator, WeightedKPointIntegrator
 from risb.stabilization import MuNewtonStep, MuSecantStep
+from risb.types import BlockMatrix
 
 SPINS = ["up", "dn"]
 
@@ -161,16 +164,21 @@ def test_mu_steps_and_refits_reach_the_solution_of_the_unit_step() -> None:
     sz = nc("up", 0) - nc("dn", 0)
     sz += sum((nc("bath_up", a) - nc("bath_dn", a) for a in range(3)), zero())
 
-    def solved(**options: object) -> tuple[PhysicalMuLatticeSolver, list[float]]:
+    def impurity_solver() -> FockitImpuritySolver:
+        return FockitImpuritySolver(
+            U * nc("up", 0) * nc("dn", 0),
+            gf_struct,
+            diagonal_symmetries={sz: 0},
+            bath_size=bath_size,
+        )
+
+    def solved(
+        solver: FockitImpuritySolver, **options: object
+    ) -> tuple[PhysicalMuLatticeSolver, list[float]]:
         S = PhysicalMuLatticeSolver(
             h0_k=dict.fromkeys(SPINS, h0_k),
             gf_struct=gf_struct,
-            impurity_solvers=FockitImpuritySolver(
-                U * nc("up", 0) * nc("dn", 0),
-                gf_struct,
-                diagonal_symmetries={sz: 0},
-                bath_size=bath_size,
-            ),
+            impurity_solvers=solver,
             band_integrator=BandKIntegrator(WeightedKPointIntegrator(), beta=100),
             projectors=[dict.fromkeys(SPINS, np.eye(2)[:1])],
             symmetrizers=[symmetrize_blocks],
@@ -184,15 +192,27 @@ def test_mu_steps_and_refits_reach_the_solution_of_the_unit_step() -> None:
         assert S.solve(tol=1e-9, maxiter=300, callbacks=callbacks).converged
         return S, fillings
 
-    expected, _ = solved()
-    chi = {"impurity_charge_susceptibility": charge_susceptibility}
+    def chi(solver: FockitImpuritySolver) -> dict[str, object]:
+        return {
+            "impurity_charge_susceptibility": [partial(charge_susceptibility, solver)]
+        }
+
+    expected, _ = solved(impurity_solver())
     refit = {"max_filling_error": 1e-4, "max_mu_refits": 10}
-    for options in (
-        {"mu_step": MuNewtonStep(), **chi},
-        {**refit, **chi},
-        {**refit, "mu_impurity_refit_step": MuSecantStep()},
-    ):
-        S, fillings = solved(**options)
+    options_of_solver: list[Callable[[FockitImpuritySolver], dict[str, object]]] = [
+        lambda solver: {"mu_step": MuNewtonStep(), **chi(solver)},
+        lambda solver: {**refit, **chi(solver)},
+        lambda _: {**refit, "mu_impurity_refit_step": MuSecantStep()},
+        lambda solver: {
+            **refit,
+            **chi(solver),
+            "impurity_charge_predictor": [ChargePredictor(solver)],
+        },
+    ]
+    for options_of in options_of_solver:
+        solver = impurity_solver()
+        options = options_of(solver)
+        S, fillings = solved(solver, **options)
         if "max_filling_error" in options:
             assert fillings == pytest.approx([n_target] * len(fillings), abs=1e-4)
         # mu lies in a gap, so the filling does not fix it
@@ -280,6 +300,50 @@ def test_physical_mu_finds_the_neel_antiferromagnet() -> None:
     assert S.n_electrons == pytest.approx(2.0, abs=1e-8)
     m = [np.trace(S.rho_c[i]["up"] - S.rho_c[i]["dn"]).real for i in range(2)]
     assert m[0] > 0.9
+    assert m[1] == pytest.approx(-m[0], abs=1e-6)
+
+
+def test_predicted_mu_keeps_the_filling_of_the_neel_antiferromagnet() -> None:
+    # The second sublattice is a copy of the first with the spins swapped
+    U, B = 4.0, 3
+    e = bethe_h0_k(400)
+    h0_k = np.block([[0 * e, e], [e, 0 * e]])
+    gf_struct = [(bl, 1) for bl in SPINS]
+    bath_size = dict.fromkeys(SPINS, B)
+    solver = FockitImpuritySolver(
+        U * nc("up", 0) * nc("dn", 0), gf_struct, bath_size=bath_size
+    )
+
+    def swap_spin(A: BlockMatrix) -> BlockMatrix:
+        return {"up": A["dn"], "dn": A["up"]}
+
+    S = PhysicalMuLatticeSolver(
+        h0_k=dict.fromkeys(SPINS, h0_k),
+        gf_struct=[gf_struct] * 2,
+        impurity_solvers=[solver, DummyImpuritySolver(solver, rotations=[swap_spin])],
+        band_integrator=BandKIntegrator(WeightedKPointIntegrator(), beta=100),
+        projectors=[
+            dict.fromkeys(SPINS, np.eye(2)[:1]),
+            dict.fromkeys(SPINS, np.eye(2)[1:]),
+        ],
+        force_real=True,
+        bath_size=[bath_size] * 2,
+        n_target=1.8,
+        impurity_charge_susceptibility=[partial(charge_susceptibility, solver), None],
+        max_filling_error=1e-4,
+        max_mu_refits=10,
+        impurity_charge_predictor=[ChargePredictor(solver), None],
+    )
+    for i, sign in [(0, 1), (1, -1)]:
+        for bl, split in [("up", -0.1), ("dn", 0.1)]:
+            S.Lambda[i][bl] = S.Lambda[i][bl] + sign * split * np.eye(B)
+    fillings: list[float] = []
+    callbacks = [*S.default_callbacks(), lambda *_: fillings.append(S.n_electrons)]
+    assert S.solve(tol=1e-9, callbacks=callbacks).converged
+    assert fillings == pytest.approx([1.8] * len(fillings), abs=1e-4)
+    assert S.n_electrons == pytest.approx(1.8, abs=1e-8)
+    m = [np.trace(S.rho_c[i]["up"] - S.rho_c[i]["dn"]).real for i in range(2)]
+    assert m[0] > 0.5
     assert m[1] == pytest.approx(-m[0], abs=1e-6)
 
 

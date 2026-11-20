@@ -74,6 +74,7 @@ class LatticeDiagnostics:
                 "optimizer.restarted",
                 "optimizer.switched",
                 "filling",
+                "filling.predicted",
             }
             else logging.DEBUG
         )

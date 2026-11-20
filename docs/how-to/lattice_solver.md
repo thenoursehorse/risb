@@ -422,6 +422,30 @@ S = PhysicalMuLatticeSolver(...,
 and the chemical potential is `S.mu` after solving. `n_target` does not
 include `S.n_ghost_electrons`.
 
+The filling is then `n_target` only at a solution. To keep it within
+`max_filling_error` of `n_target` in every cycle, the impurities are solved
+again at a new `mu`. A predictor of the impurity charge from earlier solves
+sets `mu` before the solves, so that fewer are needed
+
+```python
+from functools import partial
+from risb.impurity_solvers.fockit import ChargePredictor, charge_susceptibility
+
+S = PhysicalMuLatticeSolver(...,
+                            impurity_solvers=[impurity_solver],
+                            n_target=n_target,
+                            max_filling_error=1e-4,
+                            impurity_charge_susceptibility=[
+                                partial(charge_susceptibility, impurity_solver)
+                            ],
+                            impurity_charge_predictor=[ChargePredictor(impurity_solver)],
+                            ...
+)
+```
+
+With {py:class}`~risb.impurity_solvers.Block2ImpuritySolver`, use those of
+{py:mod}`risb.impurity_solvers.block2`.
+
 ## Finite temperature
 
 `LatticeSolver` is at zero temperature. If you want ghost {{RISB}} at a finite

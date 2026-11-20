@@ -46,6 +46,7 @@ from risb.types import (
     DensityFeedback,
     GaugeFix,
     GfStruct,
+    ImpurityChargePredictor,
     ImpurityChargeSusceptibility,
     PinFullEmpty,
     Symmetrize,
@@ -390,13 +391,14 @@ class PhysicalMuLatticeSolver(ZeroTemperatureLatticeSolver):
         The step of :attr:`mu` after each cycle, with `n_target`. Default is
         :class:`risb.stabilization.MuUnitStep`; see also
         :class:`risb.stabilization.MuNewtonStep`.
-    impurity_charge_susceptibility : callable or sequence of callable, optional
-        Charge susceptibility of the physical orbitals of an impurity, e.g.,
-        :func:`risb.impurity_solvers.fockit.charge_susceptibility`, for the
-        :math:`dn/d\mu` that `mu_step` may use. One for all clusters, or one
-        per cluster in the order of `impurity_solvers`; ``None`` leaves an
-        impurity out. A cluster with a :class:`.DummyImpuritySolver` takes
-        that of the cluster it copies. Default leaves every impurity out.
+    impurity_charge_susceptibility : sequence of callable, optional
+        Charge susceptibility of the physical orbitals of each impurity, e.g.,
+        ``partial(risb.impurity_solvers.fockit.charge_susceptibility,
+        impurity_solver)``, for the :math:`dn/d\mu` that `mu_step` may use.
+        One per cluster in the order of `impurity_solvers`; ``None`` leaves an
+        impurity out, and is needed for a cluster with a
+        :class:`.DummyImpuritySolver`, which takes that of the cluster it
+        copies. Default leaves every impurity out.
     max_filling_error : float or None, optional
         With `n_target`, the chemical potential of the impurities is refitted
         in each cycle until ``|n_electrons - n_target|`` is at most this. A
@@ -416,6 +418,15 @@ class PhysicalMuLatticeSolver(ZeroTemperatureLatticeSolver):
     max_mu_refits : int, optional
         Largest number of refits in a cycle. When they run out, the cycle
         carries on.
+    impurity_charge_predictor : sequence of risb.types.ImpurityChargePredictor, optional
+        Predicts :math:`N_c` of each impurity from its earlier solves, e.g.,
+        ``risb.impurity_solvers.fockit.ChargePredictor(impurity_solver)``. From the second
+        cycle, :attr:`mu` is set before the impurity solves so that the
+        filling with the predicted :math:`N_c` is `n_target`. :attr:`mu`,
+        :attr:`Lambda` and :attr:`Lambda_c` change as in a refit. One per
+        cluster in the order of `impurity_solvers`, and ``None`` for a cluster
+        with a :class:`.DummyImpuritySolver`. Needs `n_target` and
+        `max_filling_error`. Default is no prediction.
     density_feedback : risb.types.DensityFeedback or None, optional
         Shifts the quasiparticle levels against the density mismatch, before
         pinning. Default is
@@ -447,12 +458,13 @@ class PhysicalMuLatticeSolver(ZeroTemperatureLatticeSolver):
         n_target: float | None = None,
         max_qp_filling_deviation: float | None = 0.75,
         mu_step: ChemicalPotentialStep = _DEFAULT_MU_STEP,
-        impurity_charge_susceptibility: ImpurityChargeSusceptibility
-        | Sequence[ImpurityChargeSusceptibility | None]
+        impurity_charge_susceptibility: Sequence[ImpurityChargeSusceptibility | None]
         | None = None,
         max_filling_error: float | None = None,
         mu_impurity_refit_step: ChemicalPotentialStep = _DEFAULT_REFIT_STEP,
         max_mu_refits: int = 3,
+        impurity_charge_predictor: Sequence[ImpurityChargePredictor | None]
+        | None = None,
         bath_size: Sequence[Mapping[str, int]] | None = None,
         h0_k_evaluator: Callable[[KPoints], BlockMatrixLike] | None = None,
         projectors_evaluator: Callable[[KPoints], Sequence[BlockMatrixLike]]
@@ -497,6 +509,7 @@ class PhysicalMuLatticeSolver(ZeroTemperatureLatticeSolver):
             max_filling_error,
             mu_impurity_refit_step,
             max_mu_refits,
+            impurity_charge_predictor,
         )
 
     @override
